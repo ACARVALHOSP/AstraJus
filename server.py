@@ -1,0 +1,2175 @@
+"""Servidor MCP "cnj-processual": consulta processual judicial brasileira via APIs públicas do CNJ.
+
+Tools expostas:
+- consultar_processo_datajud: metadados e movimentações de processo (API Pública DataJud).
+- consultar_publicacoes_djen: publicações/intimações no DJEN (API Comunica PJe).
+- baixar_certidao_djen: baixa a certidão PDF de uma publicação e salva em arquivo temporário.
+
+Transporte: stdio. Atenção: nada deve ser impresso em stdout (ele é o canal do protocolo);
+logs vão para stderr.
+"""
+
+import argparse
+import asyncio
+import hashlib
+import hmac
+import json
+import logging
+import math
+import os
+import re
+import secrets
+import smtplib
+import ssl
+import sys
+import tempfile
+import threading
+import time
+from collections import deque
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
+from html import escape as _escapar
+from html.parser import HTMLParser
+from pathlib import Path
+from typing import Any
+from urllib.parse import parse_qs, urlsplit
+
+import httpx
+from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
+
+logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("cnj-processual")
+
+mcp = FastMCP("cnj-processual")
+
+# --- Configuração -----------------------------------------------------------
+
+DATAJUD_BASE_URL = "https://api-publica.datajud.cnj.jus.br"
+# Chave pública oficial divulgada pelo CNJ em https://datajud-wiki.cnj.jus.br/api-publica/.
+# O CNJ pode rotacioná-la a qualquer momento: se as consultas começarem a retornar 401/403,
+# verifique a wiki e defina a variável de ambiente DATAJUD_API_KEY com a chave atual.
+DATAJUD_API_KEY_PADRAO = "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=="
+
+DJEN_BASE_URL = "https://comunicaapi.pje.jus.br/api/v1/comunicacao"
+
+# A API DataJud é frequentemente lenta (observado ~48s em teste real); timeouts curtos
+# geram falso negativo, por isso o limite é alto e há uma nova tentativa.
+DATAJUD_TIMEOUT_S = 70.0
+DATAJUD_TENTATIVAS = 2
+DATAJUD_BACKOFF_S = 3.0
+
+DJEN_TIMEOUT_S = 30.0
+DJEN_TENTATIVAS = 2  # 1 tentativa inicial + 1 retry para falhas transitórias
+DJEN_BACKOFF_S = 2.0
+DJEN_STATUS_TRANSITORIOS = {500, 502, 503, 504}
+
+CERTIDAO_DIR = Path(tempfile.gettempdir()) / "cnj-processual" / "certidoes"
+CERTIDAO_RETENCAO_DIAS = 7
+# Links de download de certidão valem por este tempo. O segredo assina os links; sem
+# CNJ_MCP_SEGREDO, um segredo aleatório é gerado a cada inicialização (os links antigos deixam de valer).
+CERTIDAO_LINK_VALIDADE_S = 15 * 60
+_SEGREDO_CERTIDAO = os.environ.get("CNJ_MCP_SEGREDO", "").strip() or secrets.token_hex(32)
+_NOME_CERTIDAO = re.compile(r"certidao_[A-Za-z0-9]+\.pdf")
+
+# Graus de jurisdição usados pelo DataJud no campo "grau".
+_DESCRICAO_GRAU = {
+    "G1": "1º grau (primeira instância)",
+    "G2": "2º grau (recurso ao tribunal de justiça ou TRF)",
+    "JE": "juizado especial",
+    "TR": "turma recursal",
+    "STJ": "Superior Tribunal de Justiça",
+    "STF": "Supremo Tribunal Federal",
+    "TST": "Tribunal Superior do Trabalho",
+    "TSE": "Tribunal Superior Eleitoral",
+    "STM": "Superior Tribunal Militar",
+}
+
+# Transporte HTTP injetável para testes (httpx.MockTransport). Em produção fica None,
+# e o httpx usa a rede normalmente.
+_TRANSPORTE_HTTP: httpx.AsyncBaseTransport | None = None
+
+
+def _cliente(timeout: float, **kwargs) -> httpx.AsyncClient:
+    return httpx.AsyncClient(timeout=httpx.Timeout(timeout), transport=_TRANSPORTE_HTTP, **kwargs)
+
+
+def _datajud_api_key() -> str:
+    return os.environ.get("DATAJUD_API_KEY", "").strip() or DATAJUD_API_KEY_PADRAO
+
+
+def _so_digitos(valor: str | None) -> str:
+    """Remove máscara e qualquer caractere não numérico (ex: '1006314-27.2023.8.26.0005' -> '10063142720238260005')."""
+    return re.sub(r"\D", "", valor or "")
+
+
+def _erro(mensagem: str, **extra) -> dict:
+    return {"erro": True, "mensagem": mensagem, **extra}
+
+
+def _total_hits(hits: dict) -> int:
+    """Lê o total do Elasticsearch, que pode vir como {"value": n} (ES 7+) ou como inteiro."""
+    total = hits.get("total", 0)
+    if isinstance(total, dict):
+        total = total.get("value", 0)
+    try:
+        return int(total or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _json_da_resposta(resp: httpx.Response) -> tuple[Any, dict | None]:
+    """Devolve (dados, None) ou (None, erro) se o corpo não for JSON."""
+    try:
+        return resp.json(), None
+    except ValueError:
+        return None, _erro(f"Resposta não é JSON válido (HTTP {resp.status_code}): {resp.text[:300]}")
+
+
+# --- Utilitários de texto (HTML do DJEN) -------------------------------------
+
+class _ExtratorTexto(HTMLParser):
+    """Extrai texto puro de HTML, ignorando o conteúdo de <style>, <script> e <head>."""
+
+    _IGNORADAS = {"style", "script", "head"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._partes: list[str] = []
+        self._ignorando = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self._IGNORADAS:
+            self._ignorando += 1
+        elif tag in {"br", "p", "div", "tr", "li", "section", "article", "header", "table"}:
+            self._partes.append("\n")
+        elif tag in {"td", "th"}:
+            self._partes.append(" ")
+
+    def handle_endtag(self, tag):
+        if tag in self._IGNORADAS and self._ignorando:
+            self._ignorando -= 1
+        elif tag in {"p", "div", "tr", "li", "section", "article", "table"}:
+            self._partes.append("\n")
+
+    def handle_data(self, data):
+        if not self._ignorando:
+            self._partes.append(data)
+
+    def texto(self) -> str:
+        bruto = "".join(self._partes)
+        linhas = [re.sub(r"[ \t\xa0]+", " ", linha).strip() for linha in bruto.splitlines()]
+        # Colapsa sequências de linhas vazias em no máximo uma.
+        saida: list[str] = []
+        for linha in linhas:
+            if linha or (saida and saida[-1]):
+                saida.append(linha)
+        return "\n".join(saida).strip()
+
+
+def _html_para_texto(conteudo: str | None) -> str:
+    """Decodifica entidades HTML (ex: &aacute;) e remove tags, devolvendo texto legível."""
+    if not conteudo:
+        return ""
+    extrator = _ExtratorTexto()  # convert_charrefs=True já decodifica entidades (&aacute; -> á)
+    extrator.feed(conteudo)
+    extrator.close()
+    return extrator.texto()
+
+
+# --- Tool 1: DataJud ---------------------------------------------------------
+
+@mcp.tool()
+async def consultar_processo_datajud(tribunal: str, numero_processo: str) -> dict:
+    """Consulta metadados de um processo judicial (classe, órgão julgador, data de ajuizamento,
+    grau e lista de movimentações) na API Pública do DataJud (CNJ).
+
+    Parâmetros:
+    - tribunal: sigla minúscula do tribunal, como "tjsp", "trf1" ou "stj".
+    - numero_processo: número do processo CNJ de 20 dígitos. Aceita com ou sem máscara
+      (ex: "1006314-27.2023.8.26.0005" ou "10063142720238260005").
+
+    Retorno: dicionário com "encontrado" (bool) e, quando encontrado, "processos", uma lista em
+    que cada item traz classe, dataAjuizamento, orgaoJulgador, tribunal, grau, grau_descricao
+    (ex.: "1º grau", "2º grau") e movimentos (codigo, nome, dataHora e, quando existir,
+    complementosTabelados). Se o processo não existir nesse tribunal, retorna encontrado=False com
+    mensagem explicativa (isso não é erro).
+
+    Um mesmo número pode aparecer mais de uma vez na lista: cada item é um grau de jurisdição
+    diferente (ex.: 1º grau e 2º grau). Ao apresentar o resultado, identifique o grau de cada item.
+
+    Limitações:
+    - A API DataJud NÃO expõe nomes de partes (política de proteção de dados), então o
+      resultado nunca inclui partes, autores ou réus.
+    - A API é lenta: esta tool usa timeout de 70s e uma nova tentativa automática em timeout,
+      429 ou 502/503/504. Uma consulta com falhas pode levar mais de dois minutos.
+    - Consulta apenas o tribunal informado; se não sabe o tribunal, deduza pelo número CNJ
+      (segmento J.TR, ex: ".8.26." = TJSP) ou tente o tribunal superior correspondente.
+    """
+    try:
+        tribunal_norm = (tribunal or "").strip().lower()
+        if not re.fullmatch(r"[a-z0-9]+", tribunal_norm):
+            return _erro("Tribunal inválido. Use a sigla minúscula, como 'tjsp', 'trf1' ou 'stj'.")
+
+        numero = _so_digitos(numero_processo)
+        if len(numero) != 20:
+            return _erro(
+                f"Número de processo inválido: esperados 20 dígitos, recebidos {len(numero)}. "
+                "Formato CNJ: NNNNNNN-DD.AAAA.J.TR.OOOO."
+            )
+
+        url = f"{DATAJUD_BASE_URL}/api_publica_{tribunal_norm}/_search"
+        headers = {
+            "Authorization": f"APIKey {_datajud_api_key()}",
+            "Content-Type": "application/json",
+        }
+        corpo = {"query": {"match": {"numeroProcesso": numero}}}
+
+        resposta = await _datajud_post_com_retry(url, headers, corpo)
+        if isinstance(resposta, dict):  # erro estruturado já montado
+            return resposta
+
+        dados, erro_json = _json_da_resposta(resposta)
+        if erro_json:
+            return erro_json
+        if not isinstance(dados, dict) or not isinstance(dados.get("hits"), dict):
+            # Corpo sem "hits" não é "processo inexistente": é uma resposta de erro disfarçada.
+            return _erro(f"Resposta inesperada da API DataJud (sem 'hits'): {str(dados)[:300]}")
+
+        hits = dados["hits"]
+        total = _total_hits(hits)
+        if total == 0:
+            return {
+                "encontrado": False,
+                "mensagem": (
+                    f"Processo {numero} não encontrado no tribunal '{tribunal_norm}'. "
+                    "Confira o número e a sigla do tribunal; o processo pode estar em outro tribunal."
+                ),
+            }
+
+        processos = [_extrair_processo_datajud(h.get("_source") or {}) for h in hits.get("hits") or []]
+        return {"encontrado": True, "total": total, "processos": processos}
+
+    except Exception as exc:  # nunca deixar exceção vazar para o protocolo MCP
+        log.exception("Falha inesperada em consultar_processo_datajud")
+        return _erro(f"Erro inesperado ao consultar o DataJud: {exc}")
+
+
+async def _datajud_post_com_retry(url: str, headers: dict, corpo: dict):
+    """Faz o POST com timeout de 70s. Retenta em timeout, em 502/503/504 (gateway lento) e em
+    429 (Elasticsearch sobrecarregado, comum em horário de pico).
+
+    Retorna a resposta httpx em caso de sucesso, ou um dicionário de erro já pronto.
+    """
+    ultimo_problema = "sem detalhes"
+    async with _cliente(DATAJUD_TIMEOUT_S) as cliente:
+        for tentativa in range(1, DATAJUD_TENTATIVAS + 1):
+            try:
+                resp = await cliente.post(url, headers=headers, json=corpo)
+            except httpx.TimeoutException:
+                ultimo_problema = f"timeout após {DATAJUD_TIMEOUT_S:.0f}s"
+            except httpx.HTTPError as exc:
+                ultimo_problema = f"erro de conexão: {exc}"
+            else:
+                if resp.status_code in (429, 502, 503, 504):
+                    ultimo_problema = f"HTTP {resp.status_code} da API DataJud (sobrecarga ou gateway lento)"
+                elif resp.status_code in (401, 403):
+                    return _erro(
+                        f"HTTP {resp.status_code} da API DataJud: chave de API rejeitada. "
+                        "O CNJ pode ter rotacionado a chave pública; consulte "
+                        "https://datajud-wiki.cnj.jus.br/api-publica/ e defina DATAJUD_API_KEY."
+                    )
+                elif resp.status_code == 404:
+                    return _erro("HTTP 404 da API DataJud: sigla de tribunal provavelmente inválida.")
+                elif resp.status_code >= 400:
+                    return _erro(f"HTTP {resp.status_code} da API DataJud: {resp.text[:300]}")
+                else:
+                    return resp
+
+            log.warning("DataJud tentativa %d/%d falhou: %s", tentativa, DATAJUD_TENTATIVAS, ultimo_problema)
+            if tentativa < DATAJUD_TENTATIVAS:
+                await asyncio.sleep(DATAJUD_BACKOFF_S * tentativa)
+
+    return _erro(
+        f"Falha ao consultar o DataJud após {DATAJUD_TENTATIVAS} tentativas ({ultimo_problema}). "
+        "A API é instável em horários de pico; tente novamente em alguns minutos."
+    )
+
+
+def _extrair_processo_datajud(fonte: dict) -> dict:
+    movimentos = []
+    for mov in fonte.get("movimentos") or []:
+        item = {"codigo": mov.get("codigo"), "nome": mov.get("nome"), "dataHora": mov.get("dataHora")}
+        if mov.get("complementosTabelados"):
+            item["complementosTabelados"] = mov["complementosTabelados"]
+        movimentos.append(item)
+
+    return {
+        "numeroProcesso": fonte.get("numeroProcesso"),
+        "tribunal": fonte.get("tribunal"),
+        "grau": fonte.get("grau"),
+        "grau_descricao": _DESCRICAO_GRAU.get(fonte.get("grau") or "", fonte.get("grau")),
+        "classe": (fonte.get("classe") or {}).get("nome"),
+        "dataAjuizamento": fonte.get("dataAjuizamento"),
+        "orgaoJulgador": (fonte.get("orgaoJulgador") or {}).get("nome"),
+        "totalMovimentos": len(movimentos),
+        "movimentos": movimentos,
+    }
+
+
+# --- Tool 2: DJEN ------------------------------------------------------------
+
+_FORMATO_DATA = "%Y-%m-%d"
+
+
+def _validar_data(nome: str, valor: str | None) -> str | None:
+    """Retorna mensagem de erro se a data não estiver em YYYY-MM-DD; None se válida ou ausente."""
+    if valor is None or valor == "":
+        return None
+    try:
+        datetime.strptime(valor, _FORMATO_DATA)
+    except ValueError:
+        return f"{nome} inválida: use o formato YYYY-MM-DD (recebido '{valor}')."
+    return None
+
+
+@mcp.tool()
+async def consultar_publicacoes_djen(
+    numero_processo: str | None = None,
+    sigla_tribunal: str | None = None,
+    numero_oab: str | None = None,
+    uf_oab: str | None = None,
+    data_disponibilizacao_inicio: str | None = None,
+    data_disponibilizacao_fim: str | None = None,
+    pagina: int = 1,
+    itens_por_pagina: int = 50,
+) -> dict:
+    """Consulta publicações e intimações no Diário de Justiça Eletrônico Nacional (DJEN), via
+    API pública Comunica PJe. Não exige autenticação.
+
+    Parâmetros (é obrigatório informar ao menos um entre numero_processo e numero_oab):
+    - numero_processo: número CNJ de 20 dígitos; máscara é removida automaticamente.
+    - sigla_tribunal: sigla do tribunal em maiúsculas, ex: "TJSP".
+    - numero_oab: número da OAB do advogado, ex: "330659".
+    - uf_oab: UF da OAB com 2 letras, ex: "SP".
+    - data_disponibilizacao_inicio / data_disponibilizacao_fim: intervalo no formato YYYY-MM-DD
+      (o início não pode ser posterior ao fim).
+    - pagina: número da página (padrão 1).
+    - itens_por_pagina: quantidade por página (padrão 50).
+
+    Retorno: dicionário com "total" (quantidade informada pela API), "pagina" e "itens". Cada item
+    traz data_disponibilizacao, siglaTribunal, nomeOrgao, tipoComunicacao, tipoDocumento,
+    nomeClasse, numeroprocessocommascara, hash, link, destinatarios (nome e polo) e
+    destinatarioadvogados (nome, numero_oab, uf_oab). O campo "texto" vem convertido de HTML
+    para texto puro legível. O "hash" de cada item pode ser passado a baixar_certidao_djen.
+
+    Limitações:
+    - Busca por OAB: tribunais gravam a OAB com sufixos variados (ex: "123456", "123456-O",
+      "123456-A"). A busca pode não encontrar tudo; não há tentativa automática com sufixos
+      nesta versão.
+    - Falhas transitórias (timeout, 500, 502, 503, 504) são repetidas uma vez antes de virar erro.
+    - Se a API responder HTTP 403, o IP de saída está fora do Brasil (geo-bloqueio).
+    """
+    try:
+        numero = _so_digitos(numero_processo) if numero_processo else None
+        if numero_processo and len(numero) != 20:
+            return _erro(
+                f"Número de processo inválido: esperados 20 dígitos, recebidos {len(numero)}."
+            )
+
+        oab = (numero_oab or "").strip() or None
+        if not numero and not oab:
+            return _erro("Informe ao menos um entre numero_processo e numero_oab.")
+
+        uf = (uf_oab or "").strip().upper() or None
+        if uf and not re.fullmatch(r"[A-Z]{2}", uf):
+            return _erro("uf_oab inválida: use 2 letras, ex: 'SP'.")
+
+        for nome, valor in (
+            ("data_disponibilizacao_inicio", data_disponibilizacao_inicio),
+            ("data_disponibilizacao_fim", data_disponibilizacao_fim),
+        ):
+            erro_data = _validar_data(nome, valor)
+            if erro_data:
+                return _erro(erro_data)
+
+        if data_disponibilizacao_inicio and data_disponibilizacao_fim:
+            inicio = datetime.strptime(data_disponibilizacao_inicio, _FORMATO_DATA)
+            fim = datetime.strptime(data_disponibilizacao_fim, _FORMATO_DATA)
+            if inicio > fim:
+                return _erro("data_disponibilizacao_inicio não pode ser posterior a data_disponibilizacao_fim.")
+
+        if pagina < 1 or itens_por_pagina < 1:
+            return _erro("pagina e itens_por_pagina devem ser inteiros maiores ou iguais a 1.")
+
+        params = {
+            "numeroProcesso": numero,
+            "siglaTribunal": (sigla_tribunal or "").strip().upper() or None,
+            "numeroOab": oab,
+            "ufOab": uf,
+            "dataDisponibilizacaoInicio": data_disponibilizacao_inicio or None,
+            "dataDisponibilizacaoFim": data_disponibilizacao_fim or None,
+            "pagina": pagina,
+            "itensPorPagina": itens_por_pagina,
+        }
+        params = {k: v for k, v in params.items() if v is not None}
+
+        resposta = await _djen_get_com_retry(DJEN_BASE_URL, params=params)
+        if isinstance(resposta, dict):
+            return resposta
+
+        dados, erro_json = _json_da_resposta(resposta)
+        if erro_json:
+            return erro_json
+        if not isinstance(dados, dict):
+            return _erro("Resposta inesperada da API do DJEN (não é um objeto JSON).")
+        return {
+            "total": dados.get("count", 0),
+            "pagina": pagina,
+            "itens": [_extrair_publicacao_djen(item) for item in dados.get("items") or []],
+        }
+
+    except Exception as exc:
+        log.exception("Falha inesperada em consultar_publicacoes_djen")
+        return _erro(f"Erro inesperado ao consultar o DJEN: {exc}")
+
+
+async def _djen_get_com_retry(url: str, params: dict | None = None):
+    """GET no DJEN com timeout de 30s. Repete uma vez em timeout, erro de conexão ou HTTP
+    500/502/503/504. HTTP 403 vira erro de geo-bloqueio.
+
+    Retorna a resposta httpx em caso de sucesso, ou um dicionário de erro já pronto.
+    """
+    ultimo_problema = "sem detalhes"
+    async with _cliente(DJEN_TIMEOUT_S, follow_redirects=True) as cliente:
+        for tentativa in range(1, DJEN_TENTATIVAS + 1):
+            try:
+                resp = await cliente.get(url, params=params)
+            except httpx.TimeoutException:
+                ultimo_problema = f"timeout após {DJEN_TIMEOUT_S:.0f}s"
+            except httpx.HTTPError as exc:
+                ultimo_problema = f"erro de conexão: {exc}"
+            else:
+                if resp.status_code == 403:
+                    return _erro(_mensagem_geobloqueio())
+                if resp.status_code in DJEN_STATUS_TRANSITORIOS:
+                    ultimo_problema = f"HTTP {resp.status_code}"
+                elif resp.status_code >= 400:
+                    return _erro(f"HTTP {resp.status_code} da API do DJEN: {resp.text[:300]}")
+                else:
+                    return resp
+
+            log.warning("DJEN tentativa %d/%d falhou: %s", tentativa, DJEN_TENTATIVAS, ultimo_problema)
+            if tentativa < DJEN_TENTATIVAS:
+                await asyncio.sleep(DJEN_BACKOFF_S)
+
+    return _erro(f"Falha ao consultar o DJEN após {DJEN_TENTATIVAS} tentativas ({ultimo_problema}).")
+
+
+def _mensagem_geobloqueio() -> str:
+    return (
+        "HTTP 403 da API do DJEN. A API Comunica PJe bloqueia requisições de IPs fora do Brasil "
+        "(geo-bloqueio). Verifique se a conexão de saída deste ambiente está no Brasil."
+    )
+
+
+def _extrair_publicacao_djen(item: dict) -> dict:
+    return {
+        "data_disponibilizacao": item.get("data_disponibilizacao"),
+        "siglaTribunal": item.get("siglaTribunal"),
+        "nomeOrgao": item.get("nomeOrgao"),
+        "tipoComunicacao": item.get("tipoComunicacao"),
+        "tipoDocumento": item.get("tipoDocumento"),
+        "nomeClasse": item.get("nomeClasse"),
+        "numeroprocessocommascara": item.get("numeroprocessocommascara"),
+        "hash": item.get("hash"),
+        "link": item.get("link"),
+        "destinatarios": [
+            {"nome": d.get("nome"), "polo": d.get("polo")} for d in item.get("destinatarios") or []
+        ],
+        "destinatarioadvogados": [
+            {
+                "nome": (da.get("advogado") or {}).get("nome"),
+                "numero_oab": (da.get("advogado") or {}).get("numero_oab"),
+                "uf_oab": (da.get("advogado") or {}).get("uf_oab"),
+            }
+            for da in item.get("destinatarioadvogados") or []
+        ],
+        "texto": _html_para_texto(item.get("texto")),
+    }
+
+
+# --- Tool 3 (bônus): certidão DJEN -------------------------------------------
+
+@mcp.tool()
+async def baixar_certidao_djen(hash: str) -> dict:
+    """Baixa a certidão em PDF de uma publicação do DJEN e salva em arquivo temporário local.
+
+    Parâmetro:
+    - hash: valor do campo "hash" retornado por consultar_publicacoes_djen.
+
+    Retorno: dicionário com "link_download" (URL que baixa o PDF direto no navegador, válida por 15
+    minutos), "nome_arquivo", "bytes" e "validade_link". O caminho no servidor não é informado. Entregue o link ao usuário; não tente
+    abri-lo como texto. Se "link_download" vier null, a resposta traz um campo "aviso".
+    Certidões com mais de 7 dias são removidas do diretório temporário do servidor a cada novo download.
+    """
+    try:
+        hash_limpo = (hash or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9]+", hash_limpo):
+            return _erro("Hash inválido: deve conter apenas letras e números, como retornado por consultar_publicacoes_djen.")
+
+        url = f"{DJEN_BASE_URL}/{hash_limpo}/certidao"
+        resposta = await _djen_get_com_retry(url)
+        if isinstance(resposta, dict):
+            return resposta
+
+        conteudo = resposta.content
+        if not conteudo.startswith(b"%PDF"):
+            return _erro("A API do DJEN não retornou um PDF válido para este hash.")
+
+        CERTIDAO_DIR.mkdir(parents=True, exist_ok=True)
+        _limpar_certidoes_antigas()
+        caminho = CERTIDAO_DIR / f"certidao_{hash_limpo}.pdf"
+        caminho.write_bytes(conteudo)
+        resultado = {
+            "nome_arquivo": caminho.name,
+            "bytes": len(conteudo),
+            "link_download": _link_certidao(caminho.name),
+            "validade_link": f"{CERTIDAO_LINK_VALIDADE_S // 60} minutos",
+        }
+        if resultado["link_download"] is None:
+            resultado["aviso"] = "Link de download indisponível: o administrador precisa definir CNJ_MCP_URL_PUBLICA."
+        return resultado
+
+    except Exception as exc:
+        log.exception("Falha inesperada em baixar_certidao_djen")
+        return _erro(f"Erro inesperado ao baixar a certidão: {exc}")
+
+
+def _limpar_certidoes_antigas() -> None:
+    """Remove certidões mais antigas que CERTIDAO_RETENCAO_DIAS. Falhas aqui não interrompem o download."""
+    limite = time.time() - CERTIDAO_RETENCAO_DIAS * 86400
+    try:
+        for arquivo in CERTIDAO_DIR.glob("certidao_*.pdf"):
+            if arquivo.stat().st_mtime < limite:
+                arquivo.unlink(missing_ok=True)
+    except OSError as exc:
+        log.warning("Não foi possível limpar certidões antigas: %s", exc)
+
+
+def _assinatura_certidao(nome: str, expira: int) -> str:
+    return hmac.new(_SEGREDO_CERTIDAO.encode(), f"{nome}:{expira}".encode(), hashlib.sha256).hexdigest()
+
+
+def _link_certidao(nome: str) -> str | None:
+    """URL assinada e temporária para baixar a certidão. None se CNJ_MCP_URL_PUBLICA não estiver definida."""
+    base = os.environ.get("CNJ_MCP_URL_PUBLICA", "").strip().rstrip("/")
+    if not base:
+        return None
+    expira = int(time.time()) + CERTIDAO_LINK_VALIDADE_S
+    return f"{base}/certidoes/{nome}?exp={expira}&sig={_assinatura_certidao(nome, expira)}"
+
+
+def _verificar_link_certidao(nome: str, exp: str, sig: str) -> bool:
+    if not _NOME_CERTIDAO.fullmatch(nome) or not exp.isdigit():
+        return False
+    if int(exp) < time.time():
+        return False
+    return hmac.compare_digest(sig, _assinatura_certidao(nome, int(exp)))
+
+
+async def _servir_certidao(scope, send) -> None:
+    from urllib.parse import parse_qs as _pq
+
+    nome = Path(scope.get("path", "")).name
+    query = _pq(scope.get("query_string", b"").decode("latin-1"))
+    exp = (query.get("exp") or [""])[0]
+    sig = (query.get("sig") or [""])[0]
+    if not _verificar_link_certidao(nome, exp, sig):
+        await _responder(send, 403, b"Link invalido ou expirado. Peca uma nova certidao.")
+        return
+    arquivo = CERTIDAO_DIR / nome
+    if not arquivo.is_file():
+        await _responder(send, 404, b"Certidao nao encontrada (talvez ja tenha sido removida).")
+        return
+    await _responder(send, 200, arquivo.read_bytes(), tipo="application/pdf",
+                     cabecalhos_extra=[(b"content-disposition", f'attachment; filename="{nome}"'.encode())])
+
+
+# --- Autenticação HTTP: um token por usuário ----------------------------------
+
+_HOSTS_LOCAIS = {"127.0.0.1", "localhost", "::1"}
+_NOME_USUARIO = re.compile(r"[a-z0-9][a-z0-9._+@-]{1,253}")
+_EMAIL = re.compile(r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}")
+_TAMANHO_MAX_FORM = 4096
+
+MENSAGEM_CADASTRO_OK = (
+    "Se o e-mail informado for válido, você receberá o seu token em instantes. "
+    "O token chega somente nesse e-mail."
+)
+MENSAGEM_CADASTRO_LIMITADO = "Já enviamos um token há pouco. Aguarde alguns minutos antes de pedir outro."
+MENSAGEM_CADASTRO_FALHA = "Não foi possível enviar o e-mail agora. Tente novamente mais tarde."
+MENSAGEM_TERMOS_NECESSARIOS = "Leia e aceite os termos de uso para continuar."
+
+# Versão dos termos. Mude o valor sempre que o texto mudar: o registro guarda a versão aceita.
+TERMOS_VERSAO = "2026-10-05"
+TERMOS_SECOES = [
+    ("1. Natureza do serviço", [
+        "O cnj-processual é uma ferramenta experimental, oferecida sem garantia de disponibilidade, "
+        "precisão ou continuidade.",
+        "Ela consulta APIs públicas do CNJ (DataJud e DJEN) e pode mostrar informações incompletas, "
+        "desatualizadas ou diferentes dos sistemas oficiais dos tribunais.",
+    ]),
+    ("2. Isenção de responsabilidade", [
+        "O criador e os mantenedores do serviço não se responsabilizam por prejuízos de qualquer natureza "
+        "decorrentes do uso ou da impossibilidade de uso da ferramenta.",
+        "Isso inclui perda de prazo, decisão tomada com base nas informações exibidas, falhas de consulta "
+        "e indisponibilidade do serviço.",
+    ]),
+    ("3. Responsabilidade do usuário", [
+        "Você é responsável pelo uso correto da ferramenta.",
+        "Antes de qualquer providência, confira as informações no processo eletrônico do tribunal e no "
+        "Diário de Justiça.",
+        "Não use a ferramenta para fins ilícitos, para violar sigilo legal ou para sobrecarregar o serviço.",
+    ]),
+    ("4. Não é aconselhamento jurídico", [
+        "As informações exibidas servem de apoio à consulta. Elas não substituem a análise de um "
+        "profissional habilitado.",
+    ]),
+    ("5. Dados pessoais e sigilo", [
+        "As publicações podem conter dados pessoais de partes e advogados.",
+        "Trate esses dados conforme a legislação aplicável, incluindo a LGPD, e use-os apenas para a "
+        "finalidade legítima da consulta.",
+    ]),
+    ("6. Token, limites e suspensão", [
+        "O token é pessoal e intransferível. Você é responsável pela sua guarda.",
+        "O uso pode sofrer limites de quantidade de requisições.",
+        "O criador pode suspender ou revogar o acesso, a qualquer momento, em caso de uso indevido.",
+    ]),
+    ("7. Alterações", [
+        "O serviço pode ser alterado, interrompido ou descontinuado a qualquer momento.",
+        "Os termos podem ser atualizados. O registro guarda a versão que você aceitou.",
+    ]),
+    ("8. Registro do aceite", [
+        "Ao aceitar, registramos a data e a versão dos termos junto ao seu e-mail, para comprovação.",
+    ]),
+    ("9. Lei aplicável", [
+        "Estes termos são regidos pela lei brasileira.",
+    ]),
+]
+
+
+def _hash_token(token: str) -> str:
+    """Tokens não são guardados em texto puro: só o SHA-256 vai para o arquivo de usuários."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _mascarar_email(email: str) -> str:
+    local, _, dominio = email.partition("@")
+    return f"{local[:1]}***@{dominio}"
+
+
+class RegistroUsuarios:
+    """Lê o arquivo de usuários (JSON: {nome: {hash, criado_em, revogado}}).
+
+    O arquivo é relido sempre que muda de data de modificação, então uma revogação passa
+    a valer na próxima requisição, sem reiniciar o servidor.
+    """
+
+    def __init__(self, caminho: Path) -> None:
+        self.caminho = caminho
+        self._mtime: int | None = None
+        self._dados: dict = {}
+        self._trava = threading.Lock()
+
+    def atualizar(self, alterar) -> None:
+        """Lê o registro mais recente, aplica a alteração e grava, tudo sob trava.
+
+        Toda escrita passa por aqui: assim uma operação nunca grava por cima de uma mudança que
+        outra operação fez no intervalo. `alterar` recebe o dicionário e devolve False para
+        cancelar a gravação.
+        """
+        with self._trava:
+            dados = self.carregar()
+            if alterar(dados) is not False:
+                self.salvar(dados)
+
+    def carregar(self) -> dict:
+        try:
+            mtime = self.caminho.stat().st_mtime_ns
+        except FileNotFoundError:
+            self._mtime, self._dados = None, {}
+            return self._dados
+        if mtime != self._mtime:
+            self._dados = json.loads(self.caminho.read_text(encoding="utf-8") or "{}")
+            self._mtime = mtime
+        return self._dados
+
+    def salvar(self, dados: dict) -> None:
+        self.caminho.parent.mkdir(parents=True, exist_ok=True)
+        temporario = self.caminho.with_suffix(".tmp")
+        temporario.write_text(json.dumps(dados, indent=2, ensure_ascii=False), encoding="utf-8")
+        os.replace(temporario, self.caminho)  # troca atômica: o servidor nunca lê arquivo pela metade
+        self._mtime = None
+
+    def identificar(self, token: str) -> str | None:
+        """Devolve o nome do usuário dono do token, ou None se o token não existe ou foi revogado."""
+        h = _hash_token(token)
+        for nome, registro in self.carregar().items():
+            if not registro.get("revogado") and hmac.compare_digest(registro.get("hash", ""), h):
+                return nome
+        return None
+
+    def ativos(self) -> list[str]:
+        return [nome for nome, r in self.carregar().items() if not r.get("revogado")]
+
+
+class LimitadorUso:
+    """Limite de uso por chave (usuário, IP ou e-mail): por minuto e por dia, em memória.
+
+    Os limites ficam em 0 para desligar. Os contadores são por processo: com mais de uma
+    instância, cada uma conta separadamente.
+    """
+
+    def __init__(self, por_minuto: int, por_dia: int, agora=time.time) -> None:
+        self.por_minuto = por_minuto
+        self.por_dia = por_dia
+        self._agora = agora
+        self._janela: dict[str, deque] = {}
+        self._dia: dict[str, tuple[str, int]] = {}
+
+    def verificar(self, chave: str) -> tuple[bool, int, str]:
+        """Registra a requisição se houver cota. Devolve (permitido, segundos_ate_nova_tentativa, motivo)."""
+        return self._avaliar(chave, registrar=True)
+
+    def ocupado(self, chave: str) -> tuple[bool, int, str]:
+        """Consulta sem registrar: devolve (bloqueado, segundos_ate_nova_tentativa, motivo)."""
+        permitido, espera, motivo = self._avaliar(chave, registrar=False)
+        return (not permitido), espera, motivo
+
+    def _avaliar(self, chave: str, registrar: bool) -> tuple[bool, int, str]:
+        agora = self._agora()
+
+        janela = self._janela.setdefault(chave, deque())
+        while janela and agora - janela[0] >= 60:
+            janela.popleft()
+        if self.por_minuto and len(janela) >= self.por_minuto:
+            espera = math.ceil(60 - (agora - janela[0]))
+            return False, max(1, espera), f"limite de {self.por_minuto} requisições por minuto"
+
+        dia_atual = datetime.fromtimestamp(agora).date()
+        dia_registrado, contagem = self._dia.get(chave, (dia_atual, 0))
+        if dia_registrado != dia_atual:
+            contagem = 0
+        if self.por_dia and contagem >= self.por_dia:
+            proxima_meia_noite = datetime.combine(dia_atual + timedelta(days=1), datetime.min.time())
+            espera = math.ceil((proxima_meia_noite - datetime.fromtimestamp(agora)).total_seconds())
+            return False, max(1, espera), f"limite de {self.por_dia} requisições por dia"
+
+        if registrar:
+            janela.append(agora)
+            self._dia[chave] = (dia_atual, contagem + 1)
+        return True, 0, ""
+
+
+def _rotulo_usuario(nome: str) -> str:
+    """Nome seguro para logs: e-mails são mascarados (a***@dominio), nomes simples ficam como estão."""
+    return _mascarar_email(nome) if "@" in nome else nome
+
+
+# --- Cadastro público: o próprio usuário pede o token pelo e-mail -----------
+
+@dataclass
+class ConfiguracaoSMTP:
+    host: str
+    porta: int
+    usuario: str
+    senha: str
+    remetente: str
+
+
+def _enviar_token_por_email(cfg: ConfiguracaoSMTP, destino: str, token: str) -> None:
+    """Envia o token ao e-mail do próprio usuário. Porta 465 usa SSL direto; as demais usam STARTTLS."""
+    mensagem = EmailMessage()
+    mensagem["Subject"] = "Seu token de acesso ao cnj-processual"
+    mensagem["From"] = cfg.remetente
+    mensagem["To"] = destino
+    mensagem.set_content(
+        "Olá,\n\n"
+        "Este é o seu token de acesso ao servidor cnj-processual:\n\n"
+        f"{token}\n\n"
+        "Anote o token agora. Ele não será mostrado novamente. Se perder, peça um novo em /cadastro,\n"
+        "e o anterior deixa de valer.\n\n"
+        "Use-o no cabeçalho Authorization: Bearer <token> da configuração do seu cliente MCP.\n"
+        "Não compartilhe este token. Se você não pediu este e-mail, ignore-o: o token anterior\n"
+        "só deixa de valer se você solicitar um novo.\n"
+    )
+    contexto = ssl.create_default_context()
+    if cfg.porta == 465:
+        with smtplib.SMTP_SSL(cfg.host, cfg.porta, context=contexto, timeout=30) as servidor:
+            servidor.login(cfg.usuario, cfg.senha)
+            servidor.send_message(mensagem)
+    else:
+        with smtplib.SMTP(cfg.host, cfg.porta, timeout=30) as servidor:
+            servidor.starttls(context=contexto)
+            servidor.login(cfg.usuario, cfg.senha)
+            servidor.send_message(mensagem)
+
+
+MENSAGEM_CAPTCHA_FALHA = "Confirme que você não é um robô e tente de novo."
+
+
+class VerificadorRecaptcha:
+    """Valida no Google o resultado do reCAPTCHA. Em caso de falha de rede, recusa (fecha por padrão)."""
+
+    URL_VERIFICACAO = "https://www.google.com/recaptcha/api/siteverify"
+
+    def __init__(self, segredo: str, hostname_esperado: str | None = None) -> None:
+        self._segredo = segredo
+        # o Google informa o domínio onde o captcha foi resolvido; confere-se que é o do serviço
+        self._hostname = hostname_esperado
+
+    async def validar(self, resposta: str, ip: str) -> bool:
+        if not resposta:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=10, transport=_TRANSPORTE_HTTP) as cliente:
+                r = await cliente.post(self.URL_VERIFICACAO,
+                                       data={"secret": self._segredo, "response": resposta, "remoteip": ip})
+            dados = r.json()
+            if not dados.get("success"):
+                return False
+            if self._hostname and dados.get("hostname") != self._hostname:
+                log.warning("reCAPTCHA emitido para outro domínio (%s); cadastro recusado", dados.get("hostname"))
+                return False
+            return True
+        except (httpx.HTTPError, ValueError):
+            log.exception("Falha ao validar o reCAPTCHA; cadastro recusado por segurança")
+            return False
+
+
+class CadastroPublico:
+    """Emite um token para o e-mail informado e o envia por e-mail. A página nunca mostra o token.
+
+    Regras:
+    - A resposta é a mesma para qualquer e-mail válido, então não revela quem já tem acesso.
+    - Pedir de novo gera um token novo e invalida o anterior (é o caminho para quem perdeu o token).
+    - Um usuário revogado pelo administrador não recebe token novo por este caminho.
+    - Limites por IP e por e-mail impedem o uso do servidor para enviar spam.
+    """
+
+    def __init__(self, registro: RegistroUsuarios, cfg: ConfiguracaoSMTP,
+                 limitador_ip: LimitadorUso, limitador_email: LimitadorUso,
+                 enviar=None) -> None:
+        self.registro = registro
+        self.cfg = cfg
+        self.limitador_ip = limitador_ip
+        self.limitador_email = limitador_email
+        self._enviar = enviar or (lambda destino, token: _enviar_token_por_email(cfg, destino, token))
+
+    async def solicitar(self, email_bruto: str, ip: str, aceite_termos: bool = False) -> str:
+        if not aceite_termos:
+            return MENSAGEM_TERMOS_NECESSARIOS
+        email = (email_bruto or "").strip().lower()
+        if len(email) > 254 or not _EMAIL.fullmatch(email):
+            return "Informe um e-mail válido."
+
+        permitido_ip, _, _ = self.limitador_ip.verificar(ip)
+        permitido_email, _, _ = self.limitador_email.verificar(email)
+        if not (permitido_ip and permitido_email):
+            log.warning("Pedido de token limitado (ip=%s, e-mail=%s)", ip, _mascarar_email(email))
+            return MENSAGEM_CADASTRO_LIMITADO
+
+        dados = self.registro.carregar()
+        existente = dados.get(email, {})
+        if existente.get("revogado") and existente.get("revogado_por") == "admin":
+            log.warning("Pedido de token recusado: acesso de %s revogado pelo administrador", _mascarar_email(email))
+            return MENSAGEM_CADASTRO_OK  # mesma resposta: não revela o bloqueio
+
+        token = secrets.token_urlsafe(32)
+        try:
+            await asyncio.to_thread(self._enviar, email, token)
+        except Exception:
+            log.exception("Falha ao enviar o token por e-mail para %s", _mascarar_email(email))
+            return MENSAGEM_CADASTRO_FALHA
+
+        # Só grava depois do envio: se o e-mail falhar, o token antigo continua valendo.
+        # A gravação lê o registro de novo e não reativa um e-mail revogado pelo administrador
+        # enquanto o envio acontecia.
+        gravado = {"ok": False}
+
+        def gravar(dados_atuais: dict):
+            atual = dados_atuais.get(email, {})
+            if atual.get("revogado") and atual.get("revogado_por") == "admin":
+                return False
+            agora = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            dados_atuais[email] = {
+                "hash": _hash_token(token),
+                "criado_em": agora,
+                "revogado": False,
+                "origem": "cadastro",
+                "termos": {"versao": TERMOS_VERSAO, "aceito_em": agora},
+            }
+            gravado["ok"] = True
+
+        self.registro.atualizar(gravar)
+        if not gravado["ok"]:
+            log.warning("Token não gravado: acesso de %s foi revogado durante o envio", _mascarar_email(email))
+            return MENSAGEM_CADASTRO_OK  # mesma resposta: não revela o motivo
+        log.info("Token emitido por cadastro público para %s", _mascarar_email(email))
+        return MENSAGEM_CADASTRO_OK
+
+
+# --- Middleware HTTP ---------------------------------------------------------
+
+# --- OAuth 2.1 (PKCE) para conectores personalizados do Claude ---------------
+
+_HOSTS_REDIRECT_CLAUDE = {"claude.ai", "claude.com"}
+_HOSTS_REDIRECT_LOCAIS = {"localhost", "127.0.0.1"}
+
+
+def _redirect_permitido(uri: str) -> bool:
+    """Aceita só o callback do Claude (https) e callbacks locais (usados pelo Claude Code)."""
+    from urllib.parse import urlsplit
+
+    partes = urlsplit(uri)
+    if partes.scheme == "https" and partes.hostname in _HOSTS_REDIRECT_CLAUDE:
+        return True
+    return partes.scheme == "http" and partes.hostname in _HOSTS_REDIRECT_LOCAIS
+
+
+def _s256(verificador: str) -> str:
+    import base64
+
+    digest = hashlib.sha256(verificador.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+
+class ServidorOAuth:
+    """Authorization server mínimo para o conector do Claude.
+
+    Fluxo: o Claude registra um cliente (/oauth/register), abre /oauth/authorize, e a pessoa
+    cola o próprio token do cnj-processual (recebido por e-mail ou entregue pelo administrador).
+    O servidor devolve um código de uso único (5 min), que o Claude troca em /oauth/token por um
+    access token com validade de 30 dias. A troca exige PKCE (S256).
+
+    Access tokens ficam guardados só pelo hash, em oauth.json. Revogar o usuário invalida também
+    os access tokens dele.
+    """
+
+    CODIGO_VALIDADE_S = 300
+    TOKEN_VALIDADE_S = 30 * 86400
+
+    def __init__(self, registro: RegistroUsuarios, caminho: Path, agora=time.time,
+                 limitador_registro: "LimitadorUso | None" = None) -> None:
+        self.limitador_registro = limitador_registro
+        self.registro = registro
+        self.caminho = caminho
+        self._agora = agora
+        self._codigos: dict[str, dict] = {}
+
+    # --- armazenamento -------------------------------------------------------
+
+    def _carregar(self) -> dict:
+        if not self.caminho.exists():
+            return {"clientes": {}, "tokens": {}}
+        dados = json.loads(self.caminho.read_text(encoding="utf-8") or "{}")
+        dados.setdefault("clientes", {})
+        dados.setdefault("tokens", {})
+        return dados
+
+    def _salvar(self, dados: dict) -> None:
+        self.caminho.parent.mkdir(parents=True, exist_ok=True)
+        temporario = self.caminho.with_suffix(".tmp")
+        temporario.write_text(json.dumps(dados, indent=2, ensure_ascii=False), encoding="utf-8")
+        os.replace(temporario, self.caminho)
+
+    # --- clientes ------------------------------------------------------------
+
+    MAX_CLIENTES = 500
+    PRAZO_CLIENTE_NAO_USADO_S = 30 * 86400
+
+    def registrar_cliente(self, redirect_uris: list[str], nome: str) -> str | None:
+        if not redirect_uris or not all(_redirect_permitido(u) for u in redirect_uris):
+            return None
+        client_id = secrets.token_urlsafe(16)
+        dados = self._carregar()
+        agora = self._agora()
+        # remove clientes que nunca chegaram a gerar token e estão parados há mais do que o prazo
+        dados["clientes"] = {
+            cid: c for cid, c in dados["clientes"].items()
+            if c.get("usado") or agora - c.get("criado_em", agora) < self.PRAZO_CLIENTE_NAO_USADO_S
+        }
+        if len(dados["clientes"]) >= self.MAX_CLIENTES:
+            return None  # teto atingido: o registro é recusado até que clientes antigos sejam limpos
+        dados["clientes"][client_id] = {
+            "redirect_uris": redirect_uris, "nome": nome[:100], "criado_em": agora, "usado": False,
+        }
+        self._salvar(dados)
+        return client_id
+
+    def cliente_valido(self, client_id: str, redirect_uri: str) -> bool:
+        cliente = self._carregar()["clientes"].get(client_id)
+        return bool(cliente) and redirect_uri in cliente["redirect_uris"]
+
+    # --- códigos e tokens ----------------------------------------------------
+
+    def emitir_codigo(self, client_id: str, redirect_uri: str, desafio: str, usuario: str) -> str:
+        codigo = secrets.token_urlsafe(32)
+        self._codigos[_hash_token(codigo)] = {
+            "client_id": client_id, "redirect_uri": redirect_uri, "desafio": desafio,
+            "usuario": usuario, "expira_em": self._agora() + self.CODIGO_VALIDADE_S,
+        }
+        return codigo
+
+    def trocar_codigo(self, codigo: str, client_id: str, redirect_uri: str, verificador: str) -> str | None:
+        """Devolve o access token, ou None se o código, o cliente, o redirect ou o PKCE não baterem."""
+        registro = self._codigos.pop(_hash_token(codigo), None)  # uso único
+        if not registro or self._agora() > registro["expira_em"]:
+            return None
+        if registro["client_id"] != client_id or registro["redirect_uri"] != redirect_uri:
+            return None
+        if not hmac.compare_digest(registro["desafio"], _s256(verificador)):
+            return None
+
+        access = secrets.token_urlsafe(32)
+        dados = self._carregar()
+        if client_id in dados["clientes"]:
+            dados["clientes"][client_id]["usado"] = True  # cliente em uso não é removido na limpeza
+        dados["tokens"][_hash_token(access)] = {
+            "usuario": registro["usuario"],
+            "expira_em": self._agora() + self.TOKEN_VALIDADE_S,
+        }
+        # descarta access tokens vencidos ao emitir um novo
+        agora = self._agora()
+        dados["tokens"] = {h: t for h, t in dados["tokens"].items() if t["expira_em"] > agora}
+        self._salvar(dados)
+        return access
+
+    def identificar(self, access: str) -> str | None:
+        registro = self._carregar()["tokens"].get(_hash_token(access))
+        if not registro or self._agora() > registro["expira_em"]:
+            return None
+        usuario = registro["usuario"]
+        conta = self.registro.carregar().get(usuario)
+        if not conta or conta.get("revogado"):
+            return None
+        return usuario
+
+    # --- HTTP ----------------------------------------------------------------
+
+    async def tratar(self, scope, receive, send) -> None:
+        caminho = scope.get("path", "")
+        metodo = scope.get("method")
+        base = _base_publica(scope)
+
+        if caminho == "/.well-known/oauth-protected-resource" and metodo == "GET":
+            await _json(send, 200, {"resource": f"{base}/mcp", "authorization_servers": [base],
+                                    "bearer_methods_supported": ["header"]})
+        elif caminho == "/.well-known/oauth-authorization-server" and metodo == "GET":
+            await _json(send, 200, {
+                "issuer": base,
+                "authorization_endpoint": f"{base}/oauth/authorize",
+                "token_endpoint": f"{base}/oauth/token",
+                "registration_endpoint": f"{base}/oauth/register",
+                "response_types_supported": ["code"],
+                "grant_types_supported": ["authorization_code"],
+                "code_challenge_methods_supported": ["S256"],
+                "token_endpoint_auth_methods_supported": ["none"],
+            })
+        elif caminho == "/oauth/register" and metodo == "POST":
+            await self._registrar(scope, receive, send)
+        elif caminho == "/oauth/authorize" and metodo == "GET":
+            await self._autorizar_pagina(scope, send, dict(_query(scope)))
+        elif caminho == "/oauth/authorize" and metodo == "POST":
+            await self._autorizar_envio(receive, send)
+        elif caminho == "/oauth/token" and metodo == "POST":
+            await self._token(receive, send)
+        else:
+            await _responder(send, 404, b"Nao encontrado")
+
+    async def _registrar(self, scope, receive, send) -> None:
+        if self.limitador_registro is not None:
+            permitido, espera, motivo = self.limitador_registro.verificar(f"oauth-registro:{_ip_cliente(scope)}")
+            if not permitido:
+                await _json(send, 429, {"error": "temporarily_unavailable", "error_description": motivo})
+                return
+        corpo = await _ler_corpo(receive)
+        try:
+            dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            dados = {}
+        uris = dados.get("redirect_uris") or []
+        if not isinstance(uris, list) or not all(isinstance(u, str) for u in uris):
+            await _json(send, 400, {"error": "invalid_redirect_uri"})
+            return
+        client_id = self.registrar_cliente(uris, str(dados.get("client_name", "cliente MCP")))
+        if client_id is None:
+            await _json(send, 400, {"error": "invalid_redirect_uri",
+                                    "error_description": "Use um redirect_uri https do claude.ai/claude.com ou localhost, "
+                                                         "ou tente novamente mais tarde se o limite de clientes foi atingido."})
+            return
+        await _json(send, 201, {
+            "client_id": client_id,
+            "client_id_issued_at": int(self._agora()),
+            "client_name": str(dados.get("client_name", "cliente MCP")),
+            "redirect_uris": uris,
+            "grant_types": ["authorization_code"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+        })
+
+    def _parametros_validos(self, params: dict) -> str | None:
+        """Devolve None se válidos; caso contrário, o motivo. Nunca redireciona para URI não validada."""
+        if params.get("response_type") != "code":
+            return "response_type deve ser 'code'."
+        if params.get("code_challenge_method") != "S256" or not params.get("code_challenge"):
+            return "PKCE (S256) é obrigatório."
+        if not self.cliente_valido(params.get("client_id", ""), params.get("redirect_uri", "")):
+            return "Cliente ou redirect_uri não registrados."
+        return None
+
+    async def _autorizar_pagina(self, scope, send, params: dict) -> None:
+        erro = self._parametros_validos(params)
+        if erro:
+            await _responder(send, 400, erro.encode("utf-8"))
+            return
+        await _responder(send, 200, _pagina_autorizacao(params).encode("utf-8"),
+                         tipo="text/html; charset=utf-8")
+
+    async def _autorizar_envio(self, receive, send) -> None:
+        corpo = await _ler_corpo(receive)
+        if corpo is None:
+            await _responder(send, 413, b"Formulario grande demais")
+            return
+        params = {k: v[0] for k, v in parse_qs(corpo.decode("utf-8", "replace"), keep_blank_values=True).items()}
+        erro = self._parametros_validos(params)
+        if erro:
+            await _responder(send, 400, erro.encode("utf-8"))
+            return
+
+        usuario = self.registro.identificar(params.get("token", "").strip())
+        if usuario is None:
+            log.warning("Autorização OAuth negada: token inválido ou revogado")
+            await _responder(send, 401, _pagina_autorizacao(params, "Token inválido ou revogado.").encode("utf-8"),
+                             tipo="text/html; charset=utf-8")
+            return
+
+        codigo = self.emitir_codigo(params["client_id"], params["redirect_uri"],
+                                    params["code_challenge"], usuario)
+        log.info("Autorização OAuth concedida para '%s'", _rotulo_usuario(usuario))
+        from urllib.parse import urlencode
+
+        separador = "&" if "?" in params["redirect_uri"] else "?"
+        destino = params["redirect_uri"] + separador + urlencode(
+            {"code": codigo, "state": params.get("state", "")})
+        await _responder(send, 302, b"", cabecalhos_extra=[(b"location", destino.encode("utf-8"))])
+
+    async def _token(self, receive, send) -> None:
+        corpo = await _ler_corpo(receive)
+        if corpo is None:
+            await _json(send, 413, {"error": "invalid_request"})
+            return
+        p = {k: v[0] for k, v in parse_qs(corpo.decode("utf-8", "replace"), keep_blank_values=True).items()}
+        if p.get("grant_type") != "authorization_code":
+            await _json(send, 400, {"error": "unsupported_grant_type"})
+            return
+        access = self.trocar_codigo(p.get("code", ""), p.get("client_id", ""),
+                                    p.get("redirect_uri", ""), p.get("code_verifier", ""))
+        if access is None:
+            await _json(send, 400, {"error": "invalid_grant"})
+            return
+        await _json(send, 200, {"access_token": access, "token_type": "Bearer",
+                                "expires_in": self.TOKEN_VALIDADE_S})
+
+
+def _base_publica(scope) -> str:
+    """URL pública do servidor, a partir do Host da requisição (o Caddy repassa o domínio)."""
+    host = ""
+    for nome, valor in scope.get("headers") or []:
+        if nome == b"host":
+            host = valor.decode("latin-1")
+    local = host.split(":")[0] in _HOSTS_LOCAIS or host.startswith("[::1]")
+    return f"{'http' if local else 'https'}://{host}"
+
+
+def _query(scope):
+    from urllib.parse import parse_qsl
+
+    return parse_qsl(scope.get("query_string", b"").decode("latin-1"), keep_blank_values=True)
+
+
+async def _json(send, status: int, corpo: dict) -> None:
+    await _responder(send, status, json.dumps(corpo, ensure_ascii=False).encode("utf-8"),
+                     tipo="application/json; charset=utf-8")
+
+
+def _pagina_autorizacao(params: dict, erro: str | None = None) -> str:
+    ocultos = "".join(
+        f'<input type="hidden" name="{_escapar(k)}" value="{_escapar(params.get(k, ""))}">'
+        for k in ("response_type", "client_id", "redirect_uri", "code_challenge",
+                  "code_challenge_method", "state", "scope")
+    )
+    aviso = f"<p class='aviso'>{_escapar(erro)}</p>" if erro else ""
+    return f"""<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cnj-processual · autorizar acesso</title>
+<style>{_ESTILO_PAGINAS}</style></head><body>
+<h1>Autorizar o Claude a usar o cnj-processual</h1>
+<p>Cole o token que você recebeu por e-mail. Ele não fica salvo nesta página.</p>
+{aviso}
+<form method="post" action="/oauth/authorize">
+{ocultos}
+<label>Token<br><input type="password" name="token" required autocomplete="off"></label>
+<button type="submit">Autorizar</button>
+</form>
+<p>Ainda não tem token? Peça em <a href="/cadastro">/cadastro</a>.</p>
+</body></html>"""
+
+
+class _AutenticacaoBearer:
+    """Middleware ASGI.
+
+    - /mcp exige 'Authorization: Bearer <token>' de um usuário ativo e aplica os limites de uso.
+    - /cadastro (se houver SMTP configurado) permite pedir o token pelo e-mail.
+    - /admin (se houver CNJ_MCP_ADMIN_TOKEN) é a página administrativa.
+    - /healthz é liberado para o health check da hospedagem.
+    """
+
+    def __init__(self, app, registro: RegistroUsuarios, limitador: LimitadorUso | None = None,
+                 admin_token: str | None = None, cadastro: CadastroPublico | None = None,
+                 oauth: "ServidorOAuth | None" = None, captcha: "VerificadorRecaptcha | None" = None,
+                 captcha_site_key: str | None = None, falhas: LimitadorUso | None = None) -> None:
+        self.app = app
+        self.registro = registro
+        self.limitador = limitador
+        self.admin_token = admin_token
+        self.cadastro = cadastro
+        self.oauth = oauth
+        self.captcha = captcha
+        self.captcha_site_key = captcha_site_key
+        # conta tentativas de autenticação falhas por IP (mcp e admin), para frear força bruta
+        self.falhas = falhas
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":  # lifespan e afins passam direto
+            await self.app(scope, receive, send)
+            return
+
+        caminho = scope.get("path", "")
+        if caminho == "/healthz":
+            await _responder(send, 200, b"ok")
+            return
+        if caminho == "/cadastro":
+            if scope.get("method") == "POST":
+                # tempo de resposta fixo: não revela se o e-mail foi enviado, recusado ou revogado
+                await _com_tempo_minimo(self._cadastro_http, scope, receive, send)
+            else:
+                await self._cadastro_http(scope, receive, send)
+            return
+        if caminho == "/static/carbon/styles.min.css" and scope.get("method") == "GET":
+            # folha de estilos do Carbon (Apache 2.0), servida pelo próprio servidor
+            css = Path(__file__).resolve().parent / "static" / "carbon" / "styles.min.css"
+            if css.is_file():
+                await _responder(send, 200, css.read_bytes(), tipo="text/css; charset=utf-8")
+            else:
+                await _responder(send, 404, b"Nao encontrado")
+            return
+        if caminho == "/static/cadastro.js" and scope.get("method") == "GET":
+            # script externo da página de cadastro (a CSP não permite script inline)
+            js = Path(__file__).resolve().parent / "static" / "cadastro.js"
+            if js.is_file():
+                await _responder(send, 200, js.read_bytes(), tipo="application/javascript; charset=utf-8")
+            else:
+                await _responder(send, 404, b"Nao encontrado")
+            return
+        if caminho == "/static/app.js" and scope.get("method") == "GET":
+            # script externo do painel web (cliente MCP em JavaScript puro)
+            js = Path(__file__).resolve().parent / "static" / "app.js"
+            if js.is_file():
+                await _responder(send, 200, js.read_bytes(), tipo="application/javascript; charset=utf-8")
+            else:
+                await _responder(send, 404, b"Nao encontrado")
+            return
+        if caminho == "/app" and scope.get("method") == "GET":
+            # painel público: a pessoa cola o próprio token no navegador, o servidor não autentica a página
+            pagina = Path(__file__).resolve().parent / "static" / "app.html"
+            if pagina.is_file():
+                await _responder(send, 200, pagina.read_bytes(), tipo="text/html; charset=utf-8")
+            else:
+                await _responder(send, 404, b"Nao encontrado")
+            return
+        if caminho == "/guia" and scope.get("method") == "GET":
+            # guia público para usuários finais: não tem dados sensíveis, por isso não exige token
+            guia = Path(__file__).resolve().parent / "guia-do-usuario.html"
+            if guia.is_file():
+                await _responder(send, 200, guia.read_bytes(), tipo="text/html; charset=utf-8")
+            else:
+                await _responder(send, 404, b"Guia nao encontrado")
+            return
+        if caminho.startswith("/certidoes/"):
+            # acesso por link assinado e temporário (sem token de usuário)
+            await _servir_certidao(scope, send)
+            return
+        if caminho.startswith("/admin"):
+            await self._admin(scope, receive, send)
+            return
+        if self.oauth and (caminho.startswith("/oauth/") or caminho.startswith("/.well-known/")):
+            await self.oauth.tratar(scope, receive, send)
+            return
+
+        ip = _ip_cliente(scope)
+        chave_falhas = f"mcp:{ip}"
+        if self.falhas is not None:
+            bloqueado, espera, motivo = self.falhas.ocupado(chave_falhas)
+            if bloqueado:
+                log.warning("Autenticação bloqueada para o IP %s: %s", ip, motivo)
+                await _responder(send, 429, f"Muitas tentativas sem sucesso. Tente em {espera}s.".encode("utf-8"),
+                                 cabecalhos_extra=[(b"retry-after", str(espera).encode())])
+                return
+
+        cabecalhos = dict(scope.get("headers") or [])
+        autorizacao = cabecalhos.get(b"authorization", b"").decode("latin-1")
+        token = autorizacao[len("Bearer "):] if autorizacao.startswith("Bearer ") else ""
+        usuario = None
+        if token:
+            usuario = self.registro.identificar(token)
+            if usuario is None and self.oauth is not None:
+                usuario = self.oauth.identificar(token)
+        if usuario is None:
+            if self.falhas is not None:
+                self.falhas.verificar(chave_falhas)
+            log.warning("Requisição negada: token ausente, inválido ou revogado (%s %s)", scope.get("method"), caminho)
+            desafio = b"Bearer"
+            if self.oauth is not None:
+                # o Claude usa este cabeçalho para descobrir onde autorizar (RFC 9728)
+                desafio = f'Bearer resource_metadata="{_base_publica(scope)}/.well-known/oauth-protected-resource"'.encode()
+            await _responder(send, 401, b"Token ausente, invalido ou revogado",
+                             cabecalhos_extra=[(b"www-authenticate", desafio)])
+            return
+
+        if self.limitador and scope.get("method") == "POST" and caminho == "/mcp":
+            permitido, espera, motivo = self.limitador.verificar(usuario)
+            if not permitido:
+                log.warning("Requisição de '%s' limitada: %s", _rotulo_usuario(usuario), motivo)
+                await _responder(
+                    send, 429, f"Limite de uso atingido: {motivo}. Tente em {espera}s.".encode("utf-8"),
+                    cabecalhos_extra=[(b"retry-after", str(espera).encode())],
+                )
+                return
+
+        log.info("Requisição de '%s': %s %s", _rotulo_usuario(usuario), scope.get("method"), caminho)
+        await self.app(scope, receive, send)
+
+    # --- Cadastro público ------------------------------------------------------
+
+    async def _cadastro_http(self, scope, receive, send):
+        if self.cadastro is None:
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        if scope.get("method") == "GET":
+            # Primeira tela: termos. A etapa de e-mail só abre com ?etapa=email (após o aceite).
+            from urllib.parse import parse_qsl
+            query = dict(parse_qsl(scope.get("query_string", b"").decode("latin-1")))
+            if query.get("etapa") == "email" and query.get("aceite") == "sim":
+                pagina = _pagina_cadastro(site_key=self.captcha_site_key)
+            elif query.get("etapa") == "email":
+                pagina = _pagina_termos(MENSAGEM_TERMOS_NECESSARIOS, erro=True)
+            else:
+                pagina = _pagina_termos()
+            await _responder(send, 200, pagina.encode("utf-8"), tipo="text/html; charset=utf-8")
+            return
+        if scope.get("method") == "POST":
+            corpo = await _ler_corpo(receive)
+            if corpo is None:
+                await _responder(send, 413, b"Formulario grande demais")
+                return
+            campos = {k: v[0] for k, v in parse_qs(corpo.decode("utf-8", "replace"), keep_blank_values=True).items()}
+            aceitou = campos.get("aceite") == "sim"
+            if not aceitou:
+                # sem aceite, o e-mail nem é lido: volta para a tela de termos
+                await _responder(send, 200, _pagina_termos(MENSAGEM_TERMOS_NECESSARIOS, erro=True).encode("utf-8"),
+                                 tipo="text/html; charset=utf-8")
+                return
+            if self.captcha is not None:
+                humano = await self.captcha.validar(campos.get("g-recaptcha-response", ""), _ip_cliente(scope))
+                if not humano:
+                    log.warning("Cadastro recusado: reCAPTCHA inválido ou ausente")
+                    await _responder(send, 200,
+                                     _pagina_cadastro(MENSAGEM_CAPTCHA_FALHA, erro=True,
+                                                      site_key=self.captcha_site_key).encode("utf-8"),
+                                     tipo="text/html; charset=utf-8")
+                    return
+            mensagem = await self.cadastro.solicitar(campos.get("email", ""), _ip_cliente(scope), aceitou)
+            erro = mensagem != MENSAGEM_CADASTRO_OK
+            await _responder(send, 200, _pagina_cadastro(mensagem, erro=erro,
+                                                         site_key=self.captcha_site_key).encode("utf-8"),
+                             tipo="text/html; charset=utf-8")
+            return
+        await _responder(send, 404, b"Nao encontrado")
+
+    # --- Página administrativa -------------------------------------------------
+
+    async def _admin(self, scope, receive, send):
+        if self.admin_token is None:
+            await _responder(send, 404, b"Nao encontrado")
+            return
+
+        metodo = scope.get("method")
+        caminho = scope.get("path")
+        if metodo == "GET" and caminho == "/admin":
+            # Sem token, a página só traz o formulário: a lista de usuários não é exibida.
+            await _responder(send, 200, _pagina_admin(self.registro, mensagem=None).encode("utf-8"),
+                             tipo="text/html; charset=utf-8")
+            return
+        if metodo == "POST" and caminho == "/admin/acao":
+            ip = _ip_cliente(scope)
+            chave_admin = f"admin:{ip}"
+            if self.falhas is not None:
+                bloqueado, espera, motivo = self.falhas.ocupado(chave_admin)
+                if bloqueado:
+                    log.warning("Administração bloqueada para o IP %s: %s", ip, motivo)
+                    await _responder(send, 429, _pagina_admin(self.registro,
+                                                              f"Muitas tentativas. Tente em {espera}s.").encode("utf-8"),
+                                     tipo="text/html; charset=utf-8",
+                                     cabecalhos_extra=[(b"retry-after", str(espera).encode())])
+                    return
+            corpo = await _ler_corpo(receive)
+            if corpo is None:
+                await _responder(send, 413, b"Formulario grande demais")
+                return
+            campos = {k: v[0] for k, v in parse_qs(corpo.decode("utf-8", "replace"), keep_blank_values=True).items()}
+            if not hmac.compare_digest(campos.get("token_admin", "").encode("utf-8"), self.admin_token.encode("utf-8")):
+                if self.falhas is not None:
+                    self.falhas.verificar(chave_admin)
+                log.warning("Ação administrativa negada: token administrativo inválido")
+                await _responder(send, 401, _pagina_admin(self.registro, "Token administrativo inválido.", erro=True).encode("utf-8"),
+                                 tipo="text/html; charset=utf-8")
+                return
+            mensagem, token_novo = _executar_acao_admin(self.registro, campos.get("acao", ""), campos.get("nome", ""))
+            log.info("Ação administrativa: %s '%s'", campos.get("acao"), _rotulo_usuario(campos.get("nome", "")))
+            await _responder(send, 200,
+                             _pagina_admin(self.registro, mensagem, token_novo, mostrar_lista=True).encode("utf-8"),
+                             tipo="text/html; charset=utf-8")
+            return
+
+        await _responder(send, 404, b"Nao encontrado")
+
+
+def _ip_cliente(scope) -> str:
+    """IP de quem fez a requisição. Atrás do Caddy, o último X-Forwarded-For é o IP que o proxy viu."""
+    for nome, valor in scope.get("headers") or []:
+        if nome == b"x-forwarded-for":
+            return valor.decode("latin-1").split(",")[-1].strip() or "desconhecido"
+    cliente = scope.get("client")
+    return cliente[0] if cliente else "desconhecido"
+
+
+CADASTRO_TEMPO_MINIMO_S = float(os.environ.get("CNJ_CADASTRO_TEMPO_MINIMO_S", "2.5"))
+
+
+async def _com_tempo_minimo(atendimento, scope, receive, send) -> None:
+    """Executa o atendimento e só entrega a resposta depois de um tempo mínimo fixo."""
+    inicio = time.monotonic()
+    mensagens: list[dict] = []
+
+    async def guardar(mensagem):
+        mensagens.append(mensagem)
+
+    await atendimento(scope, receive, guardar)
+    restante = CADASTRO_TEMPO_MINIMO_S - (time.monotonic() - inicio)
+    if restante > 0:
+        await asyncio.sleep(restante)
+    for mensagem in mensagens:
+        await send(mensagem)
+
+
+async def _ler_corpo(receive) -> bytes | None:
+    """Lê o corpo da requisição. Devolve None se passar do tamanho máximo de formulário."""
+    partes: list[bytes] = []
+    total = 0
+    while True:
+        mensagem = await receive()
+        bloco = mensagem.get("body", b"")
+        total += len(bloco)
+        if total > _TAMANHO_MAX_FORM:
+            return None
+        partes.append(bloco)
+        if not mensagem.get("more_body"):
+            return b"".join(partes)
+
+
+async def _responder(send, status: int, corpo: bytes, tipo: str = "text/plain; charset=utf-8",
+                     cabecalhos_extra=()) -> None:
+    cabecalhos = [(b"content-type", tipo.encode()), (b"content-length", str(len(corpo)).encode())]
+    cabecalhos.extend(cabecalhos_extra)
+    await send({"type": "http.response.start", "status": status, "headers": cabecalhos})
+    await send({"type": "http.response.body", "body": corpo})
+
+
+_ESTILO_PAGINAS = """
+body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+td, th { border-bottom: 1px solid #ddd; padding: .4rem; text-align: left; }
+form { display: block; margin: .6rem 0; }
+input { padding: .5rem; margin: .2rem 0; width: 100%; max-width: 360px; box-sizing: border-box; }
+button { padding: .5rem 1rem; }
+.aviso { background: #f3f3f3; padding: .6rem; border-radius: 6px; }
+"""
+
+
+# Estilo próprio da página de cadastro. Paleta: tinta fria + um único acento teal (contraste AA
+# com texto branco no botão). Raio único: 14px no cartão, 10px nos controles.
+_ESTILO_CADASTRO = """
+:root {
+  color-scheme: light dark;
+  --fundo: #f4f6f8;
+  --cartao: #ffffff;
+  --texto: #14202b;
+  --texto-suave: #4a5a68;
+  --borda: #d6dde4;
+  --acento: #0f766e;
+  --acento-hover: #0c5f58;
+  --foco: #0f766e;
+  --erro-fundo: #fdecec;
+  --erro-texto: #8a1c1c;
+  --aviso-fundo: #e7f4f2;
+  --aviso-texto: #0c4a45;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --fundo: #0e151c;
+    --cartao: #17222c;
+    --texto: #eaf0f4;
+    --texto-suave: #9fb0bd;
+    --borda: #2b3a46;
+    --acento: #2dd4bf;
+    --acento-hover: #5eead4;
+    --foco: #5eead4;
+    --erro-fundo: #3a1c1c;
+    --erro-texto: #ffb4b4;
+    --aviso-fundo: #12332f;
+    --aviso-texto: #bff3ea;
+  }
+}
+:root[data-theme="dark"] {
+  --fundo: #0e151c;
+  --cartao: #17222c;
+  --texto: #eaf0f4;
+  --texto-suave: #9fb0bd;
+  --borda: #2b3a46;
+  --acento: #2dd4bf;
+  --acento-hover: #5eead4;
+  --foco: #5eead4;
+  --erro-fundo: #3a1c1c;
+  --erro-texto: #ffb4b4;
+  --aviso-fundo: #12332f;
+  --aviso-texto: #bff3ea;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.cartao {
+  width: 100%;
+  max-width: 440px;
+  background: var(--cartao);
+  border: 1px solid var(--borda);
+  border-radius: 14px;
+  padding: 32px 28px;
+  box-shadow: 0 1px 2px rgb(20 32 43 / 0.06), 0 12px 32px rgb(20 32 43 / 0.06);
+}
+.marca {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--texto-suave);
+  margin: 0 0 16px;
+}
+h1 {
+  font-size: 1.5rem;
+  line-height: 1.25;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0 0 8px;
+}
+.apoio {
+  margin: 0 0 24px;
+  color: var(--texto-suave);
+  font-size: 0.975rem;
+}
+.aviso {
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--aviso-fundo);
+  color: var(--aviso-texto);
+  font-size: 0.925rem;
+}
+.aviso.erro {
+  background: var(--erro-fundo);
+  color: var(--erro-texto);
+}
+form { margin: 0; }
+label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 6px;
+}
+input {
+  width: 100%;
+  padding: 12px 14px;
+  font: inherit;
+  color: var(--texto);
+  background: var(--cartao);
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+}
+input::placeholder { color: var(--texto-suave); opacity: 0.8; }
+input:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid var(--foco);
+  outline-offset: 2px;
+}
+.ajuda {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.85rem;
+  color: var(--texto-suave);
+}
+button {
+  width: 100%;
+  margin-top: 18px;
+  padding: 13px 16px;
+  font: inherit;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--acento);
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background-color 150ms ease, transform 100ms ease;
+}
+button:hover { background: var(--acento-hover); }
+button:active { transform: scale(0.98); }
+.rodape {
+  margin: 24px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--borda);
+  font-size: 0.875rem;
+  color: var(--texto-suave);
+}
+@media (max-width: 480px) {
+  .cartao { padding: 24px 20px; }
+  h1 { font-size: 1.3rem; }
+}
+.termos {
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 14px 16px;
+  margin: 0 0 18px;
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  background: var(--fundo);
+  font-size: 0.9rem;
+  color: var(--texto);
+}
+.termos:focus-visible { outline: 3px solid var(--foco); outline-offset: 2px; }
+.termos h2 {
+  font-size: 0.95rem;
+  font-weight: 650;
+  margin: 14px 0 4px;
+}
+.termos h2:first-child { margin-top: 0; }
+.termos p { margin: 0 0 8px; }
+.aceite {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin: 0 0 4px;
+}
+.aceite input { width: auto; margin-top: 3px; }
+.alerta {
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--foco);
+  background: var(--aviso-fundo);
+  color: var(--aviso-texto);
+  font-size: 0.925rem;
+}
+.alerta strong { display: block; margin-bottom: 2px; }
+.g-recaptcha { margin-top: 16px; }
+/* Feedback de envio: a barra só aparece enquanto o formulário está sendo enviado */
+.enviando-barra {
+  position: relative;
+  height: 2px;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--borda);
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+.enviando-barra::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--acento);
+  transform: translateX(-100%);
+}
+form.enviando .enviando-barra { opacity: 1; }
+form.enviando .enviando-barra::after { animation: enviando-correr 1.2s linear infinite; }
+button:disabled { opacity: 0.7; cursor: progress; }
+@keyframes enviando-correr {
+  to { transform: translateX(100%); }
+}
+.voltar {
+  display: inline-block;
+  margin-top: 14px;
+  font-size: 0.875rem;
+  color: var(--texto-suave);
+}
+@media (prefers-reduced-motion: reduce) {
+  button { transition: none; }
+  form.enviando .enviando-barra::after { animation: none; transform: translateX(-40%); }
+}
+"""
+
+
+def _pagina_termos(mensagem: str | None = None, erro: bool = False) -> str:
+    """Primeira tela do cadastro: os termos precisam ser lidos e aceitos antes do e-mail."""
+    classe_aviso = "aviso erro" if erro else "aviso"
+    aviso = f"<p class='{classe_aviso}' role='status'>{_escapar(mensagem)}</p>" if mensagem else ""
+    secoes = "\n".join(
+        f"<h2>{_escapar(titulo)}</h2>" + "".join(f"<p>{_escapar(p)}</p>" for p in paragrafos)
+        for titulo, paragrafos in TERMOS_SECOES
+    )
+    return f"""<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Termos de uso · cnj-processual</title>
+<style>{_ESTILO_CADASTRO}</style></head><body>
+<main class="cartao">
+<p class="marca">cnj-processual · versão {_escapar(TERMOS_VERSAO)}</p>
+<h1>Termos de uso</h1>
+<p class="apoio">Leia os termos antes de pedir o seu token.</p>
+{aviso}
+<div class="termos" tabindex="0" aria-label="Texto dos termos de uso">
+{secoes}
+</div>
+<form method="get" action="/cadastro">
+<input type="hidden" name="etapa" value="email">
+<label class="aceite"><input type="checkbox" name="aceite" value="sim" required>
+<span>Li os termos de uso e concordo com eles.</span></label>
+<button type="submit">Continuar</button>
+</form>
+<p class="rodape">A versão aceita fica registrada junto ao seu e-mail.</p>
+<a class="voltar" href="/guia">Guia do usuário: como usar o serviço</a>
+</main>
+</body></html>"""
+
+
+def _pagina_cadastro(mensagem: str | None = None, erro: bool = False, site_key: str | None = None) -> str:
+    classe_aviso = "aviso erro" if erro else "aviso"
+    aviso = (
+        f"<p class='{classe_aviso}' role='status'>{_escapar(mensagem)}</p>" if mensagem else ""
+    )
+    # reCAPTCHA só aparece quando a chave de site está configurada no servidor
+    if site_key:
+        captcha = (
+            '<script src="https://www.google.com/recaptcha/api.js" async defer></script>'
+            f'<div class="g-recaptcha" data-sitekey="{_escapar(site_key)}"></div>'
+        )
+    else:
+        captcha = ""
+    return f"""<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pedir token de acesso · cnj-processual</title>
+<style>{_ESTILO_CADASTRO}</style></head><body>
+<main class="cartao">
+<p class="marca">cnj-processual</p>
+<h1>Pedir seu token de acesso</h1>
+<p class="apoio">Informe o seu e-mail. O token será enviado para esse endereço e não aparece nesta página.</p>
+<p class="alerta" role="note"><strong>Anote o seu token assim que chegar no e-mail.</strong>
+Ele não será mostrado novamente. Se perder, peça um novo, e o anterior deixa de valer.</p>
+{aviso}
+<form method="post" action="/cadastro">
+<input type="hidden" name="aceite" value="sim">
+<label for="email">E-mail</label>
+<input id="email" type="email" name="email" required autocomplete="email" inputmode="email"
+       placeholder="voce@exemplo.com.br" aria-describedby="ajuda-email">
+<span id="ajuda-email" class="ajuda">Use o e-mail que você vai cadastrar no seu cliente MCP.</span>
+{captcha}
+<button type="submit">Enviar token por e-mail</button>
+<div class="enviando-barra" aria-hidden="true"></div>
+</form>
+<a class="voltar" href="/cadastro">Voltar aos termos de uso</a>
+<a class="voltar" href="/guia">Guia do usuário: como usar o serviço</a>
+<p class="rodape">Já tem token e perdeu o acesso? Peça um novo: o token anterior deixa de valer.</p>
+</main>
+<script src="/static/cadastro.js" defer></script>
+</body></html>"""
+
+
+# Layout da página administrativa, sobre a folha do Carbon (static/carbon/styles.min.css).
+_ESTILO_ADMIN_LAYOUT = """
+body { margin: 0; min-height: 100dvh; }
+.admin-pagina { max-width: 960px; margin: 0 auto; padding: 2rem 1rem; }
+.admin-cabecalho { margin-bottom: 2rem; }
+.admin-cabecalho h1 { font-size: 1.75rem; font-weight: 600; margin: 0.25rem 0; }
+.admin-cabecalho p { margin: 0; }
+.admin-secao { margin-bottom: 2rem; }
+.admin-secao h2 { font-size: 1.125rem; font-weight: 600; margin: 0 0 0.75rem; }
+.cds--data-table-container { overflow-x: auto; }
+.admin-form { max-width: 30rem; }
+.admin-form .cds--form-item { margin-bottom: 1rem; }
+.admin-acoes { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.token-valor {
+  margin: 1rem 0 0;
+  padding: 1rem;
+  overflow-x: auto;
+  background: var(--cds-layer-02, #f4f4f4);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.875rem;
+}
+.admin-notificacao { margin-bottom: 1.5rem; }
+"""
+
+
+def _data_legivel(iso: str) -> str:
+    """'2026-10-05T14:03:00+00:00' vira '05/10/2026 14:03'. Valores fora do padrão voltam como vieram."""
+    try:
+        dt = datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return str(iso or "")
+    return dt.strftime("%d/%m/%Y %H:%M")
+
+
+def _notificacao(tipo: str, titulo: str, subtitulo: str | None = None) -> str:
+    """Notificação inline do Carbon. tipo: 'info', 'success', 'warning' ou 'error'."""
+    sub = f"<p class='cds--inline-notification__subtitle'>{_escapar(subtitulo)}</p>" if subtitulo else ""
+    papel = "alert" if tipo in ("warning", "error") else "status"
+    return (
+        f"<div class='cds--inline-notification cds--inline-notification--{tipo} admin-notificacao' role='{papel}'>"
+        "<div class='cds--inline-notification__details'>"
+        "<div class='cds--inline-notification__text-wrapper'>"
+        f"<p class='cds--inline-notification__title'>{_escapar(titulo)}</p>{sub}"
+        "</div></div></div>"
+    )
+
+
+def _pagina_admin(registro: RegistroUsuarios, mensagem: str | None, token_novo: str | None = None,
+                  mostrar_lista: bool = False, erro: bool = False) -> str:
+    linhas = []
+    if mostrar_lista:
+        for nome, r in sorted(registro.carregar().items()):
+            revogado = bool(r.get("revogado"))
+            tag = "<span class='cds--tag cds--tag--gray'>Revogado</span>" if revogado \
+                else "<span class='cds--tag cds--tag--green'>Ativo</span>"
+            linhas.append(
+                "<tr>"
+                f"<td>{_escapar(nome)}</td>"
+                f"<td>{tag}</td>"
+                f"<td>{_escapar(_data_legivel(r.get('criado_em', '')))}</td>"
+                "</tr>"
+            )
+    if linhas:
+        corpo_tabela = "\n".join(linhas)
+    elif mostrar_lista:
+        corpo_tabela = "<tr><td colspan='3'>Nenhum usuário cadastrado.</td></tr>"
+    else:
+        corpo_tabela = ("<tr><td colspan='3'>Informe o token administrativo e escolha uma ação "
+                        "para carregar a lista.</td></tr>")
+
+    bloco_mensagem = ""
+    if mensagem:
+        bloco_mensagem = _notificacao("error" if erro else "info", mensagem)
+    bloco_token = ""
+    if token_novo:
+        bloco_token = (
+            "<section class='admin-secao'>"
+            + _notificacao("warning", "Copie o token agora",
+                           "Ele não será mostrado de novo. Entregue por canal seguro.")
+            + f"<pre class='token-valor'>{_escapar(token_novo)}</pre>"
+            + "</section>"
+        )
+    return f"""<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Administração · cnj-processual</title>
+<link rel="stylesheet" href="/static/carbon/styles.min.css">
+<style>{_ESTILO_ADMIN_LAYOUT}</style></head>
+<body class="cds--g10">
+<main class="admin-pagina">
+<header class="admin-cabecalho">
+<p class="cds--label">cnj-processual · administração</p>
+<h1>Usuários</h1>
+<p>Crie ou revogue o acesso de cada pessoa. A revogação vale imediatamente.</p>
+</header>
+{bloco_mensagem}
+{bloco_token}
+<section class="admin-secao">
+<h2>Lista</h2>
+<div class="cds--data-table-container">
+<table class="cds--data-table">
+<thead><tr>
+<th scope="col">Nome</th><th scope="col">Situação</th><th scope="col">Criado em</th>
+</tr></thead>
+<tbody>
+{corpo_tabela}
+</tbody>
+</table>
+</div>
+</section>
+
+<section class="admin-secao">
+<h2>Ação</h2>
+<form method="post" action="/admin/acao" class="admin-form">
+<div class="cds--form-item">
+<label class="cds--label" for="nome">Nome ou e-mail</label>
+<input class="cds--text-input" id="nome" name="nome" placeholder="ana ou ana@exemplo.com.br" required autocomplete="off">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="token_admin">Token administrativo</label>
+<input class="cds--text-input" id="token_admin" type="password" name="token_admin" required autocomplete="off">
+</div>
+<div class="admin-acoes">
+<button class="cds--btn cds--btn--primary" type="submit" name="acao" value="criar">Criar</button>
+<button class="cds--btn cds--btn--danger" type="submit" name="acao" value="revogar">Revogar</button>
+</div>
+</form>
+</section>
+</main>
+</body></html>"""
+
+
+def _executar_acao_admin(registro: RegistroUsuarios, acao: str, nome: str) -> tuple[str, str | None]:
+    """Cria ou revoga um usuário e devolve (mensagem, token_novo). Usada pela página administrativa."""
+    nome = nome.strip().lower()
+    if acao == "criar":
+        _, mensagem, token = _criar_usuario_core(registro, nome)
+        return mensagem, token
+    if acao == "revogar":
+        _, mensagem = _revogar_usuario_core(registro, nome)
+        return mensagem, None
+    return "Ação desconhecida.", None
+
+
+# --- Administração de usuários (linha de comando e página) -------------------
+
+def _criar_usuario_core(registro: RegistroUsuarios, nome: str) -> tuple[bool, str, str | None]:
+    if not _NOME_USUARIO.fullmatch(nome):
+        return False, "Nome inválido: use letras minúsculas, números, '.', '_', '-', '+', '@' (2 a 254 caracteres).", None
+    token = secrets.token_urlsafe(32)
+    resultado = {"ok": False}
+
+    def criar(dados: dict):
+        if nome in dados and not dados[nome].get("revogado"):
+            return False
+        dados[nome] = {
+            "hash": _hash_token(token),
+            "criado_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "revogado": False,
+            "origem": "admin",
+        }
+        resultado["ok"] = True
+
+    registro.atualizar(criar)
+    if not resultado["ok"]:
+        return False, f"Já existe um usuário ativo chamado '{nome}'. Revogue antes de recriar.", None
+    return True, f"Usuário '{nome}' criado.", token
+
+
+def _revogar_usuario_core(registro: RegistroUsuarios, nome: str) -> tuple[bool, str]:
+    resultado = {"ok": False}
+
+    def revogar(dados: dict):
+        if nome not in dados or dados[nome].get("revogado"):
+            return False
+        dados[nome]["revogado"] = True
+        dados[nome]["revogado_em"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        dados[nome]["revogado_por"] = "admin"
+        resultado["ok"] = True
+
+    registro.atualizar(revogar)
+    if not resultado["ok"]:
+        return False, f"Não há usuário ativo chamado '{nome}'."
+    return True, f"Usuário '{nome}' revogado. O token deixa de valer imediatamente."
+
+
+def _criar_usuario(registro: RegistroUsuarios, nome: str) -> int:
+    ok, mensagem, token = _criar_usuario_core(registro, nome)
+    if not ok:
+        print(mensagem)
+        return 1
+    print(mensagem + " Token (mostrado só agora; entregue por canal seguro):")
+    print(token)
+    return 0
+
+
+def _revogar_usuario(registro: RegistroUsuarios, nome: str) -> int:
+    ok, mensagem = _revogar_usuario_core(registro, nome)
+    print(mensagem)
+    return 0 if ok else 1
+
+
+def _listar_usuarios(registro: RegistroUsuarios) -> int:
+    dados = registro.carregar()
+    if not dados:
+        print("Nenhum usuário cadastrado.")
+        return 0
+    for nome, r in sorted(dados.items()):
+        situacao = "revogado" if r.get("revogado") else "ativo"
+        print(f"{nome:<40} {situacao:<9} criado em {r.get('criado_em', '?')}")
+    return 0
+
+
+def _seguranca_de_transporte(hosts_permitidos: str) -> "TransportSecuritySettings | None":
+    """Monta a lista de Host e Origin aceitos pelo SDK, a partir de CNJ_MCP_HOSTS_PERMITIDOS.
+
+    O navegador manda o cabeçalho Origin em requisições POST, mesmo de mesma origem. Por isso o
+    domínio público precisa entrar tanto em allowed_hosts quanto em allowed_origins: liberar só o
+    primeiro derruba o painel web com "Invalid Origin header", porque curl e clientes MCP comuns
+    não mandam Origin e por isso nunca pegam esse caso.
+    """
+    hosts_extras = [h.strip() for h in hosts_permitidos.split(",") if h.strip()]
+    if not hosts_extras:
+        return None
+    origens_extras = [f"https://{h}" for h in hosts_extras] + [f"http://{h}" for h in hosts_extras]
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*", *hosts_extras],
+        allowed_origins=["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*", *origens_extras],
+    )
+
+
+def _inteiro_env(nome: str, padrao: int) -> int:
+    try:
+        return max(0, int(os.environ.get(nome, padrao)))
+    except ValueError:
+        sys.exit(f"Erro: {nome} deve ser um número inteiro.")
+
+
+def _smtp_do_ambiente() -> ConfiguracaoSMTP | None:
+    """Lê CNJ_SMTP_*. Sem CNJ_SMTP_HOST, o cadastro público fica desligado."""
+    host = os.environ.get("CNJ_SMTP_HOST", "").strip()
+    if not host:
+        return None
+    remetente = os.environ.get("CNJ_SMTP_REMETENTE", "").strip() or os.environ.get("CNJ_SMTP_USUARIO", "").strip()
+    return ConfiguracaoSMTP(
+        host=host,
+        porta=_inteiro_env("CNJ_SMTP_PORTA", 587),
+        usuario=os.environ.get("CNJ_SMTP_USUARIO", "").strip(),
+        senha=os.environ.get("CNJ_SMTP_SENHA", ""),
+        remetente=remetente,
+    )
+
+
+def _principal() -> int:
+    parser = argparse.ArgumentParser(description="Servidor MCP cnj-processual.")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default=os.environ.get("CNJ_MCP_TRANSPORT", "stdio"),
+        help="stdio (padrão, uso local) ou http (servidor compartilhado).",
+    )
+    parser.add_argument("--host", default=os.environ.get("CNJ_MCP_HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("CNJ_MCP_PORT", "8000")))
+    parser.add_argument("--criar-usuario", metavar="NOME", help="Cria um usuário e mostra o token uma vez.")
+    parser.add_argument("--revogar-usuario", metavar="NOME", help="Revoga o token de um usuário.")
+    parser.add_argument("--listar-usuarios", action="store_true", help="Lista os usuários cadastrados.")
+    args = parser.parse_args()
+
+    registro = RegistroUsuarios(Path(os.environ.get("CNJ_MCP_USUARIOS", "usuarios.json")))
+
+    if args.criar_usuario:
+        return _criar_usuario(registro, args.criar_usuario.strip().lower())
+    if args.revogar_usuario:
+        return _revogar_usuario(registro, args.revogar_usuario.strip().lower())
+    if args.listar_usuarios:
+        return _listar_usuarios(registro)
+
+    if args.transport == "stdio":
+        mcp.run(transport="stdio")
+        return 0
+
+    smtp = _smtp_do_ambiente()
+    if not registro.ativos() and smtp is None:
+        print(
+            "Erro: nenhum usuário ativo e cadastro público desligado (sem CNJ_SMTP_HOST). "
+            "Crie um usuário com --criar-usuario NOME ou configure o SMTP.",
+            file=sys.stderr,
+        )
+        return 1
+
+    admin_token = os.environ.get("CNJ_MCP_ADMIN_TOKEN", "").strip() or None
+    if admin_token and len(admin_token) < 24:
+        sys.exit("Erro: CNJ_MCP_ADMIN_TOKEN precisa ter pelo menos 24 caracteres.")
+    limitador = LimitadorUso(
+        por_minuto=_inteiro_env("CNJ_MCP_LIMITE_POR_MINUTO", 20),
+        por_dia=_inteiro_env("CNJ_MCP_LIMITE_DIARIO", 300),
+    )
+    cadastro = None
+    if smtp is not None:
+        cadastro = CadastroPublico(
+            registro,
+            smtp,
+            limitador_ip=LimitadorUso(por_minuto=3, por_dia=30),
+            limitador_email=LimitadorUso(por_minuto=1, por_dia=5),
+        )
+
+    # O SDK recusa Host e Origin que não estejam na lista (proteção contra DNS rebinding). Atrás de
+    # um domínio público, é preciso liberá-lo em CNJ_MCP_HOSTS_PERMITIDOS (ex.: mcp.seudominio.com.br).
+    seguranca = _seguranca_de_transporte(os.environ.get("CNJ_MCP_HOSTS_PERMITIDOS", ""))
+    if seguranca:
+        mcp.settings.transport_security = seguranca
+
+    import uvicorn
+
+    segredo_captcha = os.environ.get("CNJ_RECAPTCHA_SECRET", "").strip()
+    site_captcha = os.environ.get("CNJ_RECAPTCHA_SITE_KEY", "").strip()
+    if bool(segredo_captcha) != bool(site_captcha):
+        sys.exit("Erro: defina CNJ_RECAPTCHA_SITE_KEY e CNJ_RECAPTCHA_SECRET juntos.")
+    url_publica = os.environ.get("CNJ_MCP_URL_PUBLICA", "").strip()
+    host_publico = urlsplit(url_publica).hostname if url_publica else None
+    captcha = VerificadorRecaptcha(segredo_captcha, host_publico) if segredo_captcha else None
+    if captcha is not None and not host_publico:
+        log.warning("CNJ_MCP_URL_PUBLICA não definida: o reCAPTCHA não confere o domínio da resposta.")
+    if cadastro is not None and captcha is None:
+        log.warning("reCAPTCHA não configurado: o cadastro público não verifica se é um robô.")
+
+    oauth = ServidorOAuth(registro, registro.caminho.parent / "oauth.json",
+                          limitador_registro=LimitadorUso(por_minuto=5, por_dia=50))
+    falhas = LimitadorUso(por_minuto=10, por_dia=300)
+    app = _AutenticacaoBearer(mcp.streamable_http_app(), registro, limitador, admin_token, cadastro, oauth,
+                              captcha, site_captcha or None, falhas=falhas)
+    log.info(
+        "Servidor HTTP em http://%s:%d/mcp (%d usuário(s) ativo(s); cadastro %s; admin %s)",
+        args.host, args.port, len(registro.ativos()),
+        "habilitado" if cadastro else "desabilitado", "habilitado" if admin_token else "desabilitado",
+    )
+    # access_log desligado: o log padrão do uvicorn gravaria a URL completa, inclusive os parâmetros
+    # assinados dos links de certidão. As requisições autenticadas já são registradas pelo middleware.
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info", access_log=False)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(_principal())

@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cnj-processual · funcionalidades</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --fundo: #f4f6f8;
+  --cartao: #ffffff;
+  --texto: #14202b;
+  --suave: #4a5a68;
+  --borda: #d6dde4;
+  --acento: #0f766e;
+  --codigo: #eef2f5;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --fundo: #0e151c;
+    --cartao: #17222c;
+    --texto: #eaf0f4;
+    --suave: #9fb0bd;
+    --borda: #2b3a46;
+    --acento: #2dd4bf;
+    --codigo: #0e151c;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.6;
+}
+main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+header { margin-bottom: 32px; }
+.marca { font-size: .8125rem; font-weight: 600; color: var(--suave); margin: 0 0 8px; }
+h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 12px; letter-spacing: -.01em; }
+h2 { font-size: 1.35rem; margin: 40px 0 12px; padding-top: 8px; border-top: 1px solid var(--borda); }
+h3 { font-size: 1.05rem; margin: 24px 0 8px; }
+p, li { font-size: .975rem; }
+.lead { color: var(--suave); font-size: 1.05rem; margin: 0; }
+nav ul { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+nav a {
+  display: inline-block; padding: 6px 12px; border: 1px solid var(--borda);
+  border-radius: 999px; color: var(--texto); text-decoration: none; font-size: .875rem;
+}
+nav a:hover { border-color: var(--acento); color: var(--acento); }
+nav a:focus-visible, a:focus-visible { outline: 3px solid var(--acento); outline-offset: 2px; }
+.cartao {
+  background: var(--cartao); border: 1px solid var(--borda); border-radius: 14px;
+  padding: 20px 22px; margin: 16px 0;
+}
+table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: .9rem; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--borda); vertical-align: top; }
+th { color: var(--suave); font-weight: 600; }
+code, pre {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: .85rem;
+}
+code { background: var(--codigo); padding: 1px 6px; border-radius: 6px; }
+pre {
+  background: var(--codigo); padding: 12px 14px; border-radius: 10px;
+  overflow-x: auto; border: 1px solid var(--borda); margin: 12px 0;
+}
+pre code { background: none; padding: 0; }
+.etiqueta {
+  display: inline-block; font-size: .75rem; font-weight: 600; padding: 2px 8px;
+  border-radius: 999px; border: 1px solid var(--acento); color: var(--acento); margin-right: 6px;
+}
+.aviso { border-left: 3px solid var(--acento); padding: 8px 14px; color: var(--suave); margin: 12px 0; }
+footer { margin-top: 48px; font-size: .85rem; color: var(--suave); border-top: 1px solid var(--borda); padding-top: 16px; }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <p class="marca">cnj-processual · servidor MCP</p>
+  <h1>Funcionalidades</h1>
+  <p class="lead">Servidor MCP para consulta processual judicial brasileira, usando as APIs públicas do CNJ: DataJud (metadados e movimentações) e DJEN (publicações e certidões). Pode rodar localmente ou como serviço compartilhado com acesso por token.</p>
+  <nav aria-label="Seções">
+    <ul>
+      <li><a href="#tools">Ferramentas</a></li>
+      <li><a href="#acesso">Como acessar</a></li>
+      <li><a href="#usuarios">Usuários e tokens</a></li>
+      <li><a href="#cadastro">Cadastro por e-mail</a></li>
+      <li><a href="#oauth">Conector do Claude</a></li>
+      <li><a href="#seguranca">Segurança e limites</a></li>
+      <li><a href="#painel-web">Painel web</a></li>
+      <li><a href="#instaladores">Instaladores</a></li>
+      <li><a href="#limites">Limitações</a></li>
+      <li><a href="#config">Configuração</a></li>
+    </ul>
+  </nav>
+</header>
+
+<section id="tools">
+  <h2>Ferramentas (tools)</h2>
+  <p>O servidor expõe três ferramentas que o modelo pode chamar.</p>
+
+  <div class="cartao">
+    <h3><span class="etiqueta">DataJud</span><code>consultar_processo_datajud</code></h3>
+    <p>Consulta metadados de um processo: classe, órgão julgador, data de ajuizamento, grau e a lista de movimentações.</p>
+    <table>
+      <tr><th>Parâmetro</th><th>Descrição</th></tr>
+      <tr><td><code>tribunal</code> (obrigatório)</td><td>Sigla minúscula, como <code>tjsp</code>, <code>trf1</code> ou <code>stj</code>.</td></tr>
+      <tr><td><code>numero_processo</code> (obrigatório)</td><td>Número CNJ de 20 dígitos, com ou sem máscara.</td></tr>
+    </table>
+    <ul>
+      <li>Cada resultado traz <code>grau</code> e <code>grau_descricao</code> (por exemplo, "1º grau" ou "2º grau"). Um mesmo número pode aparecer mais de uma vez, uma para cada grau.</li>
+      <li>Movimentações com código, nome, data e, quando existir, complementos tabelados.</li>
+      <li>Processo não encontrado retorna <code>encontrado: false</code>, que não é erro.</li>
+      <li>Timeout de 70 segundos, com nova tentativa em timeout, 429 e 502/503/504.</li>
+      <li><strong>Não retorna nomes de partes</strong>, por política de proteção de dados da API.</li>
+    </ul>
+  </div>
+
+  <div class="cartao">
+    <h3><span class="etiqueta">DJEN</span><code>consultar_publicacoes_djen</code></h3>
+    <p>Consulta publicações e intimações do Diário de Justiça Eletrônico Nacional. Não exige autenticação na API do CNJ.</p>
+    <table>
+      <tr><th>Parâmetro</th><th>Descrição</th></tr>
+      <tr><td><code>numero_processo</code></td><td>20 dígitos, máscara removida automaticamente.</td></tr>
+      <tr><td><code>numero_oab</code>, <code>uf_oab</code></td><td>OAB do advogado e UF com 2 letras.</td></tr>
+      <tr><td><code>sigla_tribunal</code></td><td>Por exemplo, <code>TJSP</code>.</td></tr>
+      <tr><td><code>data_disponibilizacao_inicio</code>, <code>data_disponibilizacao_fim</code></td><td>Intervalo em <code>AAAA-MM-DD</code>. O início não pode ser posterior ao fim.</td></tr>
+      <tr><td><code>pagina</code>, <code>itens_por_pagina</code></td><td>Paginação. Padrão: página 1, 50 itens.</td></tr>
+    </table>
+    <ul>
+      <li>Ao informar processo ou OAB é obrigatório, ou ambos.</li>
+      <li>O texto da publicação vem convertido de HTML para texto puro, com entidades decodificadas.</li>
+      <li>Cada item traz o <code>hash</code>, que é usado para baixar a certidão.</li>
+      <li>Timeout de 30 segundos, com uma nova tentativa em timeout, erro de conexão e 500/502/503/504.</li>
+      <li>HTTP 403 significa bloqueio geográfico: o serviço só funciona a partir de IPs do Brasil.</li>
+    </ul>
+  </div>
+
+  <div class="cartao">
+    <h3><span class="etiqueta">DJEN</span><code>baixar_certidao_djen</code></h3>
+    <p>Gera a certidão em PDF de uma publicação e devolve um link de download temporário.</p>
+    <ul>
+      <li>Parâmetro: <code>hash</code>, vindo de <code>consultar_publicacoes_djen</code>.</li>
+      <li>Resposta com <code>link_download</code>, válido por <strong>15 minutos</strong>, assinado e sem exigir token. O PDF abre direto no navegador.</li>
+      <li>O PDF é confirmado pela assinatura <code>%PDF</code> antes de ser salvo.</li>
+      <li>Certidões com mais de 7 dias são removidas do servidor a cada novo download.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="acesso">
+  <h2>Como acessar</h2>
+  <p>O mesmo código roda de duas formas.</p>
+  <table>
+    <tr><th>Modo</th><th>Quando usar</th><th>Como</th></tr>
+    <tr><td><strong>Local (stdio)</strong></td><td>Uso pessoal, no próprio computador.</td><td>Instalação com <code>pip install -e .</code> e registro no cliente MCP, sem token.</td></tr>
+    <tr><td><strong>Compartilhado (HTTP)</strong></td><td>Várias pessoas, com acesso individual por token.</td><td>Endpoint <code>/mcp</code> em HTTPS, com <code>Authorization: Bearer</code> ou o conector OAuth do Claude.</td></tr>
+  </table>
+  <div class="aviso">Exemplo de endereço do serviço compartilhado: <code>https://exemplo.sslip.io/mcp</code>. O endereço real é definido por quem hospeda o servidor.</div>
+</section>
+
+<section id="usuarios">
+  <h2>Usuários e tokens</h2>
+  <p>Cada pessoa tem um token próprio. O servidor guarda apenas o hash SHA-256 de cada token, nunca o valor original.</p>
+  <ul>
+    <li><strong>Criar:</strong> pela linha de comando (<code>--criar-usuario NOME</code>) ou pela página administrativa. O token aparece uma única vez.</li>
+    <li><strong>Listar:</strong> <code>--listar-usuarios</code>, sem mostrar tokens.</li>
+    <li><strong>Revogar:</strong> <code>--revogar-usuario NOME</code>. O efeito é imediato, sem reiniciar o servidor.</li>
+    <li>Os nomes aceitam letras minúsculas, números, <code>.</code>, <code>_</code>, <code>-</code>, <code>+</code> e <code>@</code>.</li>
+    <li>Cada requisição autenticada fica no log com o nome do usuário, o método e o caminho. O conteúdo das consultas não é registrado.</li>
+  </ul>
+
+  <h3>Página administrativa (<code>/admin</code>)</h3>
+  <p>Disponível quando <code>CNJ_MCP_ADMIN_TOKEN</code> está definido (mínimo de 24 caracteres). Permite criar e revogar usuários pelo navegador. Sem o token administrativo, a página não mostra a lista de usuários.</p>
+</section>
+
+<section id="cadastro">
+  <h2>Cadastro por e-mail (<code>/cadastro</code>)</h2>
+  <p>Quem quer acesso pede o próprio token. Disponível quando o SMTP está configurado.</p>
+  <ol>
+    <li><strong>Termos de uso:</strong> o texto é mostrado primeiro, e a pessoa precisa marcar a caixa de aceite. A versão dos termos e a data do aceite ficam registradas.</li>
+    <li><strong>E-mail:</strong> a pessoa informa o endereço e confirma o reCAPTCHA ("não sou um robô").</li>
+    <li><strong>Token:</strong> o token chega só no e-mail informado. A página nunca mostra o token e avisa para anotá-lo, porque ele não será exibido novamente.</li>
+  </ol>
+  <ul>
+    <li>A resposta é a mesma para qualquer e-mail válido, então ninguém descobre quais endereços já têm acesso.</li>
+    <li>Pedir de novo gera um token novo e invalida o anterior. É o caminho para quem perdeu o token.</li>
+    <li>Quem foi revogado pelo administrador não recebe token novo por esse caminho.</li>
+    <li>O token só é enviado depois que o captcha é validado no servidor, e o e-mail só é enviado se o envio não falhar.</li>
+  </ul>
+</section>
+
+<section id="oauth">
+  <h2>Conector do Claude (OAuth 2.1 com PKCE)</h2>
+  <p>Permite adicionar o servidor em <strong>Personalização → Conectores</strong>, no Claude Desktop ou no Claude web, sem editar arquivos.</p>
+  <ol>
+    <li>O Claude registra um cliente em <code>/oauth/register</code>. Só são aceitos callbacks de <code>claude.ai</code>, <code>claude.com</code> e de <code>localhost</code>.</li>
+    <li>A pessoa abre a página de autorização e cola o próprio token.</li>
+    <li>O servidor devolve um código de uso único, que vale por 5 minutos.</li>
+    <li>O Claude troca o código por um access token em <code>/oauth/token</code>. A troca exige PKCE (S256).</li>
+    <li>O access token vale por 30 dias. Revogar o usuário invalida também os access tokens dele.</li>
+  </ol>
+  <p>Os metadados de descoberta ficam em <code>/.well-known/oauth-protected-resource</code> e <code>/.well-known/oauth-authorization-server</code>.</p>
+</section>
+
+<section id="seguranca">
+  <h2>Segurança e limites</h2>
+  <table>
+    <tr><th>Recurso</th><th>Como funciona</th></tr>
+    <tr><td>Autenticação</td><td>Token por usuário, comparado com hash e tempo constante.</td></tr>
+    <tr><td>Limite por usuário</td><td>20 requisições ao <code>/mcp</code> por minuto e 300 por dia (ajustáveis). Excedendo, resposta HTTP 429 com <code>Retry-After</code>.</td></tr>
+    <tr><td>Limite do cadastro</td><td>Por IP: 3 pedidos por minuto e 30 por dia. Por e-mail: 1 por minuto e 5 por dia.</td></tr>
+    <tr><td>Proteção contra DNS rebinding</td><td>O servidor aceita apenas os hosts configurados em <code>CNJ_MCP_HOSTS_PERMITIDOS</code>. Outros recebem HTTP 421.</td></tr>
+    <tr><td>reCAPTCHA</td><td>Validado no servidor antes de qualquer envio de token. Se a verificação falhar, o cadastro é recusado.</td></tr>
+    <tr><td>Links de certidão</td><td>Assinados com HMAC e válidos por 15 minutos. Nomes fora do padrão de certidão não são servidos.</td></tr>
+    <tr><td>Segredos</td><td>Tokens, chaves SMTP e do reCAPTCHA ficam em variáveis de ambiente, e não no código.</td></tr>
+    <tr><td>Tamanho de formulário</td><td>Limitado a 4 KB nas páginas de formulário.</td></tr>
+  </table>
+</section>
+
+<section id="painel-web">
+  <h2>Painel web (<code>/app</code>)</h2>
+  <p>Página própria, sem relação com o Claude, para quem quer consultar direto no navegador. Fala o protocolo MCP (Streamable HTTP) em JavaScript puro, com o token que a pessoa cola no topo da página. Usa a folha de estilos do Carbon, a mesma do <code>/admin</code>.</p>
+  <ul>
+    <li><strong>Token local:</strong> fica só no navegador de quem usa, em <code>localStorage</code> (se a pessoa marcar "lembrar") ou só na memória da aba. Nunca é enviado a nenhum serviço além do próprio servidor.</li>
+    <li><strong>Duas abas:</strong> consulta de processo (DataJud) e de publicações (DJEN), com os mesmos campos das tools.</li>
+    <li><strong>Espera visível:</strong> um indicador com o tempo decorrido, porque a consulta ao DataJud pode levar até dois minutos.</li>
+    <li><strong>Reconexão de sessão:</strong> se a sessão MCP expirar no servidor (por exemplo, após um reinício), o painel reinicia a sessão sozinho e repete a chamada uma vez.</li>
+    <li><strong>Certidão:</strong> o botão "Baixar certidão" chama a tool e abre o link de download em uma aba nova.</li>
+    <li><strong>Sem CDN:</strong> todo o JavaScript e o CSS são servidos pelo próprio servidor (<code>static/app.js</code>, <code>static/app.html</code>), porque a CSP não libera scripts de terceiros.</li>
+  </ul>
+</section>
+
+<section id="instaladores">
+  <h2>Instaladores</h2>
+  <p>Scripts em <code>instalador/</code> configuram o cliente sem editar JSON à mão.</p>
+  <ul>
+    <li><strong>Windows:</strong> <code>instalar-windows.ps1</code></li>
+    <li><strong>macOS e Linux:</strong> <code>instalar-unix.sh</code></li>
+  </ul>
+  <p>Validam o token no servidor antes de gravar qualquer configuração, fazem backup do arquivo do Claude Desktop e mantêm as outras configurações. Aceitam <code>CNJ_TOKEN</code> para uso sem interação.</p>
+</section>
+
+<section id="limites">
+  <h2>Limitações</h2>
+  <ul>
+    <li><strong>Nomes de partes:</strong> o DataJud não expõe partes. O DJEN pode trazer nomes e OABs, e o uso deve seguir a finalidade legítima da consulta.</li>
+    <li><strong>Busca por OAB:</strong> tribunais gravam a OAB com sufixos diferentes (<code>123456</code>, <code>123456-O</code>), e a busca pode não encontrar tudo.</li>
+    <li><strong>Lentidão do DataJud:</strong> consultas podem levar mais de um minuto em horários de pico.</li>
+    <li><strong>Bloqueio geográfico:</strong> o DJEN só responde a partir do Brasil.</li>
+    <li><strong>Limites em memória:</strong> os contadores de uso ficam no processo. Com mais de uma instância, cada uma conta separadamente.</li>
+    <li><strong>Certidões no servidor:</strong> os PDFs ficam no servidor e são apagados após 7 dias.</li>
+    <li><strong>Chaves reinicializadas:</strong> sem <code>CNJ_MCP_SEGREDO</code>, links de certidão emitidos antes de um reinício deixam de valer.</li>
+  </ul>
+</section>
+
+<section id="config">
+  <h2>Configuração</h2>
+  <table>
+    <tr><th>Variável</th><th>Padrão</th><th>Função</th></tr>
+    <tr><td><code>CNJ_MCP_TRANSPORT</code></td><td><code>stdio</code></td><td><code>stdio</code> (local) ou <code>http</code> (compartilhado).</td></tr>
+    <tr><td><code>CNJ_MCP_HOST</code>, <code>CNJ_MCP_PORT</code></td><td><code>127.0.0.1</code>, <code>8000</code></td><td>Interface e porta do modo HTTP.</td></tr>
+    <tr><td><code>CNJ_MCP_USUARIOS</code></td><td><code>usuarios.json</code></td><td>Arquivo de usuários. Em hospedagem, use um volume persistente.</td></tr>
+    <tr><td><code>CNJ_MCP_HOSTS_PERMITIDOS</code></td><td>vazio</td><td>Domínios públicos aceitos pelo servidor.</td></tr>
+    <tr><td><code>CNJ_MCP_URL_PUBLICA</code></td><td>vazio</td><td>Endereço usado nos links de download das certidões.</td></tr>
+    <tr><td><code>CNJ_MCP_ADMIN_TOKEN</code></td><td>vazio</td><td>Habilita a página <code>/admin</code>.</td></tr>
+    <tr><td><code>CNJ_MCP_LIMITE_POR_MINUTO</code>, <code>CNJ_MCP_LIMITE_DIARIO</code></td><td><code>20</code>, <code>300</code></td><td>Limites por usuário. <code>0</code> desliga.</td></tr>
+    <tr><td><code>CNJ_SMTP_HOST</code>, <code>CNJ_SMTP_PORTA</code>, <code>CNJ_SMTP_USUARIO</code>, <code>CNJ_SMTP_SENHA</code>, <code>CNJ_SMTP_REMETENTE</code></td><td>vazio, <code>587</code></td><td>Envio dos tokens por e-mail. Sem <code>CNJ_SMTP_HOST</code>, o cadastro fica desligado.</td></tr>
+    <tr><td><code>CNJ_RECAPTCHA_SITE_KEY</code>, <code>CNJ_RECAPTCHA_SECRET</code></td><td>vazio</td><td>reCAPTCHA v2 do cadastro. Devem ser definidas juntas.</td></tr>
+    <tr><td><code>CNJ_MCP_SEGREDO</code></td><td>aleatório</td><td>Assina os links de certidão. Defina para mantê-los válidos após reinícios.</td></tr>
+    <tr><td><code>DATAJUD_API_KEY</code></td><td>chave pública do CNJ</td><td>Substitui a chave do DataJud, se o CNJ a rotacionar.</td></tr>
+  </table>
+</section>
+
+<footer>
+  <p>Documento gerado a partir do código do projeto. Os nomes de tools, rotas e variáveis seguem a versão atual do servidor.</p>
+</footer>
+
+</main>
+</body>
+</html>

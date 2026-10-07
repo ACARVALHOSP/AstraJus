@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+# Arquivo de usuários: contém hashes de tokens e não deve ir para o repositório
+usuarios.json
+usuarios.tmp
+oauth.json
+# Artefatos de execução local, sem relação com o código do projeto
+claude_run.err
+claude_run.json
+# Relatório de auditoria: lista achados de segurança do servidor real. Não é material público.
+relatorio-auditoria.html

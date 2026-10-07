@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Painel de consulta · cnj-processual</title>
+<link rel="stylesheet" href="/static/carbon/styles.min.css">
+<style>
+body { margin: 0; min-height: 100dvh; }
+[hidden] { display: none !important; }
+.skip-link {
+  position: absolute; left: -9999px; top: 0; z-index: 10;
+  background: #000; color: #fff; padding: 0.5rem 1rem;
+}
+.skip-link:focus { left: 0.5rem; top: 0.5rem; }
+
+.app-cabecalho { border-bottom: 1px solid var(--cds-border-subtle, #e0e0e0); padding: 1.5rem 1rem; }
+.app-cabecalho-interno { max-width: 960px; margin: 0 auto; }
+.app-cabecalho-topo { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.app-cabecalho-topo h1 { font-size: 1.5rem; font-weight: 600; margin: 0.25rem 0 0; }
+.token-form { display: flex; align-items: flex-end; gap: 1rem; flex-wrap: wrap; }
+.token-campo { flex: 1 1 260px; margin: 0; }
+.checkbox-lembrar { display: flex; align-items: center; gap: 0.4rem; font-size: 0.875rem; white-space: nowrap; }
+.checkbox-lembrar input { width: auto; }
+.token-acoes { display: flex; gap: 0.5rem; }
+
+.app-corpo { max-width: 960px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+.app-formulario {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem; margin: 1.5rem 0 0.5rem;
+}
+.app-formulario .cds--form-item { margin: 0; }
+.app-formulario button[type="submit"] { grid-column: 1 / -1; justify-self: start; margin-top: 0.5rem; }
+.campo-ajuda { display: block; margin-top: 0.25rem; font-size: 0.75rem; color: var(--cds-text-secondary, #525252); }
+.campo-ajuda--largo { grid-column: 1 / -1; margin: 0; }
+.aviso-demora { font-size: 0.875rem; color: var(--cds-text-secondary, #525252); margin: 0.5rem 0 0; }
+
+.app-resultado { margin-top: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
+.resultado-card { padding: 1rem; }
+.resultado-cabecalho { display: flex; flex-wrap: wrap; gap: 0.375rem; margin-bottom: 0.5rem; }
+.resultado-card h3 { margin: 0 0 0.5rem; font-size: 1.05rem; font-weight: 600; }
+.resultado-card p { margin: 0.125rem 0; font-size: 0.925rem; }
+.resultado-rotulo { font-size: 0.75rem; font-weight: 600; color: var(--cds-text-secondary, #525252); margin-top: 0.75rem; }
+.resultado-detalhes { margin-top: 0.75rem; }
+.resultado-detalhes summary { cursor: pointer; font-size: 0.875rem; font-weight: 600; }
+.resultado-texto { white-space: pre-line; max-height: 260px; overflow-y: auto; background: var(--cds-layer-02, #f4f4f4); padding: 0.75rem; border-radius: 4px; font-size: 0.875rem; margin-top: 0.5rem; }
+.resultado-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.75rem; }
+.resultado-aviso { color: var(--cds-support-error, #da1e28); font-size: 0.8125rem; }
+.chips { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.25rem 0 0; }
+.chip { background: var(--cds-layer-02, #f4f4f4); padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.75rem; }
+
+.app-espera { display: flex; align-items: center; font-size: 0.925rem; color: var(--cds-text-secondary, #525252); }
+.app-espera--inline { margin: 0.25rem 0 0; }
+.espera-spinner {
+  width: 1rem; height: 1rem; margin-right: 0.5rem; display: inline-block;
+  border: 2px solid var(--cds-border-subtle, #c6c6c6);
+  border-top-color: var(--cds-interactive, #0f62fe);
+  border-radius: 50%;
+  animation: girar 0.8s linear infinite;
+}
+@keyframes girar { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .espera-spinner { animation: none; border-top-color: var(--cds-border-subtle, #c6c6c6); }
+}
+
+.app-rodape { max-width: 960px; margin: 0 auto; padding: 0 1rem 2rem; font-size: 0.875rem; }
+</style>
+</head>
+<body class="cds--g10">
+<a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
+
+<header class="app-cabecalho">
+<div class="app-cabecalho-interno">
+<div class="app-cabecalho-topo">
+<div>
+<p class="cds--label">cnj-processual</p>
+<h1>Painel de consulta</h1>
+</div>
+<span id="status-conexao" class="cds--tag cds--tag--gray">Sem token</span>
+</div>
+<form id="form-token" class="token-form" autocomplete="off">
+<div class="cds--form-item token-campo">
+<label class="cds--label" for="token">Seu token de acesso</label>
+<input class="cds--text-input" id="token" type="password" placeholder="cole aqui o token recebido por e-mail" required>
+</div>
+<label class="checkbox-lembrar"><input type="checkbox" id="lembrar-token"> Lembrar neste navegador</label>
+<div class="token-acoes">
+<button class="cds--btn cds--btn--primary cds--btn--sm" type="submit">Conectar</button>
+<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="esquecer-token">Esquecer</button>
+</div>
+</form>
+</div>
+</header>
+
+<main id="conteudo" class="app-corpo">
+
+<nav class="cds--tabs" aria-label="Tipo de consulta">
+<ul class="cds--tabs__nav" role="tablist">
+<li class="cds--tabs__nav-item cds--tabs__nav-item--selected" role="presentation">
+<button class="cds--tabs__nav-link" id="aba-processo-botao" role="tab" aria-selected="true" aria-controls="aba-processo" type="button">Processo (DataJud)</button>
+</li>
+<li class="cds--tabs__nav-item" role="presentation">
+<button class="cds--tabs__nav-link" id="aba-publicacoes-botao" role="tab" aria-selected="false" aria-controls="aba-publicacoes" type="button">Publicações (DJEN)</button>
+</li>
+</ul>
+</nav>
+
+<section id="aba-processo" role="tabpanel" aria-labelledby="aba-processo-botao">
+<form id="form-processo" class="app-formulario">
+<div class="cds--form-item">
+<label class="cds--label" for="tribunal">Tribunal</label>
+<input class="cds--text-input" id="tribunal" name="tribunal" placeholder="tjsp" required>
+<span class="campo-ajuda">Sigla minúscula, como tjsp, trf1 ou stj.</span>
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="numero-processo">Número do processo</label>
+<input class="cds--text-input" id="numero-processo" name="numero_processo" placeholder="1006314-27.2023.8.26.0005" required>
+<span class="campo-ajuda">20 dígitos, com ou sem máscara.</span>
+</div>
+<button class="cds--btn cds--btn--primary" type="submit">Consultar processo</button>
+</form>
+<p class="aviso-demora">A consulta ao DataJud pode levar até dois minutos em horários de pico.</p>
+<div id="resultado-processo" class="app-resultado" aria-live="polite"></div>
+</section>
+
+<section id="aba-publicacoes" role="tabpanel" aria-labelledby="aba-publicacoes-botao" hidden>
+<form id="form-publicacoes" class="app-formulario">
+<div class="cds--form-item">
+<label class="cds--label" for="pub-numero-processo">Número do processo</label>
+<input class="cds--text-input" id="pub-numero-processo" name="numero_processo" placeholder="1006314-27.2023.8.26.0005">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="pub-sigla-tribunal">Tribunal</label>
+<input class="cds--text-input" id="pub-sigla-tribunal" name="sigla_tribunal" placeholder="TJSP">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="pub-numero-oab">Número da OAB</label>
+<input class="cds--text-input" id="pub-numero-oab" name="numero_oab" placeholder="330659">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="pub-uf-oab">UF da OAB</label>
+<input class="cds--text-input" id="pub-uf-oab" name="uf_oab" placeholder="SP" maxlength="2">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="pub-data-inicio">Publicado a partir de</label>
+<input class="cds--text-input" id="pub-data-inicio" name="data_disponibilizacao_inicio" type="date">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="pub-data-fim">Publicado até</label>
+<input class="cds--text-input" id="pub-data-fim" name="data_disponibilizacao_fim" type="date">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="pub-itens">Itens por página</label>
+<input class="cds--text-input" id="pub-itens" name="itens_por_pagina" type="number" min="1" max="100" value="20">
+</div>
+<p class="campo-ajuda campo-ajuda--largo">Informe o número do processo ou a OAB. Os demais campos são opcionais.</p>
+<button class="cds--btn cds--btn--primary" type="submit">Consultar publicações</button>
+</form>
+<div id="resultado-publicacoes" class="app-resultado" aria-live="polite"></div>
+</section>
+
+</main>
+
+<footer class="app-rodape">
+<a href="/guia">Guia do usuário</a> · <a href="/cadastro">Pedir um token</a>
+</footer>
+
+<script src="/static/app.js" defer></script>
+</body>
+</html>
