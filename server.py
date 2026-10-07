@@ -982,9 +982,9 @@ def _atualizar_apos_aviso(dados: dict, id_monitoramento: str, hashes: list[str],
 
 
 async def _verificar_um_monitoramento(
-    registro: RegistroMonitoramentos, id_monitoramento: str, m: dict, enviar_fn, agora_dt,
+    registro: RegistroMonitoramentos, id_monitoramento: str, monitoramento: dict, enviar_fn, agora_dt,
 ) -> None:
-    criterio = m.get("criterio") or {}
+    criterio = monitoramento.get("criterio") or {}
     params = {
         "numeroProcesso": criterio.get("numero_processo"),
         "siglaTribunal": criterio.get("sigla_tribunal"),
@@ -1007,12 +1007,12 @@ async def _verificar_um_monitoramento(
         return
 
     itens = [_extrair_publicacao_djen(item) for item in dados_resp.get("items") or []]
-    hashes_vistos = set(m.get("hashes_notificados") or [])
+    hashes_vistos = set(monitoramento.get("hashes_notificados") or [])
     novos = [item for item in itens if item.get("hash") and item["hash"] not in hashes_vistos]
 
     if novos:
         try:
-            await asyncio.to_thread(enviar_fn, m["usuario"], criterio, novos)
+            await asyncio.to_thread(enviar_fn, monitoramento["usuario"], criterio, novos)
         except Exception:
             log.exception("Monitoramento %s: falha ao enviar e-mail de aviso", id_monitoramento)
             return  # tenta de novo no próximo ciclo; não marca como notificado
@@ -1023,7 +1023,7 @@ async def _verificar_um_monitoramento(
         registro.atualizar(lambda d: _atualizar_apos_aviso(d, id_monitoramento, hashes_atualizados, nova_expiracao))
         return
 
-    expira_em = m.get("expira_em")
+    expira_em = monitoramento.get("expira_em")
     if expira_em and datetime.fromisoformat(expira_em) <= agora_dt:
         registro.atualizar(lambda d: d.pop(id_monitoramento, None) if id_monitoramento in d else False)
 
@@ -1038,9 +1038,9 @@ async def _verificar_monitoramentos_pendentes(
         return
     enviar_fn = enviar or (lambda destino, criterio, itens: _enviar_aviso_monitoramento(smtp, destino, criterio, itens))
     agora_dt = agora()
-    for id_monitoramento, m in list(registro.carregar().items()):
+    for id_monitoramento, monitoramento in list(registro.carregar().items()):
         try:
-            await _verificar_um_monitoramento(registro, id_monitoramento, m, enviar_fn, agora_dt)
+            await _verificar_um_monitoramento(registro, id_monitoramento, monitoramento, enviar_fn, agora_dt)
         except Exception:
             log.exception("Falha ao verificar monitoramento %s", id_monitoramento)
 
@@ -1078,6 +1078,21 @@ def _usuario_da_requisicao(ctx: Context) -> str | None:
     return usuario
 
 
+def _estado_e_usuario_ou_erro(ctx: Context, exigir_smtp: bool = False) -> "tuple[_EstadoMonitoramento, str] | dict":
+    """Guarda comum das 3 tools de Monitoramento: confere se o recurso está disponível (modo HTTP,
+    com e-mail quando exigir_smtp) e identifica o usuário autenticado. Devolve (estado, usuario) em
+    caso de sucesso, ou um dicionário de erro já pronto para a tool devolver direto."""
+    estado = _ESTADO_MONITORAMENTO
+    if estado is None or (exigir_smtp and estado.smtp is None):
+        mensagem = "Monitoramento só está disponível no servidor hospedado"
+        mensagem += ", com e-mail configurado." if exigir_smtp else "."
+        return _erro(mensagem)
+    usuario = _usuario_da_requisicao(ctx)
+    if usuario is None:
+        return _erro("Não foi possível identificar o usuário autenticado.")
+    return estado, usuario
+
+
 @mcp.tool()
 async def monitorar_publicacoes(
     ctx: Context,
@@ -1099,12 +1114,10 @@ async def monitorar_publicacoes(
     - Expira automaticamente após 180 dias sem nenhuma publicação nova (o prazo é renovado a cada
       publicação encontrada).
     """
-    estado = _ESTADO_MONITORAMENTO
-    if estado is None or estado.smtp is None:
-        return _erro("Monitoramento só está disponível no servidor hospedado, com e-mail configurado.")
-    usuario = _usuario_da_requisicao(ctx)
-    if usuario is None:
-        return _erro("Não foi possível identificar o usuário autenticado.")
+    resultado = _estado_e_usuario_ou_erro(ctx, exigir_smtp=True)
+    if isinstance(resultado, dict):
+        return resultado
+    estado, usuario = resultado
     return _criar_monitoramento(
         estado.registro_monitoramentos, usuario, numero_processo, sigla_tribunal, numero_oab, uf_oab, datetime.now
     )
@@ -1117,12 +1130,10 @@ async def listar_monitoramentos(ctx: Context) -> dict:
     Retorno: dicionário com "monitoramentos", uma lista de itens com id, criterio, criado_em e
     expira_em. O id pode ser passado a remover_monitoramento.
     """
-    estado = _ESTADO_MONITORAMENTO
-    if estado is None:
-        return _erro("Monitoramento só está disponível no servidor hospedado.")
-    usuario = _usuario_da_requisicao(ctx)
-    if usuario is None:
-        return _erro("Não foi possível identificar o usuário autenticado.")
+    resultado = _estado_e_usuario_ou_erro(ctx)
+    if isinstance(resultado, dict):
+        return resultado
+    estado, usuario = resultado
     return _listar_monitoramentos(estado.registro_monitoramentos, usuario)
 
 
@@ -1133,12 +1144,10 @@ async def remover_monitoramento(ctx: Context, id: str) -> dict:
     Parâmetro:
     - id: valor do campo "id" devolvido por listar_monitoramentos ou por monitorar_publicacoes.
     """
-    estado = _ESTADO_MONITORAMENTO
-    if estado is None:
-        return _erro("Monitoramento só está disponível no servidor hospedado.")
-    usuario = _usuario_da_requisicao(ctx)
-    if usuario is None:
-        return _erro("Não foi possível identificar o usuário autenticado.")
+    resultado = _estado_e_usuario_ou_erro(ctx)
+    if isinstance(resultado, dict):
+        return resultado
+    estado, usuario = resultado
     return _remover_monitoramento(estado.registro_monitoramentos, usuario, id)
 
 
