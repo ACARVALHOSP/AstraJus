@@ -5,6 +5,9 @@
 
 const URL_MCP = "/mcp";
 const CHAVE_TOKEN = "cnj_token";
+const CHAVE_HISTORICO = "cnj_historico";
+const CHAVE_FAVORITOS = "cnj_favoritos";
+const HISTORICO_MAX = 10;
 
 class ErroMCP extends Error {
   constructor(status, mensagem) {
@@ -246,11 +249,137 @@ function exigirCliente(container) {
   return false;
 }
 
+// --- Histórico e Favoritos (só neste navegador, via localStorage) --------------------------
+
+function _lerLista(chave) {
+  try {
+    const bruto = localStorage.getItem(chave);
+    const lista = bruto ? JSON.parse(bruto) : [];
+    return Array.isArray(lista) ? lista : [];
+  } catch {
+    return [];
+  }
+}
+
+function _salvarLista(chave, lista) {
+  try {
+    localStorage.setItem(chave, JSON.stringify(lista));
+  } catch {
+    // localStorage indisponível (modo privado, cota esgotada etc.): a utilidade só deixa de
+    // persistir entre sessões, o restante do painel continua funcionando.
+  }
+}
+
+function lerHistorico() {
+  return _lerLista(CHAVE_HISTORICO);
+}
+
+function adicionarHistorico(item) {
+  const lista = lerHistorico().filter((h) => h.resumo !== item.resumo || h.tipo !== item.tipo);
+  lista.unshift({ ...item, quando: new Date().toISOString() });
+  _salvarLista(CHAVE_HISTORICO, lista.slice(0, HISTORICO_MAX));
+  renderizarListaRapida();
+}
+
+function lerFavoritos() {
+  return _lerLista(CHAVE_FAVORITOS);
+}
+
+function _chaveFavorito(tribunal, numero) {
+  return `${(tribunal || "").toLowerCase()}:${numero}`;
+}
+
+function ehFavorito(tribunal, numero) {
+  const chave = _chaveFavorito(tribunal, numero);
+  return lerFavoritos().some((f) => _chaveFavorito(f.tribunal, f.numero) === chave);
+}
+
+function alternarFavorito(tribunal, numero) {
+  const chave = _chaveFavorito(tribunal, numero);
+  const lista = lerFavoritos();
+  const index = lista.findIndex((f) => _chaveFavorito(f.tribunal, f.numero) === chave);
+  if (index === -1) lista.unshift({ tribunal, numero });
+  else lista.splice(index, 1);
+  _salvarLista(CHAVE_FAVORITOS, lista);
+  renderizarListaRapida();
+  return index === -1; // true = acabou de favoritar
+}
+
+function removerFavorito(tribunal, numero) {
+  const chave = _chaveFavorito(tribunal, numero);
+  _salvarLista(CHAVE_FAVORITOS, lerFavoritos().filter((f) => _chaveFavorito(f.tribunal, f.numero) !== chave));
+  renderizarListaRapida();
+}
+
+function _usarItemRapido(item) {
+  if (item.tipo === "processo") {
+    selecionarAba(abas[0]);
+    document.getElementById("tribunal").value = item.args.tribunal || "";
+    document.getElementById("numero-processo").value = item.args.numero_processo || "";
+    formProcesso.requestSubmit();
+  } else {
+    selecionarAba(abas[1]);
+    document.getElementById("pub-numero-processo").value = item.args.numero_processo || "";
+    document.getElementById("pub-sigla-tribunal").value = item.args.sigla_tribunal || "";
+    document.getElementById("pub-numero-oab").value = item.args.numero_oab || "";
+    document.getElementById("pub-uf-oab").value = item.args.uf_oab || "";
+    formPublicacoes.requestSubmit();
+  }
+}
+
+function renderizarListaRapida() {
+  const listaFavoritos = document.getElementById("lista-favoritos");
+  const listaHistorico = document.getElementById("lista-historico");
+  if (!listaFavoritos || !listaHistorico) return;
+
+  limpar(listaFavoritos);
+  const favoritos = lerFavoritos();
+  if (!favoritos.length) {
+    listaFavoritos.appendChild(el("li", { class: "lista-rapida-vazio", texto: "Nenhum favorito ainda." }));
+  }
+  for (const fav of favoritos) {
+    listaFavoritos.appendChild(
+      el("li", { class: "lista-rapida-item cds--tile" }, [
+        el("span", { texto: `${(fav.tribunal || "?").toUpperCase()} · ${fav.numero}` }),
+        el("div", {}, [
+          el("button", {
+            class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Consultar",
+            onclick: () => _usarItemRapido({ tipo: "processo", args: { tribunal: fav.tribunal, numero_processo: fav.numero } }),
+          }),
+          el("button", {
+            class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Remover",
+            onclick: () => removerFavorito(fav.tribunal, fav.numero),
+          }),
+        ]),
+      ])
+    );
+  }
+
+  limpar(listaHistorico);
+  const historico = lerHistorico();
+  if (!historico.length) {
+    listaHistorico.appendChild(el("li", { class: "lista-rapida-vazio", texto: "Nenhuma consulta recente." }));
+  }
+  for (const item of historico) {
+    listaHistorico.appendChild(
+      el("li", { class: "lista-rapida-item cds--tile" }, [
+        el("span", { texto: `${item.resumo} · ${formatarData(item.quando)}` }),
+        el("button", {
+          class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Repetir",
+          onclick: () => _usarItemRapido(item),
+        }),
+      ])
+    );
+  }
+}
+
 // --- Abas ------------------------------------------------------------------------------------
 
 const abas = [
   { botao: document.getElementById("aba-processo-botao"), painel: document.getElementById("aba-processo") },
   { botao: document.getElementById("aba-publicacoes-botao"), painel: document.getElementById("aba-publicacoes") },
+  { botao: document.getElementById("aba-historico-botao"), painel: document.getElementById("aba-historico") },
+  { botao: document.getElementById("aba-monitoramentos-botao"), painel: document.getElementById("aba-monitoramentos") },
 ];
 
 function selecionarAba(alvo) {
@@ -261,6 +390,8 @@ function selecionarAba(alvo) {
     aba.painel.hidden = !ativa;
   }
   alvo.botao.focus();
+  if (alvo.painel.id === "aba-historico") renderizarListaRapida();
+  if (alvo.painel.id === "aba-monitoramentos") carregarMonitoramentos();
 }
 
 for (const aba of abas) aba.botao.addEventListener("click", () => selecionarAba(aba));
@@ -312,6 +443,32 @@ function cartaoProcesso(proc) {
     detalhes.appendChild(tabelaMovimentos(movimentos));
     card.appendChild(detalhes);
   }
+
+  if (proc.numeroProcesso) {
+    const acoes = el("div", { class: "resultado-acoes" });
+    const favoritado = ehFavorito(proc.tribunal, proc.numeroProcesso);
+    const botaoFavorito = el("button", {
+      class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button",
+      texto: favoritado ? "★ Favorito" : "☆ Favoritar",
+    });
+    botaoFavorito.addEventListener("click", () => {
+      const ficouFavorito = alternarFavorito(proc.tribunal, proc.numeroProcesso);
+      botaoFavorito.textContent = ficouFavorito ? "★ Favorito" : "☆ Favoritar";
+    });
+    acoes.appendChild(botaoFavorito);
+
+    const botaoAcompanhar = el("button", {
+      class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Acompanhar por e-mail",
+    });
+    const statusAcompanhar = el("span", { class: "app-espera app-espera--inline" });
+    botaoAcompanhar.addEventListener("click", () =>
+      acompanharBusca({ numero_processo: proc.numeroProcesso, sigla_tribunal: proc.tribunal }, botaoAcompanhar, statusAcompanhar)
+    );
+    acoes.appendChild(botaoAcompanhar);
+    acoes.appendChild(statusAcompanhar);
+    card.appendChild(acoes);
+  }
+
   return card;
 }
 
@@ -343,12 +500,42 @@ formProcesso.addEventListener("submit", async (evento) => {
   try {
     const dados = await cliente.chamarTool("consultar_processo_datajud", { tribunal, numero_processo: numero });
     renderizarProcesso(resultadoProcesso, dados);
+    if (!dados.erro) {
+      adicionarHistorico({
+        tipo: "processo",
+        args: { tribunal, numero_processo: numero },
+        resumo: `Processo ${numero} (${tribunal.toUpperCase()})`,
+      });
+    }
   } catch (erro) {
     mostrarErro(resultadoProcesso, erro.message);
   } finally {
     pararEspera();
   }
 });
+
+// --- Monitoramento: acompanhar um processo/OAB por e-mail -------------------------------------
+
+async function acompanharBusca(criterio, botao, statusEl) {
+  if (!cliente) return;
+  const textoOriginal = botao.textContent;
+  botao.disabled = true;
+  botao.textContent = "Ativando…";
+  limpar(statusEl);
+  try {
+    const dados = await cliente.chamarTool("monitorar_publicacoes", criterio);
+    if (dados.erro) {
+      statusEl.appendChild(el("span", { class: "resultado-aviso", texto: dados.mensagem }));
+    } else {
+      statusEl.appendChild(el("span", { texto: "Você será avisado por e-mail quando sair publicação nova." }));
+    }
+  } catch (erro) {
+    statusEl.appendChild(el("span", { class: "resultado-aviso", texto: erro.message }));
+  } finally {
+    botao.disabled = false;
+    botao.textContent = textoOriginal;
+  }
+}
 
 // --- Consulta de publicações (DJEN) -----------------------------------------------------------
 
@@ -392,6 +579,22 @@ function cartaoPublicacao(item) {
   }
 
   const acoes = el("div", { class: "resultado-acoes" });
+  if (item.texto) {
+    const botaoCopiar = el("button", {
+      class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Copiar texto",
+    });
+    botaoCopiar.addEventListener("click", async () => {
+      const textoOriginal = botaoCopiar.textContent;
+      try {
+        await navigator.clipboard.writeText(item.texto);
+        botaoCopiar.textContent = "Copiado!";
+      } catch {
+        botaoCopiar.textContent = "Não foi possível copiar";
+      }
+      setTimeout(() => { botaoCopiar.textContent = textoOriginal; }, 2000);
+    });
+    acoes.appendChild(botaoCopiar);
+  }
   if (item.link) {
     acoes.appendChild(
       el("a", { class: "cds--btn cds--btn--tertiary cds--btn--sm", href: item.link, target: "_blank", rel: "noopener noreferrer", texto: "Ver no sistema do tribunal" })
@@ -459,8 +662,55 @@ function renderizarPublicacoes(container, dados) {
 
 const formPublicacoes = document.getElementById("form-publicacoes");
 const resultadoPublicacoes = document.getElementById("resultado-publicacoes");
+const paginacaoPublicacoes = document.getElementById("paginacao-publicacoes");
+const botaoPaginaAnterior = document.getElementById("pagina-anterior");
+const botaoPaginaProxima = document.getElementById("pagina-proxima");
+const textoPaginaAtual = document.getElementById("pagina-atual-texto");
+const botaoAcompanharBusca = document.getElementById("botao-acompanhar-busca");
 
-formPublicacoes.addEventListener("submit", async (evento) => {
+let ultimaBuscaPublicacoes = null; // { args, pagina, itensPorPagina, totalRecebido }
+
+function _criterioMonitoramento(args) {
+  const { numero_processo, sigla_tribunal, numero_oab, uf_oab } = args;
+  return { numero_processo, sigla_tribunal, numero_oab, uf_oab };
+}
+
+async function executarBuscaPublicacoes(args, pagina) {
+  const argsComPagina = { ...args, pagina };
+  const botao = formPublicacoes.querySelector("button[type=submit]");
+  const pararEspera = mostrarEspera(resultadoPublicacoes, botao, "Consultando o DJEN");
+  try {
+    const dados = await cliente.chamarTool("consultar_publicacoes_djen", argsComPagina);
+    renderizarPublicacoes(resultadoPublicacoes, dados);
+
+    if (!dados.erro) {
+      ultimaBuscaPublicacoes = { args, pagina, itensRecebidos: (dados.itens || []).length, total: dados.total || 0 };
+      const itensPorPagina = args.itens_por_pagina || 20;
+      textoPaginaAtual.textContent = `Página ${pagina}`;
+      botaoPaginaAnterior.disabled = pagina <= 1;
+      botaoPaginaProxima.disabled = pagina * itensPorPagina >= (dados.total || 0);
+      paginacaoPublicacoes.hidden = (dados.total || 0) <= itensPorPagina && pagina <= 1;
+
+      botaoAcompanharBusca.hidden = false;
+
+      if (pagina === 1) {
+        const resumo = args.numero_processo
+          ? `Publicações do processo ${args.numero_processo}`
+          : `Publicações da OAB ${args.numero_oab}/${args.uf_oab || "?"}`;
+        adicionarHistorico({ tipo: "publicacoes", args, resumo });
+      }
+    } else {
+      paginacaoPublicacoes.hidden = true;
+      botaoAcompanharBusca.hidden = true;
+    }
+  } catch (erro) {
+    mostrarErro(resultadoPublicacoes, erro.message);
+  } finally {
+    pararEspera();
+  }
+}
+
+formPublicacoes.addEventListener("submit", (evento) => {
   evento.preventDefault();
   if (!exigirCliente(resultadoPublicacoes)) return;
 
@@ -485,14 +735,77 @@ formPublicacoes.addEventListener("submit", async (evento) => {
   const itens = parseInt(document.getElementById("pub-itens").value, 10);
   if (itens > 0) args.itens_por_pagina = itens;
 
-  const botao = formPublicacoes.querySelector("button[type=submit]");
-  const pararEspera = mostrarEspera(resultadoPublicacoes, botao, "Consultando o DJEN");
-  try {
-    const dados = await cliente.chamarTool("consultar_publicacoes_djen", args);
-    renderizarPublicacoes(resultadoPublicacoes, dados);
-  } catch (erro) {
-    mostrarErro(resultadoPublicacoes, erro.message);
-  } finally {
-    pararEspera();
-  }
+  executarBuscaPublicacoes(args, 1);
 });
+
+botaoPaginaAnterior.addEventListener("click", () => {
+  if (!ultimaBuscaPublicacoes || ultimaBuscaPublicacoes.pagina <= 1) return;
+  executarBuscaPublicacoes(ultimaBuscaPublicacoes.args, ultimaBuscaPublicacoes.pagina - 1);
+});
+
+botaoPaginaProxima.addEventListener("click", () => {
+  if (!ultimaBuscaPublicacoes) return;
+  executarBuscaPublicacoes(ultimaBuscaPublicacoes.args, ultimaBuscaPublicacoes.pagina + 1);
+});
+
+botaoAcompanharBusca.addEventListener("click", () => {
+  if (!ultimaBuscaPublicacoes) return;
+  const statusEl = el("p", { class: "app-espera app-espera--inline" });
+  botaoAcompanharBusca.insertAdjacentElement("afterend", statusEl);
+  acompanharBusca(_criterioMonitoramento(ultimaBuscaPublicacoes.args), botaoAcompanharBusca, statusEl);
+});
+
+// --- Monitoramentos: "Meus monitoramentos" ----------------------------------------------------
+
+function _descreverCriterioMonitoramento(criterio) {
+  if (criterio.numero_processo) return `Processo ${criterio.numero_processo}`;
+  return `OAB ${criterio.numero_oab}/${criterio.uf_oab || "?"}`;
+}
+
+function cartaoMonitoramento(m) {
+  const card = el("article", { class: "cds--tile resultado-card" });
+  card.appendChild(el("h3", { texto: _descreverCriterioMonitoramento(m.criterio || {}) }));
+  card.appendChild(el("p", { texto: `Criado em ${formatarData(m.criado_em)}` }));
+  card.appendChild(el("p", { texto: `Expira em ${formatarData(m.expira_em)} se não houver publicação nova antes` }));
+  const acoes = el("div", { class: "resultado-acoes" });
+  const botaoRemover = el("button", { class: "cds--btn cds--btn--danger--tertiary cds--btn--sm", type: "button", texto: "Remover" });
+  botaoRemover.addEventListener("click", async () => {
+    botaoRemover.disabled = true;
+    try {
+      await cliente.chamarTool("remover_monitoramento", { id: m.id });
+      carregarMonitoramentos();
+    } catch (erro) {
+      mostrarErro(resultadoMonitoramentos, erro.message);
+    }
+  });
+  acoes.appendChild(botaoRemover);
+  card.appendChild(acoes);
+  return card;
+}
+
+const resultadoMonitoramentos = document.getElementById("resultado-monitoramentos");
+
+async function carregarMonitoramentos() {
+  if (!exigirCliente(resultadoMonitoramentos)) return;
+  limpar(resultadoMonitoramentos);
+  resultadoMonitoramentos.appendChild(el("p", { class: "app-espera" }, ["Carregando…"]));
+  try {
+    const dados = await cliente.chamarTool("listar_monitoramentos", {});
+    limpar(resultadoMonitoramentos);
+    if (dados.erro) {
+      resultadoMonitoramentos.appendChild(notificacao("error", "Não foi possível carregar", dados.mensagem));
+      return;
+    }
+    const lista = dados.monitoramentos || [];
+    if (!lista.length) {
+      resultadoMonitoramentos.appendChild(notificacao("info", "Nenhum monitoramento ativo", "Use \"Acompanhar\" numa consulta de processo ou publicações para criar um."));
+      return;
+    }
+    for (const m of lista) resultadoMonitoramentos.appendChild(cartaoMonitoramento(m));
+  } catch (erro) {
+    limpar(resultadoMonitoramentos);
+    mostrarErro(resultadoMonitoramentos, erro.message);
+  }
+}
+
+document.getElementById("botao-atualizar-monitoramentos").addEventListener("click", carregarMonitoramentos);

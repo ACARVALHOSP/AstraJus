@@ -113,6 +113,12 @@ body { margin: 0; min-height: 100dvh; }
 <li class="cds--tabs__nav-item" role="presentation">
 <button class="cds--tabs__nav-link" id="aba-publicacoes-botao" role="tab" aria-selected="false" aria-controls="aba-publicacoes" type="button">Publicações (DJEN)</button>
 </li>
+<li class="cds--tabs__nav-item" role="presentation">
+<button class="cds--tabs__nav-link" id="aba-historico-botao" role="tab" aria-selected="false" aria-controls="aba-historico" type="button">Histórico e favoritos</button>
+</li>
+<li class="cds--tabs__nav-item" role="presentation">
+<button class="cds--tabs__nav-link" id="aba-monitoramentos-botao" role="tab" aria-selected="false" aria-controls="aba-monitoramentos" type="button">Meus monitoramentos</button>
+</li>
 </ul>
 </nav>
 
@@ -167,7 +173,30 @@ body { margin: 0; min-height: 100dvh; }
 <p class="campo-ajuda campo-ajuda--largo">Informe o número do processo ou a OAB. Os demais campos são opcionais.</p>
 <button class="cds--btn cds--btn--primary" type="submit">Consultar publicações</button>
 </form>
+<p class="acompanhar-linha">
+<button class="cds--btn cds--btn--tertiary cds--btn--sm" type="button" id="botao-acompanhar-busca" hidden>Acompanhar esta busca por e-mail</button>
+</p>
 <div id="resultado-publicacoes" class="app-resultado" aria-live="polite"></div>
+<nav class="paginacao" id="paginacao-publicacoes" hidden aria-label="Páginas de publicações">
+<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="pagina-anterior">« Anterior</button>
+<span id="pagina-atual-texto">Página 1</span>
+<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="pagina-proxima">Próxima »</button>
+</nav>
+</section>
+
+<section id="aba-historico" role="tabpanel" aria-labelledby="aba-historico-botao" hidden>
+<h2 class="lista-rapida-titulo">Favoritos</h2>
+<p class="campo-ajuda">Processos marcados manualmente na aba Processo (DataJud).</p>
+<ul id="lista-favoritos" class="lista-rapida"></ul>
+<h2 class="lista-rapida-titulo">Histórico recente</h2>
+<p class="campo-ajuda">Últimas consultas feitas neste navegador. Clique para repetir.</p>
+<ul id="lista-historico" class="lista-rapida"></ul>
+</section>
+
+<section id="aba-monitoramentos" role="tabpanel" aria-labelledby="aba-monitoramentos-botao" hidden>
+<p class="campo-ajuda">Avisos por e-mail quando sair uma publicação nova para o que você está acompanhando. Verificado a cada 6 horas.</p>
+<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="botao-atualizar-monitoramentos">Atualizar lista</button>
+<div id="resultado-monitoramentos" class="app-resultado" aria-live="polite"></div>
 </section>
 
 </main>
