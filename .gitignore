@@ -13,3 +13,5 @@ claude_run.err
 claude_run.json
 # Relatório de auditoria: lista achados de segurança do servidor real. Não é material público.
 relatorio-auditoria.html
+# Estado local de ferramentas do agente (ex: lock de tarefas agendadas), sem relação com o projeto
+.claude/
