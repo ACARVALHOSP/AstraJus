@@ -13,7 +13,7 @@ import os
 import tempfile
 import time
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
@@ -1479,10 +1479,335 @@ class SegurancaDeTransporteTest(unittest.TestCase):
         self.assertIn("https://b.exemplo.com", seg.allowed_origins)
 
 
+class MonitoramentoRegistroTest(unittest.TestCase):
+    """RegistroMonitoramentos: mesmo padrão de leitura/escrita atômica que RegistroUsuarios."""
+
+    def setUp(self):
+        self._dir = tempfile.TemporaryDirectory()
+        self.registro = server.RegistroMonitoramentos(Path(self._dir.name) / "monitoramentos.json")
+
+    def tearDown(self):
+        self._dir.cleanup()
+
+    def test_arquivo_inexistente_comeca_vazio(self):
+        self.assertEqual(self.registro.carregar(), {})
+
+    def test_atualizar_grava_e_pode_ser_relido_de_outra_instancia(self):
+        self.registro.atualizar(lambda d: d.update({"x1": {"usuario": "a@a.com"}}))
+        outro = server.RegistroMonitoramentos(self.registro.caminho)
+        self.assertEqual(outro.carregar(), {"x1": {"usuario": "a@a.com"}})
+
+    def test_do_usuario_filtra_por_usuario(self):
+        self.registro.atualizar(lambda d: d.update({
+            "x1": {"usuario": "a@a.com"}, "x2": {"usuario": "b@b.com"},
+        }))
+        self.assertEqual(set(self.registro.do_usuario("a@a.com")), {"x1"})
+
+
+class _RelogioMonitoramento:
+    """Relógio injetável para os testes de Monitoramento: devolve um datetime fixo, avançável."""
+
+    def __init__(self, inicio):
+        self.t = inicio
+
+    def __call__(self):
+        return self.t
+
+
+class MonitoramentoCriacaoTest(unittest.TestCase):
+    def setUp(self):
+        self._dir = tempfile.TemporaryDirectory()
+        self.registro = server.RegistroMonitoramentos(Path(self._dir.name) / "monitoramentos.json")
+        self.relogio = _RelogioMonitoramento(datetime(2026, 10, 7, 12, 0))
+
+    def tearDown(self):
+        self._dir.cleanup()
+
+    def criar(self, usuario="ana@exemplo.com", numero_processo=None, sigla_tribunal=None,
+              numero_oab=None, uf_oab=None):
+        return server._criar_monitoramento(self.registro, usuario, numero_processo, sigla_tribunal,
+                                            numero_oab, uf_oab, self.relogio)
+
+    def test_usuario_sem_email_e_recusado(self):
+        r = self.criar(usuario="ana", numero_oab="330659")
+        self.assertTrue(r["erro"])
+        self.assertEqual(self.registro.carregar(), {})
+
+    def test_sem_processo_nem_oab_e_recusado(self):
+        r = self.criar()
+        self.assertTrue(r["erro"])
+        self.assertEqual(self.registro.carregar(), {})
+
+    def test_sucesso_grava_criterio_normalizado_e_expiracao(self):
+        r = self.criar(numero_oab="330659", uf_oab="sp")
+        self.assertNotIn("erro", r)
+        self.assertEqual(r["criterio"], {"numero_oab": "330659", "uf_oab": "SP"})
+        self.assertEqual(r["expira_em"], (self.relogio.t + timedelta(days=180)).isoformat())
+        self.assertEqual(len(self.registro.carregar()), 1)
+
+    def test_numero_processo_tem_mascara_removida(self):
+        r = self.criar(numero_processo="1006314-27.2023.8.26.0005")
+        self.assertEqual(r["criterio"]["numero_processo"], "10063142720238260005")
+
+    def test_limite_de_cinco_por_usuario_e_respeitado(self):
+        for i in range(5):
+            r = self.criar(numero_oab=str(i))
+            self.assertNotIn("erro", r)
+        r = self.criar(numero_oab="999")
+        self.assertTrue(r["erro"])
+        self.assertIn("5", r["mensagem"])
+
+    def test_limite_e_por_usuario_nao_global(self):
+        for i in range(5):
+            self.criar(usuario="ana@exemplo.com", numero_oab=str(i))
+        r = self.criar(usuario="bia@exemplo.com", numero_oab="1")
+        self.assertNotIn("erro", r)
+
+
+class MonitoramentoListagemRemocaoTest(unittest.TestCase):
+    def setUp(self):
+        self._dir = tempfile.TemporaryDirectory()
+        self.registro = server.RegistroMonitoramentos(Path(self._dir.name) / "monitoramentos.json")
+        self.relogio = _RelogioMonitoramento(datetime(2026, 10, 7, 12, 0))
+        self.criado = server._criar_monitoramento(
+            self.registro, "ana@exemplo.com", None, None, "330659", "SP", self.relogio
+        )
+
+    def tearDown(self):
+        self._dir.cleanup()
+
+    def test_lista_so_do_proprio_usuario(self):
+        server._criar_monitoramento(self.registro, "bia@exemplo.com", None, None, "1", "SP", self.relogio)
+        r = server._listar_monitoramentos(self.registro, "ana@exemplo.com")
+        self.assertEqual(len(r["monitoramentos"]), 1)
+        self.assertEqual(r["monitoramentos"][0]["id"], self.criado["id"])
+
+    def test_lista_nao_expoe_hashes_notificados(self):
+        r = server._listar_monitoramentos(self.registro, "ana@exemplo.com")
+        self.assertNotIn("hashes_notificados", r["monitoramentos"][0])
+
+    def test_remover_apaga_do_arquivo(self):
+        r = server._remover_monitoramento(self.registro, "ana@exemplo.com", self.criado["id"])
+        self.assertEqual(r, {"removido": True})
+        self.assertEqual(self.registro.carregar(), {})
+
+    def test_remover_de_outro_usuario_e_recusado(self):
+        r = server._remover_monitoramento(self.registro, "bia@exemplo.com", self.criado["id"])
+        self.assertTrue(r["erro"])
+        self.assertEqual(len(self.registro.carregar()), 1)
+
+    def test_remover_inexistente_e_recusado(self):
+        r = server._remover_monitoramento(self.registro, "ana@exemplo.com", "nao-existe")
+        self.assertTrue(r["erro"])
+
+
+class MonitoramentoVerificacaoTest(_Simulado, unittest.TestCase):
+    """_verificar_monitoramentos_pendentes: usa o mesmo transporte HTTP simulado do DJEN e um
+    'enviar' injetado no lugar do SMTP real (mesmo padrão de CadastroPublico)."""
+
+    def setUp(self):
+        super().setUp()
+        self._dir = tempfile.TemporaryDirectory()
+        self.registro = server.RegistroMonitoramentos(Path(self._dir.name) / "monitoramentos.json")
+        self.relogio = _RelogioMonitoramento(datetime(2026, 10, 7, 12, 0))
+        self.smtp = server.ConfiguracaoSMTP(host="smtp.test", porta=587, usuario="u", senha="s", remetente="from@test")
+        self.avisos = []
+        self.criado = server._criar_monitoramento(
+            self.registro, "ana@exemplo.com", None, None, "330659", "SP", self.relogio
+        )
+
+    def tearDown(self):
+        self._dir.cleanup()
+        super().tearDown()
+
+    def _enviar_fake(self, destino, criterio, itens):
+        self.avisos.append((destino, criterio, itens))
+
+    def verificar(self, enviar=None):
+        return server._verificar_monitoramentos_pendentes(
+            self.registro, self.smtp, agora=self.relogio, enviar=enviar or self._enviar_fake
+        )
+
+    def test_sem_smtp_nao_faz_nada(self):
+        self.responder(_json(200, DJEN_OK))
+        _rodar(server._verificar_monitoramentos_pendentes(self.registro, None, agora=self.relogio))
+        self.assertEqual(self.chamadas, [])
+
+    def test_publicacao_nova_dispara_aviso_e_atualiza_hashes(self):
+        self.responder(_json(200, DJEN_OK))
+        _rodar(self.verificar())
+        self.assertEqual(len(self.avisos), 1)
+        destino, _criterio, itens = self.avisos[0]
+        self.assertEqual(destino, "ana@exemplo.com")
+        self.assertEqual(itens[0]["hash"], "abc123")
+        atual = self.registro.carregar()[self.criado["id"]]
+        self.assertEqual(atual["hashes_notificados"], ["abc123"])
+        self.assertEqual(atual["expira_em"], (self.relogio.t + timedelta(days=180)).isoformat())
+
+    def test_mesma_publicacao_nao_avisa_duas_vezes(self):
+        self.responder(_json(200, DJEN_OK))
+        _rodar(self.verificar())
+        _rodar(self.verificar())
+        self.assertEqual(len(self.avisos), 1)
+
+    def test_monitoramento_expirado_sem_novidade_e_removido(self):
+        self.responder(_json(200, {"count": 0, "items": []}))
+        self.relogio.t = datetime.fromisoformat(self.criado["expira_em"])
+        _rodar(self.verificar())
+        self.assertEqual(self.registro.carregar(), {})
+
+    def test_monitoramento_nao_expirado_sem_novidade_fica_intacto(self):
+        self.responder(_json(200, {"count": 0, "items": []}))
+        _rodar(self.verificar())
+        self.assertEqual(len(self.registro.carregar()), 1)
+
+    def test_falha_no_djen_nao_quebra_nem_expira(self):
+        self.responder(httpx.Response(403))
+        self.relogio.t = datetime.fromisoformat(self.criado["expira_em"])  # já venceria, mas a falha não deve expirar
+        _rodar(self.verificar())
+        self.assertEqual(len(self.registro.carregar()), 1)
+        self.assertEqual(self.avisos, [])
+
+    def test_falha_ao_enviar_email_nao_marca_como_notificado(self):
+        self.responder(_json(200, DJEN_OK))
+
+        def enviar_que_falha(destino, criterio, itens):
+            raise RuntimeError("smtp fora do ar")
+
+        _rodar(self.verificar(enviar=enviar_que_falha))
+        atual = self.registro.carregar()[self.criado["id"]]
+        self.assertEqual(atual.get("hashes_notificados"), [])
+
+    def test_outro_monitoramento_continua_sendo_verificado_apos_falha(self):
+        server._criar_monitoramento(self.registro, "bia@exemplo.com", None, None, "1", "SP", self.relogio)
+        self.responder(httpx.Response(403), _json(200, DJEN_OK))
+        _rodar(self.verificar())
+        self.assertEqual(len(self.avisos), 1)
+
+
+class IdentificacaoUsuarioNaToolTest(_RegistroTemporario):
+    """_usuario_da_requisicao: simula só o que a função lê de ctx.request_context.request
+    (headers), em vez de montar um Request Starlette real."""
+
+    def setUp(self):
+        super().setUp()
+        self._estado_original = server._ESTADO_MONITORAMENTO
+        monitoramentos = Path(self._dir.name) / "monitoramentos.json"
+        server._ESTADO_MONITORAMENTO = server._EstadoMonitoramento(
+            registro_usuarios=self.registro, oauth=None,
+            registro_monitoramentos=server.RegistroMonitoramentos(monitoramentos),
+            smtp=None,
+        )
+
+    def tearDown(self):
+        server._ESTADO_MONITORAMENTO = self._estado_original
+        super().tearDown()
+
+    def _ctx(self, token=None):
+        from types import SimpleNamespace
+        headers = {"authorization": f"Bearer {token}"} if token else {}
+        request = SimpleNamespace(headers=headers)
+        return SimpleNamespace(request_context=SimpleNamespace(request=request))
+
+    def test_sem_estado_devolve_none(self):
+        server._ESTADO_MONITORAMENTO = None
+        self.assertIsNone(server._usuario_da_requisicao(self._ctx(self.token_ana)))
+
+    def test_sem_requisicao_http_devolve_none(self):
+        from types import SimpleNamespace
+        ctx = SimpleNamespace(request_context=SimpleNamespace(request=None))
+        self.assertIsNone(server._usuario_da_requisicao(ctx))
+
+    def test_token_valido_identifica_usuario(self):
+        self.assertEqual(server._usuario_da_requisicao(self._ctx(self.token_ana)), "ana")
+
+    def test_token_invalido_devolve_none(self):
+        self.assertIsNone(server._usuario_da_requisicao(self._ctx("token-errado")))
+
+    def test_sem_token_devolve_none(self):
+        self.assertIsNone(server._usuario_da_requisicao(self._ctx()))
+
+
+class MonitoramentoToolSemServidorHospedadoTest(unittest.TestCase):
+    """Em modo stdio (sem HTTP), _ESTADO_MONITORAMENTO nunca é montado: as tools devem recusar
+    com uma mensagem clara, em vez de quebrar."""
+
+    def setUp(self):
+        self._estado_original = server._ESTADO_MONITORAMENTO
+        server._ESTADO_MONITORAMENTO = None
+
+    def tearDown(self):
+        server._ESTADO_MONITORAMENTO = self._estado_original
+
+    def _ctx_vazio(self):
+        from types import SimpleNamespace
+        return SimpleNamespace(request_context=SimpleNamespace(request=None))
+
+    def test_monitorar_sem_servidor_hospedado_e_recusado(self):
+        r = _rodar(server.monitorar_publicacoes(self._ctx_vazio(), numero_oab="1"))
+        self.assertTrue(r["erro"])
+
+    def test_listar_sem_servidor_hospedado_e_recusado(self):
+        r = _rodar(server.listar_monitoramentos(self._ctx_vazio()))
+        self.assertTrue(r["erro"])
+
+    def test_remover_sem_servidor_hospedado_e_recusado(self):
+        r = _rodar(server.remover_monitoramento(self._ctx_vazio(), id="x"))
+        self.assertTrue(r["erro"])
+
+
+class MonitoramentoToolIntegradoTest(_RegistroTemporario):
+    """Fluxo completo criar/listar/remover passando pelas tools MCP (não pelas funções puras),
+    com um token real emitido para um usuário cujo nome é um e-mail."""
+
+    def setUp(self):
+        super().setUp()
+        self._estado_original = server._ESTADO_MONITORAMENTO
+        self._dir_mon = tempfile.TemporaryDirectory()
+        server._ESTADO_MONITORAMENTO = server._EstadoMonitoramento(
+            registro_usuarios=self.registro, oauth=None,
+            registro_monitoramentos=server.RegistroMonitoramentos(Path(self._dir_mon.name) / "monitoramentos.json"),
+            smtp=server.ConfiguracaoSMTP(host="smtp.test", porta=587, usuario="u", senha="s", remetente="from@test"),
+        )
+
+    def tearDown(self):
+        server._ESTADO_MONITORAMENTO = self._estado_original
+        self._dir_mon.cleanup()
+        super().tearDown()
+
+    def _ctx(self, token):
+        from types import SimpleNamespace
+        request = SimpleNamespace(headers={"authorization": f"Bearer {token}"})
+        return SimpleNamespace(request_context=SimpleNamespace(request=request))
+
+    def test_fluxo_criar_listar_remover_via_tool(self):
+        token_email = self._criar("ana@exemplo.com")
+        ctx = self._ctx(token_email)
+
+        criado = _rodar(server.monitorar_publicacoes(ctx, numero_oab="330659", uf_oab="SP"))
+        self.assertNotIn("erro", criado)
+
+        listado = _rodar(server.listar_monitoramentos(ctx))
+        self.assertEqual(len(listado["monitoramentos"]), 1)
+
+        removido = _rodar(server.remover_monitoramento(ctx, id=criado["id"]))
+        self.assertEqual(removido, {"removido": True})
+
+        listado_depois = _rodar(server.listar_monitoramentos(ctx))
+        self.assertEqual(listado_depois["monitoramentos"], [])
+
+    def test_token_invalido_e_recusado_pela_tool(self):
+        r = _rodar(server.monitorar_publicacoes(self._ctx("token-errado"), numero_oab="1"))
+        self.assertTrue(r["erro"])
+
+
 class RegistroDeToolsTest(unittest.TestCase):
-    def test_tres_tools_registradas(self):
+    def test_seis_tools_registradas(self):
         nomes = {t.name for t in _rodar(server.mcp.list_tools())}
-        self.assertEqual(nomes, {"consultar_processo_datajud", "consultar_publicacoes_djen", "baixar_certidao_djen"})
+        self.assertEqual(nomes, {
+            "consultar_processo_datajud", "consultar_publicacoes_djen", "baixar_certidao_djen",
+            "monitorar_publicacoes", "listar_monitoramentos", "remover_monitoramento",
+        })
 
 
 if __name__ == "__main__":

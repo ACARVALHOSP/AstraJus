@@ -36,7 +36,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -72,6 +72,13 @@ CERTIDAO_RETENCAO_DIAS = 7
 CERTIDAO_LINK_VALIDADE_S = 15 * 60
 _SEGREDO_CERTIDAO = os.environ.get("CNJ_MCP_SEGREDO", "").strip() or secrets.token_hex(32)
 _NOME_CERTIDAO = re.compile(r"certidao_[A-Za-z0-9]+\.pdf")
+
+# Monitoramento: acompanhamento recorrente de um processo/OAB, com aviso por e-mail quando sai
+# publicação nova. Só existe em modo HTTP (precisa de SMTP e de um usuário com e-mail como nome).
+MONITORAMENTO_MAX_POR_USUARIO = 5
+MONITORAMENTO_INTERVALO_HORAS = 6
+MONITORAMENTO_EXPIRACAO_DIAS = 180
+MONITORAMENTO_MAX_HASHES_LEMBRADOS = 50
 
 # Graus de jurisdição usados pelo DataJud no campo "grau".
 _DESCRICAO_GRAU = {
@@ -725,6 +732,46 @@ class RegistroUsuarios:
         return [nome for nome, r in self.carregar().items() if not r.get("revogado")]
 
 
+class RegistroMonitoramentos:
+    """Guarda os Monitoramentos (JSON: {id: {usuario, criterio, criado_em, hashes_notificados,
+    expira_em}}). Mesmo padrão de leitura/escrita de RegistroUsuarios: cache por mtime, escrita
+    atômica (arquivo temporário + os.replace), lock de threading.
+    """
+
+    def __init__(self, caminho: Path) -> None:
+        self.caminho = caminho
+        self._mtime: int | None = None
+        self._dados: dict = {}
+        self._trava = threading.Lock()
+
+    def atualizar(self, alterar) -> None:
+        with self._trava:
+            dados = self.carregar()
+            if alterar(dados) is not False:
+                self.salvar(dados)
+
+    def carregar(self) -> dict:
+        try:
+            mtime = self.caminho.stat().st_mtime_ns
+        except FileNotFoundError:
+            self._mtime, self._dados = None, {}
+            return self._dados
+        if mtime != self._mtime:
+            self._dados = json.loads(self.caminho.read_text(encoding="utf-8") or "{}")
+            self._mtime = mtime
+        return self._dados
+
+    def salvar(self, dados: dict) -> None:
+        self.caminho.parent.mkdir(parents=True, exist_ok=True)
+        temporario = self.caminho.with_suffix(".tmp")
+        temporario.write_text(json.dumps(dados, indent=2, ensure_ascii=False), encoding="utf-8")
+        os.replace(temporario, self.caminho)
+        self._mtime = None
+
+    def do_usuario(self, usuario: str) -> dict:
+        return {i: m for i, m in self.carregar().items() if m.get("usuario") == usuario}
+
+
 class LimitadorUso:
     """Limite de uso por chave (usuário, IP ou e-mail): por minuto e por dia, em memória.
 
@@ -815,6 +862,284 @@ def _enviar_token_por_email(cfg: ConfiguracaoSMTP, destino: str, token: str) -> 
             servidor.starttls(context=contexto)
             servidor.login(cfg.usuario, cfg.senha)
             servidor.send_message(mensagem)
+
+
+# --- Monitoramento: acompanhar processo/OAB e avisar por e-mail quando sai publicação nova -----
+
+def _normalizar_criterio_monitoramento(
+    numero_processo: str | None, sigla_tribunal: str | None, numero_oab: str | None, uf_oab: str | None
+) -> tuple[dict | None, dict | None]:
+    """Mesma validação de consultar_publicacoes_djen. Devolve (criterio, None) ou (None, erro)."""
+    numero = _so_digitos(numero_processo) if numero_processo else None
+    if numero_processo and len(numero) != 20:
+        return None, _erro(f"Número de processo inválido: esperados 20 dígitos, recebidos {len(numero)}.")
+
+    oab = (numero_oab or "").strip() or None
+    if not numero and not oab:
+        return None, _erro("Informe ao menos um entre numero_processo e numero_oab.")
+
+    uf = (uf_oab or "").strip().upper() or None
+    if uf and not re.fullmatch(r"[A-Z]{2}", uf):
+        return None, _erro("uf_oab inválida: use 2 letras, ex: 'SP'.")
+
+    sigla = (sigla_tribunal or "").strip().upper() or None
+    criterio = {k: v for k, v in {
+        "numero_processo": numero, "sigla_tribunal": sigla, "numero_oab": oab, "uf_oab": uf,
+    }.items() if v is not None}
+    return criterio, None
+
+
+def _criar_monitoramento(
+    registro: RegistroMonitoramentos, usuario: str, numero_processo: str | None, sigla_tribunal: str | None,
+    numero_oab: str | None, uf_oab: str | None, agora,
+) -> dict:
+    if "@" not in (usuario or ""):
+        return _erro("Monitoramento exige um usuário com e-mail cadastrado.")
+
+    criterio, erro = _normalizar_criterio_monitoramento(numero_processo, sigla_tribunal, numero_oab, uf_oab)
+    if erro:
+        return erro
+
+    if len(registro.do_usuario(usuario)) >= MONITORAMENTO_MAX_POR_USUARIO:
+        return _erro(f"Limite de {MONITORAMENTO_MAX_POR_USUARIO} monitoramentos por usuário atingido.")
+
+    agora_dt = agora()
+    novo_id = secrets.token_hex(8)
+    registro_novo = {
+        "usuario": usuario,
+        "criterio": criterio,
+        "criado_em": agora_dt.isoformat(),
+        "hashes_notificados": [],
+        "expira_em": (agora_dt + timedelta(days=MONITORAMENTO_EXPIRACAO_DIAS)).isoformat(),
+    }
+    registro.atualizar(lambda dados: dados.update({novo_id: registro_novo}))
+    return {"id": novo_id, **registro_novo}
+
+
+def _listar_monitoramentos(registro: RegistroMonitoramentos, usuario: str) -> dict:
+    itens = [
+        {"id": i, **{k: v for k, v in m.items() if k != "hashes_notificados"}}
+        for i, m in registro.do_usuario(usuario).items()
+    ]
+    itens.sort(key=lambda m: m["criado_em"])
+    return {"monitoramentos": itens}
+
+
+def _remover_monitoramento(registro: RegistroMonitoramentos, usuario: str, id_monitoramento: str) -> dict:
+    encontrado = {"ok": False}
+
+    def alterar(dados: dict):
+        atual = dados.get(id_monitoramento)
+        if atual is None or atual.get("usuario") != usuario:
+            return False
+        del dados[id_monitoramento]
+        encontrado["ok"] = True
+
+    registro.atualizar(alterar)
+    if not encontrado["ok"]:
+        return _erro("Monitoramento não encontrado.")
+    return {"removido": True}
+
+
+def _enviar_aviso_monitoramento(cfg: ConfiguracaoSMTP, destino: str, criterio: dict, itens: list[dict]) -> None:
+    """E-mail de resumo (não o texto completo) avisando sobre publicações novas de um Monitoramento."""
+    descricao = criterio.get("numero_processo") or f"OAB {criterio.get('numero_oab')}/{criterio.get('uf_oab') or '?'}"
+    url_base = os.environ.get("CNJ_MCP_URL_PUBLICA", "").strip().rstrip("/")
+    link = f"{url_base}/app" if url_base else "/app"
+
+    linhas = ["Olá,", "", f"Encontramos {len(itens)} publicação(ões) nova(s) para {descricao}:", ""]
+    for item in itens[:10]:
+        rotulo = item.get("tipoComunicacao") or item.get("tipoDocumento") or "Publicação"
+        linhas.append(f"- {item.get('data_disponibilizacao', '?')} · {item.get('siglaTribunal', '?')} · {rotulo}")
+    linhas += [
+        "", f"Veja os detalhes completos em: {link}", "",
+        'Para parar de receber estes avisos, remova o monitoramento em "Meus monitoramentos".',
+    ]
+
+    mensagem = EmailMessage()
+    mensagem["Subject"] = f"cnj-processual: {len(itens)} publicação(ões) nova(s) para {descricao}"
+    mensagem["From"] = cfg.remetente
+    mensagem["To"] = destino
+    mensagem.set_content("\n".join(linhas))
+
+    contexto = ssl.create_default_context()
+    if cfg.porta == 465:
+        with smtplib.SMTP_SSL(cfg.host, cfg.porta, context=contexto, timeout=30) as servidor:
+            servidor.login(cfg.usuario, cfg.senha)
+            servidor.send_message(mensagem)
+    else:
+        with smtplib.SMTP(cfg.host, cfg.porta, timeout=30) as servidor:
+            servidor.starttls(context=contexto)
+            servidor.login(cfg.usuario, cfg.senha)
+            servidor.send_message(mensagem)
+
+
+def _atualizar_apos_aviso(dados: dict, id_monitoramento: str, hashes: list[str], expira_em: str):
+    if id_monitoramento not in dados:
+        return False
+    dados[id_monitoramento]["hashes_notificados"] = hashes
+    dados[id_monitoramento]["expira_em"] = expira_em
+
+
+async def _verificar_um_monitoramento(
+    registro: RegistroMonitoramentos, id_monitoramento: str, m: dict, enviar_fn, agora_dt,
+) -> None:
+    criterio = m.get("criterio") or {}
+    params = {
+        "numeroProcesso": criterio.get("numero_processo"),
+        "siglaTribunal": criterio.get("sigla_tribunal"),
+        "numeroOab": criterio.get("numero_oab"),
+        "ufOab": criterio.get("uf_oab"),
+        "pagina": 1,
+        "itensPorPagina": 20,
+    }
+    params = {k: v for k, v in params.items() if v is not None}
+
+    resposta = await _djen_get_com_retry(DJEN_BASE_URL, params=params)
+    if isinstance(resposta, dict):
+        # instabilidade transitória do DJEN: tenta de novo no próximo ciclo, sem expirar nem avisar erro
+        log.warning("Monitoramento %s: DJEN indisponível neste ciclo (%s)", id_monitoramento, resposta.get("mensagem"))
+        return
+
+    dados_resp, erro_json = _json_da_resposta(resposta)
+    if erro_json or not isinstance(dados_resp, dict):
+        log.warning("Monitoramento %s: resposta inesperada do DJEN", id_monitoramento)
+        return
+
+    itens = [_extrair_publicacao_djen(item) for item in dados_resp.get("items") or []]
+    hashes_vistos = set(m.get("hashes_notificados") or [])
+    novos = [item for item in itens if item.get("hash") and item["hash"] not in hashes_vistos]
+
+    if novos:
+        try:
+            await asyncio.to_thread(enviar_fn, m["usuario"], criterio, novos)
+        except Exception:
+            log.exception("Monitoramento %s: falha ao enviar e-mail de aviso", id_monitoramento)
+            return  # tenta de novo no próximo ciclo; não marca como notificado
+
+        hashes_atualizados = list(hashes_vistos | {item["hash"] for item in novos})
+        hashes_atualizados = hashes_atualizados[-MONITORAMENTO_MAX_HASHES_LEMBRADOS:]
+        nova_expiracao = (agora_dt + timedelta(days=MONITORAMENTO_EXPIRACAO_DIAS)).isoformat()
+        registro.atualizar(lambda d: _atualizar_apos_aviso(d, id_monitoramento, hashes_atualizados, nova_expiracao))
+        return
+
+    expira_em = m.get("expira_em")
+    if expira_em and datetime.fromisoformat(expira_em) <= agora_dt:
+        registro.atualizar(lambda d: d.pop(id_monitoramento, None) if id_monitoramento in d else False)
+
+
+async def _verificar_monitoramentos_pendentes(
+    registro: RegistroMonitoramentos, smtp: ConfiguracaoSMTP | None, agora=datetime.now, enviar=None,
+) -> None:
+    """Confere todos os Monitoramentos ativos e avisa por e-mail quem tiver publicação nova.
+    Chamada pelo job do APScheduler a cada MONITORAMENTO_INTERVALO_HORAS; os testes chamam direto,
+    com um relógio e um 'enviar' injetados."""
+    if smtp is None:
+        return
+    enviar_fn = enviar or (lambda destino, criterio, itens: _enviar_aviso_monitoramento(smtp, destino, criterio, itens))
+    agora_dt = agora()
+    for id_monitoramento, m in list(registro.carregar().items()):
+        try:
+            await _verificar_um_monitoramento(registro, id_monitoramento, m, enviar_fn, agora_dt)
+        except Exception:
+            log.exception("Falha ao verificar monitoramento %s", id_monitoramento)
+
+
+@dataclass
+class _EstadoMonitoramento:
+    """Estado compartilhado que as tools de Monitoramento leem. Só existe em modo HTTP: em modo
+    stdio não há usuário autenticado nem SMTP, então _ESTADO_MONITORAMENTO fica None."""
+    registro_usuarios: RegistroUsuarios
+    oauth: "ServidorOAuth | None"
+    registro_monitoramentos: RegistroMonitoramentos
+    smtp: ConfiguracaoSMTP | None
+
+
+_ESTADO_MONITORAMENTO: "_EstadoMonitoramento | None" = None
+
+
+def _usuario_da_requisicao(ctx: Context) -> str | None:
+    """Identifica o usuário autenticado dentro de uma tool, reaproveitando o Bearer token da
+    requisição HTTP (mesma extração que _AutenticacaoBearer já faz). Em modo stdio não há
+    requisição HTTP, então devolve None."""
+    estado = _ESTADO_MONITORAMENTO
+    if estado is None:
+        return None
+    request = getattr(ctx.request_context, "request", None)
+    if request is None:
+        return None
+    autorizacao = request.headers.get("authorization", "")
+    token = autorizacao[len("Bearer "):] if autorizacao.startswith("Bearer ") else ""
+    if not token:
+        return None
+    usuario = estado.registro_usuarios.identificar(token)
+    if usuario is None and estado.oauth is not None:
+        usuario = estado.oauth.identificar(token)
+    return usuario
+
+
+@mcp.tool()
+async def monitorar_publicacoes(
+    ctx: Context,
+    numero_processo: str | None = None,
+    sigla_tribunal: str | None = None,
+    numero_oab: str | None = None,
+    uf_oab: str | None = None,
+) -> dict:
+    """Cria um Monitoramento: acompanha um processo e/ou uma OAB e avisa por e-mail (resumo + link
+    para o painel) quando sair uma publicação nova no DJEN, verificado a cada 6 horas.
+
+    Parâmetros (ao menos um entre numero_processo e numero_oab): os mesmos de
+    consultar_publicacoes_djen (numero_processo, sigla_tribunal, numero_oab, uf_oab).
+
+    Limitações:
+    - Só funciona no servidor hospedado (modo HTTP, autenticado e com e-mail configurado); em uso
+      local (stdio) esta tool devolve erro.
+    - Limite de 5 monitoramentos ativos por usuário.
+    - Expira automaticamente após 180 dias sem nenhuma publicação nova (o prazo é renovado a cada
+      publicação encontrada).
+    """
+    estado = _ESTADO_MONITORAMENTO
+    if estado is None or estado.smtp is None:
+        return _erro("Monitoramento só está disponível no servidor hospedado, com e-mail configurado.")
+    usuario = _usuario_da_requisicao(ctx)
+    if usuario is None:
+        return _erro("Não foi possível identificar o usuário autenticado.")
+    return _criar_monitoramento(
+        estado.registro_monitoramentos, usuario, numero_processo, sigla_tribunal, numero_oab, uf_oab, datetime.now
+    )
+
+
+@mcp.tool()
+async def listar_monitoramentos(ctx: Context) -> dict:
+    """Lista os Monitoramentos ativos do usuário autenticado.
+
+    Retorno: dicionário com "monitoramentos", uma lista de itens com id, criterio, criado_em e
+    expira_em. O id pode ser passado a remover_monitoramento.
+    """
+    estado = _ESTADO_MONITORAMENTO
+    if estado is None:
+        return _erro("Monitoramento só está disponível no servidor hospedado.")
+    usuario = _usuario_da_requisicao(ctx)
+    if usuario is None:
+        return _erro("Não foi possível identificar o usuário autenticado.")
+    return _listar_monitoramentos(estado.registro_monitoramentos, usuario)
+
+
+@mcp.tool()
+async def remover_monitoramento(ctx: Context, id: str) -> dict:
+    """Remove um Monitoramento do usuário autenticado.
+
+    Parâmetro:
+    - id: valor do campo "id" devolvido por listar_monitoramentos ou por monitorar_publicacoes.
+    """
+    estado = _ESTADO_MONITORAMENTO
+    if estado is None:
+        return _erro("Monitoramento só está disponível no servidor hospedado.")
+    usuario = _usuario_da_requisicao(ctx)
+    if usuario is None:
+        return _erro("Não foi possível identificar o usuário autenticado.")
+    return _remover_monitoramento(estado.registro_monitoramentos, usuario, id)
 
 
 MENSAGEM_CAPTCHA_FALHA = "Confirme que você não é um robô e tente de novo."
@@ -2158,16 +2483,50 @@ def _principal() -> int:
     oauth = ServidorOAuth(registro, registro.caminho.parent / "oauth.json",
                           limitador_registro=LimitadorUso(por_minuto=5, por_dia=50))
     falhas = LimitadorUso(por_minuto=10, por_dia=300)
+
+    registro_monitoramentos = RegistroMonitoramentos(registro.caminho.parent / "monitoramentos.json")
+    global _ESTADO_MONITORAMENTO
+    _ESTADO_MONITORAMENTO = _EstadoMonitoramento(
+        registro_usuarios=registro, oauth=oauth, registro_monitoramentos=registro_monitoramentos, smtp=smtp,
+    )
+
     app = _AutenticacaoBearer(mcp.streamable_http_app(), registro, limitador, admin_token, cadastro, oauth,
                               captcha, site_captcha or None, falhas=falhas)
     log.info(
-        "Servidor HTTP em http://%s:%d/mcp (%d usuário(s) ativo(s); cadastro %s; admin %s)",
+        "Servidor HTTP em http://%s:%d/mcp (%d usuário(s) ativo(s); cadastro %s; admin %s; monitoramento %s)",
         args.host, args.port, len(registro.ativos()),
         "habilitado" if cadastro else "desabilitado", "habilitado" if admin_token else "desabilitado",
+        "habilitado" if smtp else "desabilitado",
     )
-    # access_log desligado: o log padrão do uvicorn gravaria a URL completa, inclusive os parâmetros
-    # assinados dos links de certidão. As requisições autenticadas já são registradas pelo middleware.
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info", access_log=False)
+
+    async def _servir() -> None:
+        agendador = None
+        if smtp is not None:
+            from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+            agendador = AsyncIOScheduler()
+            agendador.add_job(
+                _verificar_monitoramentos_pendentes,
+                "interval",
+                hours=MONITORAMENTO_INTERVALO_HORAS,
+                args=[registro_monitoramentos, smtp],
+            )
+            agendador.start()
+            log.info("Monitoramento: verificação periódica a cada %dh.", MONITORAMENTO_INTERVALO_HORAS)
+
+        # access_log desligado: o log padrão do uvicorn gravaria a URL completa, inclusive os
+        # parâmetros assinados dos links de certidão. As requisições autenticadas já são
+        # registradas pelo middleware. uvicorn.Server.serve() (em vez de uvicorn.run) porque o
+        # agendador precisa do mesmo loop asyncio já em execução para disparar no horário certo.
+        configuracao = uvicorn.Config(app, host=args.host, port=args.port, log_level="info", access_log=False)
+        servidor = uvicorn.Server(configuracao)
+        try:
+            await servidor.serve()
+        finally:
+            if agendador is not None:
+                agendador.shutdown(wait=False)
+
+    asyncio.run(_servir())
     return 0
 
 
