@@ -414,8 +414,10 @@ function categorizarMovimento(nome) {
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase();
   if (
-    normalizado.includes("decisao") ||
-    ["julgamento", "sentenca", "liminar", "improcedencia", "procedencia"].includes(normalizado)
+    normalizado.includes("decis") ||
+    ["julgamento", "sentenca", "liminar", "improcedencia", "procedencia", "acordao"].some((termo) =>
+      normalizado.includes(termo)
+    )
   ) {
     return "decisao";
   }
