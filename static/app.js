@@ -398,30 +398,117 @@ for (const aba of abas) aba.botao.addEventListener("click", () => selecionarAba(
 
 // --- Consulta de processo (DataJud) -----------------------------------------------------------
 
-function tabelaMovimentos(movimentos) {
-  const corpo = el("tbody");
-  for (const mov of movimentos) {
-    const complementos = (mov.complementosTabelados || []).map((c) => c.nome).filter(Boolean).join(", ");
-    corpo.appendChild(
-      el("tr", {}, [
-        el("td", { texto: formatarData(mov.dataHora) }),
-        el("td", { texto: mov.nome || String(mov.codigo || "") }),
-        el("td", { texto: complementos || "" }),
-      ])
-    );
+// A API devolve dezenas (às vezes centenas) de movimentações, a maioria burocrática
+// (remessa, conclusão, expedição de documento). Agrupamos essa tramitação repetitiva
+// em blocos expansíveis e destacamos decisões e petições, que são o que normalmente
+// interessa a quem está acompanhando o processo.
+const CATEGORIAS_MOVIMENTO = {
+  decisao: { rotulo: "Decisão", tag: "red" },
+  peticao: { rotulo: "Petição", tag: "teal" },
+  tramitacao: { rotulo: "Tramitação", tag: "gray" },
+};
+
+function categorizarMovimento(nome) {
+  const normalizado = (nome || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
+  if (
+    normalizado.includes("decisao") ||
+    ["julgamento", "sentenca", "liminar", "improcedencia", "procedencia"].includes(normalizado)
+  ) {
+    return "decisao";
   }
-  return el("div", { class: "cds--data-table-container" }, [
-    el("table", { class: "cds--data-table" }, [
-      el("thead", {}, [
-        el("tr", {}, [
-          el("th", { scope: "col", texto: "Data" }),
-          el("th", { scope: "col", texto: "Movimentação" }),
-          el("th", { scope: "col", texto: "Complemento" }),
-        ]),
-      ]),
-      corpo,
+  if (normalizado.includes("peticao")) return "peticao";
+  return "tramitacao";
+}
+
+function agruparMovimentos(movimentos) {
+  const ordenados = [...movimentos].sort((a, b) => new Date(b.dataHora) - new Date(a.dataHora));
+  const entradas = [];
+  let pendentes = [];
+  const fecharPendentes = () => {
+    if (!pendentes.length) return;
+    if (pendentes.length < 3) {
+      for (const mov of pendentes) entradas.push({ tipo: "item", categoria: "tramitacao", mov });
+    } else {
+      entradas.push({ tipo: "grupo", itens: pendentes });
+    }
+    pendentes = [];
+  };
+  for (const mov of ordenados) {
+    const categoria = categorizarMovimento(mov.nome);
+    if (categoria === "tramitacao") {
+      pendentes.push(mov);
+      continue;
+    }
+    fecharPendentes();
+    entradas.push({ tipo: "item", categoria, mov });
+  }
+  fecharPendentes();
+  return entradas;
+}
+
+function marcadorLinhaTempo(categoria) {
+  const classe = categoria === "decisao" ? "linha-tempo-marcador linha-tempo-marcador--decisao" : "linha-tempo-marcador";
+  return el("span", { class: classe, "aria-hidden": "true" });
+}
+
+function itemLinhaTempo(mov, categoria) {
+  const info = CATEGORIAS_MOVIMENTO[categoria];
+  const complementos = (mov.complementosTabelados || []).map((c) => c.nome).filter(Boolean).join(", ");
+  return el("div", { class: "linha-tempo-item", "data-categoria": categoria }, [
+    marcadorLinhaTempo(categoria),
+    el("p", { class: "linha-tempo-data", texto: formatarData(mov.dataHora) }),
+    el("div", { class: "linha-tempo-card" }, [
+      el("span", { class: `cds--tag cds--tag--${info.tag}`, texto: info.rotulo }),
+      el("h4", { texto: mov.nome || String(mov.codigo || "") }),
+      complementos ? el("p", { class: "linha-tempo-complemento", texto: complementos }) : null,
     ]),
   ]);
+}
+
+function grupoLinhaTempo(itens) {
+  const inicio = formatarDataSimples(itens[itens.length - 1].dataHora);
+  const fim = formatarDataSimples(itens[0].dataHora);
+  const detalhes = el("details", { class: "linha-tempo-item linha-tempo-grupo", "data-categoria": "tramitacao" });
+  detalhes.appendChild(marcadorLinhaTempo("tramitacao"));
+  detalhes.appendChild(el("summary", { texto: `${itens.length} eventos de tramitação entre ${inicio} e ${fim}` }));
+  const lista = el("div", { class: "linha-tempo-grupo-lista" });
+  for (const mov of itens) {
+    lista.appendChild(el("p", { texto: `${formatarDataSimples(mov.dataHora)} — ${mov.nome || mov.codigo}` }));
+  }
+  detalhes.appendChild(lista);
+  return detalhes;
+}
+
+function linhaDoTempoMovimentos(movimentos) {
+  const entradas = agruparMovimentos(movimentos);
+  const container = el("div", { class: "linha-tempo" });
+  for (const entrada of entradas) {
+    container.appendChild(entrada.tipo === "grupo" ? grupoLinhaTempo(entrada.itens) : itemLinhaTempo(entrada.mov, entrada.categoria));
+  }
+
+  const filtros = el("div", { class: "linha-tempo-filtros", role: "group", "aria-label": "Filtrar por tipo de movimentação" });
+  const opcoes = [["todos", "Todos"], ["decisao", "Decisões"], ["peticao", "Petições"], ["tramitacao", "Tramitação"]];
+  for (const [valor, rotulo] of opcoes) {
+    const botao = el("button", {
+      class: "cds--btn cds--btn--ghost cds--btn--sm",
+      type: "button",
+      "aria-pressed": valor === "todos" ? "true" : "false",
+      texto: rotulo,
+    });
+    botao.addEventListener("click", () => {
+      for (const outro of filtros.querySelectorAll("button")) outro.setAttribute("aria-pressed", "false");
+      botao.setAttribute("aria-pressed", "true");
+      for (const item of container.children) {
+        item.hidden = valor !== "todos" && item.dataset.categoria !== valor;
+      }
+    });
+    filtros.appendChild(botao);
+  }
+
+  return el("div", {}, [filtros, container]);
 }
 
 function cartaoProcesso(proc) {
@@ -440,7 +527,7 @@ function cartaoProcesso(proc) {
   if (movimentos.length) {
     const detalhes = el("details", { class: "resultado-detalhes" });
     detalhes.appendChild(el("summary", { texto: `${proc.totalMovimentos || movimentos.length} movimentações` }));
-    detalhes.appendChild(tabelaMovimentos(movimentos));
+    detalhes.appendChild(linhaDoTempoMovimentos(movimentos));
     card.appendChild(detalhes);
   }
 

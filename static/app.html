@@ -75,6 +75,31 @@ body { margin: 0; min-height: 100dvh; }
 .paginacao span { font-size: 0.875rem; color: var(--cds-text-secondary, #525252); }
 
 .acompanhar-linha { margin: 0.75rem 0 0; }
+
+.linha-tempo-filtros { display: flex; gap: 0.4rem; flex-wrap: wrap; margin: 0 0 0.75rem; }
+.linha-tempo-filtros button[aria-pressed="true"] { background: var(--cds-layer-selected-01, #e0e0e0); }
+.linha-tempo { position: relative; padding-left: 28px; }
+.linha-tempo::before {
+  content: ""; position: absolute; left: 9px; top: 6px; bottom: 6px; width: 1px;
+  background: var(--cds-border-subtle, #e0e0e0);
+}
+.linha-tempo-item { position: relative; margin-bottom: 1rem; }
+.linha-tempo-marcador {
+  position: absolute; left: -28px; top: 2px; width: 18px; height: 18px; border-radius: 50%;
+  border: 1px solid var(--cds-border-strong, #8d8d8d); background: var(--cds-layer-01, #fff);
+}
+.linha-tempo-marcador--decisao { background: var(--cds-support-error-inverse, #fff1f1); border-color: var(--cds-support-error, #da1e28); }
+.linha-tempo-data { font-size: 0.75rem; color: var(--cds-text-secondary, #525252); margin: 0 0 0.2rem; }
+.linha-tempo-card { border: 1px solid var(--cds-border-subtle, #e0e0e0); border-radius: 4px; padding: 0.6rem 0.85rem; background: var(--cds-layer-01, #fff); }
+.linha-tempo-card h4 { margin: 0.2rem 0 0; font-size: 0.9rem; font-weight: 600; }
+.linha-tempo-complemento { margin: 0.2rem 0 0; font-size: 0.825rem; color: var(--cds-text-secondary, #525252); }
+.linha-tempo-grupo summary {
+  cursor: pointer; font-size: 0.825rem; color: var(--cds-link-primary, #0f62fe);
+  padding: 0.5rem 0.75rem; border: 1px dashed var(--cds-border-strong, #8d8d8d); border-radius: 4px;
+}
+.linha-tempo-grupo[open] summary { border-style: solid; }
+.linha-tempo-grupo-lista { margin: 0.4rem 0 0 0.25rem; padding-left: 0.75rem; border-left: 2px solid var(--cds-border-subtle, #e0e0e0); }
+.linha-tempo-grupo-lista p { margin: 0.2rem 0; font-size: 0.75rem; color: var(--cds-text-secondary, #525252); }
 </style>
 </head>
 <body class="cds--g10">
