@@ -380,6 +380,7 @@ const abas = [
   { botao: document.getElementById("aba-publicacoes-botao"), painel: document.getElementById("aba-publicacoes") },
   { botao: document.getElementById("aba-historico-botao"), painel: document.getElementById("aba-historico") },
   { botao: document.getElementById("aba-monitoramentos-botao"), painel: document.getElementById("aba-monitoramentos") },
+  { botao: document.getElementById("aba-jurimetria-botao"), painel: document.getElementById("aba-jurimetria") },
 ];
 
 function selecionarAba(alvo) {

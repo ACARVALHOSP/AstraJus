@@ -65,6 +65,15 @@ body { margin: 0; min-height: 100dvh; }
 
 .app-rodape { max-width: 960px; margin: 0 auto; padding: 0 1rem 2rem; font-size: 0.875rem; }
 
+.grade-jurimetria {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem; margin: 1rem 0;
+}
+.grade-jurimetria .cds--tile { display: flex; flex-direction: column; gap: 0.5rem; }
+.grade-jurimetria .cds--tile h3 { font-size: 1rem; font-weight: 600; margin: 0.25rem 0 0; }
+.grade-jurimetria .cds--tile p { margin: 0; font-size: 0.875rem; }
+.grade-jurimetria .cds--tag { align-self: flex-start; }
+
 .lista-rapida { list-style: none; margin: 0.5rem 0 1.5rem; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
 .lista-rapida-item { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.5rem 0.75rem; }
 .lista-rapida-item button.cds--btn { white-space: nowrap; }
@@ -144,6 +153,9 @@ body { margin: 0; min-height: 100dvh; }
 <li class="cds--tabs__nav-item" role="presentation">
 <button class="cds--tabs__nav-link" id="aba-monitoramentos-botao" role="tab" aria-selected="false" aria-controls="aba-monitoramentos" type="button">Meus monitoramentos</button>
 </li>
+<li class="cds--tabs__nav-item" role="presentation">
+<button class="cds--tabs__nav-link" id="aba-jurimetria-botao" role="tab" aria-selected="false" aria-controls="aba-jurimetria" type="button">Jurimetria</button>
+</li>
 </ul>
 </nav>
 
@@ -222,6 +234,76 @@ body { margin: 0; min-height: 100dvh; }
 <p class="campo-ajuda">Avisos por e-mail quando sair uma publicação nova para o que você está acompanhando. Verificado a cada 6 horas.</p>
 <button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="botao-atualizar-monitoramentos">Atualizar lista</button>
 <div id="resultado-monitoramentos" class="app-resultado" aria-live="polite"></div>
+</section>
+
+<section id="aba-jurimetria" role="tabpanel" aria-labelledby="aba-jurimetria-botao" hidden>
+<p class="campo-ajuda">
+Ideias de análise estatística sobre decisões judiciais (jurimetria), a partir da busca textual no CJPG (julgados de 1º grau do TJSP).
+Nenhuma destas análises está implementada ainda — são conceitos de próximos passos, não funcionalidades disponíveis.
+</p>
+<div class="grade-jurimetria">
+
+<div class="cds--tile">
+<span class="cds--tag cds--tag--gray cds--tag--sm">Conceito</span>
+<h3>Perfil decisório de um magistrado</h3>
+<p>Taxa de procedência / improcedência / parcial, proporção de acordos homologados e valor médio de indenização, filtrando por magistrado e período.</p>
+<p class="campo-ajuda">Dados: busca por nome do magistrado + termo, no inteiro teor.</p>
+</div>
+
+<div class="cds--tile">
+<span class="cds--tag cds--tag--gray cds--tag--sm">Conceito</span>
+<h3>Benchmark de valor de indenização por categoria de dano</h3>
+<p>Distribuição (mediana, mínimo, máximo) dos valores de condenação para um tipo específico de dano moral — negativa de cobertura, inscrição indevida, cancelamento de voo etc.</p>
+<p class="campo-ajuda">Dados: busca por assunto + extração manual do valor no dispositivo da sentença.</p>
+</div>
+
+<div class="cds--tile">
+<span class="cds--tag cds--tag--gray cds--tag--sm">Conceito</span>
+<h3>Due diligence de parte adversa</h3>
+<p>Histórico de ações de uma empresa ou pessoa como parte ré: quantidade de processos, teses de defesa usadas e taxa de derrota.</p>
+<p class="campo-ajuda">Dados: busca pelo nome da parte no inteiro teor.</p>
+</div>
+
+<div class="cds--tile">
+<span class="cds--tag cds--tag--gray cds--tag--sm">Conceito</span>
+<h3>Comparação entre comarcas/varas</h3>
+<p>Para a mesma tese jurídica, compara valor de condenação e taxa de procedência entre comarcas diferentes — útil para decidir onde ajuizar quando há competência concorrente.</p>
+<p class="campo-ajuda">Dados: mesma busca repetida variando o filtro de comarca.</p>
+</div>
+
+<div class="cds--tile">
+<span class="cds--tag cds--tag--gray cds--tag--sm">Conceito</span>
+<h3>Rastreamento de tese ao longo do tempo</h3>
+<p>Frequência de uso de uma expressão jurídica (uma súmula, "dano moral in re ipsa" etc.) em janelas de tempo sucessivas, para detectar mudança de entendimento antes de virar tendência visível.</p>
+<p class="campo-ajuda">Dados: mesma busca textual repetida em intervalos de data sucessivos.</p>
+</div>
+
+<div class="cds--tile">
+<span class="cds--tag cds--tag--gray cds--tag--sm">Conceito</span>
+<h3>Ranking de litigância habitual</h3>
+<p>Para um assunto específico, conta quantas vezes cada réu aparece nos resultados — identifica quem mais litiga e, cruzando com o desfecho, quem mais perde.</p>
+<p class="campo-ajuda">Dados: busca por assunto + contagem de ocorrências do campo "Requerido".</p>
+</div>
+
+<div class="cds--tile">
+<span class="cds--tag cds--tag--gray cds--tag--sm">Conceito</span>
+<h3>Tempo de tramitação por classe/vara</h3>
+<p>Estima a duração média de processos comparando o ano de distribuição (embutido no número do processo) com a data de disponibilização da sentença.</p>
+<p class="campo-ajuda">Dados: já disponíveis nos campos retornados pela busca — não exige extração extra.</p>
+</div>
+
+<div class="cds--tile">
+<span class="cds--tag cds--tag--gray cds--tag--sm">Conceito</span>
+<h3>Taxa de "jurisprudência defensiva"</h3>
+<p>Proporção de processos extintos sem resolução de mérito frente aos julgados no mérito, por vara — indicador de quão disposta uma vara está a discutir o fundo da questão.</p>
+<p class="campo-ajuda">Dados: busca por vara + classificação do texto da sentença (extinção vs. mérito).</p>
+</div>
+
+</div>
+<p class="campo-ajuda">
+Limitação conhecida: cada consulta ao CJPG tem um teto de ~10.000 resultados (limite do próprio índice de busca do TJSP).
+Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias buscas.
+</p>
 </section>
 
 </main>
