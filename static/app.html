@@ -105,6 +105,9 @@ body { margin: 0; min-height: 100dvh; }
 }
 .arvore-sugestoes button:hover, .arvore-sugestoes button:focus { background: var(--cds-layer-hover-01, #e8e8e8); }
 
+.jurimetria-botoes { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+.jurimetria-resumo-titulo { margin: 0 0 0.75rem; }
+
 .jurimetria-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 0.75rem; }
 .jurimetria-resumo .cds--tile { text-align: center; padding: 0.75rem; }
 .jurimetria-resumo .valor { font-size: 1.25rem; font-weight: 600; display: block; }
@@ -274,8 +277,8 @@ body { margin: 0; min-height: 100dvh; }
 
 <section id="aba-jurimetria" role="tabpanel" aria-labelledby="aba-jurimetria-botao" hidden>
 <p class="campo-ajuda">
-Benchmark de valor de indenização por categoria de dano, a partir da busca textual no CJPG (julgados de 1º grau do TJSP).
-As demais ideias abaixo ainda são só conceitos de próximos passos.
+Preencha os filtros abaixo e escolha a análise - todas usam a mesma busca no CJPG (julgados de 1º
+grau do TJSP). As demais ideias ao final ainda são só conceitos de próximos passos.
 </p>
 
 <form id="form-jurimetria" class="app-formulario">
@@ -288,7 +291,7 @@ As demais ideias abaixo ainda são só conceitos de próximos passos.
 <label class="cds--label" for="jur-magistrado">Magistrado</label>
 <input class="cds--text-input" id="jur-magistrado" autocomplete="off" placeholder="digite pra buscar…">
 <div class="arvore-sugestoes" id="jur-magistrado-sugestoes" hidden></div>
-<span class="campo-ajuda">O nome entra automaticamente entre aspas na pesquisa livre.</span>
+<span class="campo-ajuda">O nome entra automaticamente entre aspas na pesquisa livre. Obrigatório para o perfil do magistrado.</span>
 </div>
 
 <div class="cds--form-item">
@@ -316,49 +319,16 @@ As demais ideias abaixo ainda são só conceitos de próximos passos.
 <div class="seletor-arvore-campo cds--form-item campo-ajuda--largo" data-campo="assunto">
 <label class="cds--label">Assunto</label>
 <div class="seletor-arvore" data-campo="assunto"></div>
-<span class="campo-ajuda">Preencher Assunto ativa o resumo estatístico (mediana/percentis) abaixo dos resultados.</span>
+<span class="campo-ajuda">No Benchmark de valor, preencher Assunto ativa o resumo estatístico (mediana/percentis).</span>
 </div>
 
-<button class="cds--btn cds--btn--primary" type="submit">Consultar jurimetria</button>
+<div class="jurimetria-botoes">
+<button class="cds--btn cds--btn--primary" type="submit" name="analise" value="benchmark_valor">Benchmark de valor</button>
+<button class="cds--btn cds--btn--secondary" type="submit" name="analise" value="perfil_magistrado">Perfil do magistrado</button>
+</div>
 </form>
 <p class="aviso-demora" id="jur-espera" hidden></p>
 <div id="resultado-jurimetria" class="app-resultado" aria-live="polite"></div>
-
-<h2 class="lista-rapida-titulo">Perfil decisório de um magistrado</h2>
-<p class="campo-ajuda">
-Taxa de procedência/improcedência/parcial, proporção de acordos homologados e valor médio de
-indenização, a partir dos julgados do CJPG filtrados por magistrado e período.
-</p>
-<form id="form-perfil-magistrado" class="app-formulario">
-<div class="cds--form-item campo-ajuda--largo">
-<label class="cds--label" for="perfil-magistrado">Magistrado</label>
-<input class="cds--text-input" id="perfil-magistrado" autocomplete="off" placeholder="digite pra buscar…" required>
-<div class="arvore-sugestoes" id="perfil-magistrado-sugestoes" hidden></div>
-</div>
-
-<div class="cds--form-item campo-ajuda--largo">
-<label class="cds--label" for="perfil-termo">Pesquisa livre (opcional)</label>
-<input class="cds--text-input" id="perfil-termo" placeholder="ex.: dano moral">
-</div>
-
-<div class="cds--form-item">
-<label class="cds--label" for="perfil-data-inicio">Data de disponibilização - início</label>
-<input class="cds--text-input" id="perfil-data-inicio" placeholder="dd/mm/aaaa">
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="perfil-data-fim">Data de disponibilização - fim</label>
-<input class="cds--text-input" id="perfil-data-fim" placeholder="dd/mm/aaaa">
-</div>
-
-<div class="cds--form-item">
-<label class="cds--label" for="perfil-paginas">Páginas a buscar (10 resultados cada)</label>
-<input class="cds--text-input" id="perfil-paginas" type="number" min="1" max="15" value="1">
-</div>
-
-<button class="cds--btn cds--btn--primary" type="submit">Montar perfil</button>
-</form>
-<p class="aviso-demora" id="perfil-espera" hidden></p>
-<div id="resultado-perfil-magistrado" class="app-resultado" aria-live="polite"></div>
 
 <h2 class="lista-rapida-titulo">Outras ideias de jurimetria</h2>
 <p class="campo-ajuda">Ainda são só conceitos de próximos passos, não funcionalidades disponíveis.</p>

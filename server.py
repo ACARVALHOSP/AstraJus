@@ -951,6 +951,9 @@ async def perfil_decisorio_magistrado(
     magistrado_codigo: str | None = None,
     magistrado_nome: str | None = None,
     termo: str | None = None,
+    classe_codigo: str | None = None,
+    assunto_codigo: str | None = None,
+    vara_codigo: str | None = None,
     data_inicio: str | None = None,
     data_fim: str | None = None,
     paginas: int = 1,
@@ -958,7 +961,10 @@ async def perfil_decisorio_magistrado(
     """Busca julgados de 1º grau do TJSP (CJPG, scraping - sem API oficial, best-effort) de um
     magistrado específico e monta um perfil decisório: taxa de procedência/improcedência/parcial,
     proporção de acordos homologados e valor médio de indenização por dano moral, no período
-    informado.
+    informado. Aceita os mesmos filtros estruturados de classe/assunto/vara de
+    `consultar_jurimetria_cjpg` para refinar o universo de decisões analisadas (ex.: perfil do
+    magistrado só nas ações de indenização por dano moral) - mas, ao contrário daquela tool, não
+    calcula mediana/percentis de valor (isso é objetivo do benchmark de valor, não deste perfil).
 
     Parâmetros:
     - magistrado_codigo: código do magistrado (cdAgente), filtra de verdade no servidor. Resolvido
@@ -966,6 +972,9 @@ async def perfil_decisorio_magistrado(
     - magistrado_nome: nome em texto. Obrigatório ao menos um entre magistrado_codigo/
       magistrado_nome. Quando informado, entra automaticamente entre aspas no termo de busca.
     - termo: pesquisa livre adicional (texto completo das decisões), opcional.
+    - classe_codigo / assunto_codigo / vara_codigo: código interno do e-SAJ (resolvido via as
+      árvores de referência - ver endpoints /cjpg-arvore/* do painel web), opcionais. Filtram de
+      verdade no servidor do CJPG.
     - data_inicio / data_fim: formato dd/mm/aaaa.
     - paginas: quantas páginas de 10 resultados buscar (padrão 1, teto 15). A busca é best-effort:
       se uma página falhar no meio, o resultado parcial já buscado é devolvido com um aviso, em
@@ -997,6 +1006,12 @@ async def perfil_decisorio_magistrado(
             "dadosConsulta.dtFim": (data_fim or "").strip(),
             "dadosConsulta.ordenacao": "DESC",
         }
+        if classe_codigo:
+            params["classeTreeSelection.values"] = classe_codigo
+        if assunto_codigo:
+            params["assuntoTreeSelection.values"] = assunto_codigo
+        if vara_codigo:
+            params["varasTreeSelection.values"] = vara_codigo
         if magistrado_codigo:
             params["cdAgente"] = magistrado_codigo
             params["agenteSelectedEntitiesList"] = magistrado_codigo

@@ -1105,64 +1105,7 @@ function renderizarResumoJurimetria(agregado) {
   return bloco;
 }
 
-const formJurimetria = document.getElementById("form-jurimetria");
-const resultadoJurimetria = document.getElementById("resultado-jurimetria");
-const esperaJurimetria = document.getElementById("jur-espera");
-
-formJurimetria.addEventListener("submit", async (evento) => {
-  evento.preventDefault();
-  if (!exigirCliente(resultadoJurimetria)) return;
-
-  const argumentos = {
-    termo: document.getElementById("jur-termo").value.trim() || null,
-    magistrado_nome: autocompleteMagistrado.nome() || null,
-    magistrado_codigo: autocompleteMagistrado.codigo(),
-    data_inicio: document.getElementById("jur-data-inicio").value.trim() || null,
-    data_fim: document.getElementById("jur-data-fim").value.trim() || null,
-    paginas: Number(document.getElementById("jur-paginas").value) || 1,
-    vara_codigo: seletorVara.codigosSelecionados() || null,
-    classe_codigo: seletorClasse.codigosSelecionados() || null,
-    classe_nome: seletorClasse.nomesSelecionados().join(", ") || null,
-    assunto_codigo: seletorAssunto.codigosSelecionados() || null,
-    assunto_nome: seletorAssunto.nomesSelecionados().join(", ") || null,
-  };
-
-  const botao = formJurimetria.querySelector("button[type=submit]");
-  botao.disabled = true;
-  esperaJurimetria.hidden = false;
-  esperaJurimetria.textContent = "Consultando o CJPG — pode levar alguns segundos por página pedida…";
-  limpar(resultadoJurimetria);
-  try {
-    const dados = await cliente.chamarTool("consultar_jurimetria_cjpg", argumentos);
-    if (dados.erro) {
-      mostrarErro(resultadoJurimetria, dados.mensagem);
-      return;
-    }
-    for (const aviso of dados.avisos || []) {
-      resultadoJurimetria.appendChild(notificacao("warning", "Busca parcial", aviso));
-    }
-    resultadoJurimetria.appendChild(
-      el("p", { class: "campo-ajuda" }, [`Total no servidor: ${dados.total_servidor ?? "?"} | Buscados nesta consulta: ${dados.buscados}`])
-    );
-    if (dados.agregado) resultadoJurimetria.appendChild(renderizarResumoJurimetria(dados.agregado));
-    for (const item of dados.resultados || []) resultadoJurimetria.appendChild(cartaoJurimetria(item));
-    if (!(dados.resultados || []).length) {
-      resultadoJurimetria.appendChild(notificacao("info", "Nenhum resultado", "Tente ampliar os filtros ou o termo de busca."));
-    }
-  } catch (erro) {
-    mostrarErro(resultadoJurimetria, erro.message);
-  } finally {
-    botao.disabled = false;
-    esperaJurimetria.hidden = true;
-  }
-});
-
-// --- Perfil decisório de magistrado ------------------------------------------------------------
-
-const autocompletePerfilMagistrado = criarAutocompleteMagistrado(
-  document.getElementById("perfil-magistrado"),
-  document.getElementById("perfil-magistrado-sugestoes")
-);
+// --- Perfil decisório de magistrado (renderização) ---------------------------------------------
 
 const ROTULO_TAXA = {
   taxa_procedente: ["Procedente", "cds--tag--green"],
@@ -1192,57 +1135,81 @@ function renderizarPerfilMagistrado(perfil) {
   return bloco;
 }
 
-const formPerfilMagistrado = document.getElementById("form-perfil-magistrado");
-const resultadoPerfilMagistrado = document.getElementById("resultado-perfil-magistrado");
-const esperaPerfilMagistrado = document.getElementById("perfil-espera");
+// --- Jurimetria: formulário único, uma análise por botão ---------------------------------------
 
-formPerfilMagistrado.addEventListener("submit", async (evento) => {
+const formJurimetria = document.getElementById("form-jurimetria");
+const resultadoJurimetria = document.getElementById("resultado-jurimetria");
+const esperaJurimetria = document.getElementById("jur-espera");
+const botoesAnaliseJurimetria = Array.from(formJurimetria.querySelectorAll('button[name="analise"]'));
+
+const TITULO_ANALISE = {
+  benchmark_valor: "Benchmark de valor",
+  perfil_magistrado: "Perfil do magistrado",
+};
+
+function camposComunsJurimetria() {
+  return {
+    termo: document.getElementById("jur-termo").value.trim() || null,
+    magistrado_nome: autocompleteMagistrado.nome() || null,
+    magistrado_codigo: autocompleteMagistrado.codigo(),
+    data_inicio: document.getElementById("jur-data-inicio").value.trim() || null,
+    data_fim: document.getElementById("jur-data-fim").value.trim() || null,
+    paginas: Number(document.getElementById("jur-paginas").value) || 1,
+    vara_codigo: seletorVara.codigosSelecionados() || null,
+    classe_codigo: seletorClasse.codigosSelecionados() || null,
+    assunto_codigo: seletorAssunto.codigosSelecionados() || null,
+  };
+}
+
+formJurimetria.addEventListener("submit", async (evento) => {
   evento.preventDefault();
-  if (!exigirCliente(resultadoPerfilMagistrado)) return;
+  if (!exigirCliente(resultadoJurimetria)) return;
 
-  const nome = autocompletePerfilMagistrado.nome();
-  const codigo = autocompletePerfilMagistrado.codigo();
-  if (!nome && !codigo) {
-    mostrarErro(resultadoPerfilMagistrado, "Informe o magistrado.");
+  const analise = evento.submitter?.value;
+  const comuns = camposComunsJurimetria();
+
+  if (analise === "perfil_magistrado" && !comuns.magistrado_nome && !comuns.magistrado_codigo) {
+    mostrarErro(resultadoJurimetria, "Informe o magistrado.");
     return;
   }
 
-  const argumentos = {
-    magistrado_nome: nome || null,
-    magistrado_codigo: codigo,
-    termo: document.getElementById("perfil-termo").value.trim() || null,
-    data_inicio: document.getElementById("perfil-data-inicio").value.trim() || null,
-    data_fim: document.getElementById("perfil-data-fim").value.trim() || null,
-    paginas: Number(document.getElementById("perfil-paginas").value) || 1,
-  };
-
-  const botao = formPerfilMagistrado.querySelector("button[type=submit]");
-  botao.disabled = true;
-  esperaPerfilMagistrado.hidden = false;
-  esperaPerfilMagistrado.textContent = "Consultando o CJPG — pode levar alguns segundos por página pedida…";
-  limpar(resultadoPerfilMagistrado);
+  for (const botao of botoesAnaliseJurimetria) botao.disabled = true;
+  esperaJurimetria.hidden = false;
+  esperaJurimetria.textContent = "Consultando o CJPG — pode levar alguns segundos por página pedida…";
+  limpar(resultadoJurimetria);
   try {
-    const dados = await cliente.chamarTool("perfil_decisorio_magistrado", argumentos);
+    let dados;
+    if (analise === "perfil_magistrado") {
+      dados = await cliente.chamarTool("perfil_decisorio_magistrado", comuns);
+    } else {
+      dados = await cliente.chamarTool("consultar_jurimetria_cjpg", {
+        ...comuns,
+        classe_nome: seletorClasse.nomesSelecionados().join(", ") || null,
+        assunto_nome: seletorAssunto.nomesSelecionados().join(", ") || null,
+      });
+    }
     if (dados.erro) {
-      mostrarErro(resultadoPerfilMagistrado, dados.mensagem);
+      mostrarErro(resultadoJurimetria, dados.mensagem);
       return;
     }
+    resultadoJurimetria.appendChild(el("h3", { class: "jurimetria-resumo-titulo", texto: `Resultado: ${TITULO_ANALISE[analise] || analise}` }));
     for (const aviso of dados.avisos || []) {
-      resultadoPerfilMagistrado.appendChild(notificacao("warning", "Busca parcial", aviso));
+      resultadoJurimetria.appendChild(notificacao("warning", "Busca parcial", aviso));
     }
-    resultadoPerfilMagistrado.appendChild(
+    resultadoJurimetria.appendChild(
       el("p", { class: "campo-ajuda" }, [`Total no servidor: ${dados.total_servidor ?? "?"} | Buscados nesta consulta: ${dados.buscados}`])
     );
-    if (dados.perfil) resultadoPerfilMagistrado.appendChild(renderizarPerfilMagistrado(dados.perfil));
-    for (const item of dados.resultados || []) resultadoPerfilMagistrado.appendChild(cartaoJurimetria(item));
+    if (dados.agregado) resultadoJurimetria.appendChild(renderizarResumoJurimetria(dados.agregado));
+    if (dados.perfil) resultadoJurimetria.appendChild(renderizarPerfilMagistrado(dados.perfil));
+    for (const item of dados.resultados || []) resultadoJurimetria.appendChild(cartaoJurimetria(item));
     if (!(dados.resultados || []).length) {
-      resultadoPerfilMagistrado.appendChild(notificacao("info", "Nenhum resultado", "Tente ampliar o período ou a pesquisa livre."));
+      resultadoJurimetria.appendChild(notificacao("info", "Nenhum resultado", "Tente ampliar os filtros ou o termo de busca."));
     }
   } catch (erro) {
-    mostrarErro(resultadoPerfilMagistrado, erro.message);
+    mostrarErro(resultadoJurimetria, erro.message);
   } finally {
-    botao.disabled = false;
-    esperaPerfilMagistrado.hidden = true;
+    for (const botao of botoesAnaliseJurimetria) botao.disabled = false;
+    esperaJurimetria.hidden = true;
   }
 });
 
