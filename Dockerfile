@@ -15,11 +15,14 @@ RUN pip install --no-cache-dir . \
 USER app
 
 # A porta é lida de CNJ_MCP_PORT, então a hospedagem pode definir qualquer valor.
-# CNJ_MCP_USUARIOS deve apontar para um volume persistente (ex.: /data/usuarios.json).
+# CNJ_MCP_USUARIOS e CNJ_MCP_ARVORES_CJPG_DIR devem apontar para um volume persistente
+# (ex.: /data/...) - sem isso, as árvores de Vara/Classe/Assunto/Magistrado somem a cada
+# recriação do container e precisam ser rebaixadas com --atualizar-arvores-cjpg.
 ENV CNJ_MCP_TRANSPORT=http \
     CNJ_MCP_HOST=0.0.0.0 \
     CNJ_MCP_PORT=8000 \
-    CNJ_MCP_USUARIOS=/data/usuarios.json
+    CNJ_MCP_USUARIOS=/data/usuarios.json \
+    CNJ_MCP_ARVORES_CJPG_DIR=/data/arvores_cjpg
 
 EXPOSE 8000
 
