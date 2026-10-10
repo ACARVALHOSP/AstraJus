@@ -1157,4 +1157,93 @@ formJurimetria.addEventListener("submit", async (evento) => {
   }
 });
 
+// --- Perfil decisório de magistrado ------------------------------------------------------------
+
+const autocompletePerfilMagistrado = criarAutocompleteMagistrado(
+  document.getElementById("perfil-magistrado"),
+  document.getElementById("perfil-magistrado-sugestoes")
+);
+
+const ROTULO_TAXA = {
+  taxa_procedente: ["Procedente", "cds--tag--green"],
+  taxa_parcial: ["Parcialmente procedente", "cds--tag--teal"],
+  taxa_improcedente: ["Improcedente", "cds--tag--red"],
+  taxa_acordo: ["Acordo homologado", "cds--tag--blue"],
+  taxa_extinto: ["Extinto sem mérito", "cds--tag--gray"],
+};
+
+function formatarPercentual(valor) {
+  if (valor === null || valor === undefined) return "-";
+  return valor.toLocaleString("pt-BR", { style: "percent", minimumFractionDigits: 1 });
+}
+
+function renderizarPerfilMagistrado(perfil) {
+  const grade = el("div", { class: "jurimetria-resumo" });
+  const tile = (rotulo, valor) =>
+    el("div", { class: "cds--tile" }, [el("span", { class: "valor", texto: valor }), el("span", { class: "rotulo", texto: rotulo })]);
+  for (const [chave, [rotulo]] of Object.entries(ROTULO_TAXA)) {
+    grade.appendChild(tile(rotulo, formatarPercentual(perfil[chave])));
+  }
+  grade.appendChild(tile("Valor médio de indenização", formatarReais(perfil.valor_medio_indenizacao)));
+  grade.appendChild(tile("Decisões classificadas", String(perfil.total_classificados)));
+  grade.appendChild(tile("Com valor extraído", String(perfil.com_valor_extraido)));
+  const bloco = el("div", {}, [grade]);
+  if (perfil.aviso) bloco.appendChild(notificacao("warning", "Amostra pequena", perfil.aviso));
+  return bloco;
+}
+
+const formPerfilMagistrado = document.getElementById("form-perfil-magistrado");
+const resultadoPerfilMagistrado = document.getElementById("resultado-perfil-magistrado");
+const esperaPerfilMagistrado = document.getElementById("perfil-espera");
+
+formPerfilMagistrado.addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  if (!exigirCliente(resultadoPerfilMagistrado)) return;
+
+  const nome = autocompletePerfilMagistrado.nome();
+  const codigo = autocompletePerfilMagistrado.codigo();
+  if (!nome && !codigo) {
+    mostrarErro(resultadoPerfilMagistrado, "Informe o magistrado.");
+    return;
+  }
+
+  const argumentos = {
+    magistrado_nome: nome || null,
+    magistrado_codigo: codigo,
+    termo: document.getElementById("perfil-termo").value.trim() || null,
+    data_inicio: document.getElementById("perfil-data-inicio").value.trim() || null,
+    data_fim: document.getElementById("perfil-data-fim").value.trim() || null,
+    paginas: Number(document.getElementById("perfil-paginas").value) || 1,
+  };
+
+  const botao = formPerfilMagistrado.querySelector("button[type=submit]");
+  botao.disabled = true;
+  esperaPerfilMagistrado.hidden = false;
+  esperaPerfilMagistrado.textContent = "Consultando o CJPG — pode levar alguns segundos por página pedida…";
+  limpar(resultadoPerfilMagistrado);
+  try {
+    const dados = await cliente.chamarTool("perfil_decisorio_magistrado", argumentos);
+    if (dados.erro) {
+      mostrarErro(resultadoPerfilMagistrado, dados.mensagem);
+      return;
+    }
+    for (const aviso of dados.avisos || []) {
+      resultadoPerfilMagistrado.appendChild(notificacao("warning", "Busca parcial", aviso));
+    }
+    resultadoPerfilMagistrado.appendChild(
+      el("p", { class: "campo-ajuda" }, [`Total no servidor: ${dados.total_servidor ?? "?"} | Buscados nesta consulta: ${dados.buscados}`])
+    );
+    if (dados.perfil) resultadoPerfilMagistrado.appendChild(renderizarPerfilMagistrado(dados.perfil));
+    for (const item of dados.resultados || []) resultadoPerfilMagistrado.appendChild(cartaoJurimetria(item));
+    if (!(dados.resultados || []).length) {
+      resultadoPerfilMagistrado.appendChild(notificacao("info", "Nenhum resultado", "Tente ampliar o período ou a pesquisa livre."));
+    }
+  } catch (erro) {
+    mostrarErro(resultadoPerfilMagistrado, erro.message);
+  } finally {
+    botao.disabled = false;
+    esperaPerfilMagistrado.hidden = true;
+  }
+});
+
 document.getElementById("botao-atualizar-monitoramentos").addEventListener("click", carregarMonitoramentos);

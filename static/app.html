@@ -324,16 +324,45 @@ As demais ideias abaixo ainda são só conceitos de próximos passos.
 <p class="aviso-demora" id="jur-espera" hidden></p>
 <div id="resultado-jurimetria" class="app-resultado" aria-live="polite"></div>
 
+<h2 class="lista-rapida-titulo">Perfil decisório de um magistrado</h2>
+<p class="campo-ajuda">
+Taxa de procedência/improcedência/parcial, proporção de acordos homologados e valor médio de
+indenização, a partir dos julgados do CJPG filtrados por magistrado e período.
+</p>
+<form id="form-perfil-magistrado" class="app-formulario">
+<div class="cds--form-item campo-ajuda--largo">
+<label class="cds--label" for="perfil-magistrado">Magistrado</label>
+<input class="cds--text-input" id="perfil-magistrado" autocomplete="off" placeholder="digite pra buscar…" required>
+<div class="arvore-sugestoes" id="perfil-magistrado-sugestoes" hidden></div>
+</div>
+
+<div class="cds--form-item campo-ajuda--largo">
+<label class="cds--label" for="perfil-termo">Pesquisa livre (opcional)</label>
+<input class="cds--text-input" id="perfil-termo" placeholder="ex.: dano moral">
+</div>
+
+<div class="cds--form-item">
+<label class="cds--label" for="perfil-data-inicio">Data de disponibilização - início</label>
+<input class="cds--text-input" id="perfil-data-inicio" placeholder="dd/mm/aaaa">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="perfil-data-fim">Data de disponibilização - fim</label>
+<input class="cds--text-input" id="perfil-data-fim" placeholder="dd/mm/aaaa">
+</div>
+
+<div class="cds--form-item">
+<label class="cds--label" for="perfil-paginas">Páginas a buscar (10 resultados cada)</label>
+<input class="cds--text-input" id="perfil-paginas" type="number" min="1" max="15" value="1">
+</div>
+
+<button class="cds--btn cds--btn--primary" type="submit">Montar perfil</button>
+</form>
+<p class="aviso-demora" id="perfil-espera" hidden></p>
+<div id="resultado-perfil-magistrado" class="app-resultado" aria-live="polite"></div>
+
 <h2 class="lista-rapida-titulo">Outras ideias de jurimetria</h2>
 <p class="campo-ajuda">Ainda são só conceitos de próximos passos, não funcionalidades disponíveis.</p>
 <div class="grade-jurimetria">
-
-<div class="cds--tile">
-<span class="cds--tag cds--tag--gray cds--tag--sm">Conceito</span>
-<h3>Perfil decisório de um magistrado</h3>
-<p>Taxa de procedência / improcedência / parcial, proporção de acordos homologados e valor médio de indenização, filtrando por magistrado e período.</p>
-<p class="campo-ajuda">Dados: busca por nome do magistrado + termo, no inteiro teor.</p>
-</div>
 
 <div class="cds--tile">
 <span class="cds--tag cds--tag--gray cds--tag--sm">Conceito</span>

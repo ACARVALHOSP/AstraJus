@@ -27,7 +27,7 @@ import tempfile
 import threading
 import time
 import unicodedata
-from collections import deque
+from collections import Counter, deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
@@ -803,6 +803,41 @@ def _cjpg_bloqueado(html: str) -> bool:
     return "fundocinza1" not in html and "Parâmetros de Consulta" not in html
 
 
+async def _cjpg_executar_busca(params: dict, paginas: int) -> tuple[int | None, list[dict], list[str]]:
+    """Executa a busca paginada no CJPG (sessão + pesquisar.do + trocarDePagina.do) e devolve
+    (total_servidor, resultados_parseados, avisos). Best-effort: se uma página falhar no meio,
+    para ali e devolve o que já foi buscado, em vez de descartar tudo.
+    """
+    avisos: list[str] = []
+    async with _cliente(CJPG_TIMEOUT_S, headers=CJPG_HEADERS, follow_redirects=True) as cliente:
+        await cliente.get(f"{CJPG_BASE_URL}/")
+        resp = await cliente.get(f"{CJPG_BASE_URL}/pesquisar.do", params=params)
+        resp.raise_for_status()
+        html = resp.text
+        if _cjpg_bloqueado(html):
+            raise ValueError("CJPG: resposta sem resultados nem formulário reconhecível (possível bloqueio ou mudança de layout).")
+
+        total_servidor = _cjpg_total_resultados(html)
+        todos = _cjpg_parsear_resultados(html)
+        for p in range(2, paginas + 1):
+            await asyncio.sleep(0.5)  # educado: não martelar o servidor
+            try:
+                resp = await cliente.get(f"{CJPG_BASE_URL}/trocarDePagina.do", params={"pagina": p, "conversationId": ""})
+                resp.raise_for_status()
+            except httpx.HTTPError as exc:
+                avisos.append(f"Página {p} falhou ({exc}); parando aqui, resultado parcial.")
+                break
+            html_pagina = resp.text
+            if _cjpg_bloqueado(html_pagina):
+                avisos.append(f"Página {p} bloqueada/vazia; parando aqui.")
+                break
+            pagina_resultados = _cjpg_parsear_resultados(html_pagina)
+            if not pagina_resultados:
+                break
+            todos.extend(pagina_resultados)
+    return total_servidor, todos, avisos
+
+
 @mcp.tool()
 async def consultar_jurimetria_cjpg(
     termo: str | None = None,
@@ -870,33 +905,10 @@ async def consultar_jurimetria_cjpg(
             params["cdAgente"] = magistrado_codigo
             params["agenteSelectedEntitiesList"] = magistrado_codigo
 
-        avisos = []
-        async with _cliente(CJPG_TIMEOUT_S, headers=CJPG_HEADERS, follow_redirects=True) as cliente:
-            await cliente.get(f"{CJPG_BASE_URL}/")
-            resp = await cliente.get(f"{CJPG_BASE_URL}/pesquisar.do", params=params)
-            resp.raise_for_status()
-            html = resp.text
-            if _cjpg_bloqueado(html):
-                return _erro("CJPG: resposta sem resultados nem formulário reconhecível (possível bloqueio ou mudança de layout).")
-
-            total_servidor = _cjpg_total_resultados(html)
-            todos = _cjpg_parsear_resultados(html)
-            for p in range(2, paginas + 1):
-                await asyncio.sleep(0.5)  # educado: não martelar o servidor
-                try:
-                    resp = await cliente.get(f"{CJPG_BASE_URL}/trocarDePagina.do", params={"pagina": p, "conversationId": ""})
-                    resp.raise_for_status()
-                except httpx.HTTPError as exc:
-                    avisos.append(f"Página {p} falhou ({exc}); parando aqui, resultado parcial.")
-                    break
-                html_pagina = resp.text
-                if _cjpg_bloqueado(html_pagina):
-                    avisos.append(f"Página {p} bloqueada/vazia; parando aqui.")
-                    break
-                pagina_resultados = _cjpg_parsear_resultados(html_pagina)
-                if not pagina_resultados:
-                    break
-                todos.extend(pagina_resultados)
+        try:
+            total_servidor, todos, avisos = await _cjpg_executar_busca(params, paginas)
+        except ValueError as exc:
+            return _erro(str(exc))
 
         resposta: dict[str, Any] = {
             "total_servidor": total_servidor,
@@ -928,6 +940,107 @@ async def consultar_jurimetria_cjpg(
         return _erro(f"Erro de rede ao consultar o CJPG: {exc}")
     except Exception as exc:
         log.exception("Falha inesperada em consultar_jurimetria_cjpg")
+        return _erro(f"Erro inesperado ao consultar o CJPG: {exc}")
+
+
+CJPG_CATEGORIAS_DESFECHO = ["procedente", "parcial", "improcedente", "acordo", "extinto"]
+
+
+@mcp.tool()
+async def perfil_decisorio_magistrado(
+    magistrado_codigo: str | None = None,
+    magistrado_nome: str | None = None,
+    termo: str | None = None,
+    data_inicio: str | None = None,
+    data_fim: str | None = None,
+    paginas: int = 1,
+) -> dict:
+    """Busca julgados de 1º grau do TJSP (CJPG, scraping - sem API oficial, best-effort) de um
+    magistrado específico e monta um perfil decisório: taxa de procedência/improcedência/parcial,
+    proporção de acordos homologados e valor médio de indenização por dano moral, no período
+    informado.
+
+    Parâmetros:
+    - magistrado_codigo: código do magistrado (cdAgente), filtra de verdade no servidor. Resolvido
+      via autocomplete (endpoint /cjpg-arvore/magistrados do painel web).
+    - magistrado_nome: nome em texto. Obrigatório ao menos um entre magistrado_codigo/
+      magistrado_nome. Quando informado, entra automaticamente entre aspas no termo de busca.
+    - termo: pesquisa livre adicional (texto completo das decisões), opcional.
+    - data_inicio / data_fim: formato dd/mm/aaaa.
+    - paginas: quantas páginas de 10 resultados buscar (padrão 1, teto 15). A busca é best-effort:
+      se uma página falhar no meio, o resultado parcial já buscado é devolvido com um aviso, em
+      vez de descartado.
+
+    Limitações conhecidas:
+    - O CJPG tem um teto de ~10.000 resultados por consulta (limite do índice de busca do TJSP);
+      consultas muito amplas devem ser fatiadas por data.
+    - A classificação de desfecho e a extração de valor são heurísticas de regex sobre o texto da
+      decisão, não garantidas: funcionam bem para redação "padrão", erram em casos atípicos.
+    - O perfil reflete apenas as decisões publicadas no CJPG que o scraping conseguiu buscar
+      (até `paginas` x 10), não necessariamente toda a produção do magistrado no período.
+    """
+    try:
+        if not magistrado_codigo and not magistrado_nome:
+            return _erro("Informe magistrado_codigo ou magistrado_nome.")
+        if paginas < 1 or paginas > CJPG_PAGINAS_MAX:
+            return _erro(f"paginas deve ser entre 1 e {CJPG_PAGINAS_MAX}.")
+
+        termo_busca = (termo or "").strip()
+        if magistrado_nome:
+            termo_busca = f'{termo_busca} "{magistrado_nome.strip()}"'.strip()
+
+        params = {
+            "conversationId": "",
+            "dadosConsulta.pesquisaLivre": termo_busca,
+            "tipoNumero": "UNIFICADO",
+            "dadosConsulta.dtInicio": (data_inicio or "").strip(),
+            "dadosConsulta.dtFim": (data_fim or "").strip(),
+            "dadosConsulta.ordenacao": "DESC",
+        }
+        if magistrado_codigo:
+            params["cdAgente"] = magistrado_codigo
+            params["agenteSelectedEntitiesList"] = magistrado_codigo
+
+        try:
+            total_servidor, todos, avisos = await _cjpg_executar_busca(params, paginas)
+        except ValueError as exc:
+            return _erro(str(exc))
+
+        classificados = [r for r in todos if r["desfecho"] is not None]
+        contagens = Counter(r["desfecho"] for r in classificados)
+        total_classificados = len(classificados)
+
+        perfil: dict[str, Any] = {
+            "total_classificados": total_classificados,
+            "nao_classificados": len(todos) - total_classificados,
+        }
+        for categoria in CJPG_CATEGORIAS_DESFECHO:
+            perfil[f"taxa_{categoria}"] = (
+                contagens.get(categoria, 0) / total_classificados if total_classificados else None
+            )
+
+        valores = [
+            r["valor_condenacao"] for r in classificados
+            if r["desfecho"] in ("procedente", "parcial") and r["valor_condenacao"] is not None
+        ]
+        perfil["com_valor_extraido"] = len(valores)
+        perfil["valor_medio_indenizacao"] = statistics.mean(valores) if valores else None
+
+        if total_classificados < 5:
+            perfil["aviso"] = "Amostra pequena (menos de 5 decisões classificadas) - interprete com cautela."
+
+        return {
+            "total_servidor": total_servidor,
+            "buscados": len(todos),
+            "resultados": todos,
+            "avisos": avisos,
+            "perfil": perfil,
+        }
+
+    except httpx.HTTPError as exc:
+        return _erro(f"Erro de rede ao consultar o CJPG: {exc}")
+    except Exception as exc:
+        log.exception("Falha inesperada em perfil_decisorio_magistrado")
         return _erro(f"Erro inesperado ao consultar o CJPG: {exc}")
 
 
