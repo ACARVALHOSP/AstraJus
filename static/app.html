@@ -74,6 +74,42 @@ body { margin: 0; min-height: 100dvh; }
 .grade-jurimetria .cds--tile p { margin: 0; font-size: 0.875rem; }
 .grade-jurimetria .cds--tag { align-self: flex-start; }
 
+.seletor-arvore {
+  border: 1px solid var(--cds-border-subtle, #c6c6c6); border-radius: 4px;
+  padding: 0.5rem; background: var(--cds-layer-01, #fff);
+}
+.seletor-arvore-busca { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
+.seletor-arvore-busca input { flex: 1; }
+.seletor-arvore-resultados { max-height: 220px; overflow-y: auto; }
+.seletor-arvore-resultados label {
+  display: flex; align-items: flex-start; gap: 0.4rem; padding: 0.25rem 0.1rem;
+  font-size: 0.8125rem; cursor: pointer;
+}
+.seletor-arvore-resultados label input { margin-top: 0.2rem; }
+.seletor-arvore-caminho { color: var(--cds-text-secondary, #525252); font-size: 0.75rem; display: block; }
+.seletor-arvore-selecionados { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.5rem; }
+.seletor-arvore-selecionados .chip { display: flex; align-items: center; gap: 0.3rem; }
+.seletor-arvore-selecionados button {
+  border: none; background: none; cursor: pointer; font-weight: bold; color: var(--cds-text-secondary, #525252);
+  line-height: 1; padding: 0;
+}
+.seletor-arvore-vazio { color: var(--cds-text-secondary, #525252); font-size: 0.8125rem; padding: 0.25rem; }
+
+.arvore-sugestoes {
+  position: relative; border: 1px solid var(--cds-border-subtle, #c6c6c6); border-top: none;
+  max-height: 200px; overflow-y: auto; background: var(--cds-layer-01, #fff); z-index: 5;
+}
+.arvore-sugestoes button {
+  display: block; width: 100%; text-align: left; padding: 0.4rem 0.6rem; border: none;
+  background: none; cursor: pointer; font-size: 0.8125rem;
+}
+.arvore-sugestoes button:hover, .arvore-sugestoes button:focus { background: var(--cds-layer-hover-01, #e8e8e8); }
+
+.jurimetria-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 0.75rem; }
+.jurimetria-resumo .cds--tile { text-align: center; padding: 0.75rem; }
+.jurimetria-resumo .valor { font-size: 1.25rem; font-weight: 600; display: block; }
+.jurimetria-resumo .rotulo { font-size: 0.75rem; color: var(--cds-text-secondary, #525252); }
+
 .lista-rapida { list-style: none; margin: 0.5rem 0 1.5rem; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
 .lista-rapida-item { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.5rem 0.75rem; }
 .lista-rapida-item button.cds--btn { white-space: nowrap; }
@@ -238,9 +274,58 @@ body { margin: 0; min-height: 100dvh; }
 
 <section id="aba-jurimetria" role="tabpanel" aria-labelledby="aba-jurimetria-botao" hidden>
 <p class="campo-ajuda">
-Ideias de análise estatística sobre decisões judiciais (jurimetria), a partir da busca textual no CJPG (julgados de 1º grau do TJSP).
-Nenhuma destas análises está implementada ainda — são conceitos de próximos passos, não funcionalidades disponíveis.
+Benchmark de valor de indenização por categoria de dano, a partir da busca textual no CJPG (julgados de 1º grau do TJSP).
+As demais ideias abaixo ainda são só conceitos de próximos passos.
 </p>
+
+<form id="form-jurimetria" class="app-formulario">
+<div class="cds--form-item campo-ajuda--largo">
+<label class="cds--label" for="jur-termo">Pesquisa livre</label>
+<input class="cds--text-input" id="jur-termo" placeholder="ex.: dano moral">
+</div>
+
+<div class="cds--form-item">
+<label class="cds--label" for="jur-magistrado">Magistrado</label>
+<input class="cds--text-input" id="jur-magistrado" autocomplete="off" placeholder="digite pra buscar…">
+<div class="arvore-sugestoes" id="jur-magistrado-sugestoes" hidden></div>
+<span class="campo-ajuda">O nome entra automaticamente entre aspas na pesquisa livre.</span>
+</div>
+
+<div class="cds--form-item">
+<label class="cds--label" for="jur-data-inicio">Data de disponibilização - início</label>
+<input class="cds--text-input" id="jur-data-inicio" placeholder="dd/mm/aaaa">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="jur-data-fim">Data de disponibilização - fim</label>
+<input class="cds--text-input" id="jur-data-fim" placeholder="dd/mm/aaaa">
+</div>
+
+<div class="cds--form-item">
+<label class="cds--label" for="jur-paginas">Páginas a buscar (10 resultados cada)</label>
+<input class="cds--text-input" id="jur-paginas" type="number" min="1" max="15" value="1">
+</div>
+
+<div class="seletor-arvore-campo cds--form-item campo-ajuda--largo" data-campo="vara">
+<label class="cds--label">Vara</label>
+<div class="seletor-arvore" data-campo="vara"></div>
+</div>
+<div class="seletor-arvore-campo cds--form-item campo-ajuda--largo" data-campo="classe">
+<label class="cds--label">Classe</label>
+<div class="seletor-arvore" data-campo="classe"></div>
+</div>
+<div class="seletor-arvore-campo cds--form-item campo-ajuda--largo" data-campo="assunto">
+<label class="cds--label">Assunto</label>
+<div class="seletor-arvore" data-campo="assunto"></div>
+<span class="campo-ajuda">Preencher Assunto ativa o resumo estatístico (mediana/percentis) abaixo dos resultados.</span>
+</div>
+
+<button class="cds--btn cds--btn--primary" type="submit">Consultar jurimetria</button>
+</form>
+<p class="aviso-demora" id="jur-espera" hidden></p>
+<div id="resultado-jurimetria" class="app-resultado" aria-live="polite"></div>
+
+<h2 class="lista-rapida-titulo">Outras ideias de jurimetria</h2>
+<p class="campo-ajuda">Ainda são só conceitos de próximos passos, não funcionalidades disponíveis.</p>
 <div class="grade-jurimetria">
 
 <div class="cds--tile">
@@ -248,13 +333,6 @@ Nenhuma destas análises está implementada ainda — são conceitos de próximo
 <h3>Perfil decisório de um magistrado</h3>
 <p>Taxa de procedência / improcedência / parcial, proporção de acordos homologados e valor médio de indenização, filtrando por magistrado e período.</p>
 <p class="campo-ajuda">Dados: busca por nome do magistrado + termo, no inteiro teor.</p>
-</div>
-
-<div class="cds--tile">
-<span class="cds--tag cds--tag--gray cds--tag--sm">Conceito</span>
-<h3>Benchmark de valor de indenização por categoria de dano</h3>
-<p>Distribuição (mediana, mínimo, máximo) dos valores de condenação para um tipo específico de dano moral — negativa de cobertura, inscrição indevida, cancelamento de voo etc.</p>
-<p class="campo-ajuda">Dados: busca por assunto + extração manual do valor no dispositivo da sentença.</p>
 </div>
 
 <div class="cds--tile">

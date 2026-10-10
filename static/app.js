@@ -898,4 +898,263 @@ async function carregarMonitoramentos() {
   }
 }
 
+// --- Jurimetria: seletores de árvore (Vara/Classe/Assunto) e autocomplete (Magistrado) --------
+//
+// As árvores (Vara/Classe/Assunto) e a lista de Magistrados vêm de endpoints HTTP simples
+// (não tools MCP - são só suporte de UI, ver server.py). Usam o mesmo token Bearer do /mcp.
+
+async function _buscarJson(url) {
+  if (!cliente) throw new ErroMCP(401, "Conecte-se primeiro.");
+  const resposta = await fetch(url, { headers: { Authorization: `Bearer ${cliente.token}` } });
+  if (!resposta.ok) throw new ErroMCP(resposta.status, `Falha ao consultar ${url} (HTTP ${resposta.status}).`);
+  return resposta.json();
+}
+
+function criarSeletorArvore(container, campo) {
+  const selecionados = new Map(); // id -> {nome, busca}
+
+  const busca = el("div", { class: "seletor-arvore-busca" }, [
+    el("input", { class: "cds--text-input", type: "text", placeholder: `Buscar ${campo}… (mín. 2 letras)` }),
+  ]);
+  const inputBusca = busca.querySelector("input");
+  const resultados = el("div", { class: "seletor-arvore-resultados" }, [
+    el("p", { class: "seletor-arvore-vazio", texto: "Digite para buscar." }),
+  ]);
+  const chipsSelecionados = el("div", { class: "seletor-arvore-selecionados" });
+
+  function renderizarChips() {
+    limpar(chipsSelecionados);
+    for (const [id, info] of selecionados) {
+      const remover = el("button", { type: "button", texto: "×", "aria-label": `Remover ${info.nome}` });
+      remover.addEventListener("click", () => {
+        selecionados.delete(id);
+        renderizarChips();
+        const caixa = resultados.querySelector(`input[value="${CSS.escape(id)}"]`);
+        if (caixa) caixa.checked = false;
+      });
+      chipsSelecionados.appendChild(el("span", { class: "chip" }, [info.nome, remover]));
+    }
+  }
+
+  function renderizarResultados(lista) {
+    limpar(resultados);
+    if (!lista.length) {
+      resultados.appendChild(el("p", { class: "seletor-arvore-vazio", texto: "Nada encontrado." }));
+      return;
+    }
+    for (const no of lista) {
+      const caixa = el("input", { type: "checkbox", value: no.id });
+      caixa.checked = selecionados.has(no.id);
+      caixa.addEventListener("change", () => {
+        if (caixa.checked) selecionados.set(no.id, { nome: no.nome });
+        else selecionados.delete(no.id);
+        renderizarChips();
+      });
+      const rotulo = el("label", {}, [
+        caixa,
+        el("span", {}, [no.nome, el("span", { class: "seletor-arvore-caminho", texto: no.busca || "" })]),
+      ]);
+      resultados.appendChild(rotulo);
+    }
+  }
+
+  let temporizador = null;
+  inputBusca.addEventListener("input", () => {
+    clearTimeout(temporizador);
+    const termo = inputBusca.value.trim();
+    if (termo.length < 2) {
+      limpar(resultados);
+      resultados.appendChild(el("p", { class: "seletor-arvore-vazio", texto: "Digite para buscar." }));
+      return;
+    }
+    temporizador = setTimeout(async () => {
+      try {
+        const dados = await _buscarJson(`/cjpg-arvore/buscar?campo=${campo}&q=${encodeURIComponent(termo)}`);
+        renderizarResultados(dados.resultados || []);
+      } catch (erro) {
+        limpar(resultados);
+        resultados.appendChild(el("p", { class: "seletor-arvore-vazio", texto: erro.message }));
+      }
+    }, 300);
+  });
+
+  container.appendChild(busca);
+  container.appendChild(resultados);
+  container.appendChild(chipsSelecionados);
+
+  return {
+    codigosSelecionados: () => Array.from(selecionados.keys()).join(","),
+    nomesSelecionados: () => Array.from(selecionados.values()).map((i) => i.nome),
+  };
+}
+
+function criarAutocompleteMagistrado(inputEl, sugestoesEl) {
+  let lista = null;
+  let codigoSelecionado = null;
+
+  async function carregar() {
+    if (lista) return lista;
+    const dados = await _buscarJson("/cjpg-arvore/magistrados");
+    lista = dados.magistrados || [];
+    return lista;
+  }
+
+  function semAcento(texto) {
+    return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  }
+
+  function mostrarSugestoes(itens) {
+    limpar(sugestoesEl);
+    if (!itens.length) {
+      sugestoesEl.hidden = true;
+      return;
+    }
+    for (const item of itens.slice(0, 20)) {
+      const botao = el("button", { type: "button", texto: item.nome });
+      botao.addEventListener("click", () => {
+        inputEl.value = item.nome;
+        codigoSelecionado = item.codigo;
+        sugestoesEl.hidden = true;
+      });
+      sugestoesEl.appendChild(botao);
+    }
+    sugestoesEl.hidden = false;
+  }
+
+  inputEl.addEventListener("input", async () => {
+    codigoSelecionado = null; // mudou o texto, a seleção anterior não vale mais
+    const termo = semAcento(inputEl.value.trim());
+    if (termo.length < 2) {
+      sugestoesEl.hidden = true;
+      return;
+    }
+    try {
+      const todos = await carregar();
+      mostrarSugestoes(todos.filter((m) => semAcento(m.nome).includes(termo)));
+    } catch {
+      sugestoesEl.hidden = true;
+    }
+  });
+  document.addEventListener("click", (evento) => {
+    if (!sugestoesEl.contains(evento.target) && evento.target !== inputEl) sugestoesEl.hidden = true;
+  });
+
+  return {
+    nome: () => inputEl.value.trim(),
+    codigo: () => codigoSelecionado,
+  };
+}
+
+const seletorVara = criarSeletorArvore(document.querySelector('.seletor-arvore[data-campo="vara"]'), "vara");
+const seletorClasse = criarSeletorArvore(document.querySelector('.seletor-arvore[data-campo="classe"]'), "classe");
+const seletorAssunto = criarSeletorArvore(document.querySelector('.seletor-arvore[data-campo="assunto"]'), "assunto");
+const autocompleteMagistrado = criarAutocompleteMagistrado(
+  document.getElementById("jur-magistrado"),
+  document.getElementById("jur-magistrado-sugestoes")
+);
+
+// --- Jurimetria: consulta e resultado ----------------------------------------------------------
+
+function formatarReais(valor) {
+  if (valor === null || valor === undefined) return "-";
+  return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+const RÓTULO_DESFECHO = {
+  procedente: ["Procedente", "cds--tag--green"],
+  parcial: ["Parcialmente procedente", "cds--tag--teal"],
+  improcedente: ["Improcedente", "cds--tag--red"],
+  acordo: ["Acordo homologado", "cds--tag--blue"],
+  extinto: ["Extinto sem mérito", "cds--tag--gray"],
+};
+
+function cartaoJurimetria(item) {
+  const card = el("article", { class: "cds--tile resultado-card" });
+  const [rotuloDesfecho, corDesfecho] = RÓTULO_DESFECHO[item.desfecho] || ["Não classificado", "cds--tag--gray"];
+  card.appendChild(
+    el("div", { class: "resultado-cabecalho" }, [
+      el("span", { class: `cds--tag ${corDesfecho}`, texto: rotuloDesfecho }),
+      item.valor_condenacao != null ? el("span", { class: "cds--tag cds--tag--purple", texto: formatarReais(item.valor_condenacao) }) : null,
+    ])
+  );
+  card.appendChild(el("h3", { texto: item.numero_processo || "Número não identificado" }));
+  card.appendChild(el("p", { texto: `${item.classe || "?"} / ${item.assunto || "?"}` }));
+  card.appendChild(el("p", { texto: `${item.magistrado || "?"} · ${item.vara || "?"} · ${item.comarca || "?"} · ${item.data_disponibilizacao || "?"}` }));
+  if (item.trecho) {
+    const detalhes = el("details", { class: "resultado-detalhes" });
+    detalhes.appendChild(el("summary", { texto: "Trecho" }));
+    detalhes.appendChild(el("div", { class: "resultado-texto", texto: item.trecho }));
+    card.appendChild(detalhes);
+  }
+  return card;
+}
+
+function renderizarResumoJurimetria(agregado) {
+  const grade = el("div", { class: "jurimetria-resumo" });
+  const tile = (rotulo, valor) =>
+    el("div", { class: "cds--tile" }, [el("span", { class: "valor", texto: valor }), el("span", { class: "rotulo", texto: rotulo })]);
+  grade.appendChild(tile("Procedentes/parciais", String(agregado.procedentes_ou_parciais)));
+  grade.appendChild(tile("Com valor extraído", String(agregado.com_valor_extraido)));
+  if (agregado.mediana !== undefined) {
+    grade.appendChild(tile("Mediana", formatarReais(agregado.mediana)));
+    grade.appendChild(tile("P25", formatarReais(agregado.p25)));
+    grade.appendChild(tile("P75", formatarReais(agregado.p75)));
+  }
+  const bloco = el("div", {}, [grade]);
+  if (agregado.aviso) bloco.appendChild(notificacao("warning", "Amostra pequena", agregado.aviso));
+  return bloco;
+}
+
+const formJurimetria = document.getElementById("form-jurimetria");
+const resultadoJurimetria = document.getElementById("resultado-jurimetria");
+const esperaJurimetria = document.getElementById("jur-espera");
+
+formJurimetria.addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  if (!exigirCliente(resultadoJurimetria)) return;
+
+  const argumentos = {
+    termo: document.getElementById("jur-termo").value.trim() || null,
+    magistrado_nome: autocompleteMagistrado.nome() || null,
+    magistrado_codigo: autocompleteMagistrado.codigo(),
+    data_inicio: document.getElementById("jur-data-inicio").value.trim() || null,
+    data_fim: document.getElementById("jur-data-fim").value.trim() || null,
+    paginas: Number(document.getElementById("jur-paginas").value) || 1,
+    vara_codigo: seletorVara.codigosSelecionados() || null,
+    classe_codigo: seletorClasse.codigosSelecionados() || null,
+    classe_nome: seletorClasse.nomesSelecionados().join(", ") || null,
+    assunto_codigo: seletorAssunto.codigosSelecionados() || null,
+    assunto_nome: seletorAssunto.nomesSelecionados().join(", ") || null,
+  };
+
+  const botao = formJurimetria.querySelector("button[type=submit]");
+  botao.disabled = true;
+  esperaJurimetria.hidden = false;
+  esperaJurimetria.textContent = "Consultando o CJPG — pode levar alguns segundos por página pedida…";
+  limpar(resultadoJurimetria);
+  try {
+    const dados = await cliente.chamarTool("consultar_jurimetria_cjpg", argumentos);
+    if (dados.erro) {
+      mostrarErro(resultadoJurimetria, dados.mensagem);
+      return;
+    }
+    for (const aviso of dados.avisos || []) {
+      resultadoJurimetria.appendChild(notificacao("warning", "Busca parcial", aviso));
+    }
+    resultadoJurimetria.appendChild(
+      el("p", { class: "campo-ajuda" }, [`Total no servidor: ${dados.total_servidor ?? "?"} | Buscados nesta consulta: ${dados.buscados}`])
+    );
+    if (dados.agregado) resultadoJurimetria.appendChild(renderizarResumoJurimetria(dados.agregado));
+    for (const item of dados.resultados || []) resultadoJurimetria.appendChild(cartaoJurimetria(item));
+    if (!(dados.resultados || []).length) {
+      resultadoJurimetria.appendChild(notificacao("info", "Nenhum resultado", "Tente ampliar os filtros ou o termo de busca."));
+    }
+  } catch (erro) {
+    mostrarErro(resultadoJurimetria, erro.message);
+  } finally {
+    botao.disabled = false;
+    esperaJurimetria.hidden = true;
+  }
+});
+
 document.getElementById("botao-atualizar-monitoramentos").addEventListener("click", carregarMonitoramentos);
