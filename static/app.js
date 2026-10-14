@@ -852,7 +852,10 @@ function _elEm(doc, tag, attrs = {}, filhos = []) {
 }
 
 function abrirDemonstrativoPdf({ dataBase, dias, tipo, municipio, dia1, vencimento, linhas }) {
-  const janela = window.open("", "_blank", "noopener,noreferrer,width=820,height=900");
+  // Sem noopener/noreferrer aqui: o conteúdo é escrito por este mesmo script logo abaixo (não é
+  // uma URL de terceiro), e noopener faz window.open devolver null - a janela ainda abre (em
+  // branco), mas perdemos a referência pra preenchê-la.
+  const janela = window.open("", "_blank", "width=820,height=900");
   if (!janela) {
     window.alert("O navegador bloqueou a nova janela. Permita pop-ups para este site e tente novamente.");
     return;
