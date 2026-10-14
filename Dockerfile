@@ -15,14 +15,16 @@ RUN pip install --no-cache-dir . \
 USER app
 
 # A porta é lida de CNJ_MCP_PORT, então a hospedagem pode definir qualquer valor.
-# CNJ_MCP_USUARIOS e CNJ_MCP_ARVORES_CJPG_DIR devem apontar para um volume persistente
-# (ex.: /data/...) - sem isso, as árvores de Vara/Classe/Assunto/Magistrado somem a cada
-# recriação do container e precisam ser rebaixadas com --atualizar-arvores-cjpg.
+# CNJ_MCP_USUARIOS, CNJ_MCP_ARVORES_CJPG_DIR e CNJ_MCP_FERIADOS_DIR devem apontar para um volume
+# persistente (ex.: /data/...): além de perderem o cache a cada recriação do container, o processo
+# roda como usuário sem privilégios e não tem permissão de escrita em /app (WORKDIR, dono root) -
+# sem essas variáveis, o caminho relativo default cai em /app e a escrita falha com PermissionError.
 ENV CNJ_MCP_TRANSPORT=http \
     CNJ_MCP_HOST=0.0.0.0 \
     CNJ_MCP_PORT=8000 \
     CNJ_MCP_USUARIOS=/data/usuarios.json \
-    CNJ_MCP_ARVORES_CJPG_DIR=/data/arvores_cjpg
+    CNJ_MCP_ARVORES_CJPG_DIR=/data/arvores_cjpg \
+    CNJ_MCP_FERIADOS_DIR=/data/feriados_forenses
 
 EXPOSE 8000
 
