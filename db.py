@@ -346,6 +346,41 @@ class RegistroClientesCasos:
         )
         return [linha[0] for linha in cursor.fetchall()]
 
+    # Linha do tempo (Fase 2)
+
+    def registrar_evento(self, numero_processo: str, tipo: str, conteudo: dict, agora) -> list[str]:
+        """Grava `conteudo` (ex.: uma publicação do DJEN) na linha do tempo de cada caso que
+        inclui `numero_processo` (pode ser 0, 1 ou mais casos). Devolve os IDs dos casos
+        atualizados - vazio se nenhum caso cadastrado inclui esse processo.
+        """
+        casos = self.casos_do_processo(numero_processo)
+        if not casos:
+            return []
+        criado_em = agora().isoformat()
+        conteudo_json = json.dumps(conteudo, ensure_ascii=False)
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.executemany(
+                "INSERT INTO caso_eventos (caso_id, numero_processo, tipo, conteudo, criado_em) "
+                "VALUES (?, ?, ?, ?, ?)",
+                [(caso_id, numero_processo, tipo, conteudo_json, criado_em) for caso_id in casos],
+            )
+        return casos
+
+    def eventos_do_caso(self, caso_id: str) -> list[dict]:
+        with _abrir(self.caminho) as conexao:
+            cursor = conexao.execute(
+                "SELECT numero_processo, tipo, conteudo, criado_em FROM caso_eventos "
+                "WHERE caso_id = ? ORDER BY criado_em DESC",
+                (caso_id,),
+            )
+            return [
+                {
+                    "numero_processo": numero_processo, "tipo": tipo,
+                    "conteudo": json.loads(conteudo), "criado_em": criado_em,
+                }
+                for numero_processo, tipo, conteudo, criado_em in cursor.fetchall()
+            ]
+
 
 def _linha_cliente(linha) -> dict:
     id_, nome, cpf_cnpj, telefone, email, observacoes, criado_em = linha

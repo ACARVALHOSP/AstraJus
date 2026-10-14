@@ -1573,6 +1573,7 @@ def _atualizar_apos_aviso(dados: dict, id_monitoramento: str, hashes: list[str],
 
 async def _verificar_um_monitoramento(
     registro: RegistroMonitoramentos, id_monitoramento: str, monitoramento: dict, enviar_fn, agora_dt,
+    gestao: "RegistroClientesCasos | None" = None,
 ) -> None:
     criterio = monitoramento.get("criterio") or {}
     params = {
@@ -1611,6 +1612,18 @@ async def _verificar_um_monitoramento(
         hashes_atualizados = hashes_atualizados[-MONITORAMENTO_MAX_HASHES_LEMBRADOS:]
         nova_expiracao = (agora_dt + timedelta(days=MONITORAMENTO_EXPIRACAO_DIAS)).isoformat()
         registro.atualizar(lambda d: _atualizar_apos_aviso(d, id_monitoramento, hashes_atualizados, nova_expiracao))
+
+        if gestao is not None:
+            # Fase 2: além do aviso por e-mail, alimenta a linha do tempo de cada caso cadastrado
+            # que já inclui o processo da publicação (não cria caso novo - isso é o aviso de
+            # captura por OAB da Fase 3, feito à parte).
+            for item in novos:
+                numero = _so_digitos(item.get("numeroprocessocommascara"))
+                if len(numero) == 20:
+                    try:
+                        gestao.registrar_evento(numero, "publicacao", item, lambda: agora_dt)
+                    except Exception:
+                        log.exception("Monitoramento %s: falha ao gravar evento na linha do tempo do caso", id_monitoramento)
         return
 
     expira_em = monitoramento.get("expira_em")
@@ -1620,6 +1633,7 @@ async def _verificar_um_monitoramento(
 
 async def _verificar_monitoramentos_pendentes(
     registro: RegistroMonitoramentos, smtp: ConfiguracaoSMTP | None, agora=datetime.now, enviar=None,
+    gestao: "RegistroClientesCasos | None" = None,
 ) -> None:
     """Confere todos os Monitoramentos ativos e avisa por e-mail quem tiver publicação nova.
     Chamada pelo job do APScheduler a cada MONITORAMENTO_INTERVALO_HORAS; os testes chamam direto,
@@ -1630,7 +1644,7 @@ async def _verificar_monitoramentos_pendentes(
     agora_dt = agora()
     for id_monitoramento, monitoramento in list(registro.carregar().items()):
         try:
-            await _verificar_um_monitoramento(registro, id_monitoramento, monitoramento, enviar_fn, agora_dt)
+            await _verificar_um_monitoramento(registro, id_monitoramento, monitoramento, enviar_fn, agora_dt, gestao)
         except Exception:
             log.exception("Falha ao verificar monitoramento %s", id_monitoramento)
 
@@ -2355,6 +2369,9 @@ class _AutenticacaoBearer:
         if caminho == "/casos" and self.gestao is not None:
             await self._casos(scope, receive, send)
             return
+        if caminho.startswith("/casos/") and self.gestao is not None:
+            await self._caso_detalhe(scope, send, caminho[len("/casos/"):])
+            return
 
         log.info("Requisição de '%s': %s %s", _rotulo_usuario(usuario), scope.get("method"), caminho)
         await self.app(scope, receive, send)
@@ -2505,6 +2522,18 @@ class _AutenticacaoBearer:
             await _json(send, 201, caso)
             return
         await _responder(send, 404, b"Nao encontrado")
+
+    async def _caso_detalhe(self, scope, send, caso_id: str):
+        """GET /casos/<id>: o caso com sua linha do tempo (Fase 2) - publicações/movimentações
+        já monitoradas que o servidor ligou automaticamente a este caso."""
+        if scope.get("method") != "GET" or not caso_id:
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        caso = self.gestao.obter_caso(caso_id)
+        if caso is None:
+            await _json(send, 404, {"erro": "Caso não encontrado."})
+            return
+        await _json(send, 200, {**caso, "eventos": self.gestao.eventos_do_caso(caso_id)})
 
 
 def _ip_cliente(scope) -> str:
@@ -3260,6 +3289,7 @@ def _principal() -> int:
                 "interval",
                 hours=MONITORAMENTO_INTERVALO_HORAS,
                 args=[registro_monitoramentos, smtp],
+                kwargs={"gestao": gestao},
             )
             agendador.start()
             log.info("Monitoramento: verificação periódica a cada %dh.", MONITORAMENTO_INTERVALO_HORAS)

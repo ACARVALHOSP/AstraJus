@@ -1704,6 +1704,32 @@ function cartaoCliente(c) {
   return card;
 }
 
+function _resumoEventoCaso(evento) {
+  const c = evento.conteudo || {};
+  if (evento.tipo === "publicacao") {
+    const partes = [c.tipoComunicacao, c.nomeOrgao].filter(Boolean).join(" · ");
+    return partes || c.texto || "Publicação";
+  }
+  return evento.tipo;
+}
+
+function linhaDoTempoCaso(eventos) {
+  if (!eventos.length) {
+    return notificacao("info", "Nenhuma movimentação registrada ainda", "Publicações de processos monitorados vinculados a este caso aparecem aqui automaticamente.");
+  }
+  const lista = el("ul", { class: "linha-tempo-caso" });
+  for (const evento of eventos) {
+    lista.appendChild(
+      el("li", {}, [
+        el("strong", { texto: formatarData(evento.criado_em) }),
+        ` — ${_resumoEventoCaso(evento)}`,
+        evento.numero_processo ? el("span", { class: "campo-ajuda", texto: ` (processo ${evento.numero_processo})` }) : null,
+      ])
+    );
+  }
+  return lista;
+}
+
 function cartaoCaso(caso) {
   const clienteDoCaso = _cacheClientes.find((c) => c.id === caso.cliente_id);
   const card = el("article", { class: "cds--tile resultado-card" });
@@ -1712,6 +1738,29 @@ function cartaoCaso(caso) {
   if (caso.responsavel) card.appendChild(el("p", { texto: `Responsável: ${caso.responsavel}` }));
   card.appendChild(el("p", { texto: `Processo(s): ${(caso.processos || []).join(", ") || "nenhum"}` }));
   card.appendChild(el("span", { class: "cds--tag cds--tag--gray", texto: caso.status }));
+
+  const botaoTimeline = el("button", {
+    class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Ver linha do tempo",
+  });
+  const areaTimeline = el("div", { class: "linha-tempo-area", hidden: "hidden" });
+  botaoTimeline.addEventListener("click", async () => {
+    const abrindo = areaTimeline.hidden;
+    areaTimeline.hidden = !abrindo;
+    if (!abrindo || areaTimeline.dataset.carregado) return;
+    limpar(areaTimeline);
+    areaTimeline.appendChild(el("p", { class: "app-espera" }, ["Carregando…"]));
+    try {
+      const detalhe = await _buscarJson(`/casos/${caso.id}`);
+      limpar(areaTimeline);
+      areaTimeline.appendChild(linhaDoTempoCaso(detalhe.eventos || []));
+      areaTimeline.dataset.carregado = "1";
+    } catch (erro) {
+      limpar(areaTimeline);
+      areaTimeline.appendChild(notificacao("error", "Não foi possível carregar a linha do tempo", erro.message));
+    }
+  });
+  card.appendChild(botaoTimeline);
+  card.appendChild(areaTimeline);
   return card;
 }
 
