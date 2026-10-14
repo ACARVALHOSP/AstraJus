@@ -46,6 +46,15 @@ body { margin: 0; min-height: 100dvh; }
 .resultado-texto { white-space: pre-line; max-height: 260px; overflow-y: auto; background: var(--cds-layer-02, #f4f4f4); padding: 0.75rem; border-radius: 4px; font-size: 0.875rem; margin-top: 0.5rem; }
 .resultado-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.75rem; }
 .resultado-aviso { color: var(--cds-support-error, #da1e28); font-size: 0.8125rem; }
+.prazo-painel {
+  margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--cds-border-subtle, #e0e0e0);
+}
+.prazo-painel-grade {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem; margin: 0.5rem 0 0.75rem;
+}
+.prazo-painel-grade .cds--form-item { margin: 0; }
+.prazo-resultado { margin-top: 0.75rem; }
 .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.25rem 0 0; }
 .chip { background: var(--cds-layer-02, #f4f4f4); padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.75rem; }
 

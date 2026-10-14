@@ -4,6 +4,7 @@ Tools expostas:
 - consultar_processo_datajud: metadados e movimentações de processo (API Pública DataJud).
 - consultar_publicacoes_djen: publicações/intimações no DJEN (API Comunica PJe).
 - baixar_certidao_djen: baixa a certidão PDF de uma publicação e salva em arquivo temporário.
+- buscar_feriados_forenses: feriados forenses do TJSP por município/comarca e ano, para cálculo de prazo.
 
 Transporte: stdio. Atenção: nada deve ser impresso em stdout (ele é o canal do protocolo);
 logs vão para stderr.
@@ -507,6 +508,130 @@ def _extrair_publicacao_djen(item: dict) -> dict:
         ],
         "texto": _html_para_texto(item.get("texto")),
     }
+
+
+# --- Feriados forenses (TJSP) -------------------------------------------------
+#
+# Usado para calcular prazos processuais em dias úteis: o TJSP publica, por município/comarca,
+# a lista de feriados forenses que suspendem a contagem (além de sábados e domingos). A busca usa
+# o mesmo endpoint JSON que alimenta a página pública
+# https://www.tjsp.jus.br/CanaisComunicacao/Feriados/ExpedienteForense - sem API oficial documentada,
+# mas estável (JSON direto, não scraping de HTML como o CJPG). Resultado fica em cache em disco por
+# município normalizado + ano, porque o TJSP às vezes corrige datas ao longo do ano (ex.:
+# "ALTERADO PELO PROVIMENTO CSM Nº ...").
+
+TJSP_FERIADOS_BASE_URL = "https://www.tjsp.jus.br"
+FERIADOS_TIMEOUT_S = 20.0
+FERIADOS_CACHE_TTL_S = 24 * 60 * 60  # 1 dia: datas de feriado podem ser corrigidas pelo TJSP
+FERIADOS_ANO_MIN = 2013  # mais antigo disponível no seletor da página do TJSP
+
+_RE_DATA_MS_TJSP = re.compile(r"/Date\((\d+)\)")
+
+
+def _dir_feriados_forenses() -> Path:
+    caminho = Path(os.environ.get("CNJ_MCP_FERIADOS_DIR", "feriados_forenses"))
+    caminho.mkdir(parents=True, exist_ok=True)
+    return caminho
+
+
+def _chave_cache_feriados(municipio: str, ano: int) -> str:
+    normalizado = _sem_acento_cjpg(municipio).strip().replace(" ", "_")
+    normalizado = re.sub(r"[^a-z0-9_]", "", normalizado) or "municipio"
+    return f"{normalizado}_{ano}"
+
+
+async def _tjsp_buscar_municipios(termo: str) -> list[dict]:
+    async with _cliente(FERIADOS_TIMEOUT_S) as cliente_http:
+        resp = await cliente_http.post(
+            f"{TJSP_FERIADOS_BASE_URL}/AutoComplete/ListarMunicipios",
+            data={"texto": termo},
+            headers={"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"},
+        )
+        resp.raise_for_status()
+        dados = resp.json()
+    if not isinstance(dados, list):
+        return []
+    return [
+        {"codigo": item.get("Codigo"), "nome": item.get("Descricao")}
+        for item in dados
+        if item.get("Descricao")
+    ]
+
+
+async def _tjsp_buscar_feriados(nome_municipio: str, codigo_municipio: int, ano: int) -> list[dict]:
+    async with _cliente(FERIADOS_TIMEOUT_S) as cliente_http:
+        resp = await cliente_http.get(
+            f"{TJSP_FERIADOS_BASE_URL}/CanaisComunicacao/Feriados/PesquisarFeriados",
+            params={"nomeMunicipio": nome_municipio, "codigoMunicipio": codigo_municipio, "ano": ano},
+        )
+        resp.raise_for_status()
+        dados = resp.json()
+    feriados = []
+    for item in (dados or {}).get("data") or []:
+        m = _RE_DATA_MS_TJSP.search(item.get("DataFeriado") or "")
+        if not m:
+            continue
+        data_iso = datetime.fromtimestamp(int(m.group(1)) / 1000, tz=timezone.utc).date().isoformat()
+        feriados.append({"data": data_iso, "descricao": (item.get("Descricao") or "").strip()})
+    feriados.sort(key=lambda f: f["data"])
+    return feriados
+
+
+def _feriados_do_cache(municipio: str, ano: int) -> dict | None:
+    arquivo = _dir_feriados_forenses() / f"{_chave_cache_feriados(municipio, ano)}.json"
+    if not arquivo.is_file():
+        return None
+    if time.time() - arquivo.stat().st_mtime > FERIADOS_CACHE_TTL_S:
+        return None
+    try:
+        return json.loads(arquivo.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _salvar_feriados_no_cache(municipio: str, ano: int, resultado: dict) -> None:
+    arquivo = _dir_feriados_forenses() / f"{_chave_cache_feriados(municipio, ano)}.json"
+    arquivo.write_text(json.dumps(resultado, ensure_ascii=False), encoding="utf-8")
+
+
+@mcp.tool()
+async def buscar_feriados_forenses(municipio: str, ano: int) -> dict:
+    """Feriados forenses do TJSP para um município/comarca e ano (fonte oficial:
+    tjsp.jus.br/CanaisComunicacao/Feriados/ExpedienteForense). Usado para calcular prazos
+    processuais em dias úteis - a contagem deve excluir sábados, domingos e essas datas.
+    Resultado fica em cache por até 1 dia."""
+    municipio = (municipio or "").strip()
+    if not municipio:
+        return _erro("informe o município/comarca.")
+    ano_atual = datetime.now(timezone.utc).year
+    if not (FERIADOS_ANO_MIN <= ano <= ano_atual + 1):
+        return _erro(f"ano fora do intervalo suportado pelo TJSP ({FERIADOS_ANO_MIN}-{ano_atual + 1}).")
+
+    em_cache = _feriados_do_cache(municipio, ano)
+    if em_cache is not None:
+        return em_cache
+
+    try:
+        candidatos = await _tjsp_buscar_municipios(municipio)
+    except httpx.HTTPError as exc:
+        return _erro(f"falha ao consultar municípios no TJSP: {exc}")
+    if not candidatos:
+        return _erro(f"município/comarca não encontrado no TJSP: {municipio}")
+    escolhido = candidatos[0]
+
+    try:
+        feriados = await _tjsp_buscar_feriados(escolhido["nome"], escolhido["codigo"], ano)
+    except httpx.HTTPError as exc:
+        return _erro(f"falha ao consultar feriados no TJSP: {exc}")
+
+    resultado = {
+        "municipio": escolhido["nome"],
+        "codigo_municipio": escolhido["codigo"],
+        "ano": ano,
+        "feriados": feriados,
+    }
+    _salvar_feriados_no_cache(municipio, ano, resultado)
+    return resultado
 
 
 # --- CJPG: julgados de 1º grau do TJSP e árvores de referência ---------------

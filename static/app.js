@@ -7,6 +7,7 @@ const URL_MCP = "/mcp";
 const CHAVE_TOKEN = "cnj_token";
 const CHAVE_HISTORICO = "cnj_historico";
 const CHAVE_FAVORITOS = "cnj_favoritos";
+const CHAVE_PRAZO_MUNICIPIO = "cnj_prazo_municipio";
 const HISTORICO_MAX = 10;
 
 class ErroMCP extends Error {
@@ -196,8 +197,18 @@ function formatarData(valor) {
 
 function formatarDataSimples(valor) {
   if (!valor) return "não informado";
-  const data = new Date(valor);
-  if (Number.isNaN(data.getTime())) return String(valor);
+  const bruto = String(valor);
+  // Data pura ("AAAA-MM-DD", sem hora): formata direto dos componentes. O construtor Date
+  // trata esse formato como meia-noite UTC, e em fusos atrás de UTC (ex.: Brasília, UTC-3)
+  // toLocaleDateString devolveria o dia anterior - crítico aqui porque esta função formata
+  // datas de vencimento de prazo.
+  const somenteData = /^(\d{4})-(\d{2})-(\d{2})$/.exec(bruto);
+  if (somenteData) {
+    const [, ano, mes, dia] = somenteData;
+    return `${dia}/${mes}/${ano}`;
+  }
+  const data = new Date(bruto);
+  if (Number.isNaN(data.getTime())) return bruto;
   return data.toLocaleDateString("pt-BR");
 }
 
@@ -635,6 +646,189 @@ function chips(lista) {
   return linha;
 }
 
+// --- Calculadora de prazo (dias úteis, a partir da publicação no DJEN) ---------------------
+//
+// Reproduz as 4 regras de contagem da "Calculadora de Prazos" da PGM-SP
+// (https://pgmprazos.prefeitura.sp.gov.br/), conferidas uma a uma pelo demonstrativo dia-a-dia
+// daquela ferramenta. Útil = não é sábado, domingo nem feriado forense do município informado
+// (buscado da tool buscar_feriados_forenses, que consulta o TJSP).
+
+const TIPOS_CONTAGEM_PRAZO = [
+  { valor: "dje", rotulo: "Disponibilização no DJe" },
+  { valor: "mandado", rotulo: "Juntada de mandado/AR" },
+  { valor: "intimacao_saj", rotulo: "Intimação SAJ (+10 dias corridos)" },
+  { valor: "citacao_saj", rotulo: "Citação SAJ (+5 dias úteis)" },
+];
+
+function _dataUTC(iso) {
+  const [a, m, d] = iso.slice(0, 10).split("-").map(Number);
+  return Date.UTC(a, m - 1, d);
+}
+
+function _isoDaDataUTC(timestampUTC) {
+  const data = new Date(timestampUTC);
+  const ano = data.getUTCFullYear();
+  const mes = String(data.getUTCMonth() + 1).padStart(2, "0");
+  const dia = String(data.getUTCDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
+}
+
+function somarDiasCorridos(iso, n) {
+  return _isoDaDataUTC(_dataUTC(iso) + n * 86400000);
+}
+
+function ehFimDeSemana(iso) {
+  const diaSemana = new Date(_dataUTC(iso)).getUTCDay();
+  return diaSemana === 0 || diaSemana === 6;
+}
+
+function ehDiaUtil(iso, feriados) {
+  return !ehFimDeSemana(iso) && !feriados.has(iso);
+}
+
+function nEsimoDiaUtilApos(iso, n, feriados) {
+  let atual = iso;
+  let contados = 0;
+  while (contados < n) {
+    atual = somarDiasCorridos(atual, 1);
+    if (ehDiaUtil(atual, feriados)) contados++;
+  }
+  return atual;
+}
+
+function calcularInicioPrazo(dataBaseISO, tipo, feriados) {
+  if (tipo === "dje") {
+    const publicacao = nEsimoDiaUtilApos(dataBaseISO, 1, feriados);
+    return nEsimoDiaUtilApos(publicacao, 1, feriados);
+  }
+  if (tipo === "mandado") {
+    return nEsimoDiaUtilApos(dataBaseISO, 1, feriados);
+  }
+  if (tipo === "intimacao_saj") {
+    const marco = somarDiasCorridos(dataBaseISO, 10);
+    return nEsimoDiaUtilApos(marco, 1, feriados);
+  }
+  if (tipo === "citacao_saj") {
+    return nEsimoDiaUtilApos(dataBaseISO, 5, feriados);
+  }
+  throw new Error(`tipo de contagem desconhecido: ${tipo}`);
+}
+
+function calcularVencimentoPrazo(dataBaseISO, dias, tipo, feriados) {
+  const dia1 = calcularInicioPrazo(dataBaseISO, tipo, feriados);
+  const vencimento = dias <= 1 ? dia1 : nEsimoDiaUtilApos(dia1, dias - 1, feriados);
+  return { dia1, vencimento };
+}
+
+const _cacheFeriados = new Map(); // `${municipio}|${ano}` -> Set(iso)
+
+async function _buscarFeriadosAno(municipio, ano) {
+  const chave = `${municipio}|${ano}`;
+  if (_cacheFeriados.has(chave)) return _cacheFeriados.get(chave);
+  const dados = await cliente.chamarTool("buscar_feriados_forenses", { municipio, ano });
+  if (dados.erro) throw new Error(dados.mensagem);
+  const conjunto = new Set((dados.feriados || []).map((f) => f.data));
+  _cacheFeriados.set(chave, conjunto);
+  return conjunto;
+}
+
+async function _uniaoFeriados(municipio, anos) {
+  const conjuntos = await Promise.all(anos.map((ano) => _buscarFeriadosAno(municipio, ano)));
+  const uniao = new Set();
+  for (const conjunto of conjuntos) for (const data of conjunto) uniao.add(data);
+  return uniao;
+}
+
+// Calcula o vencimento buscando os feriados necessários; se o vencimento cair num ano ainda não
+// buscado (prazo longo), busca também esse ano e recalcula.
+async function calcularPrazoComFeriados(dataBaseISO, dias, tipo, municipio) {
+  if (!cliente) throw new Error("Informe o seu token e conecte antes de calcular o prazo.");
+  const anoBase = Number(dataBaseISO.slice(0, 4));
+  let anos = [anoBase, anoBase + 1];
+  let feriados = await _uniaoFeriados(municipio, anos);
+  let resultado = calcularVencimentoPrazo(dataBaseISO, dias, tipo, feriados);
+  const anoVencimento = Number(resultado.vencimento.slice(0, 4));
+  if (anoVencimento > anoBase + 1) {
+    anos = [...anos, anoVencimento];
+    feriados = await _uniaoFeriados(municipio, anos);
+    resultado = calcularVencimentoPrazo(dataBaseISO, dias, tipo, feriados);
+  }
+  return resultado;
+}
+
+function painelCalculoPrazo(item) {
+  const dataBase = (item.data_disponibilizacao || "").slice(0, 10);
+  const painel = el("div", { class: "prazo-painel", hidden: "" });
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dataBase)) {
+    painel.appendChild(
+      el("p", { class: "resultado-aviso", texto: "Publicação sem data de disponibilização - não é possível calcular o prazo." })
+    );
+    return painel;
+  }
+
+  const campoDias = el("input", { class: "cds--text-input", type: "number", min: "1", value: "15" });
+  const campoTipo = el(
+    "select",
+    { class: "cds--select-input" },
+    TIPOS_CONTAGEM_PRAZO.map((t) => el("option", { value: t.valor, texto: t.rotulo }))
+  );
+  const campoMunicipio = el("input", {
+    class: "cds--text-input",
+    type: "text",
+    value: localStorage.getItem(CHAVE_PRAZO_MUNICIPIO) || "São Paulo",
+  });
+  const botaoCalcular = el("button", { class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Calcular" });
+  const resultadoEl = el("div", { class: "prazo-resultado" });
+
+  painel.appendChild(
+    el("p", { class: "campo-ajuda", texto: `Base: disponibilizado em ${formatarDataSimples(dataBase)}. A contagem exclui sábados, domingos e os feriados forenses do município informado.` })
+  );
+  painel.appendChild(
+    el("div", { class: "prazo-painel-grade" }, [
+      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", texto: "Dias" }), campoDias]),
+      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", texto: "Contagem a partir de" }), campoTipo]),
+      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", texto: "Município/comarca" }), campoMunicipio]),
+    ])
+  );
+  painel.appendChild(botaoCalcular);
+  painel.appendChild(resultadoEl);
+
+  botaoCalcular.addEventListener("click", async () => {
+    const dias = Number(campoDias.value);
+    limpar(resultadoEl);
+    if (!Number.isInteger(dias) || dias < 1) {
+      resultadoEl.appendChild(el("p", { class: "resultado-aviso", texto: "Informe um número de dias válido." }));
+      return;
+    }
+    const municipio = campoMunicipio.value.trim() || "São Paulo";
+    localStorage.setItem(CHAVE_PRAZO_MUNICIPIO, municipio);
+    const textoOriginal = botaoCalcular.textContent;
+    botaoCalcular.disabled = true;
+    botaoCalcular.textContent = "Calculando…";
+    try {
+      const { dia1, vencimento } = await calcularPrazoComFeriados(dataBase, dias, campoTipo.value, municipio);
+      resultadoEl.appendChild(
+        notificacao(
+          "success",
+          `Vencimento: ${formatarDataSimples(vencimento)}`,
+          `Início da contagem (dia 1): ${formatarDataSimples(dia1)} · ${dias} dia(s) úteis em ${municipio}`
+        )
+      );
+      resultadoEl.appendChild(
+        el("p", { class: "campo-ajuda", texto: "Cálculo informativo, sem valor oficial - confirme sempre no sistema do tribunal." })
+      );
+    } catch (erro) {
+      resultadoEl.appendChild(el("p", { class: "resultado-aviso", texto: erro.message }));
+    } finally {
+      botaoCalcular.disabled = false;
+      botaoCalcular.textContent = textoOriginal;
+    }
+  });
+
+  return painel;
+}
+
 function cartaoPublicacao(item) {
   const card = el("article", { class: "cds--tile resultado-card" });
   card.appendChild(
@@ -701,7 +895,15 @@ function cartaoPublicacao(item) {
     acoes.appendChild(statusCertidao);
     botaoCertidao.addEventListener("click", () => baixarCertidao(item.hash, botaoCertidao, statusCertidao));
   }
+  const painelPrazo = painelCalculoPrazo(item);
+  const botaoPrazo = el("button", {
+    class: "cds--btn cds--btn--tertiary cds--btn--sm", type: "button", texto: "Calcular prazo",
+  });
+  botaoPrazo.addEventListener("click", () => { painelPrazo.hidden = !painelPrazo.hidden; });
+  acoes.appendChild(botaoPrazo);
+
   if (acoes.childNodes.length) card.appendChild(acoes);
+  card.appendChild(painelPrazo);
 
   return card;
 }
