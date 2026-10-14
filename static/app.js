@@ -701,6 +701,25 @@ function ehDiaUtil(iso, feriados) {
   return _rotuloNaoUtil(iso, feriados) === null;
 }
 
+// Classifica o DIA em si (independente do evento/marco da linha), pra colorir o demonstrativo:
+// "provimento" é o caso de feriado que na verdade é suspensão administrativa de expediente (não
+// é data comemorativa - o TJSP descreve como "SUSPENSÃO DO EXPEDIENTE (PROVIMENTO ...)"), que vale
+// a pena distinguir visualmente de um feriado de verdade mesmo os dois bloqueando a contagem igual.
+function _classificarDia(iso, feriados) {
+  const diaSemana = new Date(_dataUTC(iso)).getUTCDay();
+  if (diaSemana === 0 || diaSemana === 6) return "fim-de-semana";
+  const descricao = feriados.get(iso);
+  if (descricao) return /suspens[ãa]o do expediente/i.test(descricao) ? "provimento" : "feriado";
+  return "util";
+}
+
+const ROTULO_TIPO_DIA = {
+  util: "Dia útil",
+  "fim-de-semana": "Fim de semana",
+  feriado: "Feriado forense",
+  provimento: "Suspensão de expediente (provimento)",
+};
+
 function nEsimoDiaUtilApos(iso, n, feriados) {
   let atual = iso;
   let contados = 0;
@@ -717,7 +736,8 @@ function nEsimoDiaUtilApos(iso, n, feriados) {
 // dia1/vencimento são derivados das próprias linhas geradas - uma só fonte de verdade.
 function gerarDemonstrativoPrazo(dataBaseISO, dias, tipo, feriados) {
   const linhas = [];
-  const adicionar = (data, evento, diaPrazo = null) => linhas.push({ data, evento, diaPrazo });
+  const adicionar = (data, evento, diaPrazo = null) =>
+    linhas.push({ data, evento, diaPrazo, tipoDia: _classificarDia(data, feriados) });
   let atual = dataBaseISO;
   let dia1;
 
@@ -851,11 +871,44 @@ function _elEm(doc, tag, attrs = {}, filhos = []) {
   return elemento;
 }
 
+const _SVG_NS = "http://www.w3.org/2000/svg";
+
+function _elSvg(doc, tag, attrs = {}, filhos = []) {
+  const elemento = doc.createElementNS(_SVG_NS, tag);
+  for (const [chave, valor] of Object.entries(attrs)) elemento.setAttribute(chave, valor);
+  for (const filho of [].concat(filhos)) if (filho) elemento.appendChild(filho);
+  return elemento;
+}
+
+// Ícones próprios (sem biblioteca externa): um círculo com check (útil), círculo com traço (fim
+// de semana), estrela (feriado) e duas barras de "pausa" (provimento - suspensão de expediente).
+// Usam currentColor pra herdar a cor da célula/legenda que os envolve.
+function _iconeTipoDia(doc, tipoDia) {
+  const svg = _elSvg(doc, "svg", { viewBox: "0 0 16 16", width: "14", height: "14", class: "icone-dia", "aria-hidden": "true" });
+  const tracoFino = { fill: "none", stroke: "currentColor", "stroke-width": "1.5", "stroke-linecap": "round", "stroke-linejoin": "round" };
+  if (tipoDia === "util") {
+    svg.appendChild(_elSvg(doc, "circle", { cx: "8", cy: "8", r: "7", fill: "none", stroke: "currentColor", "stroke-width": "1.5" }));
+    svg.appendChild(_elSvg(doc, "path", { d: "M4.6 8.3l2.2 2.2 4.4-4.9", ...tracoFino }));
+  } else if (tipoDia === "fim-de-semana") {
+    svg.appendChild(_elSvg(doc, "circle", { cx: "8", cy: "8", r: "7", fill: "none", stroke: "currentColor", "stroke-width": "1.5" }));
+    svg.appendChild(_elSvg(doc, "line", { x1: "4.7", y1: "8", x2: "11.3", y2: "8", stroke: "currentColor", "stroke-width": "1.5", "stroke-linecap": "round" }));
+  } else if (tipoDia === "feriado") {
+    svg.appendChild(_elSvg(doc, "path", {
+      d: "M8 1.3l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.1l-3.8 2 .7-4.3-3.1-3 4.3-.6z",
+      fill: "currentColor",
+    }));
+  } else if (tipoDia === "provimento") {
+    svg.appendChild(_elSvg(doc, "rect", { x: "3.8", y: "3", width: "2.6", height: "10", rx: "0.8", fill: "currentColor" }));
+    svg.appendChild(_elSvg(doc, "rect", { x: "9.6", y: "3", width: "2.6", height: "10", rx: "0.8", fill: "currentColor" }));
+  }
+  return svg;
+}
+
 function abrirDemonstrativoPdf({ dataBase, dias, tipo, municipio, dia1, vencimento, linhas }) {
   // Sem noopener/noreferrer aqui: o conteúdo é escrito por este mesmo script logo abaixo (não é
   // uma URL de terceiro), e noopener faz window.open devolver null - a janela ainda abre (em
   // branco), mas perdemos a referência pra preenchê-la.
-  const janela = window.open("", "_blank", "width=820,height=900");
+  const janela = window.open("", "_blank", "width=860,height=900");
   if (!janela) {
     window.alert("O navegador bloqueou a nova janela. Permita pop-ups para este site e tente novamente.");
     return;
@@ -868,10 +921,21 @@ function abrirDemonstrativoPdf({ dataBase, dias, tipo, municipio, dia1, vencimen
     body { font-family: Arial, Helvetica, sans-serif; color: #161616; margin: 2rem; }
     h1 { font-size: 1.25rem; margin: 0 0 0.25rem; }
     p.base { margin: 0 0 1rem; color: #525252; font-size: 0.9rem; }
+    .legenda { display: flex; flex-wrap: wrap; gap: 0.25rem 1.1rem; margin: 0 0 1rem; font-size: 0.8125rem; }
+    .legenda-item { display: inline-flex; align-items: center; gap: 0.35rem; }
     table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
-    th, td { border: 1px solid #c6c6c6; padding: 0.35rem 0.5rem; text-align: left; }
+    th, td { border: 1px solid #c6c6c6; padding: 0.35rem 0.5rem; text-align: left; vertical-align: middle; }
     th { background: #f4f4f4; }
-    tr.venc td { font-weight: bold; background: #defbe6; }
+    td.col-icone { width: 1.75rem; text-align: center; }
+    tr.dia-util td { background: #f1fbf4; color: #0e6027; }
+    tr.dia-fim-de-semana td { background: #f4f4f4; color: #525252; }
+    tr.dia-feriado td { background: #fff1f1; color: #a2191f; }
+    tr.dia-provimento td { background: #fff8e6; color: #8a5300; }
+    tr.dia-util td.col-data, tr.dia-util td.col-dia, tr.dia-util td.col-prazo,
+    tr.dia-fim-de-semana td.col-data, tr.dia-fim-de-semana td.col-dia, tr.dia-fim-de-semana td.col-prazo,
+    tr.dia-feriado td.col-data, tr.dia-feriado td.col-dia, tr.dia-feriado td.col-prazo,
+    tr.dia-provimento td.col-data, tr.dia-provimento td.col-dia, tr.dia-provimento td.col-prazo { color: #161616; }
+    tr.venc td { font-weight: bold; background: #defbe6 !important; }
     .acoes { margin-bottom: 1rem; }
     .aviso { margin-top: 1rem; font-size: 0.8rem; color: #525252; }
     @media print { .acoes { display: none; } }
@@ -892,13 +956,26 @@ function abrirDemonstrativoPdf({ dataBase, dias, tipo, municipio, dia1, vencimen
     ])
   );
 
+  doc.body.appendChild(
+    _elEm(
+      doc,
+      "div",
+      { class: "legenda" },
+      Object.entries(ROTULO_TIPO_DIA).map(([tipoDia, rotulo]) =>
+        _elEm(doc, "span", { class: `legenda-item dia-${tipoDia}` }, [_iconeTipoDia(doc, tipoDia), rotulo])
+      )
+    )
+  );
+
   const corpoTabela = _elEm(doc, "tbody");
   for (const linha of linhas) {
+    const classes = [`dia-${linha.tipoDia}`, linha.evento === "Vencimento" ? "venc" : null].filter(Boolean).join(" ");
     corpoTabela.appendChild(
-      _elEm(doc, "tr", linha.evento === "Vencimento" ? { class: "venc" } : {}, [
-        _elEm(doc, "td", { texto: formatarDataSimples(linha.data) }),
-        _elEm(doc, "td", { texto: _abrevDiaSemana(linha.data) }),
-        _elEm(doc, "td", { texto: linha.diaPrazo === null ? "-" : String(linha.diaPrazo) }),
+      _elEm(doc, "tr", { class: classes }, [
+        _elEm(doc, "td", { class: "col-icone" }, [_iconeTipoDia(doc, linha.tipoDia)]),
+        _elEm(doc, "td", { class: "col-data", texto: formatarDataSimples(linha.data) }),
+        _elEm(doc, "td", { class: "col-dia", texto: _abrevDiaSemana(linha.data) }),
+        _elEm(doc, "td", { class: "col-prazo", texto: linha.diaPrazo === null ? "-" : String(linha.diaPrazo) }),
         _elEm(doc, "td", { texto: linha.evento || "" }),
       ])
     );
@@ -907,6 +984,7 @@ function abrirDemonstrativoPdf({ dataBase, dias, tipo, municipio, dia1, vencimen
     _elEm(doc, "table", {}, [
       _elEm(doc, "thead", {}, [
         _elEm(doc, "tr", {}, [
+          _elEm(doc, "th", { texto: "" }),
           _elEm(doc, "th", { texto: "Data" }),
           _elEm(doc, "th", { texto: "Dia" }),
           _elEm(doc, "th", { texto: "Dia do prazo" }),
