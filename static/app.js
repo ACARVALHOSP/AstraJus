@@ -392,6 +392,7 @@ const abas = [
   { botao: document.getElementById("aba-historico-botao"), painel: document.getElementById("aba-historico") },
   { botao: document.getElementById("aba-monitoramentos-botao"), painel: document.getElementById("aba-monitoramentos") },
   { botao: document.getElementById("aba-jurimetria-botao"), painel: document.getElementById("aba-jurimetria") },
+  { botao: document.getElementById("aba-clientes-botao"), painel: document.getElementById("aba-clientes") },
 ];
 
 function selecionarAba(alvo) {
@@ -404,6 +405,7 @@ function selecionarAba(alvo) {
   alvo.botao.focus();
   if (alvo.painel.id === "aba-historico") renderizarListaRapida();
   if (alvo.painel.id === "aba-monitoramentos") carregarMonitoramentos();
+  if (alvo.painel.id === "aba-clientes") carregarClientesECasos();
 }
 
 for (const aba of abas) aba.botao.addEventListener("click", () => selecionarAba(aba));
@@ -567,6 +569,7 @@ function cartaoProcesso(proc) {
     );
     acoes.appendChild(botaoAcompanhar);
     acoes.appendChild(statusAcompanhar);
+    anexarBotaoCadastrarCaso(acoes, proc.numeroProcesso);
     card.appendChild(acoes);
   }
 
@@ -1367,6 +1370,18 @@ async function _buscarJson(url) {
   return resposta.json();
 }
 
+async function _enviarJson(url, corpo) {
+  if (!cliente) throw new ErroMCP(401, "Conecte-se primeiro.");
+  const resposta = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${cliente.token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(corpo),
+  });
+  const dados = await resposta.json().catch(() => ({}));
+  if (!resposta.ok) throw new ErroMCP(resposta.status, dados.mensagem || `Falha ao enviar para ${url} (HTTP ${resposta.status}).`);
+  return dados;
+}
+
 function criarSeletorArvore(container, campo) {
   const selecionados = new Map(); // id -> {nome, busca}
 
@@ -1671,3 +1686,184 @@ formJurimetria.addEventListener("submit", async (evento) => {
 });
 
 document.getElementById("botao-atualizar-monitoramentos").addEventListener("click", carregarMonitoramentos);
+
+// --- Clientes e casos (Fase 1 da gestão de escritório) ------------------------------------
+//
+// /clientes e /casos são endpoints HTTP simples (não tools MCP, mesmo padrão das árvores do
+// CJPG acima): CRUD de apoio ao painel, não faz sentido expor isso a um agente de IA.
+
+let _cacheClientes = [];
+
+function cartaoCliente(c) {
+  const card = el("article", { class: "cds--tile resultado-card" });
+  card.appendChild(el("h3", { texto: c.nome }));
+  if (c.cpf_cnpj) card.appendChild(el("p", { texto: `CPF/CNPJ: ${c.cpf_cnpj}` }));
+  if (c.telefone) card.appendChild(el("p", { texto: `Telefone: ${c.telefone}` }));
+  if (c.email) card.appendChild(el("p", { texto: `E-mail: ${c.email}` }));
+  if (c.observacoes) card.appendChild(el("p", { texto: c.observacoes }));
+  return card;
+}
+
+function cartaoCaso(caso) {
+  const clienteDoCaso = _cacheClientes.find((c) => c.id === caso.cliente_id);
+  const card = el("article", { class: "cds--tile resultado-card" });
+  card.appendChild(el("h3", { texto: caso.titulo || "(sem título)" }));
+  card.appendChild(el("p", { texto: `Cliente: ${clienteDoCaso ? clienteDoCaso.nome : caso.cliente_id}` }));
+  if (caso.responsavel) card.appendChild(el("p", { texto: `Responsável: ${caso.responsavel}` }));
+  card.appendChild(el("p", { texto: `Processo(s): ${(caso.processos || []).join(", ") || "nenhum"}` }));
+  card.appendChild(el("span", { class: "cds--tag cds--tag--gray", texto: caso.status }));
+  return card;
+}
+
+async function carregarClientesECasos() {
+  if (!exigirCliente(document.getElementById("lista-clientes"))) return;
+  const listaClientesEl = document.getElementById("lista-clientes");
+  const listaCasosEl = document.getElementById("lista-casos");
+  const selectCliente = document.getElementById("caso-cliente");
+  limpar(listaClientesEl);
+  limpar(listaCasosEl);
+  try {
+    const { clientes } = await _buscarJson("/clientes");
+    _cacheClientes = clientes || [];
+    limpar(selectCliente);
+    if (!_cacheClientes.length) {
+      selectCliente.appendChild(el("option", { value: "" }, ["Cadastre um cliente primeiro"]));
+    }
+    for (const c of _cacheClientes) {
+      selectCliente.appendChild(el("option", { value: c.id }, [c.nome]));
+    }
+    if (!_cacheClientes.length) {
+      listaClientesEl.appendChild(notificacao("info", "Nenhum cliente cadastrado ainda"));
+    } else {
+      for (const c of _cacheClientes) listaClientesEl.appendChild(cartaoCliente(c));
+    }
+
+    const { casos } = await _buscarJson("/casos");
+    if (!(casos || []).length) {
+      listaCasosEl.appendChild(notificacao("info", "Nenhum caso cadastrado ainda"));
+    } else {
+      for (const caso of casos) listaCasosEl.appendChild(cartaoCaso(caso));
+    }
+  } catch (erro) {
+    mostrarErro(listaClientesEl, erro.message);
+  }
+}
+
+const formCliente = document.getElementById("form-cliente");
+const resultadoCliente = document.getElementById("resultado-cliente");
+
+formCliente.addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  if (!exigirCliente(resultadoCliente)) return;
+  const botao = formCliente.querySelector("button[type=submit]");
+  const dados = Object.fromEntries(new FormData(formCliente).entries());
+  const pararEspera = mostrarEspera(resultadoCliente, botao, "Cadastrando cliente");
+  try {
+    await _enviarJson("/clientes", dados);
+    limpar(resultadoCliente);
+    resultadoCliente.appendChild(notificacao("success", "Cliente cadastrado"));
+    formCliente.reset();
+    carregarClientesECasos();
+  } catch (erro) {
+    mostrarErro(resultadoCliente, erro.message);
+  } finally {
+    pararEspera();
+  }
+});
+
+const formCaso = document.getElementById("form-caso");
+const resultadoCaso = document.getElementById("resultado-caso");
+
+formCaso.addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  if (!exigirCliente(resultadoCaso)) return;
+  const botao = formCaso.querySelector("button[type=submit]");
+  const numeros = document.getElementById("caso-processos").value.split(",").map((s) => s.trim()).filter(Boolean);
+  const corpo = {
+    cliente_id: document.getElementById("caso-cliente").value,
+    titulo: document.getElementById("caso-titulo").value.trim(),
+    responsavel: document.getElementById("caso-responsavel").value.trim(),
+    numeros_processo: numeros,
+  };
+  const pararEspera = mostrarEspera(resultadoCaso, botao, "Cadastrando caso");
+  try {
+    await _enviarJson("/casos", corpo);
+    limpar(resultadoCaso);
+    resultadoCaso.appendChild(notificacao("success", "Caso cadastrado"));
+    formCaso.reset();
+    carregarClientesECasos();
+  } catch (erro) {
+    mostrarErro(resultadoCaso, erro.message);
+  } finally {
+    pararEspera();
+  }
+});
+
+// Botão "Cadastrar como caso" no resultado da consulta de processo (DataJud): abre um mini
+// formulário inline, sem precisar trocar de aba. Cria o cliente na hora se for novo (Fase 1).
+function anexarBotaoCadastrarCaso(acoes, numeroProcesso) {
+  const botao = el("button", {
+    class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Cadastrar como caso",
+  });
+  acoes.appendChild(botao);
+
+  botao.addEventListener("click", async () => {
+    if (botao.nextSibling && botao.nextSibling.classList && botao.nextSibling.classList.contains("mini-form-caso")) {
+      botao.nextSibling.remove();
+      return;
+    }
+    if (!_cacheClientes.length) {
+      try {
+        const { clientes } = await _buscarJson("/clientes");
+        _cacheClientes = clientes || [];
+      } catch {
+        // segue mesmo sem conseguir pré-carregar: o select só vai ficar com "Novo cliente"
+      }
+    }
+
+    const selectCliente = el("select", { class: "cds--text-input" }, [
+      el("option", { value: "" }, ["+ Novo cliente"]),
+      ..._cacheClientes.map((c) => el("option", { value: c.id }, [c.nome])),
+    ]);
+    const campoNomeNovo = el("input", { class: "cds--text-input", placeholder: "Nome do novo cliente" });
+    const campoTitulo = el("input", { class: "cds--text-input", placeholder: "Título do caso (opcional)" });
+    const botaoSalvar = el("button", { class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Salvar caso" });
+    const statusMini = el("span", { class: "app-espera app-espera--inline" });
+
+    selectCliente.addEventListener("change", () => {
+      campoNomeNovo.hidden = selectCliente.value !== "";
+    });
+
+    botaoSalvar.addEventListener("click", async () => {
+      botaoSalvar.disabled = true;
+      limpar(statusMini);
+      try {
+        const corpo = {
+          titulo: campoTitulo.value.trim() || null,
+          numeros_processo: [numeroProcesso],
+        };
+        if (selectCliente.value) {
+          corpo.cliente_id = selectCliente.value;
+        } else {
+          const nomeNovo = campoNomeNovo.value.trim();
+          if (!nomeNovo) throw new ErroMCP(400, "Informe o nome do novo cliente ou escolha um existente.");
+          corpo.cliente_novo = { nome: nomeNovo };
+        }
+        await _enviarJson("/casos", corpo);
+        miniForm.replaceWith(notificacao("success", "Caso cadastrado"));
+      } catch (erro) {
+        statusMini.textContent = erro.message;
+        botaoSalvar.disabled = false;
+      }
+    });
+
+    const miniForm = el("div", { class: "mini-form-caso" }, [
+      el("div", { class: "cds--form-item" }, [selectCliente]),
+      el("div", { class: "cds--form-item" }, [campoNomeNovo]),
+      el("div", { class: "cds--form-item" }, [campoTitulo]),
+      botaoSalvar,
+      statusMini,
+    ]);
+    botao.insertAdjacentElement("afterend", miniForm);
+  });
+}

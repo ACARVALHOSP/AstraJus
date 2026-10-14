@@ -204,6 +204,9 @@ body { margin: 0; min-height: 100dvh; }
 <li class="cds--tabs__nav-item" role="presentation">
 <button class="cds--tabs__nav-link" id="aba-jurimetria-botao" role="tab" aria-selected="false" aria-controls="aba-jurimetria" type="button">Jurimetria</button>
 </li>
+<li class="cds--tabs__nav-item" role="presentation">
+<button class="cds--tabs__nav-link" id="aba-clientes-botao" role="tab" aria-selected="false" aria-controls="aba-clientes" type="button">Clientes e casos</button>
+</li>
 </ul>
 </nav>
 
@@ -390,6 +393,63 @@ grau do TJSP). As demais ideias ao final ainda são só conceitos de próximos p
 Limitação conhecida: cada consulta ao CJPG tem um teto de ~10.000 resultados (limite do próprio índice de busca do TJSP).
 Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias buscas.
 </p>
+</section>
+
+<section id="aba-clientes" role="tabpanel" aria-labelledby="aba-clientes-botao" hidden>
+<h2 class="lista-rapida-titulo">Novo cliente</h2>
+<form id="form-cliente" class="app-formulario">
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-nome">Nome</label>
+<input class="cds--text-input" id="cliente-nome" name="nome" required>
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-cpf-cnpj">CPF/CNPJ</label>
+<input class="cds--text-input" id="cliente-cpf-cnpj" name="cpf_cnpj">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-telefone">Telefone</label>
+<input class="cds--text-input" id="cliente-telefone" name="telefone">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-email">E-mail</label>
+<input class="cds--text-input" id="cliente-email" name="email" type="email">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-observacoes">Observações</label>
+<input class="cds--text-input" id="cliente-observacoes" name="observacoes">
+</div>
+<button class="cds--btn cds--btn--primary" type="submit">Cadastrar cliente</button>
+</form>
+<div id="resultado-cliente" class="app-resultado" aria-live="polite"></div>
+
+<h2 class="lista-rapida-titulo">Novo caso</h2>
+<form id="form-caso" class="app-formulario">
+<div class="cds--form-item">
+<label class="cds--label" for="caso-cliente">Cliente</label>
+<select class="cds--text-input" id="caso-cliente" name="cliente_id" required></select>
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="caso-titulo">Título</label>
+<input class="cds--text-input" id="caso-titulo" name="titulo" placeholder="Ex.: Cobrança de honorários">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="caso-responsavel">Responsável</label>
+<input class="cds--text-input" id="caso-responsavel" name="responsavel">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="caso-processos">Número(s) de processo</label>
+<input class="cds--text-input" id="caso-processos" name="numeros_processo" placeholder="1006314-27.2023.8.26.0005, ...">
+<span class="campo-ajuda">Separe por vírgula se houver mais de um (ex.: recurso do mesmo caso).</span>
+</div>
+<button class="cds--btn cds--btn--primary" type="submit">Cadastrar caso</button>
+</form>
+<div id="resultado-caso" class="app-resultado" aria-live="polite"></div>
+
+<h2 class="lista-rapida-titulo">Clientes cadastrados</h2>
+<div id="lista-clientes" class="app-resultado"></div>
+
+<h2 class="lista-rapida-titulo">Casos cadastrados</h2>
+<div id="lista-casos" class="app-resultado"></div>
 </section>
 
 </main>

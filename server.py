@@ -39,7 +39,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import db as _db
-from db import RegistroMonitoramentos, RegistroUsuarios
+from db import RegistroClientesCasos, RegistroMonitoramentos, RegistroUsuarios
 
 import httpx
 from mcp.server.fastmcp import Context, FastMCP
@@ -2153,6 +2153,59 @@ def _pagina_autorizacao(params: dict, erro: str | None = None) -> str:
 </body></html>"""
 
 
+def _criar_cliente_validado(gestao: RegistroClientesCasos, dados: dict) -> tuple[dict | None, dict | None]:
+    """Valida o corpo de POST /clientes. Devolve (cliente, None) ou (None, erro)."""
+    nome = (dados.get("nome") or "").strip()
+    if not nome:
+        return None, _erro("Informe o nome do cliente.")
+    cliente = gestao.criar_cliente(
+        nome=nome,
+        cpf_cnpj=(dados.get("cpf_cnpj") or "").strip() or None,
+        telefone=(dados.get("telefone") or "").strip() or None,
+        email=(dados.get("email") or "").strip() or None,
+        observacoes=(dados.get("observacoes") or "").strip() or None,
+        agora=lambda: datetime.now(timezone.utc),
+    )
+    return cliente, None
+
+
+def _criar_caso_validado(gestao: RegistroClientesCasos, dados: dict) -> tuple[dict | None, dict | None]:
+    """Valida o corpo de POST /casos. Aceita cliente_id (existente) ou cliente_novo (cria na
+    hora) - é o que permite o botão "cadastrar como caso" da consulta pontual de processo.
+    Devolve (caso, None) ou (None, erro).
+    """
+    cliente_id = (dados.get("cliente_id") or "").strip() or None
+    cliente_novo = dados.get("cliente_novo")
+    if not cliente_id and not isinstance(cliente_novo, dict):
+        return None, _erro("Informe cliente_id ou cliente_novo.")
+    if cliente_id and gestao.obter_cliente(cliente_id) is None:
+        return None, _erro(f"Cliente '{cliente_id}' não encontrado.")
+    if not cliente_id:
+        novo_cliente, erro = _criar_cliente_validado(gestao, cliente_novo)
+        if erro:
+            return None, erro
+        cliente_id = novo_cliente["id"]
+
+    numeros_brutos = dados.get("numeros_processo") or []
+    if not isinstance(numeros_brutos, list) or not numeros_brutos:
+        return None, _erro("Informe ao menos um número de processo em numeros_processo.")
+    numeros = []
+    for numero in numeros_brutos:
+        numero_normalizado = _so_digitos(numero)
+        if len(numero_normalizado) != 20:
+            return None, _erro(f"Número de processo inválido: '{numero}' (esperados 20 dígitos).")
+        numeros.append(numero_normalizado)
+
+    caso = gestao.criar_caso(
+        cliente_id=cliente_id,
+        titulo=(dados.get("titulo") or "").strip() or None,
+        responsavel=(dados.get("responsavel") or "").strip() or None,
+        numeros_processo=numeros,
+        agora=lambda: datetime.now(timezone.utc),
+    )
+    return caso, None
+
+
 class _AutenticacaoBearer:
     """Middleware ASGI.
 
@@ -2165,7 +2218,8 @@ class _AutenticacaoBearer:
     def __init__(self, app, registro: RegistroUsuarios, limitador: LimitadorUso | None = None,
                  admin_token: str | None = None, cadastro: CadastroPublico | None = None,
                  oauth: "ServidorOAuth | None" = None, captcha: "VerificadorRecaptcha | None" = None,
-                 captcha_site_key: str | None = None, falhas: LimitadorUso | None = None) -> None:
+                 captcha_site_key: str | None = None, falhas: LimitadorUso | None = None,
+                 gestao: "RegistroClientesCasos | None" = None) -> None:
         self.app = app
         self.registro = registro
         self.limitador = limitador
@@ -2176,6 +2230,7 @@ class _AutenticacaoBearer:
         self.captcha_site_key = captcha_site_key
         # conta tentativas de autenticação falhas por IP (mcp e admin), para frear força bruta
         self.falhas = falhas
+        self.gestao = gestao
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":  # lifespan e afins passam direto
@@ -2294,6 +2349,13 @@ class _AutenticacaoBearer:
             await _arvore_magistrados_http(send)
             return
 
+        if caminho == "/clientes" and self.gestao is not None:
+            await self._clientes(scope, receive, send)
+            return
+        if caminho == "/casos" and self.gestao is not None:
+            await self._casos(scope, receive, send)
+            return
+
         log.info("Requisição de '%s': %s %s", _rotulo_usuario(usuario), scope.get("method"), caminho)
         await self.app(scope, receive, send)
 
@@ -2389,6 +2451,59 @@ class _AutenticacaoBearer:
                              tipo="text/html; charset=utf-8")
             return
 
+        await _responder(send, 404, b"Nao encontrado")
+
+    # --- Clientes e casos (Fase 1 da gestão de escritório) ---------------------
+    #
+    # Suporte de interface do painel (/app): CRUD mínimo, sem tool MCP equivalente, porque não
+    # faz sentido um agente de IA cadastrar cliente/caso por conta própria. Mesmo token Bearer
+    # do resto do app; "todos veem tudo" (sem filtro por usuário), conforme decidido para a
+    # Fase 1 da gestão de escritório.
+
+    async def _clientes(self, scope, receive, send):
+        metodo = scope.get("method")
+        if metodo == "GET":
+            await _json(send, 200, {"clientes": self.gestao.listar_clientes()})
+            return
+        if metodo == "POST":
+            corpo = await _ler_corpo(receive)
+            if corpo is None:
+                await _json(send, 413, {"erro": "Corpo da requisição grande demais."})
+                return
+            try:
+                dados = json.loads(corpo.decode("utf-8") or "{}")
+            except (ValueError, UnicodeDecodeError):
+                await _json(send, 400, {"erro": "JSON inválido."})
+                return
+            cliente, erro = _criar_cliente_validado(self.gestao, dados)
+            if erro:
+                await _json(send, 400, erro)
+                return
+            await _json(send, 201, cliente)
+            return
+        await _responder(send, 404, b"Nao encontrado")
+
+    async def _casos(self, scope, receive, send):
+        metodo = scope.get("method")
+        if metodo == "GET":
+            await _json(send, 200, {"casos": self.gestao.listar_casos()})
+            return
+        if metodo == "POST":
+            corpo = await _ler_corpo(receive)
+            if corpo is None:
+                await _json(send, 413, {"erro": "Corpo da requisição grande demais."})
+                return
+            try:
+                dados = json.loads(corpo.decode("utf-8") or "{}")
+            except (ValueError, UnicodeDecodeError):
+                await _json(send, 400, {"erro": "JSON inválido."})
+                return
+            caso, erro = _criar_caso_validado(self.gestao, dados)
+            if erro:
+                await _json(send, 400, erro)
+                return
+            await _json(send, 201, caso)
+            return
         await _responder(send, 404, b"Nao encontrado")
 
 
@@ -3119,13 +3234,14 @@ def _principal() -> int:
     falhas = LimitadorUso(por_minuto=10, por_dia=300)
 
     registro_monitoramentos = RegistroMonitoramentos(banco_caminho)
+    gestao = RegistroClientesCasos(banco_caminho)
     global _ESTADO_MONITORAMENTO
     _ESTADO_MONITORAMENTO = _EstadoMonitoramento(
         registro_usuarios=registro, oauth=oauth, registro_monitoramentos=registro_monitoramentos, smtp=smtp,
     )
 
     app = _AutenticacaoBearer(mcp.streamable_http_app(), registro, limitador, admin_token, cadastro, oauth,
-                              captcha, site_captcha or None, falhas=falhas)
+                              captcha, site_captcha or None, falhas=falhas, gestao=gestao)
     log.info(
         "Servidor HTTP em http://%s:%d/mcp (%d usuário(s) ativo(s); cadastro %s; admin %s; monitoramento %s)",
         args.host, args.port, len(registro.ativos()),
