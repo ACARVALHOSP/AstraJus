@@ -466,9 +466,10 @@ class AutenticacaoHttpTest(_RegistroTemporario):
         self.assertEqual(self.registro.identificar(self.token_ana), "ana")
 
     def test_arquivo_guarda_so_o_hash(self):
-        conteudo = self.registro.caminho.read_text(encoding="utf-8")
-        self.assertNotIn(self.token_ana, conteudo)
-        self.assertIn(server._hash_token(self.token_ana), conteudo)
+        # banco SQLite agora, não arquivo JSON texto: lê em bytes.
+        conteudo = self.registro.caminho.read_bytes()
+        self.assertNotIn(self.token_ana.encode("utf-8"), conteudo)
+        self.assertIn(server._hash_token(self.token_ana).encode("utf-8"), conteudo)
 
 
 class AdministracaoUsuariosTest(_RegistroTemporario):

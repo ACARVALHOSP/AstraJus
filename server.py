@@ -38,6 +38,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+import db as _db
+from db import RegistroMonitoramentos, RegistroUsuarios
+
 import httpx
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
@@ -1354,99 +1357,9 @@ def _mascarar_email(email: str) -> str:
     return f"{local[:1]}***@{dominio}"
 
 
-class RegistroUsuarios:
-    """Lê o arquivo de usuários (JSON: {nome: {hash, criado_em, revogado}}).
-
-    O arquivo é relido sempre que muda de data de modificação, então uma revogação passa
-    a valer na próxima requisição, sem reiniciar o servidor.
-    """
-
-    def __init__(self, caminho: Path) -> None:
-        self.caminho = caminho
-        self._mtime: int | None = None
-        self._dados: dict = {}
-        self._trava = threading.Lock()
-
-    def atualizar(self, alterar) -> None:
-        """Lê o registro mais recente, aplica a alteração e grava, tudo sob trava.
-
-        Toda escrita passa por aqui: assim uma operação nunca grava por cima de uma mudança que
-        outra operação fez no intervalo. `alterar` recebe o dicionário e devolve False para
-        cancelar a gravação.
-        """
-        with self._trava:
-            dados = self.carregar()
-            if alterar(dados) is not False:
-                self.salvar(dados)
-
-    def carregar(self) -> dict:
-        try:
-            mtime = self.caminho.stat().st_mtime_ns
-        except FileNotFoundError:
-            self._mtime, self._dados = None, {}
-            return self._dados
-        if mtime != self._mtime:
-            self._dados = json.loads(self.caminho.read_text(encoding="utf-8") or "{}")
-            self._mtime = mtime
-        return self._dados
-
-    def salvar(self, dados: dict) -> None:
-        self.caminho.parent.mkdir(parents=True, exist_ok=True)
-        temporario = self.caminho.with_suffix(".tmp")
-        temporario.write_text(json.dumps(dados, indent=2, ensure_ascii=False), encoding="utf-8")
-        os.replace(temporario, self.caminho)  # troca atômica: o servidor nunca lê arquivo pela metade
-        self._mtime = None
-
-    def identificar(self, token: str) -> str | None:
-        """Devolve o nome do usuário dono do token, ou None se o token não existe ou foi revogado."""
-        h = _hash_token(token)
-        for nome, registro in self.carregar().items():
-            if not registro.get("revogado") and hmac.compare_digest(registro.get("hash", ""), h):
-                return nome
-        return None
-
-    def ativos(self) -> list[str]:
-        return [nome for nome, r in self.carregar().items() if not r.get("revogado")]
-
-
-class RegistroMonitoramentos:
-    """Guarda os Monitoramentos (JSON: {id: {usuario, criterio, criado_em, hashes_notificados,
-    expira_em}}). Mesmo padrão de leitura/escrita de RegistroUsuarios: cache por mtime, escrita
-    atômica (arquivo temporário + os.replace), lock de threading.
-    """
-
-    def __init__(self, caminho: Path) -> None:
-        self.caminho = caminho
-        self._mtime: int | None = None
-        self._dados: dict = {}
-        self._trava = threading.Lock()
-
-    def atualizar(self, alterar) -> None:
-        with self._trava:
-            dados = self.carregar()
-            if alterar(dados) is not False:
-                self.salvar(dados)
-
-    def carregar(self) -> dict:
-        try:
-            mtime = self.caminho.stat().st_mtime_ns
-        except FileNotFoundError:
-            self._mtime, self._dados = None, {}
-            return self._dados
-        if mtime != self._mtime:
-            self._dados = json.loads(self.caminho.read_text(encoding="utf-8") or "{}")
-            self._mtime = mtime
-        return self._dados
-
-    def salvar(self, dados: dict) -> None:
-        self.caminho.parent.mkdir(parents=True, exist_ok=True)
-        temporario = self.caminho.with_suffix(".tmp")
-        temporario.write_text(json.dumps(dados, indent=2, ensure_ascii=False), encoding="utf-8")
-        os.replace(temporario, self.caminho)
-        self._mtime = None
-
-    def do_usuario(self, usuario: str) -> dict:
-        return {i: m for i, m in self.carregar().items() if m.get("usuario") == usuario}
+# RegistroUsuarios e RegistroMonitoramentos (SQLite, não mais arquivo JSON solto) vêm de db.py.
+# Mantêm a mesma interface pública (carregar/atualizar/identificar/ativos/do_usuario) usada
+# em todo este arquivo, então nenhum outro ponto do servidor precisou mudar.
 
 
 class LimitadorUso:
@@ -3122,7 +3035,12 @@ def _principal() -> int:
     )
     args = parser.parse_args()
 
-    registro = RegistroUsuarios(Path(os.environ.get("CNJ_MCP_USUARIOS", "usuarios.json")))
+    # CNJ_MCP_USUARIOS, por compatibilidade, só define o diretório de dados agora: o arquivo
+    # usuarios.json (se existir) é migrado uma vez para o banco SQLite (cnj.db) nesse mesmo diretório.
+    dados_dir = Path(os.environ.get("CNJ_MCP_USUARIOS", "usuarios.json")).parent
+    banco_caminho = dados_dir / os.environ.get("CNJ_MCP_BANCO", "cnj.db")
+    _db.migrar_de_json_se_necessario(banco_caminho, dados_dir)
+    registro = RegistroUsuarios(banco_caminho)
 
     if args.criar_usuario:
         return _criar_usuario(registro, args.criar_usuario.strip().lower())
@@ -3200,7 +3118,7 @@ def _principal() -> int:
                           limitador_registro=LimitadorUso(por_minuto=5, por_dia=50))
     falhas = LimitadorUso(por_minuto=10, por_dia=300)
 
-    registro_monitoramentos = RegistroMonitoramentos(registro.caminho.parent / "monitoramentos.json")
+    registro_monitoramentos = RegistroMonitoramentos(banco_caminho)
     global _ESTADO_MONITORAMENTO
     _ESTADO_MONITORAMENTO = _EstadoMonitoramento(
         registro_usuarios=registro, oauth=oauth, registro_monitoramentos=registro_monitoramentos, smtp=smtp,
