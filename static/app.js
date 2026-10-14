@@ -682,8 +682,23 @@ function ehFimDeSemana(iso) {
   return diaSemana === 0 || diaSemana === 6;
 }
 
+const _ABREV_DIA_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+
+function _abrevDiaSemana(iso) {
+  return _ABREV_DIA_SEMANA[new Date(_dataUTC(iso)).getUTCDay()];
+}
+
+// feriados: Map(data ISO -> descrição). Rotulo de dia não útil só por sábado/domingo/feriado -
+// usado tanto pra decidir a contagem quanto pro texto da linha no demonstrativo.
+function _rotuloNaoUtil(iso, feriados) {
+  const diaSemana = new Date(_dataUTC(iso)).getUTCDay();
+  if (diaSemana === 0) return "Domingo";
+  if (diaSemana === 6) return "Sábado";
+  return feriados.get(iso) || null;
+}
+
 function ehDiaUtil(iso, feriados) {
-  return !ehFimDeSemana(iso) && !feriados.has(iso);
+  return _rotuloNaoUtil(iso, feriados) === null;
 }
 
 function nEsimoDiaUtilApos(iso, n, feriados) {
@@ -696,64 +711,215 @@ function nEsimoDiaUtilApos(iso, n, feriados) {
   return atual;
 }
 
-function calcularInicioPrazo(dataBaseISO, tipo, feriados) {
+// Gera o demonstrativo dia-a-dia completo (mesmo formato do "Demonstrativo" da calculadora da
+// PGM-SP): cada linha tem a data, o nº do dia do prazo (só nos dias úteis já dentro da contagem)
+// e o evento (fim de semana, feriado, marco de cada regra, ou "Vencimento" na última linha).
+// dia1/vencimento são derivados das próprias linhas geradas - uma só fonte de verdade.
+function gerarDemonstrativoPrazo(dataBaseISO, dias, tipo, feriados) {
+  const linhas = [];
+  const adicionar = (data, evento, diaPrazo = null) => linhas.push({ data, evento, diaPrazo });
+  let atual = dataBaseISO;
+  let dia1;
+
   if (tipo === "dje") {
-    const publicacao = nEsimoDiaUtilApos(dataBaseISO, 1, feriados);
-    return nEsimoDiaUtilApos(publicacao, 1, feriados);
+    adicionar(atual, "Disponibilização no DJe");
+    let publicacao = null;
+    while (publicacao === null) {
+      atual = somarDiasCorridos(atual, 1);
+      const naoUtil = _rotuloNaoUtil(atual, feriados);
+      if (naoUtil) { adicionar(atual, naoUtil); continue; }
+      adicionar(atual, "Publicação");
+      publicacao = atual;
+    }
+    while (dia1 === undefined) {
+      atual = somarDiasCorridos(atual, 1);
+      const naoUtil = _rotuloNaoUtil(atual, feriados);
+      if (naoUtil) { adicionar(atual, naoUtil); continue; }
+      dia1 = atual;
+    }
+  } else if (tipo === "mandado") {
+    adicionar(atual, "Juntada de mandado/AR");
+    while (dia1 === undefined) {
+      atual = somarDiasCorridos(atual, 1);
+      const naoUtil = _rotuloNaoUtil(atual, feriados);
+      if (naoUtil) { adicionar(atual, naoUtil); continue; }
+      dia1 = atual;
+    }
+  } else if (tipo === "intimacao_saj") {
+    adicionar(atual, "1º dia corrido (entrada no Portal SAJ)");
+    for (let i = 2; i <= 10; i++) {
+      atual = somarDiasCorridos(atual, 1);
+      adicionar(atual, `${i}º dia corrido${i === 10 ? " (intimação recebida)" : ""}`);
+    }
+    while (dia1 === undefined) {
+      atual = somarDiasCorridos(atual, 1);
+      const naoUtil = _rotuloNaoUtil(atual, feriados);
+      if (naoUtil) { adicionar(atual, naoUtil); continue; }
+      dia1 = atual;
+    }
+  } else if (tipo === "citacao_saj") {
+    adicionar(atual, "Recebimento da citação no Portal SAJ");
+    let contados = 0;
+    while (contados < 5) {
+      atual = somarDiasCorridos(atual, 1);
+      const naoUtil = _rotuloNaoUtil(atual, feriados);
+      if (naoUtil) { adicionar(atual, naoUtil); continue; }
+      contados++;
+      const marcador = `${contados}º dia útil (art. 231, IX, do CPC)`;
+      if (contados === 5) {
+        dia1 = atual;
+        adicionar(atual, `${marcador} | Início do prazo`, 1);
+      } else {
+        adicionar(atual, marcador);
+      }
+    }
+  } else {
+    throw new Error(`tipo de contagem desconhecido: ${tipo}`);
   }
-  if (tipo === "mandado") {
-    return nEsimoDiaUtilApos(dataBaseISO, 1, feriados);
+
+  let contador = tipo === "citacao_saj" ? 1 : 0;
+  if (tipo !== "citacao_saj") {
+    atual = dia1;
+    contador = 1;
+    adicionar(atual, contador === dias ? "Vencimento" : "", contador);
   }
-  if (tipo === "intimacao_saj") {
-    const marco = somarDiasCorridos(dataBaseISO, 10);
-    return nEsimoDiaUtilApos(marco, 1, feriados);
+  while (contador < dias) {
+    atual = somarDiasCorridos(atual, 1);
+    const naoUtil = _rotuloNaoUtil(atual, feriados);
+    if (naoUtil) { adicionar(atual, naoUtil); continue; }
+    contador++;
+    adicionar(atual, contador === dias ? "Vencimento" : "", contador);
   }
-  if (tipo === "citacao_saj") {
-    return nEsimoDiaUtilApos(dataBaseISO, 5, feriados);
-  }
-  throw new Error(`tipo de contagem desconhecido: ${tipo}`);
+
+  return { linhas, dia1, vencimento: atual };
 }
 
-function calcularVencimentoPrazo(dataBaseISO, dias, tipo, feriados) {
-  const dia1 = calcularInicioPrazo(dataBaseISO, tipo, feriados);
-  const vencimento = dias <= 1 ? dia1 : nEsimoDiaUtilApos(dia1, dias - 1, feriados);
-  return { dia1, vencimento };
-}
-
-const _cacheFeriados = new Map(); // `${municipio}|${ano}` -> Set(iso)
+const _cacheFeriados = new Map(); // `${municipio}|${ano}` -> Map(iso -> descricao)
 
 async function _buscarFeriadosAno(municipio, ano) {
   const chave = `${municipio}|${ano}`;
   if (_cacheFeriados.has(chave)) return _cacheFeriados.get(chave);
   const dados = await cliente.chamarTool("buscar_feriados_forenses", { municipio, ano });
   if (dados.erro) throw new Error(dados.mensagem);
-  const conjunto = new Set((dados.feriados || []).map((f) => f.data));
-  _cacheFeriados.set(chave, conjunto);
-  return conjunto;
+  const mapa = new Map((dados.feriados || []).map((f) => [f.data, f.descricao || "Feriado forense"]));
+  _cacheFeriados.set(chave, mapa);
+  return mapa;
 }
 
 async function _uniaoFeriados(municipio, anos) {
-  const conjuntos = await Promise.all(anos.map((ano) => _buscarFeriadosAno(municipio, ano)));
-  const uniao = new Set();
-  for (const conjunto of conjuntos) for (const data of conjunto) uniao.add(data);
+  const mapas = await Promise.all(anos.map((ano) => _buscarFeriadosAno(municipio, ano)));
+  const uniao = new Map();
+  for (const mapa of mapas) for (const [data, descricao] of mapa) uniao.set(data, descricao);
   return uniao;
 }
 
-// Calcula o vencimento buscando os feriados necessários; se o vencimento cair num ano ainda não
-// buscado (prazo longo), busca também esse ano e recalcula.
+// Calcula o demonstrativo completo buscando os feriados necessários; se o vencimento cair num ano
+// ainda não buscado (prazo longo), busca também esse ano e recalcula.
 async function calcularPrazoComFeriados(dataBaseISO, dias, tipo, municipio) {
   if (!cliente) throw new Error("Informe o seu token e conecte antes de calcular o prazo.");
   const anoBase = Number(dataBaseISO.slice(0, 4));
   let anos = [anoBase, anoBase + 1];
   let feriados = await _uniaoFeriados(municipio, anos);
-  let resultado = calcularVencimentoPrazo(dataBaseISO, dias, tipo, feriados);
+  let resultado = gerarDemonstrativoPrazo(dataBaseISO, dias, tipo, feriados);
   const anoVencimento = Number(resultado.vencimento.slice(0, 4));
   if (anoVencimento > anoBase + 1) {
     anos = [...anos, anoVencimento];
     feriados = await _uniaoFeriados(municipio, anos);
-    resultado = calcularVencimentoPrazo(dataBaseISO, dias, tipo, feriados);
+    resultado = gerarDemonstrativoPrazo(dataBaseISO, dias, tipo, feriados);
   }
   return resultado;
+}
+
+// --- Demonstrativo em PDF (janela nova, impressão pelo próprio navegador) -------------------
+//
+// Mesma técnica da calculadora da PGM-SP: uma janela com a tabela dia-a-dia e um botão que chama
+// window.print() - o navegador gera o PDF (ou imprime de verdade) sem precisar de nenhuma
+// biblioteca extra. Conteúdo é todo montado via DOM (nunca innerHTML/document.write com dados),
+// igual ao resto do painel.
+
+function _elEm(doc, tag, attrs = {}, filhos = []) {
+  const elemento = doc.createElement(tag);
+  for (const [chave, valor] of Object.entries(attrs)) {
+    if (chave === "class") elemento.className = valor;
+    else if (chave === "texto") elemento.textContent = valor;
+    else if (valor !== null && valor !== undefined) elemento.setAttribute(chave, valor);
+  }
+  for (const filho of [].concat(filhos)) {
+    if (filho === null || filho === undefined) continue;
+    elemento.appendChild(typeof filho === "string" ? doc.createTextNode(filho) : filho);
+  }
+  return elemento;
+}
+
+function abrirDemonstrativoPdf({ dataBase, dias, tipo, municipio, dia1, vencimento, linhas }) {
+  const janela = window.open("", "_blank", "noopener,noreferrer,width=820,height=900");
+  if (!janela) {
+    window.alert("O navegador bloqueou a nova janela. Permita pop-ups para este site e tente novamente.");
+    return;
+  }
+  const doc = janela.document;
+  const tipoRotulo = (TIPOS_CONTAGEM_PRAZO.find((t) => t.valor === tipo) || {}).rotulo || tipo;
+
+  const estilo = doc.createElement("style");
+  estilo.textContent = `
+    body { font-family: Arial, Helvetica, sans-serif; color: #161616; margin: 2rem; }
+    h1 { font-size: 1.25rem; margin: 0 0 0.25rem; }
+    p.base { margin: 0 0 1rem; color: #525252; font-size: 0.9rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    th, td { border: 1px solid #c6c6c6; padding: 0.35rem 0.5rem; text-align: left; }
+    th { background: #f4f4f4; }
+    tr.venc td { font-weight: bold; background: #defbe6; }
+    .acoes { margin-bottom: 1rem; }
+    .aviso { margin-top: 1rem; font-size: 0.8rem; color: #525252; }
+    @media print { .acoes { display: none; } }
+  `;
+  doc.head.appendChild(estilo);
+  doc.title = "Demonstrativo do prazo";
+
+  const botaoPdf = _elEm(doc, "button", { texto: "Gerar PDF" });
+  botaoPdf.addEventListener("click", () => janela.print());
+  doc.body.appendChild(_elEm(doc, "div", { class: "acoes" }, [botaoPdf]));
+
+  doc.body.appendChild(_elEm(doc, "h1", { texto: "Demonstrativo do prazo" }));
+  doc.body.appendChild(
+    _elEm(doc, "p", { class: "base" }, [
+      `Prazo de ${dias} dia(s) úteis · ${tipoRotulo} · município/comarca: ${municipio}.`,
+      _elEm(doc, "br"),
+      `Base: ${formatarDataSimples(dataBase)} · Início da contagem (dia 1): ${formatarDataSimples(dia1)} · Vencimento: ${formatarDataSimples(vencimento)}`,
+    ])
+  );
+
+  const corpoTabela = _elEm(doc, "tbody");
+  for (const linha of linhas) {
+    corpoTabela.appendChild(
+      _elEm(doc, "tr", linha.evento === "Vencimento" ? { class: "venc" } : {}, [
+        _elEm(doc, "td", { texto: formatarDataSimples(linha.data) }),
+        _elEm(doc, "td", { texto: _abrevDiaSemana(linha.data) }),
+        _elEm(doc, "td", { texto: linha.diaPrazo === null ? "-" : String(linha.diaPrazo) }),
+        _elEm(doc, "td", { texto: linha.evento || "" }),
+      ])
+    );
+  }
+  doc.body.appendChild(
+    _elEm(doc, "table", {}, [
+      _elEm(doc, "thead", {}, [
+        _elEm(doc, "tr", {}, [
+          _elEm(doc, "th", { texto: "Data" }),
+          _elEm(doc, "th", { texto: "Dia" }),
+          _elEm(doc, "th", { texto: "Dia do prazo" }),
+          _elEm(doc, "th", { texto: "Evento" }),
+        ]),
+      ]),
+      corpoTabela,
+    ])
+  );
+  doc.body.appendChild(
+    _elEm(doc, "p", {
+      class: "aviso",
+      texto: "Cálculo informativo, sem valor oficial - confirme sempre no sistema do tribunal. Considera sábados, domingos e os feriados forenses do município informado.",
+    })
+  );
+  janela.focus();
 }
 
 function painelCalculoPrazo(item) {
@@ -807,7 +973,8 @@ function painelCalculoPrazo(item) {
     botaoCalcular.disabled = true;
     botaoCalcular.textContent = "Calculando…";
     try {
-      const { dia1, vencimento } = await calcularPrazoComFeriados(dataBase, dias, campoTipo.value, municipio);
+      const tipo = campoTipo.value;
+      const { dia1, vencimento, linhas } = await calcularPrazoComFeriados(dataBase, dias, tipo, municipio);
       resultadoEl.appendChild(
         notificacao(
           "success",
@@ -818,6 +985,13 @@ function painelCalculoPrazo(item) {
       resultadoEl.appendChild(
         el("p", { class: "campo-ajuda", texto: "Cálculo informativo, sem valor oficial - confirme sempre no sistema do tribunal." })
       );
+      const botaoPdf = el("button", {
+        class: "cds--btn cds--btn--tertiary cds--btn--sm", type: "button", texto: "Ver demonstrativo dia a dia (PDF)",
+      });
+      botaoPdf.addEventListener("click", () => {
+        abrirDemonstrativoPdf({ dataBase, dias, tipo, municipio, dia1, vencimento, linhas });
+      });
+      resultadoEl.appendChild(botaoPdf);
     } catch (erro) {
       resultadoEl.appendChild(el("p", { class: "resultado-aviso", texto: erro.message }));
     } finally {
