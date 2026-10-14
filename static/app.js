@@ -1764,6 +1764,53 @@ function cartaoCaso(caso) {
   return card;
 }
 
+function cartaoPendente(p) {
+  const d = p.dados || {};
+  const card = el("article", { class: "cds--tile resultado-card" });
+  card.appendChild(el("h3", { texto: d.tipoComunicacao || "Processo novo encontrado" }));
+  card.appendChild(el("p", { texto: `Processo: ${d.numeroprocessocommascara || p.numero_processo}` }));
+  if (d.nomeOrgao) card.appendChild(el("p", { texto: `Órgão: ${d.nomeOrgao}` }));
+  if (d.siglaTribunal) card.appendChild(el("p", { texto: `Tribunal: ${d.siglaTribunal}` }));
+  card.appendChild(el("p", { class: "campo-ajuda", texto: `Encontrado monitorando a OAB de ${p.usuario} em ${formatarData(p.criado_em)}` }));
+
+  const acoes = el("div", { class: "resultado-acoes" });
+  anexarBotaoCadastrarCaso(acoes, p.numero_processo, () => {
+    card.remove();
+    carregarClientesECasos();
+  });
+  const botaoDescartar = el("button", {
+    class: "cds--btn cds--btn--danger--tertiary cds--btn--sm", type: "button", texto: "Descartar",
+  });
+  botaoDescartar.addEventListener("click", async () => {
+    botaoDescartar.disabled = true;
+    try {
+      await _enviarJson(`/pendentes/${p.numero_processo}/descartar`, {});
+      card.remove();
+    } catch (erro) {
+      mostrarErro(acoes, erro.message);
+      botaoDescartar.disabled = false;
+    }
+  });
+  acoes.appendChild(botaoDescartar);
+  card.appendChild(acoes);
+  return card;
+}
+
+async function carregarPendentes() {
+  const listaPendentesEl = document.getElementById("lista-pendentes");
+  limpar(listaPendentesEl);
+  try {
+    const { pendentes } = await _buscarJson("/pendentes");
+    if (!(pendentes || []).length) {
+      listaPendentesEl.appendChild(notificacao("info", "Nenhum processo pendente de triagem"));
+    } else {
+      for (const p of pendentes) listaPendentesEl.appendChild(cartaoPendente(p));
+    }
+  } catch (erro) {
+    mostrarErro(listaPendentesEl, erro.message);
+  }
+}
+
 async function carregarClientesECasos() {
   if (!exigirCliente(document.getElementById("lista-clientes"))) return;
   const listaClientesEl = document.getElementById("lista-clientes");
@@ -1771,6 +1818,7 @@ async function carregarClientesECasos() {
   const selectCliente = document.getElementById("caso-cliente");
   limpar(listaClientesEl);
   limpar(listaCasosEl);
+  carregarPendentes();
   try {
     const { clientes } = await _buscarJson("/clientes");
     _cacheClientes = clientes || [];
@@ -1850,7 +1898,7 @@ formCaso.addEventListener("submit", async (evento) => {
 
 // Botão "Cadastrar como caso" no resultado da consulta de processo (DataJud): abre um mini
 // formulário inline, sem precisar trocar de aba. Cria o cliente na hora se for novo (Fase 1).
-function anexarBotaoCadastrarCaso(acoes, numeroProcesso) {
+function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar) {
   const botao = el("button", {
     class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Cadastrar como caso",
   });
@@ -1900,6 +1948,7 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso) {
         }
         await _enviarJson("/casos", corpo);
         miniForm.replaceWith(notificacao("success", "Caso cadastrado"));
+        if (aoSalvar) aoSalvar();
       } catch (erro) {
         statusMini.textContent = erro.message;
         botaoSalvar.disabled = false;

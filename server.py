@@ -1615,15 +1615,20 @@ async def _verificar_um_monitoramento(
 
         if gestao is not None:
             # Fase 2: além do aviso por e-mail, alimenta a linha do tempo de cada caso cadastrado
-            # que já inclui o processo da publicação (não cria caso novo - isso é o aviso de
-            # captura por OAB da Fase 3, feito à parte).
+            # que já inclui o processo da publicação. Fase 3: se o monitoramento é por OAB (não
+            # por número de processo específico) e o processo da publicação ainda não tem caso
+            # nenhum, enfileira para triagem manual (nunca cria caso sozinho - ver Q10).
+            eh_monitoramento_por_oab = bool(criterio.get("numero_oab"))
             for item in novos:
                 numero = _so_digitos(item.get("numeroprocessocommascara"))
-                if len(numero) == 20:
-                    try:
-                        gestao.registrar_evento(numero, "publicacao", item, lambda: agora_dt)
-                    except Exception:
-                        log.exception("Monitoramento %s: falha ao gravar evento na linha do tempo do caso", id_monitoramento)
+                if len(numero) != 20:
+                    continue
+                try:
+                    casos_ligados = gestao.registrar_evento(numero, "publicacao", item, lambda: agora_dt)
+                    if not casos_ligados and eh_monitoramento_por_oab:
+                        gestao.registrar_pendente(numero, monitoramento["usuario"], item, lambda: agora_dt)
+                except Exception:
+                    log.exception("Monitoramento %s: falha ao gravar evento/pendência do caso", id_monitoramento)
         return
 
     expira_em = monitoramento.get("expira_em")
@@ -2371,6 +2376,17 @@ class _AutenticacaoBearer:
             return
         if caminho.startswith("/casos/") and self.gestao is not None:
             await self._caso_detalhe(scope, send, caminho[len("/casos/"):])
+            return
+        if caminho == "/pendentes" and self.gestao is not None:
+            await _json(send, 200, {"pendentes": self.gestao.listar_pendentes()})
+            return
+        if caminho.startswith("/pendentes/") and caminho.endswith("/descartar") and self.gestao is not None:
+            if scope.get("method") != "POST":
+                await _responder(send, 404, b"Nao encontrado")
+                return
+            numero = caminho[len("/pendentes/"):-len("/descartar")].rstrip("/")
+            encontrado = self.gestao.descartar_pendente(numero)
+            await _json(send, 200 if encontrado else 404, {"descartado": encontrado})
             return
 
         log.info("Requisição de '%s': %s %s", _rotulo_usuario(usuario), scope.get("method"), caminho)

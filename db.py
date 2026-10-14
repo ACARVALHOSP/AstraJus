@@ -104,6 +104,18 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 criado_em TEXT NOT NULL
             );
 
+            -- Triagem (fase 3): processo novo achado pela busca periódica por OAB, ainda sem
+            -- caso cadastrado. Não vira caso sozinho (decisão explícita: homônimos/erro de
+            -- grafia tornam a associação automática por nome arriscada) - fica à espera de
+            -- confirmação manual no painel, ou de ser descartado.
+            CREATE TABLE IF NOT EXISTS triagem_processos (
+                numero_processo TEXT PRIMARY KEY,
+                usuario TEXT NOT NULL,
+                dados TEXT NOT NULL,
+                criado_em TEXT NOT NULL,
+                descartado INTEGER NOT NULL DEFAULT 0
+            );
+
             CREATE INDEX IF NOT EXISTS idx_caso_processos_numero ON caso_processos (numero_processo);
             CREATE INDEX IF NOT EXISTS idx_casos_cliente ON casos (cliente_id);
             CREATE INDEX IF NOT EXISTS idx_caso_eventos_caso ON caso_eventos (caso_id);
@@ -380,6 +392,42 @@ class RegistroClientesCasos:
                 }
                 for numero_processo, tipo, conteudo, criado_em in cursor.fetchall()
             ]
+
+    # Triagem de processo novo achado por OAB (Fase 3)
+
+    def registrar_pendente(self, numero_processo: str, usuario: str, dados: dict, agora) -> None:
+        """Enfileira `numero_processo` para triagem manual, a menos que já esteja na fila (ativo
+        ou descartado): sinalizações repetidas do mesmo processo em ciclos de monitoramento
+        seguintes não reabrem algo que a pessoa já descartou."""
+        criado_em = agora().isoformat()
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute(
+                "INSERT OR IGNORE INTO triagem_processos (numero_processo, usuario, dados, criado_em, descartado) "
+                "VALUES (?, ?, ?, ?, 0)",
+                (numero_processo, usuario, json.dumps(dados, ensure_ascii=False), criado_em),
+            )
+
+    def listar_pendentes(self) -> list[dict]:
+        """Processos aguardando triagem: não descartados e ainda sem nenhum caso cadastrado
+        (criar um caso para o processo é o que tira ele desta lista, sem precisar de um passo
+        extra de 'resolver')."""
+        with _abrir(self.caminho) as conexao:
+            cursor = conexao.execute(
+                "SELECT numero_processo, usuario, dados, criado_em FROM triagem_processos "
+                "WHERE descartado = 0 AND numero_processo NOT IN (SELECT numero_processo FROM caso_processos) "
+                "ORDER BY criado_em DESC"
+            )
+            return [
+                {"numero_processo": n, "usuario": u, "dados": json.loads(d), "criado_em": c}
+                for n, u, d, c in cursor.fetchall()
+            ]
+
+    def descartar_pendente(self, numero_processo: str) -> bool:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            cursor = conexao.execute(
+                "UPDATE triagem_processos SET descartado = 1 WHERE numero_processo = ?", (numero_processo,)
+            )
+            return cursor.rowcount > 0
 
 
 def _linha_cliente(linha) -> dict:
