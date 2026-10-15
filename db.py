@@ -135,9 +135,25 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 descartado INTEGER NOT NULL DEFAULT 0
             );
 
+            -- Log geral de publicações capturadas por monitoramento de OAB (aba "Publicações por
+            -- OAB"), diferente de triagem_processos: aqui entra TODA publicação achada (tenha ou
+            -- não caso já cadastrado), com status de tratamento manual. Captura roda a cada 24h,
+            -- separada do ciclo de 6h que manda e-mail.
+            CREATE TABLE IF NOT EXISTS publicacoes_capturadas (
+                hash TEXT PRIMARY KEY,
+                monitoramento_id TEXT,
+                nome_pesquisado TEXT,
+                numero_processo TEXT,
+                dados TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'nao_tratada',
+                caso_id TEXT,
+                criado_em TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_caso_processos_numero ON caso_processos (numero_processo);
             CREATE INDEX IF NOT EXISTS idx_casos_cliente ON casos (cliente_id);
             CREATE INDEX IF NOT EXISTS idx_caso_eventos_caso ON caso_eventos (caso_id);
+            CREATE INDEX IF NOT EXISTS idx_publicacoes_status ON publicacoes_capturadas (status);
             """
         )
 
@@ -559,4 +575,99 @@ def _linha_caso(linha) -> dict:
         "id": id_, "cliente_id": cliente_id, "titulo": titulo, "responsavel": responsavel,
         "status": status, "drive_pasta_id": drive_pasta_id, "calendar_evento_id": calendar_evento_id,
         "criado_em": criado_em,
+    }
+
+
+_STATUS_PUBLICACAO_VALIDOS = {"nao_tratada", "tratada", "arquivada"}
+
+
+class RegistroPublicacoesOAB:
+    """Log geral de publicações capturadas por monitoramento de OAB (aba "Publicações por OAB").
+    Mesmo padrão de conexão efêmera das outras classes."""
+
+    def __init__(self, caminho: str | Path) -> None:
+        self.caminho = Path(caminho)
+        self._trava = threading.Lock()
+
+    def registrar(
+        self, hash_publicacao: str, monitoramento_id: str | None, nome_pesquisado: str | None,
+        numero_processo: str | None, dados: dict, status: str, caso_id: str | None, agora,
+    ) -> bool:
+        """INSERT OR IGNORE pelo hash: uma publicação já vista (mesmo hash) não aparece de novo
+        nas capturas seguintes. Devolve True se inseriu (publicação nova), False se já existia."""
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            cursor = conexao.execute(
+                "INSERT OR IGNORE INTO publicacoes_capturadas "
+                "(hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, caso_id, criado_em) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    hash_publicacao, monitoramento_id, nome_pesquisado, numero_processo,
+                    json.dumps(dados, ensure_ascii=False), status, caso_id, agora().isoformat(),
+                ),
+            )
+            return cursor.rowcount > 0
+
+    def listar(self, status: str | None = None) -> list[dict]:
+        with _abrir(self.caminho) as conexao:
+            if status:
+                cursor = conexao.execute(
+                    "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, "
+                    "caso_id, criado_em FROM publicacoes_capturadas WHERE status = ? ORDER BY criado_em DESC",
+                    (status,),
+                )
+            else:
+                cursor = conexao.execute(
+                    "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, "
+                    "caso_id, criado_em FROM publicacoes_capturadas ORDER BY criado_em DESC"
+                )
+            return [_linha_publicacao(linha) for linha in cursor.fetchall()]
+
+    def obter(self, hash_publicacao: str) -> dict | None:
+        with _abrir(self.caminho) as conexao:
+            linha = conexao.execute(
+                "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, "
+                "caso_id, criado_em FROM publicacoes_capturadas WHERE hash = ?",
+                (hash_publicacao,),
+            ).fetchone()
+        return _linha_publicacao(linha) if linha else None
+
+    def atualizar_status(self, hashes: list[str], status: str, caso_id: str | None = None) -> int:
+        """Atualiza o status (em lote) de uma lista de hashes. `caso_id`, se dado, também é
+        gravado (uso: ao criar um caso a partir da publicação). Devolve quantas linhas mudaram."""
+        if status not in _STATUS_PUBLICACAO_VALIDOS:
+            raise ValueError(f"status inválido: {status}")
+        if not hashes:
+            return 0
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            marcadores = ",".join("?" for _ in hashes)
+            if caso_id is not None:
+                cursor = conexao.execute(
+                    f"UPDATE publicacoes_capturadas SET status = ?, caso_id = ? WHERE hash IN ({marcadores})",
+                    (status, caso_id, *hashes),
+                )
+            else:
+                cursor = conexao.execute(
+                    f"UPDATE publicacoes_capturadas SET status = ? WHERE hash IN ({marcadores})",
+                    (status, *hashes),
+                )
+            return cursor.rowcount
+
+    def marcar_tratada_por_processo(self, numero_processo: str, caso_id: str) -> int:
+        """Quando um processo já tem caso (ou acaba de ganhar um), as publicações já capturadas
+        desse processo viram "tratada" automaticamente (Q11 da fase de publicações por OAB)."""
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            cursor = conexao.execute(
+                "UPDATE publicacoes_capturadas SET status = 'tratada', caso_id = ? "
+                "WHERE numero_processo = ? AND status != 'tratada'",
+                (caso_id, numero_processo),
+            )
+            return cursor.rowcount
+
+
+def _linha_publicacao(linha) -> dict:
+    hash_, monitoramento_id, nome_pesquisado, numero_processo, dados, status, caso_id, criado_em = linha
+    return {
+        "hash": hash_, "monitoramento_id": monitoramento_id, "nome_pesquisado": nome_pesquisado,
+        "numero_processo": numero_processo, "dados": json.loads(dados), "status": status,
+        "caso_id": caso_id, "criado_em": criado_em,
     }

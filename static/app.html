@@ -53,6 +53,20 @@ body { margin: 0; min-height: 100dvh; }
 .partes-checkbox-lista { display: flex; flex-direction: column; gap: 0.25rem; }
 .parte-checkbox-item { display: flex; align-items: center; gap: 0.375rem; font-size: 0.875rem; font-weight: normal; }
 .parte-checkbox-item input[type="checkbox"] { width: auto; margin: 0; }
+.pub-oab-barra { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 1rem; margin-top: 1rem; }
+.pub-oab-filtros, .pub-oab-acoes-lote { display: flex; align-items: flex-end; gap: 0.5rem; }
+.pub-oab-tabela { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+.pub-oab-tabela th { text-align: left; font-size: 0.75rem; text-transform: uppercase; color: var(--cds-text-secondary, #525252); padding: 0.5rem; border-bottom: 1px solid var(--cds-border-subtle, #e0e0e0); }
+.pub-oab-tabela td { padding: 0.625rem 0.5rem; border-bottom: 1px solid var(--cds-border-subtle, #e0e0e0); vertical-align: top; }
+.pub-oab-texto-expandido { margin-top: 0.375rem; font-size: 0.8125rem; color: var(--cds-text-secondary, #525252); white-space: pre-line; }
+.pub-oab-status-nao-tratada { background: #fcf4d6; color: #684e00; padding: 0.125rem 0.5rem; border-radius: 3px; font-size: 0.75rem; font-weight: 600; }
+.pub-oab-status-tratada { background: #defbe6; color: #0e6027; padding: 0.125rem 0.5rem; border-radius: 3px; font-size: 0.75rem; font-weight: 600; }
+.pub-oab-status-arquivada { background: #e0e0e0; color: #525252; padding: 0.125rem 0.5rem; border-radius: 3px; font-size: 0.75rem; font-weight: 600; }
+.pub-oab-acoes-linha { display: flex; gap: 0.25rem; align-items: center; white-space: nowrap; }
+.pub-oab-menu { position: relative; display: inline-block; }
+.pub-oab-menu-lista { position: absolute; right: 0; top: 100%; background: var(--cds-layer-01, #fff); border: 1px solid var(--cds-border-subtle, #e0e0e0); border-radius: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); z-index: 10; min-width: 160px; }
+.pub-oab-menu-lista button { display: block; width: 100%; text-align: left; padding: 0.5rem 0.75rem; border: none; background: none; cursor: pointer; font-size: 0.8125rem; }
+.pub-oab-menu-lista button:hover { background: var(--cds-layer-hover-01, #e8e8e8); }
 .prazo-painel {
   margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--cds-border-subtle, #e0e0e0);
 }
@@ -214,6 +228,9 @@ body { margin: 0; min-height: 100dvh; }
 <li class="cds--tabs__nav-item" role="presentation">
 <button class="cds--tabs__nav-link" id="aba-clientes-botao" role="tab" aria-selected="false" aria-controls="aba-clientes" type="button">Clientes e casos</button>
 </li>
+<li class="cds--tabs__nav-item" role="presentation">
+<button class="cds--tabs__nav-link" id="aba-publicacoes-oab-botao" role="tab" aria-selected="false" aria-controls="aba-publicacoes-oab" type="button">Publicações por OAB</button>
+</li>
 </ul>
 </nav>
 
@@ -252,6 +269,11 @@ body { margin: 0; min-height: 100dvh; }
 <div class="cds--form-item">
 <label class="cds--label" for="pub-uf-oab">UF da OAB</label>
 <input class="cds--text-input" id="pub-uf-oab" name="uf_oab" placeholder="SP" maxlength="2">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="pub-nome-oab">Nome pesquisado (opcional)</label>
+<input class="cds--text-input" id="pub-nome-oab" placeholder="Ex.: advogado ou parte dono da OAB">
+<span class="campo-ajuda">Só identifica o monitoramento na aba "Publicações por OAB" - não entra na busca.</span>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="pub-data-inicio">Publicado a partir de</label>
@@ -461,6 +483,27 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 
 <h2 class="lista-rapida-titulo">Casos cadastrados</h2>
 <div id="lista-casos" class="app-resultado"></div>
+</section>
+
+<section id="aba-publicacoes-oab" role="tabpanel" aria-labelledby="aba-publicacoes-oab-botao" hidden>
+<p class="campo-ajuda">Toda publicação capturada pelo monitoramento de OAB (ver aba "Publicações (DJEN)" para criar um), atualizada a cada 24h.</p>
+<div class="pub-oab-barra">
+<div class="pub-oab-filtros">
+<label class="cds--label" for="pub-oab-filtro-status">Status</label>
+<select class="cds--select-input" id="pub-oab-filtro-status">
+<option value="">Todos</option>
+<option value="nao_tratada">Não tratada</option>
+<option value="tratada">Tratada</option>
+<option value="arquivada">Arquivada</option>
+</select>
+</div>
+<div class="pub-oab-acoes-lote">
+<button class="cds--btn cds--btn--tertiary cds--btn--sm" type="button" id="pub-oab-marcar-tratada" disabled>Marcar tratada</button>
+<button class="cds--btn cds--btn--tertiary cds--btn--sm" type="button" id="pub-oab-arquivar" disabled>Arquivar</button>
+<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="pub-oab-atualizar">Atualizar lista</button>
+</div>
+</div>
+<div id="lista-publicacoes-oab" class="app-resultado"></div>
 </section>
 
 </main>

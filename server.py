@@ -40,7 +40,10 @@ from urllib.parse import parse_qs, urlsplit
 
 import db as _db
 import google_integracao
-from db import RegistroClientesCasos, RegistroIntegracaoGoogle, RegistroMonitoramentos, RegistroUsuarios
+from db import (
+    RegistroClientesCasos, RegistroIntegracaoGoogle, RegistroMonitoramentos, RegistroPublicacoesOAB,
+    RegistroUsuarios,
+)
 
 import httpx
 from mcp.server.fastmcp import Context, FastMCP
@@ -1458,7 +1461,8 @@ def _enviar_token_por_email(cfg: ConfiguracaoSMTP, destino: str, token: str) -> 
 # --- Monitoramento: acompanhar processo/OAB e avisar por e-mail quando sai publicação nova -----
 
 def _normalizar_criterio_monitoramento(
-    numero_processo: str | None, sigla_tribunal: str | None, numero_oab: str | None, uf_oab: str | None
+    numero_processo: str | None, sigla_tribunal: str | None, numero_oab: str | None, uf_oab: str | None,
+    nome: str | None = None,
 ) -> tuple[dict | None, dict | None]:
     """Mesma validação de consultar_publicacoes_djen. Devolve (criterio, None) ou (None, erro)."""
     numero = _so_digitos(numero_processo) if numero_processo else None
@@ -1474,20 +1478,23 @@ def _normalizar_criterio_monitoramento(
         return None, _erro("uf_oab inválida: use 2 letras, ex: 'SP'.")
 
     sigla = (sigla_tribunal or "").strip().upper() or None
+    # "nome" é só um rótulo (ex.: o advogado/parte da OAB pesquisada), usado para identificar o
+    # monitoramento na aba "Publicações por OAB" - não entra na busca ao DJEN.
+    rotulo = (nome or "").strip() or None
     criterio = {k: v for k, v in {
-        "numero_processo": numero, "sigla_tribunal": sigla, "numero_oab": oab, "uf_oab": uf,
+        "numero_processo": numero, "sigla_tribunal": sigla, "numero_oab": oab, "uf_oab": uf, "nome": rotulo,
     }.items() if v is not None}
     return criterio, None
 
 
 def _criar_monitoramento(
     registro: RegistroMonitoramentos, usuario: str, numero_processo: str | None, sigla_tribunal: str | None,
-    numero_oab: str | None, uf_oab: str | None, agora,
+    numero_oab: str | None, uf_oab: str | None, agora, nome: str | None = None,
 ) -> dict:
     if "@" not in (usuario or ""):
         return _erro("Monitoramento exige um usuário com e-mail cadastrado.")
 
-    criterio, erro = _normalizar_criterio_monitoramento(numero_processo, sigla_tribunal, numero_oab, uf_oab)
+    criterio, erro = _normalizar_criterio_monitoramento(numero_processo, sigla_tribunal, numero_oab, uf_oab, nome)
     if erro:
         return erro
 
@@ -1637,6 +1644,64 @@ async def _verificar_um_monitoramento(
         registro.atualizar(lambda d: d.pop(id_monitoramento, None) if id_monitoramento in d else False)
 
 
+# --- Captura de publicações por OAB a cada 24h (aba "Publicações por OAB") -------------------
+#
+# Separada do ciclo de 6h acima (que manda e-mail): essa captura só alimenta o log geral da aba,
+# sem mandar aviso nenhum. Pega TODO monitoramento por OAB (ignora os por número de processo
+# específico - esses já têm sua própria linha do tempo via caso_eventos) e grava cada publicação
+# achada (dedupe por hash, ver RegistroPublicacoesOAB.registrar). Publicação de processo que já
+# tem caso cadastrado entra direto como "tratada" (Q11).
+
+async def _capturar_um_monitoramento_oab(
+    id_monitoramento: str, criterio: dict, publicacoes: "RegistroPublicacoesOAB",
+    gestao: "RegistroClientesCasos", agora,
+) -> None:
+    params = {k: v for k, v in {
+        "numeroOab": criterio.get("numero_oab"), "ufOab": criterio.get("uf_oab"),
+        "siglaTribunal": criterio.get("sigla_tribunal"), "pagina": 1, "itensPorPagina": 50,
+    }.items() if v is not None}
+
+    resposta = await _djen_get_com_retry(DJEN_BASE_URL, params=params)
+    if isinstance(resposta, dict):
+        log.warning("Captura 24h (OAB) %s: DJEN indisponível neste ciclo (%s)", id_monitoramento, resposta.get("mensagem"))
+        return
+    dados_resp, erro_json = _json_da_resposta(resposta)
+    if erro_json or not isinstance(dados_resp, dict):
+        log.warning("Captura 24h (OAB) %s: resposta inesperada do DJEN", id_monitoramento)
+        return
+
+    nome_pesquisado = criterio.get("nome")
+    for bruto in dados_resp.get("items") or []:
+        item = _extrair_publicacao_djen(bruto)
+        hash_publicacao = item.get("hash")
+        if not hash_publicacao:
+            continue
+        numero = _so_digitos(item.get("numeroprocessocommascara"))
+        numero = numero if len(numero) == 20 else None
+        casos_ligados = gestao.casos_do_processo(numero) if numero else []
+        status_inicial = "tratada" if casos_ligados else "nao_tratada"
+        publicacoes.registrar(
+            hash_publicacao, id_monitoramento, nome_pesquisado, numero, item,
+            status_inicial, casos_ligados[0] if casos_ligados else None, agora,
+        )
+
+
+async def _capturar_publicacoes_oab(
+    registro: RegistroMonitoramentos, publicacoes: "RegistroPublicacoesOAB", gestao: "RegistroClientesCasos",
+    agora=lambda: datetime.now(timezone.utc),
+) -> None:
+    """Confere todo monitoramento por OAB e grava as publicações achadas no log da aba. Chamada
+    pelo job do APScheduler a cada 24h; os testes chamam direto, com um relógio injetado."""
+    for id_monitoramento, monitoramento in list(registro.carregar().items()):
+        criterio = monitoramento.get("criterio") or {}
+        if not criterio.get("numero_oab"):
+            continue  # monitoramento por número de processo específico não entra nesta aba
+        try:
+            await _capturar_um_monitoramento_oab(id_monitoramento, criterio, publicacoes, gestao, agora)
+        except Exception:
+            log.exception("Captura 24h (OAB): falha no monitoramento %s", id_monitoramento)
+
+
 async def _verificar_monitoramentos_pendentes(
     registro: RegistroMonitoramentos, smtp: ConfiguracaoSMTP | None, agora=datetime.now, enviar=None,
     gestao: "RegistroClientesCasos | None" = None,
@@ -1769,12 +1834,16 @@ async def monitorar_publicacoes(
     sigla_tribunal: str | None = None,
     numero_oab: str | None = None,
     uf_oab: str | None = None,
+    nome: str | None = None,
 ) -> dict:
     """Cria um Monitoramento: acompanha um processo e/ou uma OAB e avisa por e-mail (resumo + link
-    para o painel) quando sair uma publicação nova no DJEN, verificado a cada 6 horas.
+    para o painel) quando sair uma publicação nova no DJEN, verificado a cada 6 horas. Monitoramentos
+    por OAB também alimentam a aba "Publicações por OAB" do painel, capturada a cada 24h.
 
     Parâmetros (ao menos um entre numero_processo e numero_oab): os mesmos de
-    consultar_publicacoes_djen (numero_processo, sigla_tribunal, numero_oab, uf_oab).
+    consultar_publicacoes_djen (numero_processo, sigla_tribunal, numero_oab, uf_oab), mais um
+    `nome` opcional (ex.: o advogado ou parte dono da OAB) só para identificar o monitoramento
+    nas telas - não entra na busca em si.
 
     Limitações:
     - Só funciona no servidor hospedado (modo HTTP, autenticado e com e-mail configurado); em uso
@@ -1788,7 +1857,8 @@ async def monitorar_publicacoes(
         return resultado
     estado, usuario = resultado
     return _criar_monitoramento(
-        estado.registro_monitoramentos, usuario, numero_processo, sigla_tribunal, numero_oab, uf_oab, datetime.now
+        estado.registro_monitoramentos, usuario, numero_processo, sigla_tribunal, numero_oab, uf_oab,
+        datetime.now, nome,
     )
 
 
@@ -2271,12 +2341,17 @@ def _resolver_cliente_id(gestao: RegistroClientesCasos, item: dict) -> tuple[str
     return novo_cliente["id"], None
 
 
-def _criar_caso_validado(gestao: RegistroClientesCasos, dados: dict) -> tuple[dict | None, dict | None]:
+def _criar_caso_validado(
+    gestao: RegistroClientesCasos, dados: dict, publicacoes: "RegistroPublicacoesOAB | None" = None,
+) -> tuple[dict | None, dict | None]:
     """Valida o corpo de POST /casos. Aceita cliente_id (existente) ou cliente_novo (cria na
     hora) - é o que permite o botão "cadastrar como caso" da consulta pontual de processo.
     clientes_adicionais (opcional) é uma lista de {cliente_id} ou {cliente_novo}: outras partes
     da mesma publicação/processo que também viram clientes do escritório, vinculadas a este
     mesmo caso (ex.: autor e réu, quando ambos interessam ao escritório).
+    `publicacoes`, se dado, marca como "tratada" qualquer publicação já capturada (aba
+    "Publicações por OAB") desses mesmos processos (Q11: processo que já tem caso aparece
+    tratado direto).
     Devolve (caso, None) ou (None, erro).
     """
     cliente_id, erro = _resolver_cliente_id(gestao, dados)
@@ -2313,6 +2388,12 @@ def _criar_caso_validado(gestao: RegistroClientesCasos, dados: dict) -> tuple[di
         agora=lambda: datetime.now(timezone.utc),
         clientes_adicionais=clientes_adicionais,
     )
+    if publicacoes is not None:
+        for numero in numeros:
+            try:
+                publicacoes.marcar_tratada_por_processo(numero, caso["id"])
+            except Exception:
+                log.exception("Caso %s: falha ao marcar publicações tratadas para o processo %s", caso["id"], numero)
     return caso, None
 
 
@@ -2331,7 +2412,8 @@ class _AutenticacaoBearer:
                  captcha_site_key: str | None = None, falhas: LimitadorUso | None = None,
                  gestao: "RegistroClientesCasos | None" = None,
                  registro_google: "RegistroIntegracaoGoogle | None" = None,
-                 google_client_id: str | None = None, google_client_secret: str | None = None) -> None:
+                 google_client_id: str | None = None, google_client_secret: str | None = None,
+                 publicacoes: "RegistroPublicacoesOAB | None" = None) -> None:
         self.app = app
         self.registro = registro
         self.limitador = limitador
@@ -2344,6 +2426,7 @@ class _AutenticacaoBearer:
         self.falhas = falhas
         self.gestao = gestao
         self.registro_google = registro_google
+        self.publicacoes = publicacoes
         self.google_client_id = google_client_id
         self.google_client_secret = google_client_secret
         # state do fluxo OAuth do Google em andamento: state -> prazo de validade (datetime).
@@ -2491,6 +2574,17 @@ class _AutenticacaoBearer:
             numero = caminho[len("/pendentes/"):-len("/descartar")].rstrip("/")
             encontrado = self.gestao.descartar_pendente(numero)
             await _json(send, 200 if encontrado else 404, {"descartado": encontrado})
+            return
+        if caminho == "/publicacoes-oab" and self.publicacoes is not None:
+            await self._publicacoes_oab(scope, send)
+            return
+        if caminho == "/publicacoes-oab/status" and self.publicacoes is not None:
+            await self._publicacoes_oab_status(scope, receive, send)
+            return
+        if caminho.startswith("/publicacoes-oab/") and caminho.endswith("/criar-caso") \
+                and self.publicacoes is not None and self.gestao is not None:
+            hash_publicacao = caminho[len("/publicacoes-oab/"):-len("/criar-caso")].rstrip("/")
+            await self._publicacao_oab_criar_caso(scope, receive, send, hash_publicacao)
             return
 
         log.info("Requisição de '%s': %s %s", _rotulo_usuario(usuario), scope.get("method"), caminho)
@@ -2725,7 +2819,7 @@ class _AutenticacaoBearer:
             except (ValueError, UnicodeDecodeError):
                 await _json(send, 400, _erro("JSON inválido."))
                 return
-            caso, erro = _criar_caso_validado(self.gestao, dados)
+            caso, erro = _criar_caso_validado(self.gestao, dados, self.publicacoes)
             if erro:
                 await _json(send, 400, erro)
                 return
@@ -2819,6 +2913,75 @@ class _AutenticacaoBearer:
             agora=lambda: datetime.now(timezone.utc),
         )
         await _json(send, 201, {"evento_id": resultado.get("id"), "link": resultado.get("htmlLink")})
+
+    # --- Publicações por OAB (log geral, captura a cada 24h) -------------------
+
+    async def _publicacoes_oab(self, scope, send):
+        if scope.get("method") != "GET":
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        status = dict(_query(scope)).get("status") or None
+        if status and status not in ("nao_tratada", "tratada", "arquivada"):
+            await _json(send, 400, _erro("status inválido."))
+            return
+        await _json(send, 200, {"publicacoes": self.publicacoes.listar(status)})
+
+    async def _publicacoes_oab_status(self, scope, receive, send):
+        """POST /publicacoes-oab/status: atualização em lote - {hashes: [...], status: "..."}."""
+        if scope.get("method") != "POST":
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        corpo = await _ler_corpo(receive)
+        try:
+            dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            await _json(send, 400, _erro("JSON inválido."))
+            return
+        hashes = dados.get("hashes")
+        status = dados.get("status")
+        if not isinstance(hashes, list) or not hashes:
+            await _json(send, 400, _erro("Informe ao menos um hash em 'hashes'."))
+            return
+        if status not in ("nao_tratada", "tratada", "arquivada"):
+            await _json(send, 400, _erro("status deve ser nao_tratada, tratada ou arquivada."))
+            return
+        quantidade = self.publicacoes.atualizar_status(hashes, status)
+        await _json(send, 200, {"atualizadas": quantidade})
+
+    async def _publicacao_oab_criar_caso(self, scope, receive, send, hash_publicacao: str):
+        """POST /publicacoes-oab/<hash>/criar-caso: atalho do "+" na tabela - cria o caso (cliente
+        novo com o nome pesquisado, se houver) e já marca a publicação como tratada (Q9)."""
+        if scope.get("method") != "POST":
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        publicacao = self.publicacoes.obter(hash_publicacao)
+        if publicacao is None:
+            await _json(send, 404, _erro("Publicação não encontrada."))
+            return
+        if not publicacao.get("numero_processo"):
+            await _json(send, 400, _erro("Publicação sem número de processo identificado; não é possível criar caso."))
+            return
+        corpo = await _ler_corpo(receive)
+        try:
+            dados_corpo = json.loads((corpo or b"").decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            await _json(send, 400, _erro("JSON inválido."))
+            return
+        nome_sugerido = (dados_corpo.get("nome_cliente") or publicacao.get("nome_pesquisado") or "").strip()
+        if not nome_sugerido:
+            await _json(send, 400, _erro("Informe nome_cliente: a publicação não tem um nome pesquisado associado."))
+            return
+        corpo_caso = {
+            "cliente_novo": {"nome": nome_sugerido},
+            "titulo": (dados_corpo.get("titulo") or "").strip() or None,
+            "numeros_processo": [publicacao["numero_processo"]],
+        }
+        caso, erro = _criar_caso_validado(self.gestao, corpo_caso, self.publicacoes)
+        if erro:
+            await _json(send, 400, erro)
+            return
+        self.publicacoes.atualizar_status([hash_publicacao], "tratada", caso_id=caso["id"])
+        await _json(send, 201, caso)
 
 
 def _ip_cliente(scope) -> str:
@@ -3580,6 +3743,7 @@ def _principal() -> int:
     registro_monitoramentos = RegistroMonitoramentos(banco_caminho)
     gestao = RegistroClientesCasos(banco_caminho)
     registro_google = RegistroIntegracaoGoogle(banco_caminho)
+    publicacoes = RegistroPublicacoesOAB(banco_caminho)
     google_client_id = os.environ.get("CNJ_GOOGLE_CLIENT_ID", "").strip() or None
     google_client_secret = os.environ.get("CNJ_GOOGLE_CLIENT_SECRET", "").strip() or None
     global _ESTADO_MONITORAMENTO
@@ -3590,7 +3754,7 @@ def _principal() -> int:
     app = _AutenticacaoBearer(mcp.streamable_http_app(), registro, limitador, admin_token, cadastro, oauth,
                               captcha, site_captcha or None, falhas=falhas, gestao=gestao,
                               registro_google=registro_google, google_client_id=google_client_id,
-                              google_client_secret=google_client_secret)
+                              google_client_secret=google_client_secret, publicacoes=publicacoes)
     log.info(
         "Servidor HTTP em http://%s:%d/mcp (%d usuário(s) ativo(s); cadastro %s; admin %s; monitoramento %s)",
         args.host, args.port, len(registro.ativos()),
@@ -3601,29 +3765,36 @@ def _principal() -> int:
     google_configurado = bool(google_client_id and google_client_secret)
 
     async def _servir() -> None:
-        agendador = None
-        if smtp is not None or google_configurado:
-            from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-            agendador = AsyncIOScheduler()
-            if smtp is not None:
-                agendador.add_job(
-                    _verificar_monitoramentos_pendentes,
-                    "interval",
-                    hours=MONITORAMENTO_INTERVALO_HORAS,
-                    args=[registro_monitoramentos, smtp],
-                    kwargs={"gestao": gestao},
-                )
-                log.info("Monitoramento: verificação periódica a cada %dh.", MONITORAMENTO_INTERVALO_HORAS)
-            if google_configurado:
-                agendador.add_job(
-                    _sincronizar_calendar_google_job,
-                    "interval",
-                    hours=1,
-                    args=[registro_google, gestao, google_client_id, google_client_secret],
-                )
-                log.info("Google Calendar: sincronização periódica a cada 1h (se conectado em /admin).")
-            agendador.start()
+        # O agendador roda sempre: a captura de publicações por OAB (24h) não depende de SMTP
+        # nem do Google, então não há mais um caso de "nada agendado".
+        agendador = AsyncIOScheduler()
+        if smtp is not None:
+            agendador.add_job(
+                _verificar_monitoramentos_pendentes,
+                "interval",
+                hours=MONITORAMENTO_INTERVALO_HORAS,
+                args=[registro_monitoramentos, smtp],
+                kwargs={"gestao": gestao},
+            )
+            log.info("Monitoramento: verificação periódica a cada %dh.", MONITORAMENTO_INTERVALO_HORAS)
+        if google_configurado:
+            agendador.add_job(
+                _sincronizar_calendar_google_job,
+                "interval",
+                hours=1,
+                args=[registro_google, gestao, google_client_id, google_client_secret],
+            )
+            log.info("Google Calendar: sincronização periódica a cada 1h (se conectado em /admin).")
+        agendador.add_job(
+            _capturar_publicacoes_oab,
+            "interval",
+            hours=24,
+            args=[registro_monitoramentos, publicacoes, gestao],
+        )
+        log.info("Publicações por OAB: captura periódica a cada 24h.")
+        agendador.start()
 
         # access_log desligado: o log padrão do uvicorn gravaria a URL completa, inclusive os
         # parâmetros assinados dos links de certidão. As requisições autenticadas já são

@@ -393,6 +393,7 @@ const abas = [
   { botao: document.getElementById("aba-monitoramentos-botao"), painel: document.getElementById("aba-monitoramentos") },
   { botao: document.getElementById("aba-jurimetria-botao"), painel: document.getElementById("aba-jurimetria") },
   { botao: document.getElementById("aba-clientes-botao"), painel: document.getElementById("aba-clientes") },
+  { botao: document.getElementById("aba-publicacoes-oab-botao"), painel: document.getElementById("aba-publicacoes-oab") },
 ];
 
 function selecionarAba(alvo) {
@@ -406,6 +407,7 @@ function selecionarAba(alvo) {
   if (alvo.painel.id === "aba-historico") renderizarListaRapida();
   if (alvo.painel.id === "aba-monitoramentos") carregarMonitoramentos();
   if (alvo.painel.id === "aba-clientes") carregarClientesECasos();
+  if (alvo.painel.id === "aba-publicacoes-oab") carregarPublicacoesOab();
 }
 
 for (const aba of abas) aba.botao.addEventListener("click", () => selecionarAba(aba));
@@ -1236,7 +1238,9 @@ let ultimaBuscaPublicacoes = null; // { args, pagina, itensPorPagina, totalReceb
 
 function _criterioMonitoramento(args) {
   const { numero_processo, sigla_tribunal, numero_oab, uf_oab } = args;
-  return { numero_processo, sigla_tribunal, numero_oab, uf_oab };
+  const campoNome = document.getElementById("pub-nome-oab");
+  const nome = campoNome ? campoNome.value.trim() || undefined : undefined;
+  return { numero_processo, sigla_tribunal, numero_oab, uf_oab, nome };
 }
 
 async function executarBuscaPublicacoes(args, pagina) {
@@ -2140,3 +2144,227 @@ function anexarBotaoEventoAgenda(container, numeroProcesso, dataVencimentoISO, t
     botao.insertAdjacentElement("afterend", miniForm);
   });
 }
+
+// --- Publicações por OAB (log geral, captura a cada 24h) ----------------------------------
+//
+// Diferente de "Processos novos para triagem" (aba Clientes e casos): aqui entra TODA
+// publicação achada pelo monitoramento de OAB, tenha ou não caso já cadastrado, com um status
+// de tratamento manual (não tratada / tratada / arquivada). Captura roda a cada 24h no servidor.
+
+const _ROTULO_STATUS_PUB_OAB = { nao_tratada: "Não tratada", tratada: "Tratada", arquivada: "Arquivada" };
+
+function _badgeStatusPubOab(status) {
+  return el("span", { class: `pub-oab-status-${status.replace(/_/g, "-")}`, texto: _ROTULO_STATUS_PUB_OAB[status] || status });
+}
+
+function _irParaConsultaProcesso(numeroProcesso) {
+  const abaProcesso = abas.find((a) => a.painel.id === "aba-processo");
+  if (abaProcesso) selecionarAba(abaProcesso);
+  const campo = document.getElementById("numero-processo");
+  if (campo) campo.value = numeroProcesso || "";
+}
+
+const _publicacoesOabSelecionadas = new Set();
+
+function _atualizarBotoesLotePubOab() {
+  const tem = _publicacoesOabSelecionadas.size > 0;
+  document.getElementById("pub-oab-marcar-tratada").disabled = !tem;
+  document.getElementById("pub-oab-arquivar").disabled = !tem;
+}
+
+function _statusGeralPubOab(mensagem, erro) {
+  const areaStatus = document.getElementById("pub-oab-status-geral");
+  if (!areaStatus) return;
+  limpar(areaStatus);
+  if (mensagem) areaStatus.appendChild(notificacao(erro ? "error" : "success", mensagem));
+}
+
+async function _aplicarStatusPubOab(hashes, status) {
+  try {
+    await _enviarJson("/publicacoes-oab/status", { hashes, status });
+    _statusGeralPubOab(`${hashes.length} publicação(ões) marcada(s) como "${_ROTULO_STATUS_PUB_OAB[status]}".`);
+    _publicacoesOabSelecionadas.clear();
+    carregarPublicacoesOab();
+  } catch (erro) {
+    _statusGeralPubOab(erro.message, true);
+  }
+}
+
+function linhaPublicacaoOab(p) {
+  const d = p.dados || {};
+  const linhas = [];
+  const tr = el("tr", {});
+
+  const checkbox = el("input", { type: "checkbox" });
+  checkbox.checked = _publicacoesOabSelecionadas.has(p.hash);
+  checkbox.addEventListener("change", () => {
+    if (checkbox.checked) _publicacoesOabSelecionadas.add(p.hash);
+    else _publicacoesOabSelecionadas.delete(p.hash);
+    _atualizarBotoesLotePubOab();
+  });
+  tr.appendChild(el("td", {}, [checkbox]));
+
+  tr.appendChild(el("td", {}, [
+    el("div", { texto: formatarDataSimples(d.data_disponibilizacao) }),
+    el("div", { class: "campo-ajuda", texto: `Capturado em ${formatarData(p.criado_em)}` }),
+  ]));
+  tr.appendChild(el("td", { texto: d.tipoComunicacao || d.tipoDocumento || "-" }));
+
+  const celProcesso = el("td", {});
+  if (p.numero_processo) {
+    celProcesso.appendChild(el("div", { texto: d.numeroprocessocommascara || p.numero_processo }));
+  } else {
+    celProcesso.appendChild(el("div", { texto: "Processo não encontrado" }));
+    const linkBusca = el("a", { href: "#", texto: "Iniciar busca de processo" });
+    linkBusca.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      _irParaConsultaProcesso(d.numeroprocessocommascara);
+    });
+    celProcesso.appendChild(linkBusca);
+  }
+  if (d.texto) {
+    const trTexto = el("tr", {});
+    trTexto.hidden = true;
+    trTexto.appendChild(el("td", { colspan: "8" }, [el("div", { class: "pub-oab-texto-expandido", texto: d.texto })]));
+    const botaoExpandir = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Ler mais" });
+    botaoExpandir.addEventListener("click", () => {
+      trTexto.hidden = !trTexto.hidden;
+      botaoExpandir.textContent = trTexto.hidden ? "Ler mais" : "Ler menos";
+    });
+    celProcesso.appendChild(botaoExpandir);
+    linhas.push(tr, trTexto);
+  } else {
+    linhas.push(tr);
+  }
+  tr.appendChild(celProcesso);
+
+  tr.appendChild(el("td", {}, [
+    el("div", { texto: d.siglaTribunal || "-" }),
+    el("div", { class: "campo-ajuda", texto: d.nomeOrgao || "" }),
+  ]));
+  tr.appendChild(el("td", { texto: p.nome_pesquisado || "-" }));
+  tr.appendChild(el("td", {}, [_badgeStatusPubOab(p.status)]));
+
+  const celAcoes = el("td", {});
+  const acoesLinha = el("div", { class: "pub-oab-acoes-linha" });
+
+  if (d.link) {
+    acoesLinha.appendChild(
+      el("a", { class: "cds--btn cds--btn--primary cds--btn--sm", href: d.link, target: "_blank", rel: "noopener", texto: "Acessar publicação" })
+    );
+  }
+
+  if (p.status !== "tratada" && p.numero_processo) {
+    const botaoMais = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "+" });
+    botaoMais.title = "Cadastrar como caso";
+    botaoMais.addEventListener("click", async () => {
+      const sugestao = p.nome_pesquisado || "";
+      const nome = (window.prompt("Nome do cliente para este caso:", sugestao) || "").trim();
+      if (!nome) return;
+      botaoMais.disabled = true;
+      try {
+        await _enviarJson(`/publicacoes-oab/${p.hash}/criar-caso`, { nome_cliente: nome });
+        _statusGeralPubOab("Caso cadastrado a partir da publicação.");
+        carregarPublicacoesOab();
+      } catch (erro) {
+        _statusGeralPubOab(erro.message, true);
+        botaoMais.disabled = false;
+      }
+    });
+    acoesLinha.appendChild(botaoMais);
+  }
+
+  if (p.status !== "tratada") {
+    const botaoCheck = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "✓" });
+    botaoCheck.title = "Marcar tratada";
+    botaoCheck.addEventListener("click", () => _aplicarStatusPubOab([p.hash], "tratada"));
+    acoesLinha.appendChild(botaoCheck);
+  }
+
+  const menuWrap = el("div", { class: "pub-oab-menu" });
+  const botaoMenu = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "⋮" });
+  const listaMenu = el("div", { class: "pub-oab-menu-lista" });
+  listaMenu.hidden = true;
+  if (p.status !== "arquivada") {
+    const opcaoArquivar = el("button", { type: "button", texto: "Arquivar" });
+    opcaoArquivar.addEventListener("click", () => { listaMenu.hidden = true; _aplicarStatusPubOab([p.hash], "arquivada"); });
+    listaMenu.appendChild(opcaoArquivar);
+  }
+  if (p.status !== "nao_tratada") {
+    const opcaoNaoTratada = el("button", { type: "button", texto: "Marcar não tratada" });
+    opcaoNaoTratada.addEventListener("click", () => { listaMenu.hidden = true; _aplicarStatusPubOab([p.hash], "nao_tratada"); });
+    listaMenu.appendChild(opcaoNaoTratada);
+  }
+  botaoMenu.addEventListener("click", () => { listaMenu.hidden = !listaMenu.hidden; });
+  menuWrap.appendChild(botaoMenu);
+  menuWrap.appendChild(listaMenu);
+  acoesLinha.appendChild(menuWrap);
+
+  celAcoes.appendChild(acoesLinha);
+  tr.appendChild(celAcoes);
+
+  return linhas;
+}
+
+async function carregarPublicacoesOab() {
+  const container = document.getElementById("lista-publicacoes-oab");
+  if (!exigirCliente(container)) return;
+  limpar(container);
+  container.appendChild(el("p", { class: "app-espera" }, ["Carregando…"]));
+  const filtroStatus = document.getElementById("pub-oab-filtro-status").value;
+  try {
+    const url = filtroStatus ? `/publicacoes-oab?status=${encodeURIComponent(filtroStatus)}` : "/publicacoes-oab";
+    const { publicacoes } = await _buscarJson(url);
+    limpar(container);
+    container.appendChild(el("div", { id: "pub-oab-status-geral" }));
+    if (!(publicacoes || []).length) {
+      container.appendChild(notificacao(
+        "info", "Nenhuma publicação capturada ainda",
+        "Crie um monitoramento por OAB na aba Publicações (DJEN) - a captura roda a cada 24h."
+      ));
+      return;
+    }
+    _publicacoesOabSelecionadas.clear();
+    _atualizarBotoesLotePubOab();
+
+    const checkboxTodos = el("input", { type: "checkbox" });
+    checkboxTodos.addEventListener("change", () => {
+      for (const p of publicacoes) {
+        if (checkboxTodos.checked) _publicacoesOabSelecionadas.add(p.hash);
+        else _publicacoesOabSelecionadas.delete(p.hash);
+      }
+      carregarPublicacoesOab();
+    });
+
+    const thead = el("thead", {}, [
+      el("tr", {}, [
+        el("th", {}, [checkboxTodos]),
+        el("th", { texto: "Divulgado em" }),
+        el("th", { texto: "Tipo" }),
+        el("th", { texto: "Processo" }),
+        el("th", { texto: "Diário" }),
+        el("th", { texto: "Nome pesquisado" }),
+        el("th", { texto: "Status" }),
+        el("th", { texto: "Ações" }),
+      ]),
+    ]);
+    const tbody = el("tbody", {});
+    for (const p of publicacoes) {
+      for (const linha of linhaPublicacaoOab(p)) tbody.appendChild(linha);
+    }
+    container.appendChild(el("p", { class: "campo-ajuda", texto: `Mostrando ${publicacoes.length} publicação(ões)` }));
+    container.appendChild(el("table", { class: "pub-oab-tabela" }, [thead, tbody]));
+  } catch (erro) {
+    limpar(container);
+    mostrarErro(container, erro.message);
+  }
+}
+
+document.getElementById("pub-oab-filtro-status").addEventListener("change", carregarPublicacoesOab);
+document.getElementById("pub-oab-atualizar").addEventListener("click", carregarPublicacoesOab);
+document.getElementById("pub-oab-marcar-tratada").addEventListener("click", () => {
+  _aplicarStatusPubOab(Array.from(_publicacoesOabSelecionadas), "tratada");
+});
+document.getElementById("pub-oab-arquivar").addEventListener("click", () => {
+  _aplicarStatusPubOab(Array.from(_publicacoesOabSelecionadas), "arquivada");
+});
