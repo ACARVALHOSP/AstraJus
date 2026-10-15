@@ -2248,22 +2248,52 @@ def _criar_cliente_validado(gestao: RegistroClientesCasos, dados: dict) -> tuple
     return cliente, None
 
 
+def _resolver_cliente_id(gestao: RegistroClientesCasos, item: dict) -> tuple[str | None, dict | None]:
+    """Resolve {cliente_id} ou {cliente_novo} para um id de cliente existente. Em cliente_novo,
+    reaproveita um cliente já cadastrado com o mesmo nome em vez de duplicar - comum quando a
+    mesma parte aparece em publicações diferentes."""
+    cliente_id = (item.get("cliente_id") or "").strip() or None
+    if cliente_id:
+        if gestao.obter_cliente(cliente_id) is None:
+            return None, _erro(f"Cliente '{cliente_id}' não encontrado.")
+        return cliente_id, None
+    cliente_novo = item.get("cliente_novo")
+    if not isinstance(cliente_novo, dict):
+        return None, _erro("Informe cliente_id ou cliente_novo.")
+    nome = (cliente_novo.get("nome") or "").strip()
+    if nome:
+        existente = gestao.buscar_cliente_por_nome(nome)
+        if existente:
+            return existente["id"], None
+    novo_cliente, erro = _criar_cliente_validado(gestao, cliente_novo)
+    if erro:
+        return None, erro
+    return novo_cliente["id"], None
+
+
 def _criar_caso_validado(gestao: RegistroClientesCasos, dados: dict) -> tuple[dict | None, dict | None]:
     """Valida o corpo de POST /casos. Aceita cliente_id (existente) ou cliente_novo (cria na
     hora) - é o que permite o botão "cadastrar como caso" da consulta pontual de processo.
+    clientes_adicionais (opcional) é uma lista de {cliente_id} ou {cliente_novo}: outras partes
+    da mesma publicação/processo que também viram clientes do escritório, vinculadas a este
+    mesmo caso (ex.: autor e réu, quando ambos interessam ao escritório).
     Devolve (caso, None) ou (None, erro).
     """
-    cliente_id = (dados.get("cliente_id") or "").strip() or None
-    cliente_novo = dados.get("cliente_novo")
-    if not cliente_id and not isinstance(cliente_novo, dict):
-        return None, _erro("Informe cliente_id ou cliente_novo.")
-    if cliente_id and gestao.obter_cliente(cliente_id) is None:
-        return None, _erro(f"Cliente '{cliente_id}' não encontrado.")
-    if not cliente_id:
-        novo_cliente, erro = _criar_cliente_validado(gestao, cliente_novo)
+    cliente_id, erro = _resolver_cliente_id(gestao, dados)
+    if erro:
+        return None, erro
+
+    adicionais_brutos = dados.get("clientes_adicionais") or []
+    if not isinstance(adicionais_brutos, list):
+        return None, _erro("clientes_adicionais deve ser uma lista.")
+    clientes_adicionais = []
+    for item in adicionais_brutos:
+        if not isinstance(item, dict):
+            return None, _erro("Cada item de clientes_adicionais deve ser um objeto.")
+        cid, erro = _resolver_cliente_id(gestao, item)
         if erro:
             return None, erro
-        cliente_id = novo_cliente["id"]
+        clientes_adicionais.append(cid)
 
     numeros_brutos = dados.get("numeros_processo") or []
     if not isinstance(numeros_brutos, list) or not numeros_brutos:
@@ -2281,6 +2311,7 @@ def _criar_caso_validado(gestao: RegistroClientesCasos, dados: dict) -> tuple[di
         responsavel=(dados.get("responsavel") or "").strip() or None,
         numeros_processo=numeros,
         agora=lambda: datetime.now(timezone.utc),
+        clientes_adicionais=clientes_adicionais,
     )
     return caso, None
 

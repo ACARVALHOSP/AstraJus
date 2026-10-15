@@ -1752,10 +1752,11 @@ function linhaDoTempoCaso(eventos) {
 }
 
 function cartaoCaso(caso) {
-  const clienteDoCaso = _cacheClientes.find((c) => c.id === caso.cliente_id);
+  const nomeCliente = (id) => (_cacheClientes.find((c) => c.id === id) || {}).nome || id;
+  const nomesClientes = [caso.cliente_id, ...(caso.clientes_adicionais || [])].map(nomeCliente);
   const card = el("article", { class: "cds--tile resultado-card" });
   card.appendChild(el("h3", { texto: caso.titulo || "(sem título)" }));
-  card.appendChild(el("p", { texto: `Cliente: ${clienteDoCaso ? clienteDoCaso.nome : caso.cliente_id}` }));
+  card.appendChild(el("p", { texto: `Cliente(s): ${nomesClientes.join(", ")}` }));
   if (caso.responsavel) card.appendChild(el("p", { texto: `Responsável: ${caso.responsavel}` }));
   card.appendChild(el("p", { texto: `Processo(s): ${(caso.processos || []).join(", ") || "nenhum"}` }));
   card.appendChild(el("span", { class: "cds--tag cds--tag--gray", texto: caso.status }));
@@ -1948,11 +1949,17 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
       }
     }
 
+    const usaCheckboxesPartes = Boolean(partes && partes.length);
+
     const selectCliente = el("select", { class: "cds--text-input" }, [
       el("option", { value: "" }, ["+ Novo cliente"]),
       ..._cacheClientes.map((c) => el("option", { value: c.id }, [c.nome])),
     ]);
-    const campoNomeNovo = el("input", { class: "cds--text-input", placeholder: "Nome do novo cliente", value: nomeSugerido || "" });
+    const campoNomeNovo = el("input", {
+      class: "cds--text-input",
+      placeholder: usaCheckboxesPartes ? "+ outro cliente (opcional)" : "Nome do novo cliente",
+      value: usaCheckboxesPartes ? "" : (nomeSugerido || ""),
+    });
     const campoTitulo = el("input", { class: "cds--text-input", placeholder: "Título do caso (opcional)", value: tituloSugerido || "" });
     const botaoSalvar = el("button", { class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Salvar caso" });
     const statusMini = el("span", { class: "app-espera app-espera--inline" });
@@ -1961,17 +1968,27 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
       campoNomeNovo.hidden = selectCliente.value !== "";
     });
 
-    // Publicações do DJEN costumam listar mais de uma parte (autor e réu); deixa escolher qual
-    // delas vira o nome do cliente, em vez de forçar digitar de novo o que já veio na publicação.
-    let selectPartes = null;
-    if (partes && partes.length > 1) {
-      selectPartes = el(
-        "select", { class: "cds--text-input" },
-        partes.map((nome, i) => el("option", { value: String(i) }, [nome]))
-      );
-      selectPartes.addEventListener("change", () => {
-        campoNomeNovo.value = partes[Number(selectPartes.value)];
+    // Publicações do DJEN costumam listar mais de uma parte (autor e réu). Em vez de forçar
+    // escolher só uma, cada parte vira uma checkbox: as marcadas viram clientes do mesmo caso
+    // (a primeira marcada é o cliente principal, as demais entram em clientes_adicionais).
+    let checkboxesPartes = null;
+    let blocoPartes = null;
+    if (usaCheckboxesPartes) {
+      checkboxesPartes = partes.map((nome, i) => {
+        const cb = el("input", { type: "checkbox", id: `parte-cb-${i}-${Math.random().toString(36).slice(2, 7)}` });
+        cb.checked = i === 0;
+        return { nome, checkbox: cb };
       });
+      blocoPartes = el(
+        "div", { class: "cds--form-item partes-checkbox-lista" },
+        [
+          el("label", { class: "cds--label", texto: "Cadastrar como cliente(s) deste caso" }),
+          ...checkboxesPartes.map(({ nome, checkbox }) =>
+            el("label", { class: "parte-checkbox-item" }, [checkbox, ` ${nome}`])
+          ),
+        ]
+      );
+      selectCliente.hidden = true; // nesse modo, cliente existente também é resolvido pelo nome no servidor
     }
 
     // DataJud não tem nome de parte (ver server.py), só classe/órgão - por isso é um botão à
@@ -1983,18 +2000,27 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
         class: "cds--btn cds--btn--tertiary cds--btn--sm", type: "button", texto: "Buscar classe/órgão no DataJud",
       });
       statusDataJud = el("span", { class: "app-espera app-espera--inline" });
+      const rotuloOriginalDataJud = botaoDataJud.textContent;
       botaoDataJud.addEventListener("click", async () => {
+        if (botaoDataJud.disabled) return; // já consultando - evita disparo duplicado
         botaoDataJud.disabled = true;
-        statusDataJud.textContent = "Consultando (pode levar até 2min)…";
+        botaoDataJud.textContent = "Consultando…";
+        statusDataJud.textContent = "Pode levar até 2min, aguarde…";
         try {
           const dados = await cliente.chamarTool("consultar_processo_datajud", { tribunal, numero_processo: numeroProcesso });
+          if (dados.erro) throw new ErroMCP(200, dados.mensagem || "Falha ao consultar o DataJud.");
           const proc = (dados.processos || [])[0];
           if (!proc) throw new ErroMCP(200, dados.mensagem || "Processo não encontrado no DataJud.");
           const partesTitulo = [proc.classe, proc.orgaoJulgador].filter(Boolean).join(" - ");
-          if (partesTitulo) campoTitulo.value = campoTitulo.value ? `${campoTitulo.value} (${partesTitulo})` : partesTitulo;
-          statusDataJud.textContent = "";
+          // idempotente: um segundo clique não duplica o mesmo trecho se já estiver no título
+          if (partesTitulo && !campoTitulo.value.includes(partesTitulo)) {
+            campoTitulo.value = campoTitulo.value ? `${campoTitulo.value} (${partesTitulo})` : partesTitulo;
+          }
+          statusDataJud.textContent = "Classe/órgão adicionados.";
+          botaoDataJud.textContent = "Atualizar classe/órgão do DataJud";
         } catch (erro) {
-          statusDataJud.textContent = erro.message;
+          statusDataJud.textContent = erro.message || "Falha ao consultar o DataJud (sem detalhes do servidor).";
+          botaoDataJud.textContent = rotuloOriginalDataJud;
         } finally {
           botaoDataJud.disabled = false;
         }
@@ -2009,7 +2035,17 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
           titulo: campoTitulo.value.trim() || null,
           numeros_processo: [numeroProcesso],
         };
-        if (selectCliente.value) {
+        if (usaCheckboxesPartes) {
+          const nomesEscolhidos = checkboxesPartes.filter((p) => p.checkbox.checked).map((p) => p.nome);
+          const nomeExtra = campoNomeNovo.value.trim();
+          if (nomeExtra) nomesEscolhidos.push(nomeExtra);
+          if (!nomesEscolhidos.length) {
+            throw new ErroMCP(400, "Marque ao menos uma parte como cliente, ou informe um nome em \"+ outro cliente\".");
+          }
+          const [primeiro, ...resto] = nomesEscolhidos;
+          corpo.cliente_novo = { nome: primeiro };
+          corpo.clientes_adicionais = resto.map((nome) => ({ cliente_novo: { nome } }));
+        } else if (selectCliente.value) {
           corpo.cliente_id = selectCliente.value;
         } else {
           const nomeNovo = campoNomeNovo.value.trim();
@@ -2027,7 +2063,7 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
 
     const miniForm = el("div", { class: "mini-form-caso" }, [
       el("div", { class: "cds--form-item" }, [selectCliente]),
-      selectPartes ? el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", texto: "Parte" }), selectPartes]) : null,
+      blocoPartes,
       el("div", { class: "cds--form-item" }, [campoNomeNovo]),
       el("div", { class: "cds--form-item" }, [campoTitulo]),
       botaoDataJud,

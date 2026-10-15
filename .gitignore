@@ -8,6 +8,8 @@ dist/
 usuarios.json
 usuarios.tmp
 oauth.json
+# Banco SQLite: dados locais (usuários, clientes, casos), não é material do repositório
+cnj.db
 # Artefatos de execução local, sem relação com o código do projeto
 claude_run.err
 claude_run.json

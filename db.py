@@ -93,6 +93,15 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 PRIMARY KEY (caso_id, numero_processo)
             );
 
+            -- Clientes adicionais de um caso (ex.: mais de uma parte da mesma publicação vira
+            -- cliente do escritório). casos.cliente_id continua sendo o cliente principal; esta
+            -- tabela só guarda os extras, então um caso sem nenhum aqui segue igual a antes.
+            CREATE TABLE IF NOT EXISTS caso_clientes (
+                caso_id TEXT NOT NULL REFERENCES casos(id),
+                cliente_id TEXT NOT NULL REFERENCES clientes(id),
+                PRIMARY KEY (caso_id, cliente_id)
+            );
+
             -- Linha do tempo do caso (fase 2): publicações/movimentações já
             -- monitoradas, ligadas ao caso quando o processo está vinculado a um.
             CREATE TABLE IF NOT EXISTS caso_eventos (
@@ -296,6 +305,17 @@ class RegistroClientesCasos:
             ).fetchone()
         return _linha_cliente(linha) if linha else None
 
+    def buscar_cliente_por_nome(self, nome: str) -> dict | None:
+        """Casamento exato (sem diferenciar maiúsculas) - usado para não duplicar cliente quando
+        a mesma parte aparece em casos/publicações diferentes."""
+        with _abrir(self.caminho) as conexao:
+            linha = conexao.execute(
+                "SELECT id, nome, cpf_cnpj, telefone, email, observacoes, criado_em "
+                "FROM clientes WHERE lower(nome) = lower(?) LIMIT 1",
+                (nome,),
+            ).fetchone()
+        return _linha_cliente(linha) if linha else None
+
     def listar_clientes(self) -> list[dict]:
         with _abrir(self.caminho) as conexao:
             cursor = conexao.execute(
@@ -308,7 +328,7 @@ class RegistroClientesCasos:
 
     def criar_caso(
         self, cliente_id: str, titulo: str | None, responsavel: str | None,
-        numeros_processo: list[str], agora,
+        numeros_processo: list[str], agora, clientes_adicionais: list[str] | None = None,
     ) -> dict:
         novo_id = uuid.uuid4().hex
         criado_em = agora().isoformat()
@@ -322,6 +342,11 @@ class RegistroClientesCasos:
                 "INSERT OR IGNORE INTO caso_processos (caso_id, numero_processo) VALUES (?, ?)",
                 [(novo_id, numero) for numero in numeros_processo],
             )
+            if clientes_adicionais:
+                conexao.executemany(
+                    "INSERT OR IGNORE INTO caso_clientes (caso_id, cliente_id) VALUES (?, ?)",
+                    [(novo_id, cid) for cid in clientes_adicionais if cid != cliente_id],
+                )
         return self.obter_caso(novo_id)
 
     def adicionar_processo_ao_caso(self, caso_id: str, numero_processo: str) -> None:
@@ -340,7 +365,11 @@ class RegistroClientesCasos:
             ).fetchone()
             if not linha:
                 return None
-            return {**_linha_caso(linha), "processos": self._processos_do_caso(conexao, caso_id)}
+            return {
+                **_linha_caso(linha),
+                "processos": self._processos_do_caso(conexao, caso_id),
+                "clientes_adicionais": self._clientes_adicionais_do_caso(conexao, caso_id),
+            }
 
     def listar_casos(self) -> list[dict]:
         with _abrir(self.caminho) as conexao:
@@ -349,7 +378,11 @@ class RegistroClientesCasos:
                 "calendar_evento_id, criado_em FROM casos ORDER BY criado_em DESC"
             )
             return [
-                {**_linha_caso(linha), "processos": self._processos_do_caso(conexao, linha[0])}
+                {
+                    **_linha_caso(linha),
+                    "processos": self._processos_do_caso(conexao, linha[0]),
+                    "clientes_adicionais": self._clientes_adicionais_do_caso(conexao, linha[0]),
+                }
                 for linha in cursor.fetchall()
             ]
 
@@ -365,6 +398,13 @@ class RegistroClientesCasos:
     def _processos_do_caso(conexao: sqlite3.Connection, caso_id: str) -> list[str]:
         cursor = conexao.execute(
             "SELECT numero_processo FROM caso_processos WHERE caso_id = ?", (caso_id,)
+        )
+        return [linha[0] for linha in cursor.fetchall()]
+
+    @staticmethod
+    def _clientes_adicionais_do_caso(conexao: sqlite3.Connection, caso_id: str) -> list[str]:
+        cursor = conexao.execute(
+            "SELECT cliente_id FROM caso_clientes WHERE caso_id = ?", (caso_id,)
         )
         return [linha[0] for linha in cursor.fetchall()]
 
