@@ -5,7 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY pyproject.toml README.md server.py guia-do-usuario.html ./
+COPY pyproject.toml README.md server.py db.py google_integracao.py guia-do-usuario.html ./
 COPY static/ ./static/
 RUN pip install --no-cache-dir . \
     && useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app \
