@@ -1163,6 +1163,17 @@ function cartaoPublicacao(item) {
   botaoPrazo.addEventListener("click", () => { painelPrazo.hidden = !painelPrazo.hidden; });
   acoes.appendChild(botaoPrazo);
 
+  if (item.numeroprocessocommascara) {
+    const nomesPartes = (item.destinatarios || []).map((d) => d.nome).filter(Boolean);
+    anexarBotaoCadastrarCaso(acoes, item.numeroprocessocommascara, null, {
+      rotulo: "Cadastrar cliente e caso",
+      nomeSugerido: nomesPartes[0] || "",
+      tituloSugerido: item.nomeClasse || item.tipoComunicacao || "",
+      partes: nomesPartes,
+      tribunal: (item.siglaTribunal || "").toLowerCase() || null,
+    });
+  }
+
   if (acoes.childNodes.length) card.appendChild(acoes);
   card.appendChild(painelPrazo);
 
@@ -1916,9 +1927,10 @@ formCaso.addEventListener("submit", async (evento) => {
 
 // Botão "Cadastrar como caso" no resultado da consulta de processo (DataJud): abre um mini
 // formulário inline, sem precisar trocar de aba. Cria o cliente na hora se for novo (Fase 1).
-function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar) {
+function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) {
+  const { rotulo, nomeSugerido, tituloSugerido, partes, tribunal } = opcoes;
   const botao = el("button", {
-    class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Cadastrar como caso",
+    class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: rotulo || "Cadastrar como caso",
   });
   acoes.appendChild(botao);
 
@@ -1940,14 +1952,54 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar) {
       el("option", { value: "" }, ["+ Novo cliente"]),
       ..._cacheClientes.map((c) => el("option", { value: c.id }, [c.nome])),
     ]);
-    const campoNomeNovo = el("input", { class: "cds--text-input", placeholder: "Nome do novo cliente" });
-    const campoTitulo = el("input", { class: "cds--text-input", placeholder: "Título do caso (opcional)" });
+    const campoNomeNovo = el("input", { class: "cds--text-input", placeholder: "Nome do novo cliente", value: nomeSugerido || "" });
+    const campoTitulo = el("input", { class: "cds--text-input", placeholder: "Título do caso (opcional)", value: tituloSugerido || "" });
     const botaoSalvar = el("button", { class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Salvar caso" });
     const statusMini = el("span", { class: "app-espera app-espera--inline" });
 
     selectCliente.addEventListener("change", () => {
       campoNomeNovo.hidden = selectCliente.value !== "";
     });
+
+    // Publicações do DJEN costumam listar mais de uma parte (autor e réu); deixa escolher qual
+    // delas vira o nome do cliente, em vez de forçar digitar de novo o que já veio na publicação.
+    let selectPartes = null;
+    if (partes && partes.length > 1) {
+      selectPartes = el(
+        "select", { class: "cds--text-input" },
+        partes.map((nome, i) => el("option", { value: String(i) }, [nome]))
+      );
+      selectPartes.addEventListener("change", () => {
+        campoNomeNovo.value = partes[Number(selectPartes.value)];
+      });
+    }
+
+    // DataJud não tem nome de parte (ver server.py), só classe/órgão - por isso é um botão à
+    // parte (opcional, pode levar até 2min), não algo que trava o cadastro básico vindo do DJEN.
+    let botaoDataJud = null;
+    let statusDataJud = null;
+    if (tribunal) {
+      botaoDataJud = el("button", {
+        class: "cds--btn cds--btn--tertiary cds--btn--sm", type: "button", texto: "Buscar classe/órgão no DataJud",
+      });
+      statusDataJud = el("span", { class: "app-espera app-espera--inline" });
+      botaoDataJud.addEventListener("click", async () => {
+        botaoDataJud.disabled = true;
+        statusDataJud.textContent = "Consultando (pode levar até 2min)…";
+        try {
+          const dados = await cliente.chamarTool("consultar_processo_datajud", { tribunal, numero_processo: numeroProcesso });
+          const proc = (dados.processos || [])[0];
+          if (!proc) throw new ErroMCP(200, dados.mensagem || "Processo não encontrado no DataJud.");
+          const partesTitulo = [proc.classe, proc.orgaoJulgador].filter(Boolean).join(" - ");
+          if (partesTitulo) campoTitulo.value = campoTitulo.value ? `${campoTitulo.value} (${partesTitulo})` : partesTitulo;
+          statusDataJud.textContent = "";
+        } catch (erro) {
+          statusDataJud.textContent = erro.message;
+        } finally {
+          botaoDataJud.disabled = false;
+        }
+      });
+    }
 
     botaoSalvar.addEventListener("click", async () => {
       botaoSalvar.disabled = true;
@@ -1975,8 +2027,11 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar) {
 
     const miniForm = el("div", { class: "mini-form-caso" }, [
       el("div", { class: "cds--form-item" }, [selectCliente]),
+      selectPartes ? el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", texto: "Parte" }), selectPartes]) : null,
       el("div", { class: "cds--form-item" }, [campoNomeNovo]),
       el("div", { class: "cds--form-item" }, [campoTitulo]),
+      botaoDataJud,
+      statusDataJud,
       botaoSalvar,
       statusMini,
     ]);
