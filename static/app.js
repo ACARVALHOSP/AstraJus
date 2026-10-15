@@ -1076,6 +1076,9 @@ function painelCalculoPrazo(item) {
         abrirDemonstrativoPdf({ dataBase, dias, tipo, municipio, dia1, vencimento, linhas });
       });
       resultadoEl.appendChild(botaoPdf);
+      if (item.numeroprocessocommascara) {
+        anexarBotaoEventoAgenda(resultadoEl, item.numeroprocessocommascara, vencimento, `Prazo: ${dias} dias (${municipio})`);
+      }
     } catch (erro) {
       resultadoEl.appendChild(el("p", { class: "resultado-aviso", texto: erro.message }));
     } finally {
@@ -1710,6 +1713,13 @@ function _resumoEventoCaso(evento) {
     const partes = [c.tipoComunicacao, c.nomeOrgao].filter(Boolean).join(" · ");
     return partes || c.texto || "Publicação";
   }
+  if (evento.tipo === "prazo_agenda") {
+    return `Evento criado na agenda: ${c.titulo || "Prazo"} em ${formatarDataSimples(c.data)}`;
+  }
+  if (evento.tipo === "evento_agenda_alterado") {
+    if (c.status === "cancelled") return "Evento da agenda foi cancelado";
+    return `Evento da agenda mudou: ${c.titulo || "Prazo"} agora em ${formatarDataSimples(c.data)}`;
+  }
   return evento.tipo;
 }
 
@@ -1738,6 +1748,14 @@ function cartaoCaso(caso) {
   if (caso.responsavel) card.appendChild(el("p", { texto: `Responsável: ${caso.responsavel}` }));
   card.appendChild(el("p", { texto: `Processo(s): ${(caso.processos || []).join(", ") || "nenhum"}` }));
   card.appendChild(el("span", { class: "cds--tag cds--tag--gray", texto: caso.status }));
+  if (caso.drive_pasta_id) {
+    card.appendChild(
+      el("p", {}, [el("a", {
+        href: `https://drive.google.com/drive/folders/${caso.drive_pasta_id}`, target: "_blank", rel: "noopener",
+        texto: "Abrir pasta no Drive",
+      })])
+    );
+  }
 
   const botaoTimeline = el("button", {
     class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Ver linha do tempo",
@@ -1959,6 +1977,72 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar) {
       el("div", { class: "cds--form-item" }, [selectCliente]),
       el("div", { class: "cds--form-item" }, [campoNomeNovo]),
       el("div", { class: "cds--form-item" }, [campoTitulo]),
+      botaoSalvar,
+      statusMini,
+    ]);
+    botao.insertAdjacentElement("afterend", miniForm);
+  });
+}
+
+function _soDigitos(valor) {
+  return (valor || "").replace(/\D/g, "");
+}
+
+// Botão "Criar evento na agenda (Google)" no resultado da calculadora de prazo (Fase 4):
+// pede qual caso, e cria o evento via POST /casos/<id>/evento-calendar. Só aparece quando há
+// pelo menos um caso cadastrado - sem caso, não há onde vincular o evento.
+function anexarBotaoEventoAgenda(container, numeroProcesso, dataVencimentoISO, tituloSugerido) {
+  const botao = el("button", {
+    class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Criar evento na agenda (Google)",
+  });
+  container.appendChild(botao);
+
+  botao.addEventListener("click", async () => {
+    if (botao.nextSibling && botao.nextSibling.classList && botao.nextSibling.classList.contains("mini-form-caso")) {
+      botao.nextSibling.remove();
+      return;
+    }
+    let casos = [];
+    try {
+      const resposta = await _buscarJson("/casos");
+      casos = resposta.casos || [];
+    } catch (erro) {
+      mostrarErro(container, erro.message);
+      return;
+    }
+    if (!casos.length) {
+      container.appendChild(notificacao("info", "Nenhum caso cadastrado", "Cadastre um caso para este processo antes de criar o evento na agenda."));
+      return;
+    }
+    const numeroDigitos = _soDigitos(numeroProcesso);
+    const casosDoProcesso = casos.filter((c) => (c.processos || []).includes(numeroDigitos));
+    const opcoes = casosDoProcesso.length ? casosDoProcesso : casos;
+
+    const selectCaso = el(
+      "select", { class: "cds--text-input" },
+      opcoes.map((c) => el("option", { value: c.id }, [c.titulo || c.id]))
+    );
+    const botaoSalvar = el("button", { class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Criar evento" });
+    const statusMini = el("span", { class: "app-espera app-espera--inline" });
+
+    botaoSalvar.addEventListener("click", async () => {
+      botaoSalvar.disabled = true;
+      limpar(statusMini);
+      try {
+        const resultado = await _enviarJson(`/casos/${selectCaso.value}/evento-calendar`, {
+          data: dataVencimentoISO, titulo: tituloSugerido,
+        });
+        const aviso = notificacao("success", "Evento criado na agenda");
+        if (resultado.link) aviso.appendChild(el("p", {}, [el("a", { href: resultado.link, target: "_blank", rel: "noopener", texto: "Abrir no Google Calendar" })]));
+        miniForm.replaceWith(aviso);
+      } catch (erro) {
+        statusMini.textContent = erro.message;
+        botaoSalvar.disabled = false;
+      }
+    });
+
+    const miniForm = el("div", { class: "mini-form-caso" }, [
+      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", texto: "Vincular ao caso" }), selectCaso]),
       botaoSalvar,
       statusMini,
     ]);

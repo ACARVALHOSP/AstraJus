@@ -39,7 +39,8 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import db as _db
-from db import RegistroClientesCasos, RegistroMonitoramentos, RegistroUsuarios
+import google_integracao
+from db import RegistroClientesCasos, RegistroIntegracaoGoogle, RegistroMonitoramentos, RegistroUsuarios
 
 import httpx
 from mcp.server.fastmcp import Context, FastMCP
@@ -1654,6 +1655,65 @@ async def _verificar_monitoramentos_pendentes(
             log.exception("Falha ao verificar monitoramento %s", id_monitoramento)
 
 
+# --- Sincronização periódica do Google Calendar (Fase 4: metade "Calendar -> sistema" do ------
+# sincronismo bidirecional; a outra metade, "sistema -> Calendar", é a criação do evento em
+# POST /casos/<id>/evento-calendar). Eventos sem a marca cnj_caso_id em extendedProperties.private
+# (criados direto na agenda, sem relação com nenhum caso) são ignorados - a API do Google já
+# filtra a maior parte disso via sharedExtendedProperty, ver google_integracao.listar_eventos_de_casos.
+
+async def _sincronizar_calendar_google(
+    registro_google: "RegistroIntegracaoGoogle", gestao: "RegistroClientesCasos",
+    client_id: str, client_secret: str, cliente_http: httpx.AsyncClient, agora=lambda: datetime.now(timezone.utc),
+) -> None:
+    conexao = registro_google.obter_conexao()
+    if not conexao:
+        return
+    access_token = await google_integracao.obter_access_token(cliente_http, client_id, client_secret, conexao["refresh_token"])
+    sync_token = conexao.get("sync_token_calendar")
+    eventos, novo_sync_token = await google_integracao.listar_eventos_de_casos(cliente_http, access_token, sync_token)
+    if sync_token and not novo_sync_token:
+        # sync_token expirado (HTTP 410 do Google): a API manda refazer a sincronização do zero
+        eventos, novo_sync_token = await google_integracao.listar_eventos_de_casos(cliente_http, access_token, None)
+
+    for evento in eventos:
+        caso_id = ((evento.get("extendedProperties") or {}).get("private") or {}).get("cnj_caso_id")
+        if not caso_id:
+            continue
+        evento_id = evento.get("id")
+        status = evento.get("status")
+        nova_data = (evento.get("start") or {}).get("date") or (evento.get("start") or {}).get("dateTime")
+        anterior = gestao.obter_evento_calendar(caso_id, evento_id)
+
+        if status == "cancelled":
+            if anterior and anterior.get("status") != "cancelled":
+                gestao.registrar_evento_no_caso(
+                    caso_id, None, "evento_agenda_alterado",
+                    {"evento_id": evento_id, "status": "cancelled"}, agora,
+                )
+            continue
+
+        if not anterior or anterior.get("data") != nova_data:
+            gestao.registrar_evento_no_caso(
+                caso_id, None, "evento_agenda_alterado",
+                {"evento_id": evento_id, "data": nova_data, "titulo": evento.get("summary"), "status": status}, agora,
+            )
+
+    if novo_sync_token:
+        registro_google.salvar_sync_token_calendar(novo_sync_token)
+
+
+async def _sincronizar_calendar_google_job(
+    registro_google: "RegistroIntegracaoGoogle", gestao: "RegistroClientesCasos", client_id: str, client_secret: str,
+) -> None:
+    """Wrapper chamado pelo APScheduler: abre sua própria conexão HTTP (o job não recebe uma
+    injetada, diferente de _sincronizar_calendar_google, que os testes chamam direto com mock)."""
+    try:
+        async with _cliente(20) as http_cliente:
+            await _sincronizar_calendar_google(registro_google, gestao, client_id, client_secret, http_cliente)
+    except Exception:
+        log.exception("Falha na sincronização periódica do Google Calendar")
+
+
 @dataclass
 class _EstadoMonitoramento:
     """Estado compartilhado que as tools de Monitoramento leem. Só existe em modo HTTP: em modo
@@ -2238,7 +2298,9 @@ class _AutenticacaoBearer:
                  admin_token: str | None = None, cadastro: CadastroPublico | None = None,
                  oauth: "ServidorOAuth | None" = None, captcha: "VerificadorRecaptcha | None" = None,
                  captcha_site_key: str | None = None, falhas: LimitadorUso | None = None,
-                 gestao: "RegistroClientesCasos | None" = None) -> None:
+                 gestao: "RegistroClientesCasos | None" = None,
+                 registro_google: "RegistroIntegracaoGoogle | None" = None,
+                 google_client_id: str | None = None, google_client_secret: str | None = None) -> None:
         self.app = app
         self.registro = registro
         self.limitador = limitador
@@ -2250,6 +2312,13 @@ class _AutenticacaoBearer:
         # conta tentativas de autenticação falhas por IP (mcp e admin), para frear força bruta
         self.falhas = falhas
         self.gestao = gestao
+        self.registro_google = registro_google
+        self.google_client_id = google_client_id
+        self.google_client_secret = google_client_secret
+        # state do fluxo OAuth do Google em andamento: state -> prazo de validade (datetime).
+        # Em memória só: perde-se num restart do servidor, o que só obriga a pessoa a clicar
+        # "Conectar" de novo - sem risco de segurança.
+        self._google_estados_pendentes: dict[str, datetime] = {}
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":  # lifespan e afins passam direto
@@ -2374,6 +2443,10 @@ class _AutenticacaoBearer:
         if caminho == "/casos" and self.gestao is not None:
             await self._casos(scope, receive, send)
             return
+        if caminho.startswith("/casos/") and caminho.endswith("/evento-calendar") and self.gestao is not None:
+            caso_id = caminho[len("/casos/"):-len("/evento-calendar")].rstrip("/")
+            await self._evento_calendar_do_caso(scope, receive, send, caso_id)
+            return
         if caminho.startswith("/casos/") and self.gestao is not None:
             await self._caso_detalhe(scope, send, caminho[len("/casos/"):])
             return
@@ -2450,8 +2523,20 @@ class _AutenticacaoBearer:
         caminho = scope.get("path")
         if metodo == "GET" and caminho == "/admin":
             # Sem token, a página só traz o formulário: a lista de usuários não é exibida.
-            await _responder(send, 200, _pagina_admin(self.registro, mensagem=None).encode("utf-8"),
+            await _responder(send, 200,
+                             _pagina_admin(self.registro, mensagem=None,
+                                          google_conectado=self._google_conectado(),
+                                          google_configurado=self._google_configurado()).encode("utf-8"),
                              tipo="text/html; charset=utf-8")
+            return
+        if metodo == "POST" and caminho == "/admin/google/iniciar":
+            await self._google_iniciar(scope, receive, send)
+            return
+        if metodo == "GET" and caminho == "/admin/google/callback":
+            await self._google_callback(scope, send)
+            return
+        if metodo == "POST" and caminho == "/admin/google/desconectar":
+            await self._google_desconectar(scope, receive, send)
             return
         if metodo == "POST" and caminho == "/admin/acao":
             ip = _ip_cliente(scope)
@@ -2480,11 +2565,89 @@ class _AutenticacaoBearer:
             mensagem, token_novo = _executar_acao_admin(self.registro, campos.get("acao", ""), campos.get("nome", ""))
             log.info("Ação administrativa: %s '%s'", campos.get("acao"), _rotulo_usuario(campos.get("nome", "")))
             await _responder(send, 200,
-                             _pagina_admin(self.registro, mensagem, token_novo, mostrar_lista=True).encode("utf-8"),
+                             _pagina_admin(self.registro, mensagem, token_novo, mostrar_lista=True,
+                                          google_conectado=self._google_conectado(),
+                                          google_configurado=self._google_configurado()).encode("utf-8"),
                              tipo="text/html; charset=utf-8")
             return
 
         await _responder(send, 404, b"Nao encontrado")
+
+    # --- Integração Google (Fase 4): conta institucional única, conectada pelo admin ----------
+
+    def _google_conectado(self) -> dict | None:
+        if self.registro_google is None:
+            return None
+        return self.registro_google.obter_conexao()
+
+    def _google_configurado(self) -> bool:
+        return bool(self.registro_google and self.google_client_id and self.google_client_secret)
+
+    def _limpar_estados_expirados(self) -> None:
+        agora = datetime.now(timezone.utc)
+        for state in [s for s, expira in self._google_estados_pendentes.items() if expira < agora]:
+            del self._google_estados_pendentes[state]
+
+    async def _google_iniciar(self, scope, receive, send) -> None:
+        if not self._google_configurado():
+            await _responder(send, 404, b"Integracao Google nao configurada (faltam credenciais no servidor).")
+            return
+        corpo = await _ler_corpo(receive)
+        campos = {k: v[0] for k, v in parse_qs((corpo or b"").decode("utf-8", "replace"), keep_blank_values=True).items()}
+        if not hmac.compare_digest(campos.get("token_admin", "").encode("utf-8"), (self.admin_token or "").encode("utf-8")):
+            await _responder(send, 401, b"Token administrativo invalido.")
+            return
+        self._limpar_estados_expirados()
+        state = secrets.token_urlsafe(24)
+        self._google_estados_pendentes[state] = datetime.now(timezone.utc) + timedelta(minutes=10)
+        redirect_uri = f"{_base_publica(scope)}/admin/google/callback"
+        url = google_integracao.url_autorizacao(self.google_client_id, redirect_uri, state)
+        await _responder(send, 302, b"", cabecalhos_extra=[(b"location", url.encode("utf-8"))])
+
+    async def _google_callback(self, scope, send) -> None:
+        if not self._google_configurado():
+            await _responder(send, 404, b"Integracao Google nao configurada.")
+            return
+        query = dict(_query(scope))
+        state = query.get("state", "")
+        self._limpar_estados_expirados()
+        if state not in self._google_estados_pendentes:
+            await _responder(send, 400, b"Link de autorizacao invalido ou expirado. Volte em /admin e clique em Conectar de novo.")
+            return
+        del self._google_estados_pendentes[state]
+        code = query.get("code", "")
+        if not code:
+            erro = query.get("error", "erro desconhecido")
+            await _responder(send, 400, f"Google recusou a autorizacao: {erro}".encode("utf-8"))
+            return
+        redirect_uri = f"{_base_publica(scope)}/admin/google/callback"
+        try:
+            async with _cliente(20) as http_cliente:
+                dados = await google_integracao.trocar_codigo_por_token(
+                    http_cliente, self.google_client_id, self.google_client_secret, redirect_uri, code,
+                )
+        except google_integracao.ErroGoogle as erro:
+            log.warning("Falha ao conectar Google: %s", erro)
+            await _responder(send, 400, f"Falha ao conectar: {erro}".encode("utf-8"))
+            return
+        self.registro_google.salvar_conexao(dados["refresh_token"], lambda: datetime.now(timezone.utc))
+        log.info("Integração Google conectada (conta institucional).")
+        await _responder(
+            send, 200,
+            "<!doctype html><meta charset=utf-8><p>Google conectado. Pode fechar esta aba e voltar para /admin.</p>".encode("utf-8"),
+            tipo="text/html; charset=utf-8",
+        )
+
+    async def _google_desconectar(self, scope, receive, send) -> None:
+        corpo = await _ler_corpo(receive)
+        campos = {k: v[0] for k, v in parse_qs((corpo or b"").decode("utf-8", "replace"), keep_blank_values=True).items()}
+        if not hmac.compare_digest(campos.get("token_admin", "").encode("utf-8"), (self.admin_token or "").encode("utf-8")):
+            await _responder(send, 401, b"Token administrativo invalido.")
+            return
+        if self.registro_google is not None:
+            self.registro_google.desconectar()
+            log.info("Integração Google desconectada.")
+        await _responder(send, 302, b"", cabecalhos_extra=[(b"location", b"/admin")])
 
     # --- Clientes e casos (Fase 1 da gestão de escritório) ---------------------
     #
@@ -2501,12 +2664,12 @@ class _AutenticacaoBearer:
         if metodo == "POST":
             corpo = await _ler_corpo(receive)
             if corpo is None:
-                await _json(send, 413, {"erro": "Corpo da requisição grande demais."})
+                await _json(send, 413, _erro("Corpo da requisição grande demais."))
                 return
             try:
                 dados = json.loads(corpo.decode("utf-8") or "{}")
             except (ValueError, UnicodeDecodeError):
-                await _json(send, 400, {"erro": "JSON inválido."})
+                await _json(send, 400, _erro("JSON inválido."))
                 return
             cliente, erro = _criar_cliente_validado(self.gestao, dados)
             if erro:
@@ -2524,20 +2687,47 @@ class _AutenticacaoBearer:
         if metodo == "POST":
             corpo = await _ler_corpo(receive)
             if corpo is None:
-                await _json(send, 413, {"erro": "Corpo da requisição grande demais."})
+                await _json(send, 413, _erro("Corpo da requisição grande demais."))
                 return
             try:
                 dados = json.loads(corpo.decode("utf-8") or "{}")
             except (ValueError, UnicodeDecodeError):
-                await _json(send, 400, {"erro": "JSON inválido."})
+                await _json(send, 400, _erro("JSON inválido."))
                 return
             caso, erro = _criar_caso_validado(self.gestao, dados)
             if erro:
                 await _json(send, 400, erro)
                 return
+            if self._google_conectado():
+                # Fase 4: pasta no Drive criada na hora, best-effort - se falhar (rede, token
+                # revogado do lado do Google), o caso já foi criado mesmo assim; só não tem pasta.
+                try:
+                    pasta_id = await self._criar_pasta_drive_do_caso(caso)
+                    if pasta_id:
+                        caso["drive_pasta_id"] = pasta_id
+                except Exception:
+                    log.exception("Caso %s: falha ao criar pasta no Drive", caso["id"])
             await _json(send, 201, caso)
             return
         await _responder(send, 404, b"Nao encontrado")
+
+    async def _criar_pasta_drive_do_caso(self, caso: dict) -> str | None:
+        conexao_google = self.registro_google.obter_conexao()
+        if not conexao_google:
+            return None
+        cliente_do_caso = self.gestao.obter_cliente(caso["cliente_id"])
+        nome_cliente = cliente_do_caso["nome"] if cliente_do_caso else caso["cliente_id"]
+        nome_pasta = f"{nome_cliente} - {caso.get('titulo') or ', '.join(caso.get('processos') or []) or caso['id']}"
+        pasta_raiz = os.environ.get("CNJ_GOOGLE_DRIVE_PASTA_RAIZ", "").strip() or None
+        async with _cliente(20) as http_cliente:
+            access_token = await google_integracao.obter_access_token(
+                http_cliente, self.google_client_id, self.google_client_secret, conexao_google["refresh_token"],
+            )
+            resultado = await google_integracao.criar_pasta_drive(http_cliente, access_token, nome_pasta, pasta_raiz)
+        pasta_id = resultado.get("id")
+        if pasta_id:
+            self.gestao.atualizar_drive_pasta(caso["id"], pasta_id)
+        return pasta_id
 
     async def _caso_detalhe(self, scope, send, caso_id: str):
         """GET /casos/<id>: o caso com sua linha do tempo (Fase 2) - publicações/movimentações
@@ -2547,9 +2737,57 @@ class _AutenticacaoBearer:
             return
         caso = self.gestao.obter_caso(caso_id)
         if caso is None:
-            await _json(send, 404, {"erro": "Caso não encontrado."})
+            await _json(send, 404, _erro("Caso não encontrado."))
             return
         await _json(send, 200, {**caso, "eventos": self.gestao.eventos_do_caso(caso_id)})
+
+    async def _evento_calendar_do_caso(self, scope, receive, send, caso_id: str):
+        """POST /casos/<id>/evento-calendar: cria um evento de dia inteiro no Google Calendar
+        institucional para o prazo calculado (Fase 4), e grava na linha do tempo do caso (mesma
+        tabela caso_eventos da Fase 2) - {titulo, data} no corpo."""
+        if scope.get("method") != "POST":
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        caso = self.gestao.obter_caso(caso_id)
+        if caso is None:
+            await _json(send, 404, _erro("Caso não encontrado."))
+            return
+        conexao_google = self._google_conectado()
+        if not conexao_google:
+            await _json(send, 400, _erro("Google não conectado. Conecte em /admin antes de criar eventos na agenda."))
+            return
+        corpo = await _ler_corpo(receive)
+        try:
+            dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            await _json(send, 400, _erro("JSON inválido."))
+            return
+        data_iso = (dados.get("data") or "").strip()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", data_iso):
+            await _json(send, 400, _erro("Informe 'data' no formato AAAA-MM-DD."))
+            return
+        titulo = (dados.get("titulo") or "").strip() or f"Prazo: {caso.get('titulo') or caso_id}"
+        try:
+            async with _cliente(20) as http_cliente:
+                access_token = await google_integracao.obter_access_token(
+                    http_cliente, self.google_client_id, self.google_client_secret,
+                    conexao_google["refresh_token"],
+                )
+                resultado = await google_integracao.criar_evento_calendar(
+                    http_cliente, access_token, titulo, data_iso,
+                    f"Criado automaticamente pelo cnj-processual para o caso {caso_id}.", caso_id,
+                )
+        except google_integracao.ErroGoogle as erro:
+            log.warning("Caso %s: falha ao criar evento no Calendar: %s", caso_id, erro)
+            await _json(send, 502, _erro(f"Falha ao criar evento no Google Calendar: {erro}"))
+            return
+        self.gestao.registrar_evento_no_caso(
+            caso_id=caso_id, numero_processo=(caso.get("processos") or [None])[0], tipo="prazo_agenda",
+            conteudo={"titulo": titulo, "data": data_iso, "evento_id": resultado.get("id"),
+                      "link": resultado.get("htmlLink")},
+            agora=lambda: datetime.now(timezone.utc),
+        )
+        await _json(send, 201, {"evento_id": resultado.get("id"), "link": resultado.get("htmlLink")})
 
 
 def _ip_cliente(scope) -> str:
@@ -2970,7 +3208,8 @@ def _notificacao(tipo: str, titulo: str, subtitulo: str | None = None) -> str:
 
 
 def _pagina_admin(registro: RegistroUsuarios, mensagem: str | None, token_novo: str | None = None,
-                  mostrar_lista: bool = False, erro: bool = False) -> str:
+                  mostrar_lista: bool = False, erro: bool = False,
+                  google_conectado: dict | None = None, google_configurado: bool = False) -> str:
     linhas = []
     if mostrar_lista:
         for nome, r in sorted(registro.carregar().items()):
@@ -3004,6 +3243,33 @@ def _pagina_admin(registro: RegistroUsuarios, mensagem: str | None, token_novo: 
             + f"<pre class='token-valor'>{_escapar(token_novo)}</pre>"
             + "</section>"
         )
+
+    if not google_configurado:
+        bloco_google_acao = "<p>Não configurada: defina CNJ_GOOGLE_CLIENT_ID e CNJ_GOOGLE_CLIENT_SECRET no servidor.</p>"
+    elif google_conectado:
+        bloco_google_acao = (
+            f"<p>Conectada em {_escapar(_data_legivel(google_conectado.get('conectado_em', '')))}.</p>"
+            "<form method='post' action='/admin/google/desconectar' class='admin-form'>"
+            "<div class='cds--form-item'>"
+            "<label class='cds--label' for='token_admin_google_desc'>Token administrativo</label>"
+            "<input class='cds--text-input' id='token_admin_google_desc' type='password' name='token_admin' required autocomplete='off'>"
+            "</div>"
+            "<button class='cds--btn cds--btn--danger' type='submit'>Desconectar</button>"
+            "</form>"
+        )
+    else:
+        bloco_google_acao = (
+            "<p>Agenda (Calendar) e arquivos (Drive) do escritório, numa única conta institucional.</p>"
+            "<form method='post' action='/admin/google/iniciar' class='admin-form'>"
+            "<div class='cds--form-item'>"
+            "<label class='cds--label' for='token_admin_google'>Token administrativo</label>"
+            "<input class='cds--text-input' id='token_admin_google' type='password' name='token_admin' required autocomplete='off'>"
+            "</div>"
+            "<button class='cds--btn cds--btn--primary' type='submit'>Conectar Google</button>"
+            "</form>"
+        )
+    bloco_google = f"<section class='admin-secao'><h2>Integração Google</h2>{bloco_google_acao}</section>"
+
     return f"""<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -3050,6 +3316,8 @@ def _pagina_admin(registro: RegistroUsuarios, mensagem: str | None, token_novo: 
 </div>
 </form>
 </section>
+
+{bloco_google}
 </main>
 </body></html>"""
 
@@ -3280,13 +3548,18 @@ def _principal() -> int:
 
     registro_monitoramentos = RegistroMonitoramentos(banco_caminho)
     gestao = RegistroClientesCasos(banco_caminho)
+    registro_google = RegistroIntegracaoGoogle(banco_caminho)
+    google_client_id = os.environ.get("CNJ_GOOGLE_CLIENT_ID", "").strip() or None
+    google_client_secret = os.environ.get("CNJ_GOOGLE_CLIENT_SECRET", "").strip() or None
     global _ESTADO_MONITORAMENTO
     _ESTADO_MONITORAMENTO = _EstadoMonitoramento(
         registro_usuarios=registro, oauth=oauth, registro_monitoramentos=registro_monitoramentos, smtp=smtp,
     )
 
     app = _AutenticacaoBearer(mcp.streamable_http_app(), registro, limitador, admin_token, cadastro, oauth,
-                              captcha, site_captcha or None, falhas=falhas, gestao=gestao)
+                              captcha, site_captcha or None, falhas=falhas, gestao=gestao,
+                              registro_google=registro_google, google_client_id=google_client_id,
+                              google_client_secret=google_client_secret)
     log.info(
         "Servidor HTTP em http://%s:%d/mcp (%d usuário(s) ativo(s); cadastro %s; admin %s; monitoramento %s)",
         args.host, args.port, len(registro.ativos()),
@@ -3294,21 +3567,32 @@ def _principal() -> int:
         "habilitado" if smtp else "desabilitado",
     )
 
+    google_configurado = bool(google_client_id and google_client_secret)
+
     async def _servir() -> None:
         agendador = None
-        if smtp is not None:
+        if smtp is not None or google_configurado:
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
             agendador = AsyncIOScheduler()
-            agendador.add_job(
-                _verificar_monitoramentos_pendentes,
-                "interval",
-                hours=MONITORAMENTO_INTERVALO_HORAS,
-                args=[registro_monitoramentos, smtp],
-                kwargs={"gestao": gestao},
-            )
+            if smtp is not None:
+                agendador.add_job(
+                    _verificar_monitoramentos_pendentes,
+                    "interval",
+                    hours=MONITORAMENTO_INTERVALO_HORAS,
+                    args=[registro_monitoramentos, smtp],
+                    kwargs={"gestao": gestao},
+                )
+                log.info("Monitoramento: verificação periódica a cada %dh.", MONITORAMENTO_INTERVALO_HORAS)
+            if google_configurado:
+                agendador.add_job(
+                    _sincronizar_calendar_google_job,
+                    "interval",
+                    hours=1,
+                    args=[registro_google, gestao, google_client_id, google_client_secret],
+                )
+                log.info("Google Calendar: sincronização periódica a cada 1h (se conectado em /admin).")
             agendador.start()
-            log.info("Monitoramento: verificação periódica a cada %dh.", MONITORAMENTO_INTERVALO_HORAS)
 
         # access_log desligado: o log padrão do uvicorn gravaria a URL completa, inclusive os
         # parâmetros assinados dos links de certidão. As requisições autenticadas já são

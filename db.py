@@ -104,6 +104,16 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 criado_em TEXT NOT NULL
             );
 
+            -- Integração Google (fase 4): uma linha só (id=1) - conta institucional única do
+            -- escritório, não por usuário (ver Q13). sync_token_calendar é o cursor da
+            -- sincronização incremental Calendar -> sistema (ver listar_eventos_de_casos).
+            CREATE TABLE IF NOT EXISTS integracao_google (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                refresh_token TEXT NOT NULL,
+                conectado_em TEXT NOT NULL,
+                sync_token_calendar TEXT
+            );
+
             -- Triagem (fase 3): processo novo achado pela busca periódica por OAB, ainda sem
             -- caso cadastrado. Não vira caso sozinho (decisão explícita: homônimos/erro de
             -- grafia tornam a associação automática por nome arriscada) - fica à espera de
@@ -378,6 +388,18 @@ class RegistroClientesCasos:
             )
         return casos
 
+    def registrar_evento_no_caso(self, caso_id: str, numero_processo: str | None, tipo: str, conteudo: dict, agora) -> None:
+        """Como registrar_evento, mas grava direto no `caso_id` dado - para quando quem chama já
+        sabe exatamente em qual caso (ex.: evento de agenda criado a partir da tela do caso),
+        em vez de descobrir o(s) caso(s) a partir do número do processo."""
+        criado_em = agora().isoformat()
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute(
+                "INSERT INTO caso_eventos (caso_id, numero_processo, tipo, conteudo, criado_em) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (caso_id, numero_processo, tipo, json.dumps(conteudo, ensure_ascii=False), criado_em),
+            )
+
     def eventos_do_caso(self, caso_id: str) -> list[dict]:
         with _abrir(self.caminho) as conexao:
             cursor = conexao.execute(
@@ -392,6 +414,16 @@ class RegistroClientesCasos:
                 }
                 for numero_processo, tipo, conteudo, criado_em in cursor.fetchall()
             ]
+
+    def obter_evento_calendar(self, caso_id: str, evento_id: str) -> dict | None:
+        """Último registro conhecido (criado ou de uma alteração detectada) de um evento do
+        Google Calendar nesse caso, pelo id do evento - usado pela sincronização periódica
+        (Fase 4) para saber se algo mudou desde a última vez que olhou."""
+        for evento in self.eventos_do_caso(caso_id):
+            if evento["tipo"] in ("prazo_agenda", "evento_agenda_alterado") and \
+                    evento["conteudo"].get("evento_id") == evento_id:
+                return evento["conteudo"]
+        return None
 
     # Triagem de processo novo achado por OAB (Fase 3)
 
@@ -428,6 +460,49 @@ class RegistroClientesCasos:
                 "UPDATE triagem_processos SET descartado = 1 WHERE numero_processo = ?", (numero_processo,)
             )
             return cursor.rowcount > 0
+
+    # Integração Google (Fase 4)
+
+    def atualizar_drive_pasta(self, caso_id: str, drive_pasta_id: str) -> None:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute("UPDATE casos SET drive_pasta_id = ? WHERE id = ?", (drive_pasta_id, caso_id))
+
+
+class RegistroIntegracaoGoogle:
+    """Conexão Google institucional (uma linha só, id=1): refresh_token + cursor da
+    sincronização incremental do Calendar. Mesmo padrão de conexão efêmera das outras classes."""
+
+    def __init__(self, caminho: str | Path) -> None:
+        self.caminho = Path(caminho)
+        self._trava = threading.Lock()
+
+    def salvar_conexao(self, refresh_token: str, agora) -> None:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute(
+                "INSERT INTO integracao_google (id, refresh_token, conectado_em, sync_token_calendar) "
+                "VALUES (1, ?, ?, NULL) "
+                "ON CONFLICT(id) DO UPDATE SET refresh_token = excluded.refresh_token, "
+                "conectado_em = excluded.conectado_em, sync_token_calendar = NULL",
+                (refresh_token, agora().isoformat()),
+            )
+
+    def obter_conexao(self) -> dict | None:
+        with _abrir(self.caminho) as conexao:
+            linha = conexao.execute(
+                "SELECT refresh_token, conectado_em, sync_token_calendar FROM integracao_google WHERE id = 1"
+            ).fetchone()
+            if not linha:
+                return None
+            refresh_token, conectado_em, sync_token = linha
+            return {"refresh_token": refresh_token, "conectado_em": conectado_em, "sync_token_calendar": sync_token}
+
+    def desconectar(self) -> None:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute("DELETE FROM integracao_google WHERE id = 1")
+
+    def salvar_sync_token_calendar(self, sync_token: str | None) -> None:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute("UPDATE integracao_google SET sync_token_calendar = ? WHERE id = 1", (sync_token,))
 
 
 def _linha_cliente(linha) -> dict:
