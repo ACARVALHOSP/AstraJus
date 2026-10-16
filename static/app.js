@@ -2265,7 +2265,10 @@ function linhaPublicacaoOab(p) {
 
   if (d.link) {
     acoesLinha.appendChild(
-      el("a", { class: "cds--btn cds--btn--primary cds--btn--sm", href: d.link, target: "_blank", rel: "noopener", texto: "Acessar publicação" })
+      el("a", {
+        class: "cds--btn cds--btn--primary cds--btn--sm", href: d.link, target: "_blank", rel: "noopener",
+        texto: "Abrir", title: "Acessar publicação", "aria-label": "Acessar publicação",
+      })
     );
   }
 
