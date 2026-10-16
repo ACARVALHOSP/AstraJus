@@ -607,20 +607,32 @@ class RegistroPublicacoesOAB:
             )
             return cursor.rowcount > 0
 
-    def listar(self, status: str | None = None) -> list[dict]:
+    def listar(self, status: str | None = None, limite: int = 300) -> list[dict]:
         with _abrir(self.caminho) as conexao:
             if status:
                 cursor = conexao.execute(
                     "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, "
-                    "caso_id, criado_em FROM publicacoes_capturadas WHERE status = ? ORDER BY criado_em DESC",
-                    (status,),
+                    "caso_id, criado_em FROM publicacoes_capturadas WHERE status = ? "
+                    "ORDER BY criado_em DESC LIMIT ?",
+                    (status, limite),
                 )
             else:
                 cursor = conexao.execute(
                     "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, "
-                    "caso_id, criado_em FROM publicacoes_capturadas ORDER BY criado_em DESC"
+                    "caso_id, criado_em FROM publicacoes_capturadas ORDER BY criado_em DESC LIMIT ?",
+                    (limite,),
                 )
             return [_linha_publicacao(linha) for linha in cursor.fetchall()]
+
+    def contar(self, status: str | None = None) -> int:
+        with _abrir(self.caminho) as conexao:
+            if status:
+                linha = conexao.execute(
+                    "SELECT COUNT(*) FROM publicacoes_capturadas WHERE status = ?", (status,)
+                ).fetchone()
+            else:
+                linha = conexao.execute("SELECT COUNT(*) FROM publicacoes_capturadas").fetchone()
+            return linha[0] if linha else 0
 
     def obter(self, hash_publicacao: str) -> dict | None:
         with _abrir(self.caminho) as conexao:

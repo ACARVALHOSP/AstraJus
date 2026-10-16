@@ -2153,8 +2153,11 @@ function anexarBotaoEventoAgenda(container, numeroProcesso, dataVencimentoISO, t
 
 const _ROTULO_STATUS_PUB_OAB = { nao_tratada: "Não tratada", tratada: "Tratada", arquivada: "Arquivada" };
 
+const _TAG_COR_STATUS_PUB_OAB = { nao_tratada: "warm-gray", tratada: "green", arquivada: "gray" };
+
 function _badgeStatusPubOab(status) {
-  return el("span", { class: `pub-oab-status-${status.replace(/_/g, "-")}`, texto: _ROTULO_STATUS_PUB_OAB[status] || status });
+  const cor = _TAG_COR_STATUS_PUB_OAB[status] || "gray";
+  return el("span", { class: `cds--tag cds--tag--${cor} cds--tag--sm`, texto: _ROTULO_STATUS_PUB_OAB[status] || status });
 }
 
 function _irParaConsultaProcesso(numeroProcesso) {
@@ -2190,27 +2193,31 @@ async function _aplicarStatusPubOab(hashes, status) {
   }
 }
 
+let _pubOabContadorLinha = 0;
+
 function linhaPublicacaoOab(p) {
   const d = p.dados || {};
   const linhas = [];
   const tr = el("tr", {});
+  const idTexto = `pub-oab-texto-${++_pubOabContadorLinha}`;
+  const identificacao = d.numeroprocessocommascara || p.numero_processo || p.nome_pesquisado || "publicação";
 
-  const checkbox = el("input", { type: "checkbox" });
+  const checkbox = el("input", { type: "checkbox", "aria-label": `Selecionar publicação: ${identificacao}` });
   checkbox.checked = _publicacoesOabSelecionadas.has(p.hash);
   checkbox.addEventListener("change", () => {
     if (checkbox.checked) _publicacoesOabSelecionadas.add(p.hash);
     else _publicacoesOabSelecionadas.delete(p.hash);
     _atualizarBotoesLotePubOab();
   });
-  tr.appendChild(el("td", {}, [checkbox]));
+  tr.appendChild(el("td", { "data-label": "Selecionar" }, [checkbox]));
 
-  tr.appendChild(el("td", {}, [
+  tr.appendChild(el("td", { "data-label": "Divulgado em" }, [
     el("div", { texto: formatarDataSimples(d.data_disponibilizacao) }),
     el("div", { class: "campo-ajuda", texto: `Capturado em ${formatarData(p.criado_em)}` }),
   ]));
-  tr.appendChild(el("td", { texto: d.tipoComunicacao || d.tipoDocumento || "-" }));
+  tr.appendChild(el("td", { "data-label": "Tipo", texto: d.tipoComunicacao || d.tipoDocumento || "-" }));
 
-  const celProcesso = el("td", {});
+  const celProcesso = el("td", { "data-label": "Processo" });
   if (p.numero_processo) {
     celProcesso.appendChild(el("div", { texto: d.numeroprocessocommascara || p.numero_processo }));
   } else {
@@ -2225,11 +2232,15 @@ function linhaPublicacaoOab(p) {
   if (d.texto) {
     const trTexto = el("tr", {});
     trTexto.hidden = true;
-    trTexto.appendChild(el("td", { colspan: "9" }, [el("div", { class: "pub-oab-texto-expandido", texto: d.texto })]));
-    const botaoExpandir = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Ler mais" });
+    trTexto.appendChild(el("td", { colspan: "9" }, [el("div", { id: idTexto, class: "pub-oab-texto-expandido", texto: d.texto })]));
+    const botaoExpandir = el("button", {
+      class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Ler mais",
+      "aria-expanded": "false", "aria-controls": idTexto,
+    });
     botaoExpandir.addEventListener("click", () => {
       trTexto.hidden = !trTexto.hidden;
       botaoExpandir.textContent = trTexto.hidden ? "Ler mais" : "Ler menos";
+      botaoExpandir.setAttribute("aria-expanded", trTexto.hidden ? "false" : "true");
     });
     celProcesso.appendChild(botaoExpandir);
     linhas.push(tr, trTexto);
@@ -2238,18 +2249,18 @@ function linhaPublicacaoOab(p) {
   }
   tr.appendChild(celProcesso);
 
-  tr.appendChild(el("td", {}, [
+  tr.appendChild(el("td", { "data-label": "Diário" }, [
     el("div", { texto: d.siglaTribunal || "-" }),
     el("div", { class: "campo-ajuda", texto: d.nomeOrgao || "" }),
   ]));
   const nomesPartes = (d.destinatarios || []).map((dest) => dest.nome).filter(Boolean);
-  const celPartes = el("td", { texto: nomesPartes.length ? nomesPartes.join(", ") : "-" });
+  const celPartes = el("td", { "data-label": "Partes", texto: nomesPartes.length ? nomesPartes.join(", ") : "-" });
   if (nomesPartes.length) celPartes.title = nomesPartes.join(", ");
   tr.appendChild(celPartes);
-  tr.appendChild(el("td", { texto: p.nome_pesquisado || "-" }));
-  tr.appendChild(el("td", {}, [_badgeStatusPubOab(p.status)]));
+  tr.appendChild(el("td", { "data-label": "Nome pesquisado", texto: p.nome_pesquisado || "-" }));
+  tr.appendChild(el("td", { "data-label": "Status" }, [_badgeStatusPubOab(p.status)]));
 
-  const celAcoes = el("td", {});
+  const celAcoes = el("td", { "data-label": "Ações" });
   const acoesLinha = el("div", { class: "pub-oab-acoes-linha" });
 
   if (d.link) {
@@ -2259,8 +2270,10 @@ function linhaPublicacaoOab(p) {
   }
 
   if (p.status !== "tratada" && p.numero_processo) {
-    const botaoMais = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "+" });
-    botaoMais.title = "Cadastrar como caso";
+    const botaoMais = el("button", {
+      class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "+",
+      title: "Cadastrar como caso", "aria-label": "Cadastrar como caso",
+    });
     botaoMais.addEventListener("click", async () => {
       const sugestao = p.nome_pesquisado || "";
       const nome = (window.prompt("Nome do cliente para este caso:", sugestao) || "").trim();
@@ -2279,27 +2292,35 @@ function linhaPublicacaoOab(p) {
   }
 
   if (p.status !== "tratada") {
-    const botaoCheck = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "✓" });
-    botaoCheck.title = "Marcar tratada";
+    const botaoCheck = el("button", {
+      class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "✓",
+      title: "Marcar tratada", "aria-label": "Marcar tratada",
+    });
     botaoCheck.addEventListener("click", () => _aplicarStatusPubOab([p.hash], "tratada"));
     acoesLinha.appendChild(botaoCheck);
   }
 
   const menuWrap = el("div", { class: "pub-oab-menu" });
-  const botaoMenu = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "⋮" });
+  const botaoMenu = el("button", {
+    class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "⋮",
+    "aria-label": "Mais ações", "aria-haspopup": "true", "aria-expanded": "false",
+  });
   const listaMenu = el("div", { class: "pub-oab-menu-lista" });
   listaMenu.hidden = true;
   if (p.status !== "arquivada") {
     const opcaoArquivar = el("button", { type: "button", texto: "Arquivar" });
-    opcaoArquivar.addEventListener("click", () => { listaMenu.hidden = true; _aplicarStatusPubOab([p.hash], "arquivada"); });
+    opcaoArquivar.addEventListener("click", () => { listaMenu.hidden = true; botaoMenu.setAttribute("aria-expanded", "false"); _aplicarStatusPubOab([p.hash], "arquivada"); });
     listaMenu.appendChild(opcaoArquivar);
   }
   if (p.status !== "nao_tratada") {
     const opcaoNaoTratada = el("button", { type: "button", texto: "Marcar não tratada" });
-    opcaoNaoTratada.addEventListener("click", () => { listaMenu.hidden = true; _aplicarStatusPubOab([p.hash], "nao_tratada"); });
+    opcaoNaoTratada.addEventListener("click", () => { listaMenu.hidden = true; botaoMenu.setAttribute("aria-expanded", "false"); _aplicarStatusPubOab([p.hash], "nao_tratada"); });
     listaMenu.appendChild(opcaoNaoTratada);
   }
-  botaoMenu.addEventListener("click", () => { listaMenu.hidden = !listaMenu.hidden; });
+  botaoMenu.addEventListener("click", () => {
+    listaMenu.hidden = !listaMenu.hidden;
+    botaoMenu.setAttribute("aria-expanded", listaMenu.hidden ? "false" : "true");
+  });
   menuWrap.appendChild(botaoMenu);
   menuWrap.appendChild(listaMenu);
   acoesLinha.appendChild(menuWrap);
@@ -2318,7 +2339,7 @@ async function carregarPublicacoesOab() {
   const filtroStatus = document.getElementById("pub-oab-filtro-status").value;
   try {
     const url = filtroStatus ? `/publicacoes-oab?status=${encodeURIComponent(filtroStatus)}` : "/publicacoes-oab";
-    const { publicacoes } = await _buscarJson(url);
+    const { publicacoes, total } = await _buscarJson(url);
     limpar(container);
     container.appendChild(el("div", { id: "pub-oab-status-geral" }));
     if (!(publicacoes || []).length) {
@@ -2331,7 +2352,7 @@ async function carregarPublicacoesOab() {
     _publicacoesOabSelecionadas.clear();
     _atualizarBotoesLotePubOab();
 
-    const checkboxTodos = el("input", { type: "checkbox" });
+    const checkboxTodos = el("input", { type: "checkbox", "aria-label": "Selecionar todas as publicações" });
     checkboxTodos.addEventListener("change", () => {
       for (const p of publicacoes) {
         if (checkboxTodos.checked) _publicacoesOabSelecionadas.add(p.hash);
@@ -2357,7 +2378,10 @@ async function carregarPublicacoesOab() {
     for (const p of publicacoes) {
       for (const linha of linhaPublicacaoOab(p)) tbody.appendChild(linha);
     }
-    container.appendChild(el("p", { class: "campo-ajuda", texto: `Mostrando ${publicacoes.length} publicação(ões)` }));
+    const resumo = total > publicacoes.length
+      ? `Mostrando as ${publicacoes.length} mais recentes de ${total} publicação(ões) — use o filtro de status para refinar.`
+      : `Mostrando ${publicacoes.length} publicação(ões)`;
+    container.appendChild(el("p", { class: "campo-ajuda", texto: resumo }));
     container.appendChild(el("div", { class: "pub-oab-tabela-wrap" }, [el("table", { class: "pub-oab-tabela" }, [thead, tbody])]));
   } catch (erro) {
     limpar(container);

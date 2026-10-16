@@ -2989,7 +2989,9 @@ class _AutenticacaoBearer:
         if status and status not in ("nao_tratada", "tratada", "arquivada"):
             await _json(send, 400, _erro("status inválido."))
             return
-        await _json(send, 200, {"publicacoes": self.publicacoes.listar(status)})
+        publicacoes = self.publicacoes.listar(status)
+        total = self.publicacoes.contar(status)
+        await _json(send, 200, {"publicacoes": publicacoes, "total": total})
 
     async def _publicacoes_oab_status(self, scope, receive, send):
         """POST /publicacoes-oab/status: atualização em lote - {hashes: [...], status: "..."}."""
