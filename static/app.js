@@ -7,6 +7,7 @@ const URL_MCP = "/mcp";
 const CHAVE_TOKEN = "cnj_token";
 const CHAVE_HISTORICO = "cnj_historico";
 const CHAVE_FAVORITOS = "cnj_favoritos";
+const CHAVE_FAVORITOS_CASOS = "cnj_favoritos_casos";
 const CHAVE_PRAZO_MUNICIPIO = "cnj_prazo_municipio";
 const HISTORICO_MAX = 10;
 
@@ -322,6 +323,19 @@ function removerFavorito(tribunal, numero) {
   const chave = _chaveFavorito(tribunal, numero);
   _salvarLista(CHAVE_FAVORITOS, lerFavoritos().filter((f) => _chaveFavorito(f.tribunal, f.numero) !== chave));
   renderizarListaRapida();
+}
+
+function ehCasoFavorito(casoId) {
+  return _lerLista(CHAVE_FAVORITOS_CASOS).includes(casoId);
+}
+
+function alternarCasoFavorito(casoId) {
+  const lista = _lerLista(CHAVE_FAVORITOS_CASOS);
+  const index = lista.indexOf(casoId);
+  if (index === -1) lista.unshift(casoId);
+  else lista.splice(index, 1);
+  _salvarLista(CHAVE_FAVORITOS_CASOS, lista);
+  return index === -1; // true = acabou de favoritar
 }
 
 function _usarItemRapido(item) {
@@ -1763,31 +1777,61 @@ function linhaDoTempoCaso(eventos) {
   return lista;
 }
 
-function cartaoCaso(caso) {
+function linhaCaso(caso) {
   const nomeCliente = (id) => (_cacheClientes.find((c) => c.id === id) || {}).nome || id;
   const nomesClientes = [caso.cliente_id, ...(caso.clientes_adicionais || [])].map(nomeCliente);
-  const card = el("article", { class: "cds--tile resultado-card" });
-  card.appendChild(el("h3", { texto: caso.titulo || "(sem título)" }));
-  card.appendChild(el("p", { texto: `Cliente(s): ${nomesClientes.join(", ")}` }));
-  if (caso.responsavel) card.appendChild(el("p", { texto: `Responsável: ${caso.responsavel}` }));
-  card.appendChild(el("p", { texto: `Processo(s): ${(caso.processos || []).join(", ") || "nenhum"}` }));
-  card.appendChild(el("span", { class: "cds--tag cds--tag--gray", texto: caso.status }));
-  if (caso.drive_pasta_id) {
-    card.appendChild(
-      el("p", {}, [el("a", {
-        href: `https://drive.google.com/drive/folders/${caso.drive_pasta_id}`, target: "_blank", rel: "noopener",
-        texto: "Abrir pasta no Drive",
-      })])
-    );
+  const tr = el("tr", {});
+
+  const favoritado = ehCasoFavorito(caso.id);
+  const botaoFavorito = el("button", {
+    class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button",
+    texto: favoritado ? "★" : "☆", "aria-label": favoritado ? "Remover dos favoritos" : "Adicionar aos favoritos",
+  });
+  botaoFavorito.addEventListener("click", () => {
+    const ficouFavorito = alternarCasoFavorito(caso.id);
+    botaoFavorito.textContent = ficouFavorito ? "★" : "☆";
+    botaoFavorito.setAttribute("aria-label", ficouFavorito ? "Remover dos favoritos" : "Adicionar aos favoritos");
+  });
+  tr.appendChild(el("td", { "data-label": "Favorito" }, [botaoFavorito]));
+
+  const celTitulo = el("td", { "data-label": "Título" });
+  const linhaTitulo = el("div", { class: "caso-titulo-linha" }, [
+    el("span", { texto: caso.titulo || "(sem título)" }),
+  ]);
+  if (caso.monitorado) {
+    linhaTitulo.appendChild(el("span", { class: "cds--tag cds--tag--green cds--tag--sm", texto: "Monitorado" }));
   }
+  celTitulo.appendChild(linhaTitulo);
+
+  const processos = caso.processos || [];
+  const subtitulo = el("div", { class: "campo-ajuda" }, [
+    `${caso.status === "ativo" ? "Processo ativo" : caso.status}${processos.length ? " · " : ""}`,
+  ]);
+  processos.forEach((numero, indice) => {
+    if (indice > 0) subtitulo.appendChild(document.createTextNode(", "));
+    const linkProcesso = el("a", { href: "#", texto: numero });
+    linkProcesso.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      _irParaConsultaProcesso(numero);
+    });
+    subtitulo.appendChild(linkProcesso);
+  });
+  celTitulo.appendChild(subtitulo);
 
   const botaoTimeline = el("button", {
     class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Ver linha do tempo",
+    "aria-expanded": "false",
   });
-  const areaTimeline = el("div", { class: "linha-tempo-area", hidden: "hidden" });
+  const trTimeline = el("tr", {});
+  trTimeline.hidden = true;
+  const celTimeline = el("td", { colspan: "5" }, [el("div", { class: "linha-tempo-area" })]);
+  trTimeline.appendChild(celTimeline);
   botaoTimeline.addEventListener("click", async () => {
-    const abrindo = areaTimeline.hidden;
-    areaTimeline.hidden = !abrindo;
+    const abrindo = trTimeline.hidden;
+    trTimeline.hidden = !abrindo;
+    botaoTimeline.setAttribute("aria-expanded", trTimeline.hidden ? "false" : "true");
+    botaoTimeline.textContent = trTimeline.hidden ? "Ver linha do tempo" : "Ocultar linha do tempo";
+    const areaTimeline = celTimeline.firstChild;
     if (!abrindo || areaTimeline.dataset.carregado) return;
     limpar(areaTimeline);
     areaTimeline.appendChild(el("p", { class: "app-espera" }, ["Carregando…"]));
@@ -1801,9 +1845,41 @@ function cartaoCaso(caso) {
       areaTimeline.appendChild(notificacao("error", "Não foi possível carregar a linha do tempo", erro.message));
     }
   });
-  card.appendChild(botaoTimeline);
-  card.appendChild(areaTimeline);
-  return card;
+  celTitulo.appendChild(botaoTimeline);
+  tr.appendChild(celTitulo);
+
+  const celCliente = el("td", { "data-label": "Cliente/Pasta" }, [el("div", { texto: nomesClientes.join(", ") })]);
+  if (caso.drive_pasta_id) {
+    const linkDrive = el("a", {
+      href: `https://drive.google.com/drive/folders/${caso.drive_pasta_id}`, target: "_blank", rel: "noopener",
+      texto: "Abrir pasta",
+    });
+    celCliente.appendChild(el("div", {}, [linkDrive]));
+  }
+  tr.appendChild(celCliente);
+
+  tr.appendChild(el("td", { "data-label": "Responsável", texto: caso.responsavel || "-" }));
+  tr.appendChild(el("td", { "data-label": "Últ. mov.", texto: formatarDataSimples(caso.ultima_movimentacao) }));
+
+  return [tr, trTimeline];
+}
+
+function tabelaCasos(casos) {
+  const ordenados = [...casos].sort((a, b) => (b.ultima_movimentacao || "").localeCompare(a.ultima_movimentacao || ""));
+  const thead = el("thead", {}, [
+    el("tr", {}, [
+      el("th", { texto: "Favorito" }),
+      el("th", { texto: "Título" }),
+      el("th", { texto: "Cliente/Pasta" }),
+      el("th", { texto: "Responsável" }),
+      el("th", { texto: "Últ. mov." }),
+    ]),
+  ]);
+  const tbody = el("tbody", {});
+  for (const caso of ordenados) {
+    for (const linha of linhaCaso(caso)) tbody.appendChild(linha);
+  }
+  return el("div", { class: "tabela-responsiva-wrap" }, [el("table", { class: "tabela-responsiva tabela-casos" }, [thead, tbody])]);
 }
 
 function cartaoPendente(p) {
@@ -1881,7 +1957,7 @@ async function carregarClientesECasos() {
     if (!(casos || []).length) {
       listaCasosEl.appendChild(notificacao("info", "Nenhum caso cadastrado ainda"));
     } else {
-      for (const caso of casos) listaCasosEl.appendChild(cartaoCaso(caso));
+      listaCasosEl.appendChild(tabelaCasos(casos));
     }
   } catch (erro) {
     mostrarErro(listaClientesEl, erro.message);
@@ -2392,7 +2468,7 @@ async function carregarPublicacoesOab() {
       ? `Mostrando as ${publicacoes.length} mais recentes de ${total} publicação(ões) — use o filtro de status para refinar.`
       : `Mostrando ${publicacoes.length} publicação(ões)`;
     container.appendChild(el("p", { class: "campo-ajuda", texto: resumo }));
-    container.appendChild(el("div", { class: "pub-oab-tabela-wrap" }, [el("table", { class: "pub-oab-tabela" }, [thead, tbody])]));
+    container.appendChild(el("div", { class: "tabela-responsiva-wrap" }, [el("table", { class: "tabela-responsiva pub-oab-tabela" }, [thead, tbody])]));
   } catch (erro) {
     limpar(container);
     mostrarErro(container, erro.message);

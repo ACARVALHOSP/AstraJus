@@ -398,6 +398,8 @@ class RegistroClientesCasos:
                     **_linha_caso(linha),
                     "processos": self._processos_do_caso(conexao, linha[0]),
                     "clientes_adicionais": self._clientes_adicionais_do_caso(conexao, linha[0]),
+                    "ultima_movimentacao": self._ultima_movimentacao_do_caso(conexao, linha[0], linha[7]),
+                    "monitorado": self._caso_tem_publicacao_monitorada(conexao, linha[0]),
                 }
                 for linha in cursor.fetchall()
             ]
@@ -423,6 +425,20 @@ class RegistroClientesCasos:
             "SELECT cliente_id FROM caso_clientes WHERE caso_id = ?", (caso_id,)
         )
         return [linha[0] for linha in cursor.fetchall()]
+
+    @staticmethod
+    def _ultima_movimentacao_do_caso(conexao: sqlite3.Connection, caso_id: str, criado_em_caso: str) -> str:
+        linha = conexao.execute(
+            "SELECT MAX(criado_em) FROM caso_eventos WHERE caso_id = ?", (caso_id,)
+        ).fetchone()
+        return (linha[0] if linha and linha[0] else None) or criado_em_caso
+
+    @staticmethod
+    def _caso_tem_publicacao_monitorada(conexao: sqlite3.Connection, caso_id: str) -> bool:
+        linha = conexao.execute(
+            "SELECT 1 FROM publicacoes_capturadas WHERE caso_id = ? LIMIT 1", (caso_id,)
+        ).fetchone()
+        return linha is not None
 
     # Linha do tempo (Fase 2)
 
