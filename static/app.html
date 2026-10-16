@@ -376,6 +376,9 @@ body { margin: 0; min-height: 100dvh; }
 <h2 class="lista-rapida-titulo">Favoritos</h2>
 <p class="campo-ajuda">Processos marcados manualmente na aba Processo (DataJud).</p>
 <ul id="lista-favoritos" class="lista-rapida"></ul>
+<h2 class="lista-rapida-titulo">Casos favoritos</h2>
+<p class="campo-ajuda">Casos marcados com a estrela na aba Clientes e casos.</p>
+<ul id="lista-casos-favoritos" class="lista-rapida"></ul>
 <h2 class="lista-rapida-titulo">Histórico recente</h2>
 <p class="campo-ajuda">Últimas consultas feitas neste navegador. Clique para repetir.</p>
 <ul id="lista-historico" class="lista-rapida"></ul>
@@ -539,6 +542,14 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="cds--form-item">
 <label class="cds--label" for="caso-responsavel">Responsável</label>
 <input class="cds--text-input" id="caso-responsavel" name="responsavel">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="caso-acao">Ação</label>
+<input class="cds--text-input" id="caso-acao" name="acao" placeholder="Ex.: Cumprimento de sentença">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="caso-foro">Foro</label>
+<input class="cds--text-input" id="caso-foro" name="foro" placeholder="Ex.: 3ª Vara Cível">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="caso-processos">Número(s) de processo</label>

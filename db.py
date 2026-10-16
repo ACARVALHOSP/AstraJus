@@ -81,6 +81,8 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 cliente_id TEXT NOT NULL REFERENCES clientes(id),
                 titulo TEXT,
                 responsavel TEXT,
+                acao TEXT,
+                foro TEXT,
                 status TEXT NOT NULL DEFAULT 'ativo',
                 drive_pasta_id TEXT,
                 calendar_evento_id TEXT,
@@ -156,6 +158,18 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
             CREATE INDEX IF NOT EXISTS idx_publicacoes_status ON publicacoes_capturadas (status);
             """
         )
+        _migrar_colunas_casos(conexao)
+
+
+def _migrar_colunas_casos(conexao: sqlite3.Connection) -> None:
+    """Bancos criados antes de acao/foro existirem na tabela `casos` precisam do ALTER
+    TABLE manual - CREATE TABLE IF NOT EXISTS não adiciona coluna em tabela já existente."""
+    colunas = {linha[1] for linha in conexao.execute("PRAGMA table_info(casos)")}
+    with conexao:
+        if "acao" not in colunas:
+            conexao.execute("ALTER TABLE casos ADD COLUMN acao TEXT")
+        if "foro" not in colunas:
+            conexao.execute("ALTER TABLE casos ADD COLUMN foro TEXT")
 
 
 def migrar_de_json_se_necessario(caminho_banco: Path, dados_dir: Path) -> None:
@@ -345,14 +359,15 @@ class RegistroClientesCasos:
     def criar_caso(
         self, cliente_id: str, titulo: str | None, responsavel: str | None,
         numeros_processo: list[str], agora, clientes_adicionais: list[str] | None = None,
+        acao: str | None = None, foro: str | None = None,
     ) -> dict:
         novo_id = uuid.uuid4().hex
         criado_em = agora().isoformat()
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             conexao.execute(
-                "INSERT INTO casos (id, cliente_id, titulo, responsavel, status, criado_em) "
-                "VALUES (?, ?, ?, ?, 'ativo', ?)",
-                (novo_id, cliente_id, titulo, responsavel, criado_em),
+                "INSERT INTO casos (id, cliente_id, titulo, responsavel, acao, foro, status, criado_em) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'ativo', ?)",
+                (novo_id, cliente_id, titulo, responsavel, acao, foro, criado_em),
             )
             conexao.executemany(
                 "INSERT OR IGNORE INTO caso_processos (caso_id, numero_processo) VALUES (?, ?)",
@@ -376,7 +391,7 @@ class RegistroClientesCasos:
         with _abrir(self.caminho) as conexao:
             linha = conexao.execute(
                 "SELECT id, cliente_id, titulo, responsavel, status, drive_pasta_id, "
-                "calendar_evento_id, criado_em FROM casos WHERE id = ?",
+                "calendar_evento_id, criado_em, acao, foro FROM casos WHERE id = ?",
                 (caso_id,),
             ).fetchone()
             if not linha:
@@ -391,7 +406,7 @@ class RegistroClientesCasos:
         with _abrir(self.caminho) as conexao:
             cursor = conexao.execute(
                 "SELECT id, cliente_id, titulo, responsavel, status, drive_pasta_id, "
-                "calendar_evento_id, criado_em FROM casos ORDER BY criado_em DESC"
+                "calendar_evento_id, criado_em, acao, foro FROM casos ORDER BY criado_em DESC"
             )
             return [
                 {
@@ -586,11 +601,11 @@ def _linha_cliente(linha) -> dict:
 
 
 def _linha_caso(linha) -> dict:
-    id_, cliente_id, titulo, responsavel, status, drive_pasta_id, calendar_evento_id, criado_em = linha
+    id_, cliente_id, titulo, responsavel, status, drive_pasta_id, calendar_evento_id, criado_em, acao, foro = linha
     return {
         "id": id_, "cliente_id": cliente_id, "titulo": titulo, "responsavel": responsavel,
         "status": status, "drive_pasta_id": drive_pasta_id, "calendar_evento_id": calendar_evento_id,
-        "criado_em": criado_em,
+        "criado_em": criado_em, "acao": acao, "foro": foro,
     }
 
 

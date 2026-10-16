@@ -354,6 +354,43 @@ function _usarItemRapido(item) {
   }
 }
 
+async function renderizarCasosFavoritos() {
+  const listaCasosFavoritos = document.getElementById("lista-casos-favoritos");
+  if (!listaCasosFavoritos) return;
+  const idsFavoritos = _lerLista(CHAVE_FAVORITOS_CASOS);
+  if (idsFavoritos.length && !_cacheCasos.length && cliente) {
+    try {
+      const resposta = await _buscarJson("/casos");
+      _cacheCasos = resposta.casos || [];
+    } catch {
+      // segue com o cache vazio - a lista mostra "Nenhum caso favorito ainda" se não achar nada
+    }
+  }
+  limpar(listaCasosFavoritos);
+  const casosFavoritos = idsFavoritos.map((id) => _cacheCasos.find((c) => c.id === id)).filter(Boolean);
+  if (!casosFavoritos.length) {
+    listaCasosFavoritos.appendChild(el("li", { class: "lista-rapida-vazio", texto: "Nenhum caso favorito ainda." }));
+    return;
+  }
+  for (const caso of casosFavoritos) {
+    listaCasosFavoritos.appendChild(
+      el("li", { class: "lista-rapida-item cds--tile" }, [
+        el("span", { texto: caso.titulo || "(sem título)" }),
+        el("div", {}, [
+          el("button", {
+            class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Abrir em Clientes e casos",
+            onclick: () => selecionarAba(abas.find((a) => a.painel.id === "aba-clientes")),
+          }),
+          el("button", {
+            class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Remover",
+            onclick: () => { alternarCasoFavorito(caso.id); renderizarCasosFavoritos(); },
+          }),
+        ]),
+      ])
+    );
+  }
+}
+
 function renderizarListaRapida() {
   const listaFavoritos = document.getElementById("lista-favoritos");
   const listaHistorico = document.getElementById("lista-historico");
@@ -426,7 +463,7 @@ function selecionarAba(alvo) {
     aba.painel.hidden = !ativa;
   }
   alvo.botao.focus();
-  if (alvo.painel.id === "aba-historico") renderizarListaRapida();
+  if (alvo.painel.id === "aba-historico") { renderizarListaRapida(); renderizarCasosFavoritos(); }
   if (alvo.painel.id === "aba-monitoramentos") carregarMonitoramentos();
   if (alvo.painel.id === "aba-clientes") carregarClientesECasos();
   if (alvo.painel.id === "aba-publicacoes-oab") carregarPublicacoesOab();
@@ -1733,6 +1770,7 @@ document.getElementById("botao-atualizar-monitoramentos").addEventListener("clic
 // CJPG acima): CRUD de apoio ao painel, não faz sentido expor isso a um agente de IA.
 
 let _cacheClientes = [];
+let _cacheCasos = [];
 
 function cartaoCliente(c) {
   const card = el("article", { class: "cds--tile resultado-card" });
@@ -1791,6 +1829,7 @@ function linhaCaso(caso) {
     const ficouFavorito = alternarCasoFavorito(caso.id);
     botaoFavorito.textContent = ficouFavorito ? "★" : "☆";
     botaoFavorito.setAttribute("aria-label", ficouFavorito ? "Remover dos favoritos" : "Adicionar aos favoritos");
+    renderizarCasosFavoritos();
   });
   tr.appendChild(el("td", { "data-label": "Favorito" }, [botaoFavorito]));
 
@@ -1858,7 +1897,12 @@ function linhaCaso(caso) {
   }
   tr.appendChild(celCliente);
 
-  tr.appendChild(el("td", { "data-label": "Responsável", texto: caso.responsavel || "-" }));
+  const celAcaoForo = el("td", { "data-label": "Ação/Foro" }, [
+    el("div", { texto: caso.acao || "-" }),
+  ]);
+  if (caso.foro) celAcaoForo.appendChild(el("div", { class: "campo-ajuda", texto: caso.foro }));
+  tr.appendChild(celAcaoForo);
+
   tr.appendChild(el("td", { "data-label": "Últ. mov.", texto: formatarDataSimples(caso.ultima_movimentacao) }));
 
   return [tr, trTimeline];
@@ -1871,7 +1915,7 @@ function tabelaCasos(casos) {
       el("th", { texto: "Favorito" }),
       el("th", { texto: "Título" }),
       el("th", { texto: "Cliente/Pasta" }),
-      el("th", { texto: "Responsável" }),
+      el("th", { texto: "Ação/Foro" }),
       el("th", { texto: "Últ. mov." }),
     ]),
   ]);
@@ -1954,11 +1998,13 @@ async function carregarClientesECasos() {
     }
 
     const { casos } = await _buscarJson("/casos");
-    if (!(casos || []).length) {
+    _cacheCasos = casos || [];
+    if (!_cacheCasos.length) {
       listaCasosEl.appendChild(notificacao("info", "Nenhum caso cadastrado ainda"));
     } else {
-      listaCasosEl.appendChild(tabelaCasos(casos));
+      listaCasosEl.appendChild(tabelaCasos(_cacheCasos));
     }
+    renderizarCasosFavoritos();
   } catch (erro) {
     mostrarErro(listaClientesEl, erro.message);
   }
@@ -1998,6 +2044,8 @@ formCaso.addEventListener("submit", async (evento) => {
     cliente_id: document.getElementById("caso-cliente").value,
     titulo: document.getElementById("caso-titulo").value.trim(),
     responsavel: document.getElementById("caso-responsavel").value.trim(),
+    acao: document.getElementById("caso-acao").value.trim(),
+    foro: document.getElementById("caso-foro").value.trim(),
     numeros_processo: numeros,
   };
   const pararEspera = mostrarEspera(resultadoCaso, botao, "Cadastrando caso");
@@ -2049,6 +2097,8 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
       value: usaCheckboxesPartes ? "" : (nomeSugerido || ""),
     });
     const campoTitulo = el("input", { class: "cds--text-input", placeholder: "Título do caso (opcional)", value: tituloSugerido || "" });
+    const campoAcao = el("input", { class: "cds--text-input", placeholder: "Ação (opcional)" });
+    const campoForo = el("input", { class: "cds--text-input", placeholder: "Foro (opcional)" });
     const botaoSalvar = el("button", { class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Salvar caso" });
     const statusMini = el("span", { class: "app-espera app-espera--inline" });
 
@@ -2099,12 +2149,9 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
           if (dados.erro) throw new ErroMCP(200, dados.mensagem || "Falha ao consultar o DataJud.");
           const proc = (dados.processos || [])[0];
           if (!proc) throw new ErroMCP(200, dados.mensagem || "Processo não encontrado no DataJud.");
-          const partesTitulo = [proc.classe, proc.orgaoJulgador].filter(Boolean).join(" - ");
-          // idempotente: um segundo clique não duplica o mesmo trecho se já estiver no título
-          if (partesTitulo && !campoTitulo.value.includes(partesTitulo)) {
-            campoTitulo.value = campoTitulo.value ? `${campoTitulo.value} (${partesTitulo})` : partesTitulo;
-          }
-          statusDataJud.textContent = "Classe/órgão adicionados.";
+          if (proc.classe) campoAcao.value = proc.classe;
+          if (proc.orgaoJulgador) campoForo.value = proc.orgaoJulgador;
+          statusDataJud.textContent = "Ação/foro preenchidos.";
           botaoDataJud.textContent = "Atualizar classe/órgão do DataJud";
         } catch (erro) {
           statusDataJud.textContent = erro.message || "Falha ao consultar o DataJud (sem detalhes do servidor).";
@@ -2121,6 +2168,8 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
       try {
         const corpo = {
           titulo: campoTitulo.value.trim() || null,
+          acao: campoAcao.value.trim() || null,
+          foro: campoForo.value.trim() || null,
           numeros_processo: [numeroProcesso],
         };
         if (usaCheckboxesPartes) {
@@ -2154,6 +2203,8 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
       blocoPartes,
       el("div", { class: "cds--form-item" }, [campoNomeNovo]),
       el("div", { class: "cds--form-item" }, [campoTitulo]),
+      el("div", { class: "cds--form-item" }, [campoAcao]),
+      el("div", { class: "cds--form-item" }, [campoForo]),
       botaoDataJud,
       statusDataJud,
       botaoSalvar,

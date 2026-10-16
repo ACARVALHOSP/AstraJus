@@ -2449,6 +2449,8 @@ def _criar_caso_validado(
         numeros_processo=numeros,
         agora=lambda: datetime.now(timezone.utc),
         clientes_adicionais=clientes_adicionais,
+        acao=(dados.get("acao") or "").strip() or None,
+        foro=(dados.get("foro") or "").strip() or None,
     )
     if publicacoes is not None:
         for numero in numeros:
