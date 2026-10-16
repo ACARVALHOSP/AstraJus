@@ -2358,7 +2358,7 @@ async function carregarPublicacoesOab() {
       for (const linha of linhaPublicacaoOab(p)) tbody.appendChild(linha);
     }
     container.appendChild(el("p", { class: "campo-ajuda", texto: `Mostrando ${publicacoes.length} publicação(ões)` }));
-    container.appendChild(el("table", { class: "pub-oab-tabela" }, [thead, tbody]));
+    container.appendChild(el("div", { class: "pub-oab-tabela-wrap" }, [el("table", { class: "pub-oab-tabela" }, [thead, tbody])]));
   } catch (erro) {
     limpar(container);
     mostrarErro(container, erro.message);
