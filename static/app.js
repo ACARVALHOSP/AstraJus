@@ -2225,7 +2225,7 @@ function linhaPublicacaoOab(p) {
   if (d.texto) {
     const trTexto = el("tr", {});
     trTexto.hidden = true;
-    trTexto.appendChild(el("td", { colspan: "8" }, [el("div", { class: "pub-oab-texto-expandido", texto: d.texto })]));
+    trTexto.appendChild(el("td", { colspan: "9" }, [el("div", { class: "pub-oab-texto-expandido", texto: d.texto })]));
     const botaoExpandir = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Ler mais" });
     botaoExpandir.addEventListener("click", () => {
       trTexto.hidden = !trTexto.hidden;
@@ -2242,6 +2242,10 @@ function linhaPublicacaoOab(p) {
     el("div", { texto: d.siglaTribunal || "-" }),
     el("div", { class: "campo-ajuda", texto: d.nomeOrgao || "" }),
   ]));
+  const nomesPartes = (d.destinatarios || []).map((dest) => dest.nome).filter(Boolean);
+  const celPartes = el("td", { texto: nomesPartes.length ? nomesPartes.join(", ") : "-" });
+  if (nomesPartes.length) celPartes.title = nomesPartes.join(", ");
+  tr.appendChild(celPartes);
   tr.appendChild(el("td", { texto: p.nome_pesquisado || "-" }));
   tr.appendChild(el("td", {}, [_badgeStatusPubOab(p.status)]));
 
@@ -2343,6 +2347,7 @@ async function carregarPublicacoesOab() {
         el("th", { texto: "Tipo" }),
         el("th", { texto: "Processo" }),
         el("th", { texto: "Diário" }),
+        el("th", { texto: "Partes" }),
         el("th", { texto: "Nome pesquisado" }),
         el("th", { texto: "Status" }),
         el("th", { texto: "Ações" }),
