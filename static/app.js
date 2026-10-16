@@ -400,7 +400,6 @@ function selecionarAba(alvo) {
   for (const aba of abas) {
     const ativa = aba === alvo;
     aba.botao.setAttribute("aria-selected", String(ativa));
-    aba.botao.parentElement.classList.toggle("cds--tabs__nav-item--selected", ativa);
     aba.painel.hidden = !ativa;
   }
   alvo.botao.focus();
