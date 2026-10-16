@@ -2214,8 +2214,8 @@ function linhaPublicacaoOab(p) {
   tr.appendChild(el("td", { "data-label": "Divulgado em" }, [
     el("div", { texto: formatarDataSimples(d.data_disponibilizacao) }),
     el("div", { class: "campo-ajuda", texto: `Capturado em ${formatarData(p.criado_em)}` }),
+    el("div", { class: "campo-ajuda", texto: d.tipoComunicacao || d.tipoDocumento || "-" }),
   ]));
-  tr.appendChild(el("td", { "data-label": "Tipo", texto: d.tipoComunicacao || d.tipoDocumento || "-" }));
 
   const celProcesso = el("td", { "data-label": "Processo" });
   if (p.numero_processo) {
@@ -2232,7 +2232,7 @@ function linhaPublicacaoOab(p) {
   if (d.texto) {
     const trTexto = el("tr", {});
     trTexto.hidden = true;
-    trTexto.appendChild(el("td", { colspan: "9" }, [el("div", { id: idTexto, class: "pub-oab-texto-expandido", texto: d.texto })]));
+    trTexto.appendChild(el("td", { colspan: "8" }, [el("div", { id: idTexto, class: "pub-oab-texto-expandido", texto: d.texto })]));
     const botaoExpandir = el("button", {
       class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Ler mais",
       "aria-expanded": "false", "aria-controls": idTexto,
@@ -2368,7 +2368,6 @@ async function carregarPublicacoesOab() {
       el("tr", {}, [
         el("th", {}, [checkboxTodos]),
         el("th", { texto: "Divulgado em" }),
-        el("th", { texto: "Tipo" }),
         el("th", { texto: "Processo" }),
         el("th", { texto: "Diário" }),
         el("th", { texto: "Partes" }),
