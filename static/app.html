@@ -16,7 +16,7 @@ body { margin: 0; min-height: 100dvh; }
 .skip-link:focus { left: 0.5rem; top: 0.5rem; }
 
 .app-cabecalho { border-bottom: 1px solid var(--cds-border-subtle, #e0e0e0); padding: 1.5rem 1rem; }
-.app-cabecalho-interno { max-width: 960px; margin: 0 auto; }
+.app-cabecalho-interno { max-width: clamp(960px, 90vw, 1600px); margin: 0 auto; }
 .app-cabecalho-topo { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .app-cabecalho-topo h1 { font-size: 1.5rem; font-weight: 600; margin: 0.25rem 0 0; }
 .token-form { display: flex; align-items: flex-end; gap: 1rem; flex-wrap: wrap; }
@@ -25,7 +25,7 @@ body { margin: 0; min-height: 100dvh; }
 .checkbox-lembrar input { width: auto; }
 .token-acoes { display: flex; gap: 0.5rem; }
 
-.app-corpo { max-width: 960px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+.app-corpo { max-width: clamp(960px, 90vw, 1600px); margin: 0 auto; padding: 1.5rem 1rem 3rem; }
 .app-formulario {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 1rem; margin: 1.5rem 0 0.5rem;
@@ -124,7 +124,7 @@ body { margin: 0; min-height: 100dvh; }
   .espera-spinner { animation: none; border-top-color: var(--cds-border-subtle, #c6c6c6); }
 }
 
-.app-rodape { max-width: 960px; margin: 0 auto; padding: 0 1rem 2rem; font-size: 0.875rem; }
+.app-rodape { max-width: clamp(960px, 90vw, 1600px); margin: 0 auto; padding: 0 1rem 2rem; font-size: 0.875rem; }
 
 .grade-jurimetria {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
