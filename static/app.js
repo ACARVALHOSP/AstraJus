@@ -2368,3 +2368,27 @@ document.getElementById("pub-oab-marcar-tratada").addEventListener("click", () =
 document.getElementById("pub-oab-arquivar").addEventListener("click", () => {
   _aplicarStatusPubOab(Array.from(_publicacoesOabSelecionadas), "arquivada");
 });
+
+document.getElementById("form-pub-oab-manual").addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  const status = document.getElementById("pub-oab-manual-status");
+  const botao = document.getElementById("pub-oab-manual-botao");
+  const corpo = {
+    numero_oab: document.getElementById("pub-oab-manual-numero").value.trim(),
+    uf_oab: document.getElementById("pub-oab-manual-uf").value.trim(),
+    nome: document.getElementById("pub-oab-manual-nome").value.trim(),
+    data_inicio: document.getElementById("pub-oab-manual-data-inicio").value,
+    data_fim: document.getElementById("pub-oab-manual-data-fim").value,
+  };
+  botao.disabled = true;
+  status.textContent = "Consultando o DJEN…";
+  try {
+    const resultado = await _enviarJson("/publicacoes-oab/capturar-manual", corpo);
+    status.textContent = `Encontradas ${resultado.encontradas}, novas ${resultado.novas}.`;
+    carregarPublicacoesOab();
+  } catch (erro) {
+    status.textContent = erro.message;
+  } finally {
+    botao.disabled = false;
+  }
+});

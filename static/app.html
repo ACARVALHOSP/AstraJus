@@ -53,6 +53,10 @@ body { margin: 0; min-height: 100dvh; }
 .partes-checkbox-lista { display: flex; flex-direction: column; gap: 0.25rem; }
 .parte-checkbox-item { display: flex; align-items: center; gap: 0.375rem; font-size: 0.875rem; font-weight: normal; }
 .parte-checkbox-item input[type="checkbox"] { width: auto; margin: 0; }
+.pub-oab-manual { margin-top: 1rem; border: 1px solid var(--cds-border-subtle, #e0e0e0); padding: 0.75rem 1rem; }
+.pub-oab-manual summary { cursor: pointer; font-weight: 600; }
+.pub-oab-manual-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; margin-top: 0.75rem; }
+.pub-oab-manual-form .cds--form-item { display: flex; flex-direction: column; min-width: 8rem; }
 .pub-oab-barra { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 1rem; margin-top: 1rem; }
 .pub-oab-filtros, .pub-oab-acoes-lote { display: flex; align-items: flex-end; gap: 0.5rem; }
 .pub-oab-tabela { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
@@ -487,6 +491,33 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 
 <section id="aba-publicacoes-oab" role="tabpanel" aria-labelledby="aba-publicacoes-oab-botao" hidden>
 <p class="campo-ajuda">Toda publicação capturada pelo monitoramento de OAB (ver aba "Publicações (DJEN)" para criar um), atualizada a cada 24h.</p>
+<details class="pub-oab-manual">
+<summary>Captura manual (sob demanda)</summary>
+<form id="form-pub-oab-manual" class="pub-oab-manual-form">
+<div class="cds--form-item">
+<label class="cds--label" for="pub-oab-manual-numero">Número OAB</label>
+<input class="cds--text-input" type="text" id="pub-oab-manual-numero" required>
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="pub-oab-manual-uf">UF OAB</label>
+<input class="cds--text-input" type="text" id="pub-oab-manual-uf" maxlength="2" placeholder="SP">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="pub-oab-manual-nome">Nome (opcional)</label>
+<input class="cds--text-input" type="text" id="pub-oab-manual-nome">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="pub-oab-manual-data-inicio">Data início</label>
+<input class="cds--text-input" type="date" id="pub-oab-manual-data-inicio" required>
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="pub-oab-manual-data-fim">Data fim</label>
+<input class="cds--text-input" type="date" id="pub-oab-manual-data-fim" required>
+</div>
+<button class="cds--btn cds--btn--primary cds--btn--sm" type="submit" id="pub-oab-manual-botao">Capturar agora</button>
+</form>
+<div id="pub-oab-manual-status" class="campo-ajuda" role="status"></div>
+</details>
 <div class="pub-oab-barra">
 <div class="pub-oab-filtros">
 <label class="cds--label" for="pub-oab-filtro-status">Status</label>

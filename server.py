@@ -1652,6 +1652,32 @@ async def _verificar_um_monitoramento(
 # achada (dedupe por hash, ver RegistroPublicacoesOAB.registrar). Publicação de processo que já
 # tem caso cadastrado entra direto como "tratada" (Q11).
 
+def _registrar_itens_capturados(
+    itens_brutos: list[dict], monitoramento_id: str | None, nome_pesquisado: str | None,
+    publicacoes: "RegistroPublicacoesOAB", gestao: "RegistroClientesCasos", agora,
+) -> int:
+    """Extrai e grava cada item do DJEN no log de publicações por OAB (dedupe por hash via
+    RegistroPublicacoesOAB.registrar). Devolve quantas eram novas (não estavam capturadas ainda).
+    Usado tanto pela captura automática de 24h quanto pela captura manual (data/OAB na hora)."""
+    novas = 0
+    for bruto in itens_brutos:
+        item = _extrair_publicacao_djen(bruto)
+        hash_publicacao = item.get("hash")
+        if not hash_publicacao:
+            continue
+        numero = _so_digitos(item.get("numeroprocessocommascara"))
+        numero = numero if len(numero) == 20 else None
+        casos_ligados = gestao.casos_do_processo(numero) if numero else []
+        status_inicial = "tratada" if casos_ligados else "nao_tratada"
+        inseriu = publicacoes.registrar(
+            hash_publicacao, monitoramento_id, nome_pesquisado, numero, item,
+            status_inicial, casos_ligados[0] if casos_ligados else None, agora,
+        )
+        if inseriu:
+            novas += 1
+    return novas
+
+
 async def _capturar_um_monitoramento_oab(
     id_monitoramento: str, criterio: dict, publicacoes: "RegistroPublicacoesOAB",
     gestao: "RegistroClientesCasos", agora,
@@ -1670,20 +1696,9 @@ async def _capturar_um_monitoramento_oab(
         log.warning("Captura 24h (OAB) %s: resposta inesperada do DJEN", id_monitoramento)
         return
 
-    nome_pesquisado = criterio.get("nome")
-    for bruto in dados_resp.get("items") or []:
-        item = _extrair_publicacao_djen(bruto)
-        hash_publicacao = item.get("hash")
-        if not hash_publicacao:
-            continue
-        numero = _so_digitos(item.get("numeroprocessocommascara"))
-        numero = numero if len(numero) == 20 else None
-        casos_ligados = gestao.casos_do_processo(numero) if numero else []
-        status_inicial = "tratada" if casos_ligados else "nao_tratada"
-        publicacoes.registrar(
-            hash_publicacao, id_monitoramento, nome_pesquisado, numero, item,
-            status_inicial, casos_ligados[0] if casos_ligados else None, agora,
-        )
+    _registrar_itens_capturados(
+        dados_resp.get("items") or [], id_monitoramento, criterio.get("nome"), publicacoes, gestao, agora,
+    )
 
 
 async def _capturar_publicacoes_oab(
@@ -1700,6 +1715,53 @@ async def _capturar_publicacoes_oab(
             await _capturar_um_monitoramento_oab(id_monitoramento, criterio, publicacoes, gestao, agora)
         except Exception:
             log.exception("Captura 24h (OAB): falha no monitoramento %s", id_monitoramento)
+
+
+async def _capturar_publicacoes_oab_manual(
+    publicacoes: "RegistroPublicacoesOAB", gestao: "RegistroClientesCasos", dados: dict,
+    agora=lambda: datetime.now(timezone.utc),
+) -> tuple[dict | None, dict | None]:
+    """Captura avulsa, disparada na hora pela pessoa (sem precisar de um monitoramento salvo):
+    OAB + intervalo de datas obrigatórios. Mesma gravação/dedupe da captura automática de 24h -
+    uma publicação já capturada antes (mesmo hash) não duplica. Devolve (resultado, None) ou
+    (None, erro)."""
+    numero_oab = (dados.get("numero_oab") or "").strip()
+    if not numero_oab:
+        return None, _erro("Informe numero_oab.")
+    uf_oab = (dados.get("uf_oab") or "").strip().upper() or None
+    if uf_oab and not re.fullmatch(r"[A-Z]{2}", uf_oab):
+        return None, _erro("uf_oab inválida: use 2 letras, ex: 'SP'.")
+    sigla_tribunal = (dados.get("sigla_tribunal") or "").strip().upper() or None
+    data_inicio = (dados.get("data_inicio") or "").strip() or None
+    data_fim = (dados.get("data_fim") or "").strip() or None
+    if not data_inicio or not data_fim:
+        return None, _erro("Informe data_inicio e data_fim (AAAA-MM-DD).")
+    for rotulo, valor in (("data_inicio", data_inicio), ("data_fim", data_fim)):
+        erro_data = _validar_data(rotulo, valor)
+        if erro_data:
+            return None, _erro(erro_data)
+    if datetime.strptime(data_inicio, _FORMATO_DATA) > datetime.strptime(data_fim, _FORMATO_DATA):
+        return None, _erro("data_inicio não pode ser posterior a data_fim.")
+    nome = (dados.get("nome") or "").strip() or None
+
+    params = {k: v for k, v in {
+        "numeroOab": numero_oab, "ufOab": uf_oab, "siglaTribunal": sigla_tribunal,
+        "dataDisponibilizacaoInicio": data_inicio, "dataDisponibilizacaoFim": data_fim,
+        "pagina": 1, "itensPorPagina": 100,
+    }.items() if v is not None}
+
+    resposta = await _djen_get_com_retry(DJEN_BASE_URL, params=params)
+    if isinstance(resposta, dict):
+        return None, resposta  # já no formato de erro (_erro ou equivalente)
+    dados_resp, erro_json = _json_da_resposta(resposta)
+    if erro_json:
+        return None, erro_json
+    if not isinstance(dados_resp, dict):
+        return None, _erro("Resposta inesperada da API do DJEN (não é um objeto JSON).")
+
+    itens_brutos = dados_resp.get("items") or []
+    novas = _registrar_itens_capturados(itens_brutos, None, nome, publicacoes, gestao, agora)
+    return {"encontradas": len(itens_brutos), "novas": novas}, None
 
 
 async def _verificar_monitoramentos_pendentes(
@@ -2581,6 +2643,9 @@ class _AutenticacaoBearer:
         if caminho == "/publicacoes-oab/status" and self.publicacoes is not None:
             await self._publicacoes_oab_status(scope, receive, send)
             return
+        if caminho == "/publicacoes-oab/capturar-manual" and self.publicacoes is not None and self.gestao is not None:
+            await self._publicacoes_oab_capturar_manual(scope, receive, send)
+            return
         if caminho.startswith("/publicacoes-oab/") and caminho.endswith("/criar-caso") \
                 and self.publicacoes is not None and self.gestao is not None:
             hash_publicacao = caminho[len("/publicacoes-oab/"):-len("/criar-caso")].rstrip("/")
@@ -2947,6 +3012,23 @@ class _AutenticacaoBearer:
             return
         quantidade = self.publicacoes.atualizar_status(hashes, status)
         await _json(send, 200, {"atualizadas": quantidade})
+
+    async def _publicacoes_oab_capturar_manual(self, scope, receive, send):
+        """POST /publicacoes-oab/capturar-manual: captura sob demanda por OAB + intervalo de datas."""
+        if scope.get("method") != "POST":
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        corpo = await _ler_corpo(receive)
+        try:
+            dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            await _json(send, 400, _erro("JSON inválido."))
+            return
+        resultado, erro = await _capturar_publicacoes_oab_manual(self.publicacoes, self.gestao, dados)
+        if erro:
+            await _json(send, 400, erro)
+            return
+        await _json(send, 200, resultado)
 
     async def _publicacao_oab_criar_caso(self, scope, receive, send, hash_publicacao: str):
         """POST /publicacoes-oab/<hash>/criar-caso: atalho do "+" na tabela - cria o caso (cliente
