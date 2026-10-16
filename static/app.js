@@ -245,6 +245,8 @@ document.getElementById("form-token").addEventListener("submit", (evento) => {
   if (checkboxLembrar.checked) localStorage.setItem(CHAVE_TOKEN, valor);
   else localStorage.removeItem(CHAVE_TOKEN);
   conectarComToken(valor);
+  const abaProcesso = abas.find((a) => a.painel.id === "aba-processo");
+  if (abaProcesso) selecionarAba(abaProcesso);
 });
 
 document.getElementById("esquecer-token").addEventListener("click", () => {
@@ -256,7 +258,7 @@ document.getElementById("esquecer-token").addEventListener("click", () => {
 
 function exigirCliente(container) {
   if (cliente) return true;
-  mostrarErro(container, "Informe o seu token no topo da página e clique em Conectar antes de consultar.");
+  mostrarErro(container, "Informe o seu token na aba Acesso e clique em Conectar antes de consultar.");
   return false;
 }
 
@@ -324,12 +326,12 @@ function removerFavorito(tribunal, numero) {
 
 function _usarItemRapido(item) {
   if (item.tipo === "processo") {
-    selecionarAba(abas[0]);
+    selecionarAba(abas.find((a) => a.painel.id === "aba-processo"));
     document.getElementById("tribunal").value = item.args.tribunal || "";
     document.getElementById("numero-processo").value = item.args.numero_processo || "";
     formProcesso.requestSubmit();
   } else {
-    selecionarAba(abas[1]);
+    selecionarAba(abas.find((a) => a.painel.id === "aba-publicacoes"));
     document.getElementById("pub-numero-processo").value = item.args.numero_processo || "";
     document.getElementById("pub-sigla-tribunal").value = item.args.sigla_tribunal || "";
     document.getElementById("pub-numero-oab").value = item.args.numero_oab || "";
@@ -387,6 +389,7 @@ function renderizarListaRapida() {
 // --- Abas ------------------------------------------------------------------------------------
 
 const abas = [
+  { botao: document.getElementById("aba-acesso-botao"), painel: document.getElementById("aba-acesso") },
   { botao: document.getElementById("aba-processo-botao"), painel: document.getElementById("aba-processo") },
   { botao: document.getElementById("aba-publicacoes-botao"), painel: document.getElementById("aba-publicacoes") },
   { botao: document.getElementById("aba-historico-botao"), painel: document.getElementById("aba-historico") },
@@ -395,6 +398,12 @@ const abas = [
   { botao: document.getElementById("aba-clientes-botao"), painel: document.getElementById("aba-clientes") },
   { botao: document.getElementById("aba-publicacoes-oab-botao"), painel: document.getElementById("aba-publicacoes-oab") },
 ];
+
+// Token salvo já conecta sozinho (ver carregarTokenSalvo) - pula a aba Acesso e vai direto pro uso.
+if (cliente) {
+  const abaProcessoInicial = abas.find((a) => a.painel.id === "aba-processo");
+  if (abaProcessoInicial) selecionarAba(abaProcessoInicial);
+}
 
 function selecionarAba(alvo) {
   for (const aba of abas) {

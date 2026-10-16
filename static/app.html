@@ -17,10 +17,8 @@ body { margin: 0; min-height: 100dvh; }
 
 .app-cabecalho { border-bottom: 1px solid var(--cds-border-subtle, #e0e0e0); padding: 1.5rem 1rem; }
 .app-cabecalho-interno { max-width: clamp(960px, 90vw, 1600px); margin: 0 auto; }
-.app-cabecalho-topo { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.app-cabecalho-topo { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .app-cabecalho-topo h1 { font-size: 1.5rem; font-weight: 600; margin: 0.25rem 0 0; }
-.token-form { display: flex; align-items: flex-end; gap: 1rem; flex-wrap: wrap; }
-.token-campo { flex: 1 1 260px; margin: 0; }
 .checkbox-lembrar { display: flex; align-items: center; gap: 0.4rem; font-size: 0.875rem; white-space: nowrap; }
 .checkbox-lembrar input { width: auto; }
 .token-acoes { display: flex; gap: 0.5rem; }
@@ -249,17 +247,6 @@ body { margin: 0; min-height: 100dvh; }
 </div>
 <span id="status-conexao" class="cds--tag cds--tag--gray">Sem token</span>
 </div>
-<form id="form-token" class="token-form" autocomplete="off">
-<div class="cds--form-item token-campo">
-<label class="cds--label" for="token">Seu token de acesso</label>
-<input class="cds--text-input" id="token" type="password" placeholder="cole aqui o token recebido por e-mail" required>
-</div>
-<label class="checkbox-lembrar"><input type="checkbox" id="lembrar-token"> Lembrar neste navegador</label>
-<div class="token-acoes">
-<button class="cds--btn cds--btn--primary cds--btn--sm" type="submit">Conectar</button>
-<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="esquecer-token">Esquecer</button>
-</div>
-</form>
 </div>
 </header>
 
@@ -268,7 +255,10 @@ body { margin: 0; min-height: 100dvh; }
 <nav class="app-sidebar" aria-label="Tipo de consulta">
 <ul class="app-sidebar-nav" role="tablist" aria-orientation="vertical">
 <li role="presentation">
-<button class="app-sidebar-link" id="aba-processo-botao" role="tab" aria-selected="true" aria-controls="aba-processo" type="button">Processo (DataJud)</button>
+<button class="app-sidebar-link" id="aba-acesso-botao" role="tab" aria-selected="true" aria-controls="aba-acesso" type="button">Acesso</button>
+</li>
+<li role="presentation">
+<button class="app-sidebar-link" id="aba-processo-botao" role="tab" aria-selected="false" aria-controls="aba-processo" type="button">Processo (DataJud)</button>
 </li>
 <li role="presentation">
 <button class="app-sidebar-link" id="aba-publicacoes-botao" role="tab" aria-selected="false" aria-controls="aba-publicacoes" type="button">Publicações (DJEN)</button>
@@ -293,7 +283,22 @@ body { margin: 0; min-height: 100dvh; }
 
 <main id="conteudo" class="app-corpo">
 
-<section id="aba-processo" role="tabpanel" aria-labelledby="aba-processo-botao">
+<section id="aba-acesso" role="tabpanel" aria-labelledby="aba-acesso-botao">
+<p class="campo-ajuda">Cole o token recebido por e-mail para liberar as consultas. Ele fica só neste navegador.</p>
+<form id="form-token" class="app-formulario" autocomplete="off">
+<div class="cds--form-item">
+<label class="cds--label" for="token">Seu token de acesso</label>
+<input class="cds--text-input" id="token" type="password" placeholder="cole aqui o token recebido por e-mail" required>
+</div>
+<label class="checkbox-lembrar"><input type="checkbox" id="lembrar-token"> Lembrar neste navegador</label>
+<div class="token-acoes campo-ajuda--largo">
+<button class="cds--btn cds--btn--primary" type="submit">Conectar</button>
+<button class="cds--btn cds--btn--ghost" type="button" id="esquecer-token">Esquecer</button>
+</div>
+</form>
+</section>
+
+<section id="aba-processo" role="tabpanel" aria-labelledby="aba-processo-botao" hidden>
 <form id="form-processo" class="app-formulario">
 <div class="cds--form-item">
 <label class="cds--label" for="tribunal">Tribunal</label>
