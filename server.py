@@ -2629,8 +2629,15 @@ class _AutenticacaoBearer:
             caso_id = caminho[len("/casos/"):-len("/evento-calendar")].rstrip("/")
             await self._evento_calendar_do_caso(scope, receive, send, caso_id)
             return
+        if caminho.startswith("/casos/") and "/atividades" in caminho and self.gestao is not None:
+            partes = caminho[len("/casos/"):].split("/atividades")
+            caso_id = partes[0].rstrip("/")
+            rest = partes[1].strip("/") if len(partes) > 1 else ""
+            aid = int(rest) if rest.isdigit() else None
+            await self._atividades_do_caso(scope, receive, send, caso_id, aid)
+            return
         if caminho.startswith("/casos/") and self.gestao is not None:
-            await self._caso_detalhe(scope, send, caminho[len("/casos/"):])
+            await self._caso_detalhe(scope, receive, send, caminho[len("/casos/"):])
             return
         if caminho == "/pendentes" and self.gestao is not None:
             await _json(send, 200, {"pendentes": self.gestao.listar_pendentes()})
@@ -2977,13 +2984,12 @@ class _AutenticacaoBearer:
             self.gestao.atualizar_drive_pasta(caso["id"], pasta_id)
         return pasta_id
 
-    async def _caso_detalhe(self, scope, send, caso_id: str):
-        """GET /casos/<id>: o caso com sua linha do tempo (Fase 2) - publicações/movimentações
-        já monitoradas que o servidor ligou automaticamente a este caso.
-        DELETE /casos/<id>: exclui o caso (e processos/clientes adicionais/linha do tempo
-        dele). Publicações já capturadas que apontavam pra ele voltam a "não tratada"."""
+    async def _caso_detalhe(self, scope, receive, send, caso_id: str):
+        """GET /casos/<id>: o caso com sua linha do tempo.
+        PATCH /casos/<id>: atualiza campos cadastrais e partes.
+        DELETE /casos/<id>: exclui o caso."""
         metodo = scope.get("method")
-        if not caso_id or metodo not in ("GET", "DELETE"):
+        if not caso_id or metodo not in ("GET", "PATCH", "DELETE"):
             await _responder(send, 404, b"Nao encontrado")
             return
         if metodo == "DELETE":
@@ -2993,11 +2999,92 @@ class _AutenticacaoBearer:
                 return
             await _json(send, 200, {"excluido": True})
             return
+        if metodo == "PATCH":
+            corpo = await _ler_corpo(receive)
+            try:
+                dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+            except (ValueError, UnicodeDecodeError):
+                await _json(send, 400, _erro("JSON inválido."))
+                return
+            numeros = dados.get("numeros_processo")
+            caso = self.gestao.atualizar_caso(
+                caso_id,
+                titulo=dados.get("titulo"),
+                responsavel=dados.get("responsavel"),
+                acao=dados.get("acao"),
+                foro=dados.get("foro"),
+                autor=dados.get("autor"),
+                reu=dados.get("reu"),
+                advogados=dados.get("advogados"),
+                numeros_processo=numeros,
+            )
+            if caso is None:
+                await _json(send, 404, _erro("Caso não encontrado."))
+                return
+            await _json(send, 200, caso)
+            return
         caso = self.gestao.obter_caso(caso_id)
         if caso is None:
             await _json(send, 404, _erro("Caso não encontrado."))
             return
         await _json(send, 200, {**caso, "eventos": self.gestao.eventos_do_caso(caso_id)})
+
+    async def _atividades_do_caso(self, scope, receive, send, caso_id: str, aid: int | None):
+        """GET /casos/<id>/atividades, POST /casos/<id>/atividades,
+        PATCH /casos/<id>/atividades/<aid>, DELETE /casos/<id>/atividades/<aid>"""
+        metodo = scope.get("method")
+        if not caso_id:
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        if aid is None:
+            if metodo == "GET":
+                await _json(send, 200, {"atividades": self.gestao.listar_atividades(caso_id)})
+                return
+            if metodo == "POST":
+                corpo = await _ler_corpo(receive)
+                try:
+                    dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+                except (ValueError, UnicodeDecodeError):
+                    await _json(send, 400, _erro("JSON inválido."))
+                    return
+                titulo = (dados.get("titulo") or "").strip()
+                if not titulo:
+                    await _json(send, 400, _erro("Informe o título da atividade."))
+                    return
+                atividade = self.gestao.criar_atividade(
+                    caso_id,
+                    tipo=dados.get("tipo") or "tarefa",
+                    titulo=titulo,
+                    data=dados.get("data"),
+                    hora=dados.get("hora"),
+                    observacoes=dados.get("observacoes"),
+                    agora=lambda: datetime.now(timezone.utc),
+                )
+                await _json(send, 201, atividade)
+                return
+            await _responder(send, 405, b"Metodo nao permitido")
+            return
+        if metodo == "PATCH":
+            corpo = await _ler_corpo(receive)
+            try:
+                dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+            except (ValueError, UnicodeDecodeError):
+                await _json(send, 400, _erro("JSON inválido."))
+                return
+            atividade = self.gestao.atualizar_atividade(caso_id, aid, **{
+                k: v for k, v in dados.items()
+                if k in ("titulo", "tipo", "data", "hora", "status", "observacoes")
+            })
+            if atividade is None:
+                await _json(send, 404, _erro("Atividade não encontrada."))
+                return
+            await _json(send, 200, atividade)
+            return
+        if metodo == "DELETE":
+            excluiu = self.gestao.excluir_atividade(caso_id, aid)
+            await _json(send, 200 if excluiu else 404, {"excluido": excluiu})
+            return
+        await _responder(send, 405, b"Metodo nao permitido")
 
     async def _evento_calendar_do_caso(self, scope, receive, send, caso_id: str):
         """POST /casos/<id>/evento-calendar: cria um evento de dia inteiro no Google Calendar

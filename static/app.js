@@ -2104,11 +2104,15 @@ function linhaCaso(caso, aoExcluir) {
 
   tr.appendChild(el("td", { "data-label": "Últ. mov.", texto: formatarDataSimples(caso.ultima_movimentacao) }));
 
+  const botaoAbrirCaso = el("button", {
+    class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Abrir",
+  });
+  botaoAbrirCaso.addEventListener("click", () => abrirCaso(caso.id));
   const botaoExcluirCaso = el("button", {
     class: "cds--btn cds--btn--danger--tertiary cds--btn--sm", type: "button", texto: "Excluir",
   });
   botaoExcluirCaso.addEventListener("click", () => excluirCaso(caso.id, caso.titulo, botaoExcluirCaso, aoExcluir));
-  tr.appendChild(el("td", { "data-label": "Ações" }, [botaoExcluirCaso]));
+  tr.appendChild(el("td", { "data-label": "Ações" }, [botaoAbrirCaso, botaoExcluirCaso]));
 
   return [tr, trTimeline];
 }
@@ -2900,5 +2904,245 @@ document.getElementById("form-pub-oab-manual").addEventListener("submit", async 
     status.textContent = erro.message;
   } finally {
     botao.disabled = false;
+  }
+});
+
+// ─── Vista de detalhe do caso ────────────────────────────────────────────────
+
+let _casoDetalheAtual = null;
+
+function voltarParaCasos() {
+  document.getElementById("caso-vista-detalhe").hidden = true;
+  document.getElementById("caso-vista-lista").hidden = false;
+  _casoDetalheAtual = null;
+}
+
+function _selecionarSubabaCaso(nome) {
+  for (const n of ["cadastro", "partes", "atividades"]) {
+    document.getElementById(`caso-subaba-${n}`).hidden = n !== nome;
+    const btn = document.getElementById(`caso-subaba-${n}-botao`);
+    btn.classList.toggle("sub-aba-ativa", n === nome);
+    btn.setAttribute("aria-selected", n === nome ? "true" : "false");
+  }
+}
+
+async function abrirCaso(casoId) {
+  document.getElementById("caso-vista-lista").hidden = true;
+  document.getElementById("caso-vista-detalhe").hidden = false;
+  _selecionarSubabaCaso("cadastro");
+  document.getElementById("caso-detalhe-titulo").textContent = "Carregando…";
+  limpar(document.getElementById("lista-atividades"));
+  limpar(document.getElementById("resultado-caso-editar"));
+  limpar(document.getElementById("resultado-caso-partes"));
+  try {
+    const caso = await _buscarJson(`/casos/${casoId}`);
+    _casoDetalheAtual = caso;
+    document.getElementById("caso-detalhe-titulo").textContent = caso.titulo || "(sem título)";
+    document.getElementById("editar-caso-titulo").value = caso.titulo || "";
+    document.getElementById("editar-caso-responsavel").value = caso.responsavel || "";
+    document.getElementById("editar-caso-acao").value = caso.acao || "";
+    document.getElementById("editar-caso-foro").value = caso.foro || "";
+    document.getElementById("editar-caso-processos").value = (caso.processos || []).join(", ");
+    document.getElementById("editar-caso-autor").value = caso.autor || "";
+    document.getElementById("editar-caso-reu").value = caso.reu || "";
+    document.getElementById("editar-caso-advogados").value = caso.advogados || "";
+    document.getElementById("form-caso-editar").dataset.casoId = casoId;
+    document.getElementById("form-caso-partes").dataset.casoId = casoId;
+    await _carregarAtividades(casoId);
+  } catch (erro) {
+    document.getElementById("caso-detalhe-titulo").textContent = "Erro ao carregar";
+    mostrarErro(document.getElementById("resultado-caso-editar"), erro.message);
+  }
+}
+
+async function _carregarAtividades(casoId) {
+  const lista = document.getElementById("lista-atividades");
+  limpar(lista);
+  try {
+    const { atividades } = await _buscarJson(`/casos/${casoId}/atividades`);
+    _renderizarAtividades(casoId, atividades || []);
+  } catch (erro) {
+    mostrarErro(lista, erro.message);
+  }
+}
+
+const _ROTULO_TIPO_ATIVIDADE = { tarefa: "Tarefa", prazo: "Prazo", audiencia: "Audiência", reuniao: "Reunião", outro: "Outro" };
+
+function _renderizarAtividades(casoId, atividades) {
+  const lista = document.getElementById("lista-atividades");
+  limpar(lista);
+  if (!atividades.length) {
+    lista.appendChild(notificacao("info", "Nenhuma atividade cadastrada"));
+    return;
+  }
+  for (const atv of atividades) {
+    const item = el("div", { class: "atividade-item" });
+    const check = el("input", { type: "checkbox", class: "atividade-check", "aria-label": "Concluída" });
+    check.checked = atv.status === "concluida";
+    check.addEventListener("change", async () => {
+      const novoStatus = check.checked ? "concluida" : "pendente";
+      try {
+        const atualizada = await _enviarJson(`/casos/${casoId}/atividades/${atv.id}`, { status: novoStatus }, "PATCH");
+        titulo.className = `atividade-titulo${atualizada.status === "concluida" ? " concluida" : ""}`;
+        atv.status = atualizada.status;
+      } catch (erro) {
+        check.checked = !check.checked;
+        window.alert(erro.message);
+      }
+    });
+    item.appendChild(check);
+
+    const corpo = el("div", { class: "atividade-corpo" });
+    const titulo = el("p", { class: `atividade-titulo${atv.status === "concluida" ? " concluida" : ""}`, texto: atv.titulo });
+    corpo.appendChild(titulo);
+    const partesMeta = [_ROTULO_TIPO_ATIVIDADE[atv.tipo] || atv.tipo];
+    if (atv.data) partesMeta.push(atv.data);
+    if (atv.hora) partesMeta.push(atv.hora);
+    corpo.appendChild(el("p", { class: "atividade-meta", texto: partesMeta.join(" · ") }));
+    if (atv.observacoes) corpo.appendChild(el("p", { class: "atividade-meta", texto: atv.observacoes }));
+    item.appendChild(corpo);
+
+    const acoes = el("div", { class: "atividade-acoes" });
+    const btnEditar = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Editar" });
+    btnEditar.addEventListener("click", () => _abrirModalAtividade(casoId, atv));
+    const btnExcluir = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "✕" });
+    btnExcluir.setAttribute("aria-label", "Excluir atividade");
+    btnExcluir.addEventListener("click", async () => {
+      if (!window.confirm(`Excluir "${atv.titulo}"?`)) return;
+      try {
+        await _enviarJson(`/casos/${casoId}/atividades/${atv.id}`, {}, "DELETE");
+        await _carregarAtividades(casoId);
+      } catch (err) { window.alert(err.message); }
+    });
+    acoes.appendChild(btnEditar);
+    acoes.appendChild(btnExcluir);
+    item.appendChild(acoes);
+
+    lista.appendChild(item);
+  }
+}
+
+function _abrirModalAtividade(casoId, atividade = null) {
+  document.getElementById("atividade-id").value = atividade ? atividade.id : "";
+  document.getElementById("atividade-tipo").value = atividade ? atividade.tipo : "tarefa";
+  document.getElementById("atividade-titulo").value = atividade ? atividade.titulo : "";
+  document.getElementById("atividade-data").value = atividade ? (atividade.data || "") : "";
+  document.getElementById("atividade-hora").value = atividade ? (atividade.hora || "") : "";
+  document.getElementById("atividade-observacoes").value = atividade ? (atividade.observacoes || "") : "";
+  document.getElementById("modal-atividade-titulo").textContent = atividade ? "Editar atividade" : "Nova atividade";
+  document.getElementById("form-atividade").dataset.casoId = casoId;
+  limpar(document.getElementById("resultado-atividade"));
+  abrirModal("modal-atividade");
+}
+
+document.getElementById("caso-voltar").addEventListener("click", voltarParaCasos);
+document.getElementById("caso-subaba-cadastro-botao").addEventListener("click", () => _selecionarSubabaCaso("cadastro"));
+document.getElementById("caso-subaba-partes-botao").addEventListener("click", () => _selecionarSubabaCaso("partes"));
+document.getElementById("caso-subaba-atividades-botao").addEventListener("click", () => _selecionarSubabaCaso("atividades"));
+
+document.getElementById("btn-nova-atividade").addEventListener("click", () => {
+  const casoId = document.getElementById("form-caso-editar").dataset.casoId;
+  if (casoId) _abrirModalAtividade(casoId);
+});
+document.getElementById("modal-atividade-fechar").addEventListener("click", () => fecharModal("modal-atividade"));
+
+document.getElementById("form-caso-editar").addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  const casoId = evento.target.dataset.casoId;
+  if (!casoId) return;
+  const botao = evento.target.querySelector("button[type=submit]");
+  const resultado = document.getElementById("resultado-caso-editar");
+  const numeros = document.getElementById("editar-caso-processos").value.split(",").map((s) => s.trim()).filter(Boolean);
+  const corpo = {
+    titulo: document.getElementById("editar-caso-titulo").value.trim(),
+    responsavel: document.getElementById("editar-caso-responsavel").value.trim(),
+    acao: document.getElementById("editar-caso-acao").value.trim(),
+    foro: document.getElementById("editar-caso-foro").value.trim(),
+    numeros_processo: numeros,
+  };
+  const pararEspera = mostrarEspera(resultado, botao, "Salvando");
+  try {
+    const atualizado = await _enviarJson(`/casos/${casoId}`, corpo, "PATCH");
+    limpar(resultado);
+    resultado.appendChild(notificacao("success", "Caso atualizado"));
+    document.getElementById("caso-detalhe-titulo").textContent = atualizado.titulo || "(sem título)";
+    const indice = _cacheCasos.findIndex((c) => c.id === casoId);
+    if (indice !== -1) _cacheCasos[indice] = { ..._cacheCasos[indice], ...atualizado };
+  } catch (erro) {
+    mostrarErro(resultado, erro.message);
+  } finally {
+    pararEspera();
+  }
+});
+
+document.getElementById("form-caso-partes").addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  const casoId = evento.target.dataset.casoId;
+  if (!casoId) return;
+  const botao = evento.target.querySelector("button[type=submit]");
+  const resultado = document.getElementById("resultado-caso-partes");
+  const corpo = {
+    autor: document.getElementById("editar-caso-autor").value.trim(),
+    reu: document.getElementById("editar-caso-reu").value.trim(),
+    advogados: document.getElementById("editar-caso-advogados").value.trim(),
+  };
+  const pararEspera = mostrarEspera(resultado, botao, "Salvando");
+  try {
+    await _enviarJson(`/casos/${casoId}`, corpo, "PATCH");
+    limpar(resultado);
+    resultado.appendChild(notificacao("success", "Partes atualizadas"));
+  } catch (erro) {
+    mostrarErro(resultado, erro.message);
+  } finally {
+    pararEspera();
+  }
+});
+
+document.getElementById("btn-excluir-caso").addEventListener("click", async () => {
+  const casoId = document.getElementById("form-caso-editar").dataset.casoId;
+  if (!casoId) return;
+  const titulo = document.getElementById("editar-caso-titulo").value || "(sem título)";
+  if (!window.confirm(`Excluir o caso "${titulo}"? Essa ação não pode ser desfeita.`)) return;
+  const botao = document.getElementById("btn-excluir-caso");
+  botao.disabled = true;
+  try {
+    await _enviarJson(`/casos/${casoId}`, {}, "DELETE");
+    _cacheCasos = _cacheCasos.filter((c) => c.id !== casoId);
+    voltarParaCasos();
+    _renderizarTabelaCasosPagina();
+  } catch (erro) {
+    mostrarErro(document.getElementById("resultado-caso-editar"), erro.message);
+    botao.disabled = false;
+  }
+});
+
+document.getElementById("form-atividade").addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  const casoId = evento.target.dataset.casoId;
+  if (!casoId) return;
+  const aid = document.getElementById("atividade-id").value;
+  const botao = document.querySelector("button[form='form-atividade'][type='submit']");
+  const resultado = document.getElementById("resultado-atividade");
+  const corpo = {
+    tipo: document.getElementById("atividade-tipo").value,
+    titulo: document.getElementById("atividade-titulo").value.trim(),
+    data: document.getElementById("atividade-data").value || null,
+    hora: document.getElementById("atividade-hora").value || null,
+    observacoes: document.getElementById("atividade-observacoes").value.trim() || null,
+  };
+  if (!corpo.titulo) { mostrarErro(resultado, "Informe o título."); return; }
+  const pararEspera = mostrarEspera(resultado, botao, "Salvando");
+  try {
+    if (aid) {
+      await _enviarJson(`/casos/${casoId}/atividades/${aid}`, corpo, "PATCH");
+    } else {
+      await _enviarJson(`/casos/${casoId}/atividades`, corpo);
+    }
+    fecharModal("modal-atividade");
+    await _carregarAtividades(casoId);
+  } catch (erro) {
+    mostrarErro(resultado, erro.message);
+  } finally {
+    pararEspera();
   }
 });

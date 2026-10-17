@@ -152,17 +152,30 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 criado_em TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS caso_atividades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                caso_id TEXT NOT NULL REFERENCES casos(id),
+                tipo TEXT NOT NULL DEFAULT 'tarefa',
+                titulo TEXT NOT NULL,
+                data TEXT,
+                hora TEXT,
+                status TEXT NOT NULL DEFAULT 'pendente',
+                observacoes TEXT,
+                criado_em TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_caso_processos_numero ON caso_processos (numero_processo);
             CREATE INDEX IF NOT EXISTS idx_casos_cliente ON casos (cliente_id);
             CREATE INDEX IF NOT EXISTS idx_caso_eventos_caso ON caso_eventos (caso_id);
             CREATE INDEX IF NOT EXISTS idx_publicacoes_status ON publicacoes_capturadas (status);
+            CREATE INDEX IF NOT EXISTS idx_caso_atividades_caso ON caso_atividades (caso_id);
             """
         )
         _migrar_colunas_casos(conexao)
 
 
 def _migrar_colunas_casos(conexao: sqlite3.Connection) -> None:
-    """Bancos criados antes de acao/foro existirem na tabela `casos` precisam do ALTER
+    """Bancos criados antes de certas colunas existirem na tabela `casos` precisam do ALTER
     TABLE manual - CREATE TABLE IF NOT EXISTS não adiciona coluna em tabela já existente."""
     colunas = {linha[1] for linha in conexao.execute("PRAGMA table_info(casos)")}
     with conexao:
@@ -170,6 +183,12 @@ def _migrar_colunas_casos(conexao: sqlite3.Connection) -> None:
             conexao.execute("ALTER TABLE casos ADD COLUMN acao TEXT")
         if "foro" not in colunas:
             conexao.execute("ALTER TABLE casos ADD COLUMN foro TEXT")
+        if "autor" not in colunas:
+            conexao.execute("ALTER TABLE casos ADD COLUMN autor TEXT")
+        if "reu" not in colunas:
+            conexao.execute("ALTER TABLE casos ADD COLUMN reu TEXT")
+        if "advogados" not in colunas:
+            conexao.execute("ALTER TABLE casos ADD COLUMN advogados TEXT")
 
 
 def migrar_de_json_se_necessario(caminho_banco: Path, dados_dir: Path) -> None:
@@ -411,7 +430,8 @@ class RegistroClientesCasos:
         with _abrir(self.caminho) as conexao:
             linha = conexao.execute(
                 "SELECT id, cliente_id, titulo, responsavel, status, drive_pasta_id, "
-                "calendar_evento_id, criado_em, acao, foro FROM casos WHERE id = ?",
+                "calendar_evento_id, criado_em, acao, foro, autor, reu, advogados "
+                "FROM casos WHERE id = ?",
                 (caso_id,),
             ).fetchone()
             if not linha:
@@ -422,11 +442,34 @@ class RegistroClientesCasos:
                 "clientes_adicionais": self._clientes_adicionais_do_caso(conexao, caso_id),
             }
 
+    def atualizar_caso(
+        self, caso_id: str, titulo: str | None, responsavel: str | None,
+        acao: str | None, foro: str | None, autor: str | None, reu: str | None,
+        advogados: str | None, numeros_processo: list[str] | None = None,
+    ) -> dict | None:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            cursor = conexao.execute("SELECT 1 FROM casos WHERE id = ?", (caso_id,))
+            if cursor.fetchone() is None:
+                return None
+            conexao.execute(
+                "UPDATE casos SET titulo=?, responsavel=?, acao=?, foro=?, autor=?, reu=?, advogados=? "
+                "WHERE id = ?",
+                (titulo, responsavel, acao, foro, autor, reu, advogados, caso_id),
+            )
+            if numeros_processo is not None:
+                conexao.execute("DELETE FROM caso_processos WHERE caso_id = ?", (caso_id,))
+                conexao.executemany(
+                    "INSERT OR IGNORE INTO caso_processos (caso_id, numero_processo) VALUES (?, ?)",
+                    [(caso_id, n) for n in numeros_processo],
+                )
+        return self.obter_caso(caso_id)
+
     def listar_casos(self) -> list[dict]:
         with _abrir(self.caminho) as conexao:
             cursor = conexao.execute(
                 "SELECT id, cliente_id, titulo, responsavel, status, drive_pasta_id, "
-                "calendar_evento_id, criado_em, acao, foro FROM casos ORDER BY criado_em DESC"
+                "calendar_evento_id, criado_em, acao, foro, autor, reu, advogados "
+                "FROM casos ORDER BY criado_em DESC"
             )
             return [
                 {
@@ -453,11 +496,78 @@ class RegistroClientesCasos:
                 "WHERE caso_id = ?",
                 (caso_id,),
             )
+            conexao.execute("DELETE FROM caso_atividades WHERE caso_id = ?", (caso_id,))
             conexao.execute("DELETE FROM caso_eventos WHERE caso_id = ?", (caso_id,))
             conexao.execute("DELETE FROM caso_clientes WHERE caso_id = ?", (caso_id,))
             conexao.execute("DELETE FROM caso_processos WHERE caso_id = ?", (caso_id,))
             conexao.execute("DELETE FROM casos WHERE id = ?", (caso_id,))
             return True
+
+    def listar_atividades(self, caso_id: str) -> list[dict]:
+        with _abrir(self.caminho) as conexao:
+            cursor = conexao.execute(
+                "SELECT id, caso_id, tipo, titulo, data, hora, status, observacoes, criado_em "
+                "FROM caso_atividades WHERE caso_id = ? ORDER BY data ASC, criado_em ASC",
+                (caso_id,),
+            )
+            return [_linha_atividade(linha) for linha in cursor.fetchall()]
+
+    def criar_atividade(
+        self, caso_id: str, tipo: str, titulo: str,
+        data: str | None, hora: str | None, observacoes: str | None, agora,
+    ) -> dict:
+        criado_em = agora().isoformat()
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            cursor = conexao.execute(
+                "INSERT INTO caso_atividades (caso_id, tipo, titulo, data, hora, status, observacoes, criado_em) "
+                "VALUES (?, ?, ?, ?, ?, 'pendente', ?, ?) RETURNING id",
+                (caso_id, tipo, titulo, data or None, hora or None, observacoes or None, criado_em),
+            )
+            aid = cursor.fetchone()[0]
+        with _abrir(self.caminho) as conexao:
+            linha = conexao.execute(
+                "SELECT id, caso_id, tipo, titulo, data, hora, status, observacoes, criado_em "
+                "FROM caso_atividades WHERE id = ?", (aid,)
+            ).fetchone()
+        return _linha_atividade(linha)
+
+    def atualizar_atividade(
+        self, caso_id: str, aid: int, titulo: str | None = None,
+        tipo: str | None = None, data: str | None = None, hora: str | None = None,
+        status: str | None = None, observacoes: str | None = None,
+    ) -> dict | None:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            linha = conexao.execute(
+                "SELECT id, caso_id, tipo, titulo, data, hora, status, observacoes, criado_em "
+                "FROM caso_atividades WHERE id = ? AND caso_id = ?", (aid, caso_id)
+            ).fetchone()
+            if linha is None:
+                return None
+            atual = _linha_atividade(linha)
+            novo_titulo = titulo if titulo is not None else atual["titulo"]
+            novo_tipo = tipo if tipo is not None else atual["tipo"]
+            nova_data = data if data is not None else atual["data"]
+            nova_hora = hora if hora is not None else atual["hora"]
+            novo_status = status if status is not None else atual["status"]
+            novas_obs = observacoes if observacoes is not None else atual["observacoes"]
+            conexao.execute(
+                "UPDATE caso_atividades SET titulo=?, tipo=?, data=?, hora=?, status=?, observacoes=? "
+                "WHERE id=? AND caso_id=?",
+                (novo_titulo, novo_tipo, nova_data or None, nova_hora or None, novo_status, novas_obs or None, aid, caso_id),
+            )
+        with _abrir(self.caminho) as conexao:
+            linha = conexao.execute(
+                "SELECT id, caso_id, tipo, titulo, data, hora, status, observacoes, criado_em "
+                "FROM caso_atividades WHERE id = ?", (aid,)
+            ).fetchone()
+        return _linha_atividade(linha)
+
+    def excluir_atividade(self, caso_id: str, aid: int) -> bool:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            cursor = conexao.execute(
+                "DELETE FROM caso_atividades WHERE id = ? AND caso_id = ?", (aid, caso_id)
+            )
+            return cursor.rowcount > 0
 
     def casos_do_processo(self, numero_processo: str) -> list[str]:
         """IDs dos casos que incluem esse número de processo (0, 1 ou mais)."""
@@ -641,11 +751,20 @@ def _linha_cliente(linha) -> dict:
 
 
 def _linha_caso(linha) -> dict:
-    id_, cliente_id, titulo, responsavel, status, drive_pasta_id, calendar_evento_id, criado_em, acao, foro = linha
+    id_, cliente_id, titulo, responsavel, status, drive_pasta_id, calendar_evento_id, criado_em, acao, foro, autor, reu, advogados = linha
     return {
         "id": id_, "cliente_id": cliente_id, "titulo": titulo, "responsavel": responsavel,
         "status": status, "drive_pasta_id": drive_pasta_id, "calendar_evento_id": calendar_evento_id,
         "criado_em": criado_em, "acao": acao, "foro": foro,
+        "autor": autor, "reu": reu, "advogados": advogados,
+    }
+
+
+def _linha_atividade(linha) -> dict:
+    id_, caso_id, tipo, titulo, data, hora, status, observacoes, criado_em = linha
+    return {
+        "id": id_, "caso_id": caso_id, "tipo": tipo, "titulo": titulo,
+        "data": data, "hora": hora, "status": status, "observacoes": observacoes, "criado_em": criado_em,
     }
 
 

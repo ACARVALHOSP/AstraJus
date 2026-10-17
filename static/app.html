@@ -275,6 +275,22 @@ body { margin: 0; min-height: 100dvh; }
 .linha-tempo-grupo[open] summary { border-style: solid; }
 .linha-tempo-grupo-lista { margin: 0.4rem 0 0 0.25rem; padding-left: 0.75rem; border-left: 2px solid var(--cds-border-subtle, #e0e0e0); }
 .linha-tempo-grupo-lista p { margin: 0.2rem 0; font-size: var(--fonte-ajuda); color: var(--cds-text-secondary, #525252); }
+/* Caso detalhe */
+.caso-detalhe-cabecalho { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+.caso-detalhe-cabecalho .lista-rapida-titulo { margin: 0; }
+.sub-abas { display: flex; gap: 0; border-bottom: 2px solid var(--cds-border-subtle, #e0e0e0); margin-bottom: 1.5rem; }
+.sub-aba-botao { background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; padding: 0.5rem 1rem; font-size: var(--fonte-base); cursor: pointer; color: var(--cds-text-secondary, #525252); }
+.sub-aba-botao.sub-aba-ativa { color: var(--cds-link-primary, #0f62fe); border-bottom-color: var(--cds-link-primary, #0f62fe); font-weight: 600; }
+.form-detalhe { display: flex; flex-direction: column; gap: 1rem; max-width: 560px; }
+.form-acoes-detalhe { display: flex; gap: 0.75rem; align-items: center; margin-top: 0.5rem; }
+/* Atividades */
+.atividade-item { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.75rem 0; border-bottom: 1px solid var(--cds-border-subtle, #e0e0e0); }
+.atividade-check { width: 1.25rem; height: 1.25rem; flex-shrink: 0; cursor: pointer; margin-top: 0.1rem; accent-color: var(--cds-link-primary, #0f62fe); }
+.atividade-corpo { flex: 1; min-width: 0; }
+.atividade-titulo { font-size: var(--fonte-base); font-weight: 500; margin: 0 0 0.2rem; }
+.atividade-titulo.concluida { text-decoration: line-through; color: var(--cds-text-secondary, #525252); }
+.atividade-meta { font-size: var(--fonte-ajuda); color: var(--cds-text-secondary, #525252); margin: 0; }
+.atividade-acoes { display: flex; gap: 0.5rem; flex-shrink: 0; }
 </style>
 </head>
 <body class="cds--white">
@@ -599,6 +615,8 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </section>
 
 <section id="aba-casos" role="tabpanel" aria-labelledby="aba-casos-botao" hidden>
+
+<div id="caso-vista-lista">
 <h2 class="lista-rapida-titulo">Processos novos para triagem</h2>
 <p class="campo-ajuda">Encontrados pelo monitoramento por OAB, ainda sem caso cadastrado. Vincule a um cliente ou descarte.</p>
 <div id="lista-pendentes" class="app-resultado"></div>
@@ -609,6 +627,81 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 <h2 class="lista-rapida-titulo" style="margin-top:1.5rem">Casos cadastrados</h2>
 <div id="lista-casos" class="app-resultado"></div>
+</div><!-- #caso-vista-lista -->
+
+<div id="caso-vista-detalhe" hidden>
+<div class="caso-detalhe-cabecalho">
+<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="caso-voltar">← Voltar</button>
+<h2 class="lista-rapida-titulo" id="caso-detalhe-titulo"></h2>
+</div>
+
+<div class="sub-abas" role="tablist">
+<button class="sub-aba-botao sub-aba-ativa" id="caso-subaba-cadastro-botao" role="tab" aria-selected="true" aria-controls="caso-subaba-cadastro" type="button">Cadastro</button>
+<button class="sub-aba-botao" id="caso-subaba-partes-botao" role="tab" aria-selected="false" aria-controls="caso-subaba-partes" type="button">Partes</button>
+<button class="sub-aba-botao" id="caso-subaba-atividades-botao" role="tab" aria-selected="false" aria-controls="caso-subaba-atividades" type="button">Atividades</button>
+</div>
+
+<section id="caso-subaba-cadastro" role="tabpanel">
+<form id="form-caso-editar" class="form-detalhe">
+<div class="cds--form-item">
+<label class="cds--label" for="editar-caso-titulo">Título do caso</label>
+<input class="cds--text-input" type="text" id="editar-caso-titulo" name="titulo">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="editar-caso-responsavel">Responsável</label>
+<input class="cds--text-input" type="text" id="editar-caso-responsavel" name="responsavel">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="editar-caso-acao">Ação / Tipo</label>
+<input class="cds--text-input" type="text" id="editar-caso-acao" name="acao">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="editar-caso-foro">Foro / Vara</label>
+<input class="cds--text-input" type="text" id="editar-caso-foro" name="foro">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="editar-caso-processos">Números de processo (separados por vírgula)</label>
+<input class="cds--text-input" type="text" id="editar-caso-processos" name="numeros_processo" placeholder="0000000-00.0000.0.00.0000">
+</div>
+<div id="resultado-caso-editar" class="app-resultado"></div>
+<div class="form-acoes-detalhe">
+<button class="cds--btn cds--btn--primary cds--btn--sm" type="submit" form="form-caso-editar">Salvar</button>
+<button class="cds--btn cds--btn--danger--ghost cds--btn--sm" type="button" id="btn-excluir-caso">Excluir caso</button>
+</div>
+</form>
+</section>
+
+<section id="caso-subaba-partes" role="tabpanel" hidden>
+<form id="form-caso-partes" class="form-detalhe">
+<div class="cds--form-item">
+<label class="cds--label" for="editar-caso-autor">Autor</label>
+<input class="cds--text-input" type="text" id="editar-caso-autor" name="autor">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="editar-caso-reu">Réu</label>
+<input class="cds--text-input" type="text" id="editar-caso-reu" name="reu">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="editar-caso-advogados">Advogados</label>
+<input class="cds--text-input" type="text" id="editar-caso-advogados" name="advogados" placeholder="Nomes separados por vírgula">
+</div>
+<div id="resultado-caso-partes" class="app-resultado"></div>
+<div class="form-acoes-detalhe">
+<button class="cds--btn cds--btn--primary cds--btn--sm" type="submit" form="form-caso-partes">Salvar partes</button>
+</div>
+</form>
+</section>
+
+<section id="caso-subaba-atividades" role="tabpanel" hidden>
+<div class="secao-cabecalho">
+<h3 class="lista-rapida-titulo">Atividades</h3>
+<button class="cds--btn cds--btn--primary cds--btn--sm" type="button" id="btn-nova-atividade">Nova atividade</button>
+</div>
+<div id="lista-atividades" class="app-resultado"></div>
+</section>
+
+</div><!-- #caso-vista-detalhe -->
+
 </section>
 
 <section id="aba-publicacoes-oab" role="tabpanel" aria-labelledby="aba-publicacoes-oab-botao" hidden>
@@ -757,5 +850,49 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 
 <script src="/static/app.js" defer></script>
+<div class="cds--modal" id="modal-atividade" role="dialog" aria-modal="true" aria-labelledby="modal-atividade-titulo">
+<div class="cds--modal-container cds--modal-container--sm">
+<div class="cds--modal-header">
+<p class="cds--modal-header__heading" id="modal-atividade-titulo">Nova atividade</p>
+<button class="cds--modal-close" type="button" id="modal-atividade-fechar" aria-label="Fechar">✕</button>
+</div>
+<div class="cds--modal-content">
+<form id="form-atividade">
+<input type="hidden" id="atividade-id">
+<div class="cds--form-item">
+<label class="cds--label" for="atividade-tipo">Tipo</label>
+<select class="cds--select-input" id="atividade-tipo" name="tipo">
+<option value="tarefa">Tarefa</option>
+<option value="prazo">Prazo</option>
+<option value="audiencia">Audiência</option>
+<option value="reuniao">Reunião</option>
+<option value="outro">Outro</option>
+</select>
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="atividade-titulo">Título <span aria-hidden="true">*</span></label>
+<input class="cds--text-input" type="text" id="atividade-titulo" name="titulo" required>
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="atividade-data">Data</label>
+<input class="cds--text-input" type="date" id="atividade-data" name="data">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="atividade-hora">Hora</label>
+<input class="cds--text-input" type="time" id="atividade-hora" name="hora">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="atividade-observacoes">Observações</label>
+<textarea class="cds--text-area" id="atividade-observacoes" name="observacoes" rows="3"></textarea>
+</div>
+<div id="resultado-atividade" class="app-resultado"></div>
+</form>
+</div>
+<div class="cds--modal-footer">
+<button class="cds--btn cds--btn--secondary" type="button" data-fechar-modal="modal-atividade">Cancelar</button>
+<button class="cds--btn cds--btn--primary" type="submit" form="form-atividade">Salvar</button>
+</div>
+</div>
+</div>
 </body>
 </html>
