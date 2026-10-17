@@ -125,7 +125,11 @@ class ClienteMCP {
     if (!item || typeof item.text !== "string") {
       throw new ErroMCP(200, "Resposta vazia do servidor.");
     }
-    return JSON.parse(item.text);
+    try {
+      return JSON.parse(item.text);
+    } catch {
+      throw new ErroMCP(200, item.text);
+    }
   }
 }
 
@@ -2918,6 +2922,7 @@ async function buscarAcaoForoDataJud(numerosCampo, campAcao, campForo, statusEl,
   statusEl.textContent = "Consultando DataJud…";
   try {
     const dados = await cliente.chamarTool("consultar_processo_datajud", { numero_processo: numero });
+    if (dados.erro) { statusEl.textContent = dados.mensagem || "Erro no DataJud."; return; }
     const proc = (dados.processos || [])[0];
     if (!proc) { statusEl.textContent = dados.mensagem || "Processo não encontrado."; return; }
     if (proc.classe && !campAcao.value) campAcao.value = proc.classe;
