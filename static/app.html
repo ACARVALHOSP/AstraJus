@@ -78,6 +78,25 @@ body { margin: 0; min-height: 100dvh; }
 .partes-checkbox-lista { display: flex; flex-direction: column; gap: 0.25rem; }
 .parte-checkbox-item { display: flex; align-items: center; gap: 0.375rem; font-size: 0.875rem; font-weight: normal; }
 .parte-checkbox-item input[type="checkbox"] { width: auto; margin: 0; }
+.contatos-barra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; margin: 1.5rem 0 0; }
+.contatos-az { display: flex; flex-wrap: wrap; gap: 0.125rem; }
+.contatos-az button { background: none; border: none; cursor: pointer; padding: 0.25rem 0.4rem; font-size: 0.8125rem; color: var(--cds-text-secondary, #525252); border-radius: 3px; }
+.contatos-az button:hover { background: var(--cds-layer-hover-01, #e8e8e8); }
+.contatos-az button[aria-pressed="true"] { color: var(--cds-interactive, #0f62fe); font-weight: 700; }
+.contatos-busca-campo { margin: 0; min-width: 240px; flex: 0 1 280px; }
+.contatos-tabela th:nth-child(1), .contatos-tabela td:nth-child(1) { width: 4%; }
+.contatos-tabela th:nth-child(2), .contatos-tabela td:nth-child(2) { width: 6%; }
+.contatos-tabela th:nth-child(3), .contatos-tabela td:nth-child(3) { width: 36%; }
+.contatos-tabela th:nth-child(4), .contatos-tabela td:nth-child(4) { width: 20%; }
+.contatos-tabela th:nth-child(5), .contatos-tabela td:nth-child(5) { width: 20%; }
+.contatos-tabela th:nth-child(6), .contatos-tabela td:nth-child(6) { width: 14%; }
+.contato-tipo-icone { display: inline-flex; color: var(--cds-text-secondary, #525252); }
+.contato-nome-link { color: var(--cds-link-primary, #0f62fe); background: none; border: none; padding: 0; font: inherit; font-size: 0.875rem; cursor: pointer; text-align: left; text-decoration: underline; }
+.contato-sem-dado { font-style: italic; color: var(--cds-text-secondary, #525252); }
+.sub-tabs { display: flex; gap: 1.5rem; border-bottom: 1px solid var(--cds-border-subtle, #e0e0e0); margin: 1rem 0 1.5rem; }
+.sub-tab-link { background: none; border: none; border-bottom: 3px solid transparent; padding: 0.625rem 0.125rem; cursor: pointer; font-size: 0.875rem; color: var(--cds-text-secondary, #525252); }
+.sub-tab-link[aria-selected="true"] { color: var(--cds-text-primary, #161616); border-bottom-color: var(--cds-interactive, #0f62fe); font-weight: 600; }
+.contato-detalhe-titulo { margin: 0.75rem 0 0; font-size: 1.25rem; }
 .pub-oab-manual { margin-top: 1rem; border: 1px solid var(--cds-border-subtle, #e0e0e0); padding: 0.75rem 1rem; }
 .pub-oab-manual summary { cursor: pointer; font-weight: 600; }
 .pub-oab-manual-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; margin-top: 0.75rem; }
@@ -280,7 +299,10 @@ body { margin: 0; min-height: 100dvh; }
 <button class="app-sidebar-link" id="aba-jurimetria-botao" role="tab" aria-selected="false" aria-controls="aba-jurimetria" type="button">Jurimetria</button>
 </li>
 <li role="presentation">
-<button class="app-sidebar-link" id="aba-clientes-botao" role="tab" aria-selected="false" aria-controls="aba-clientes" type="button">Clientes e casos</button>
+<button class="app-sidebar-link" id="aba-contatos-botao" role="tab" aria-selected="false" aria-controls="aba-contatos" type="button">Contatos</button>
+</li>
+<li role="presentation">
+<button class="app-sidebar-link" id="aba-casos-botao" role="tab" aria-selected="false" aria-controls="aba-casos" type="button">Casos</button>
 </li>
 <li role="presentation">
 <button class="app-sidebar-link" id="aba-publicacoes-oab-botao" role="tab" aria-selected="false" aria-controls="aba-publicacoes-oab" type="button">Publicações por OAB</button>
@@ -377,7 +399,7 @@ body { margin: 0; min-height: 100dvh; }
 <p class="campo-ajuda">Processos marcados manualmente na aba Processo (DataJud).</p>
 <ul id="lista-favoritos" class="lista-rapida"></ul>
 <h2 class="lista-rapida-titulo">Casos favoritos</h2>
-<p class="campo-ajuda">Casos marcados com a estrela na aba Clientes e casos.</p>
+<p class="campo-ajuda">Casos marcados com a estrela na aba Casos.</p>
 <ul id="lista-casos-favoritos" class="lista-rapida"></ul>
 <h2 class="lista-rapida-titulo">Histórico recente</h2>
 <p class="campo-ajuda">Últimas consultas feitas neste navegador. Clique para repetir.</p>
@@ -498,12 +520,10 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </p>
 </section>
 
-<section id="aba-clientes" role="tabpanel" aria-labelledby="aba-clientes-botao" hidden>
-<h2 class="lista-rapida-titulo">Processos novos para triagem</h2>
-<p class="campo-ajuda">Encontrados pelo monitoramento por OAB, ainda sem caso cadastrado. Vincule a um cliente ou descarte.</p>
-<div id="lista-pendentes" class="app-resultado"></div>
+<section id="aba-contatos" role="tabpanel" aria-labelledby="aba-contatos-botao" hidden>
 
-<h2 class="lista-rapida-titulo">Novo cliente</h2>
+<div id="contatos-vista-lista">
+<h2 class="lista-rapida-titulo">Novo contato</h2>
 <form id="form-cliente" class="app-formulario">
 <div class="cds--form-item">
 <label class="cds--label" for="cliente-nome">Nome</label>
@@ -525,9 +545,67 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <label class="cds--label" for="cliente-observacoes">Observações</label>
 <input class="cds--text-input" id="cliente-observacoes" name="observacoes">
 </div>
-<button class="cds--btn cds--btn--primary" type="submit">Cadastrar cliente</button>
+<button class="cds--btn cds--btn--primary" type="submit">Cadastrar contato</button>
 </form>
 <div id="resultado-cliente" class="app-resultado" aria-live="polite"></div>
+
+<h2 class="lista-rapida-titulo">Contatos cadastrados</h2>
+<div class="contatos-barra">
+<div class="contatos-az" id="contatos-az"></div>
+<div class="cds--form-item contatos-busca-campo">
+<input class="cds--text-input" type="search" id="contatos-busca" placeholder="Procure por nome, telefone ou e-mail">
+</div>
+</div>
+<div id="lista-contatos" class="app-resultado"></div>
+</div>
+
+<div id="contatos-vista-detalhe" hidden>
+<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="contato-voltar">« Voltar para contatos</button>
+<h2 id="contato-detalhe-nome" class="contato-detalhe-titulo"></h2>
+
+<div class="sub-tabs" role="tablist" aria-label="Detalhes do contato">
+<button class="sub-tab-link" id="contato-subaba-cadastro-botao" role="tab" aria-selected="true" aria-controls="contato-subaba-cadastro" type="button">Cadastro</button>
+<button class="sub-tab-link" id="contato-subaba-processos-botao" role="tab" aria-selected="false" aria-controls="contato-subaba-processos" type="button">Processos vinculados</button>
+</div>
+
+<section id="contato-subaba-cadastro" role="tabpanel" aria-labelledby="contato-subaba-cadastro-botao">
+<form id="form-contato-cadastro" class="app-formulario">
+<div class="cds--form-item">
+<label class="cds--label" for="contato-nome">Nome</label>
+<input class="cds--text-input" id="contato-nome" required>
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="contato-cpf-cnpj">CPF/CNPJ</label>
+<input class="cds--text-input" id="contato-cpf-cnpj">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="contato-telefone">Telefone</label>
+<input class="cds--text-input" id="contato-telefone">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="contato-email">E-mail</label>
+<input class="cds--text-input" id="contato-email" type="email">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="contato-observacoes">Observações</label>
+<input class="cds--text-input" id="contato-observacoes">
+</div>
+<button class="cds--btn cds--btn--primary" type="submit">Salvar alterações</button>
+</form>
+<div id="resultado-contato-cadastro" class="app-resultado" aria-live="polite"></div>
+</section>
+
+<section id="contato-subaba-processos" role="tabpanel" aria-labelledby="contato-subaba-processos-botao" hidden>
+<div id="contato-processos-vinculados" class="app-resultado"></div>
+</section>
+</div>
+
+</section>
+
+<section id="aba-casos" role="tabpanel" aria-labelledby="aba-casos-botao" hidden>
+<h2 class="lista-rapida-titulo">Processos novos para triagem</h2>
+<p class="campo-ajuda">Encontrados pelo monitoramento por OAB, ainda sem caso cadastrado. Vincule a um cliente ou descarte.</p>
+<div id="lista-pendentes" class="app-resultado"></div>
 
 <h2 class="lista-rapida-titulo">Novo caso</h2>
 <form id="form-caso" class="app-formulario">
@@ -559,9 +637,6 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <button class="cds--btn cds--btn--primary" type="submit">Cadastrar caso</button>
 </form>
 <div id="resultado-caso" class="app-resultado" aria-live="polite"></div>
-
-<h2 class="lista-rapida-titulo">Clientes cadastrados</h2>
-<div id="lista-clientes" class="app-resultado"></div>
 
 <h2 class="lista-rapida-titulo">Casos cadastrados</h2>
 <div id="lista-casos" class="app-resultado"></div>

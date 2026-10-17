@@ -335,6 +335,18 @@ class RegistroClientesCasos:
             ).fetchone()
         return _linha_cliente(linha) if linha else None
 
+    def atualizar_cliente(
+        self, cliente_id: str, nome: str, cpf_cnpj: str | None, telefone: str | None,
+        email: str | None, observacoes: str | None,
+    ) -> dict | None:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute(
+                "UPDATE clientes SET nome = ?, cpf_cnpj = ?, telefone = ?, email = ?, observacoes = ? "
+                "WHERE id = ?",
+                (nome, cpf_cnpj, telefone, email, observacoes, cliente_id),
+            )
+        return self.obter_cliente(cliente_id)
+
     def buscar_cliente_por_nome(self, nome: str) -> dict | None:
         """Casamento exato (sem diferenciar maiúsculas) - usado para não duplicar cliente quando
         a mesma parte aparece em casos/publicações diferentes."""

@@ -378,8 +378,8 @@ async function renderizarCasosFavoritos() {
         el("span", { texto: caso.titulo || "(sem título)" }),
         el("div", {}, [
           el("button", {
-            class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Abrir em Clientes e casos",
-            onclick: () => selecionarAba(abas.find((a) => a.painel.id === "aba-clientes")),
+            class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Abrir em Casos",
+            onclick: () => selecionarAba(abas.find((a) => a.painel.id === "aba-casos")),
           }),
           el("button", {
             class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Remover",
@@ -446,7 +446,8 @@ const abas = [
   { botao: document.getElementById("aba-historico-botao"), painel: document.getElementById("aba-historico") },
   { botao: document.getElementById("aba-monitoramentos-botao"), painel: document.getElementById("aba-monitoramentos") },
   { botao: document.getElementById("aba-jurimetria-botao"), painel: document.getElementById("aba-jurimetria") },
-  { botao: document.getElementById("aba-clientes-botao"), painel: document.getElementById("aba-clientes") },
+  { botao: document.getElementById("aba-contatos-botao"), painel: document.getElementById("aba-contatos") },
+  { botao: document.getElementById("aba-casos-botao"), painel: document.getElementById("aba-casos") },
   { botao: document.getElementById("aba-publicacoes-oab-botao"), painel: document.getElementById("aba-publicacoes-oab") },
 ];
 
@@ -465,7 +466,8 @@ function selecionarAba(alvo) {
   alvo.botao.focus();
   if (alvo.painel.id === "aba-historico") { renderizarListaRapida(); renderizarCasosFavoritos(); }
   if (alvo.painel.id === "aba-monitoramentos") carregarMonitoramentos();
-  if (alvo.painel.id === "aba-clientes") carregarClientesECasos();
+  if (alvo.painel.id === "aba-contatos") { voltarParaContatos(); carregarContatos(); }
+  if (alvo.painel.id === "aba-casos") carregarCasosPagina();
   if (alvo.painel.id === "aba-publicacoes-oab") carregarPublicacoesOab();
 }
 
@@ -1447,10 +1449,10 @@ async function _buscarJson(url) {
   return resposta.json();
 }
 
-async function _enviarJson(url, corpo) {
+async function _enviarJson(url, corpo, metodo = "POST") {
   if (!cliente) throw new ErroMCP(401, "Conecte-se primeiro.");
   const resposta = await fetch(url, {
-    method: "POST",
+    method: metodo,
     headers: { Authorization: `Bearer ${cliente.token}`, "Content-Type": "application/json" },
     body: JSON.stringify(corpo),
   });
@@ -1772,14 +1774,161 @@ document.getElementById("botao-atualizar-monitoramentos").addEventListener("clic
 let _cacheClientes = [];
 let _cacheCasos = [];
 
-function cartaoCliente(c) {
-  const card = el("article", { class: "cds--tile resultado-card" });
-  card.appendChild(el("h3", { texto: c.nome }));
-  if (c.cpf_cnpj) card.appendChild(el("p", { texto: `CPF/CNPJ: ${c.cpf_cnpj}` }));
-  if (c.telefone) card.appendChild(el("p", { texto: `Telefone: ${c.telefone}` }));
-  if (c.email) card.appendChild(el("p", { texto: `E-mail: ${c.email}` }));
-  if (c.observacoes) card.appendChild(el("p", { texto: c.observacoes }));
-  return card;
+function _iconePessoa() {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 32 32");
+  svg.setAttribute("width", "18");
+  svg.setAttribute("height", "18");
+  svg.setAttribute("fill", "currentColor");
+  svg.setAttribute("aria-hidden", "true");
+  const caminho = document.createElementNS(ns, "path");
+  caminho.setAttribute("d", "M16 17c3.9 0 7-3.1 7-7s-3.1-7-7-7-7 3.1-7 7 3.1 7 7 7zm0 3c-5.3 0-16 2.7-16 8v3h32v-3c0-5.3-10.7-8-16-8z");
+  svg.appendChild(caminho);
+  return svg;
+}
+
+function linhaContato(c) {
+  const tr = el("tr", {});
+  const checkbox = el("input", { type: "checkbox", "aria-label": `Selecionar ${c.nome}` });
+  tr.appendChild(el("td", { "data-label": "Selecionar" }, [checkbox]));
+  tr.appendChild(el("td", { "data-label": "Tipo" }, [_iconePessoa()]));
+
+  const botaoNome = el("button", { class: "contato-nome-link", type: "button", texto: c.nome });
+  botaoNome.addEventListener("click", () => abrirContato(c.id));
+  tr.appendChild(el("td", { "data-label": "Nome" }, [botaoNome]));
+
+  tr.appendChild(el("td", { "data-label": "Telefone" }, [
+    c.telefone ? el("span", { texto: c.telefone }) : el("span", { class: "contato-sem-dado", texto: "Nenhum telefone" }),
+  ]));
+  tr.appendChild(el("td", { "data-label": "E-mail" }, [
+    c.email ? el("span", { texto: c.email }) : el("span", { class: "contato-sem-dado", texto: "Nenhum email" }),
+  ]));
+  tr.appendChild(el("td", { "data-label": "Etiquetas" }));
+  return tr;
+}
+
+function tabelaContatos(contatos) {
+  const thead = el("thead", {}, [
+    el("tr", {}, [
+      el("th", {}),
+      el("th", { texto: "Tipo" }),
+      el("th", { texto: "Nome" }),
+      el("th", { texto: "Telefone" }),
+      el("th", { texto: "E-mail" }),
+      el("th", { texto: "Etiquetas" }),
+    ]),
+  ]);
+  const tbody = el("tbody", {});
+  for (const c of contatos) tbody.appendChild(linhaContato(c));
+  return el("div", { class: "tabela-responsiva-wrap" }, [el("table", { class: "tabela-responsiva contatos-tabela" }, [thead, tbody])]);
+}
+
+let _contatosFiltroLetra = "TODOS";
+let _contatosFiltroBusca = "";
+
+function _contatosFiltrados() {
+  return _cacheClientes.filter((c) => {
+    if (_contatosFiltroLetra !== "TODOS") {
+      const inicial = (c.nome || "").trim().charAt(0).toUpperCase();
+      if (inicial !== _contatosFiltroLetra) return false;
+    }
+    if (_contatosFiltroBusca) {
+      const alvo = `${c.nome || ""} ${c.telefone || ""} ${c.email || ""}`.toLowerCase();
+      if (!alvo.includes(_contatosFiltroBusca.toLowerCase())) return false;
+    }
+    return true;
+  });
+}
+
+function renderizarListaContatos() {
+  const listaContatosEl = document.getElementById("lista-contatos");
+  limpar(listaContatosEl);
+  if (!_cacheClientes.length) {
+    listaContatosEl.appendChild(notificacao("info", "Nenhum contato cadastrado ainda"));
+    return;
+  }
+  const filtrados = _contatosFiltrados();
+  if (!filtrados.length) {
+    listaContatosEl.appendChild(notificacao("info", "Nenhum contato encontrado com esse filtro"));
+    return;
+  }
+  listaContatosEl.appendChild(el("p", { class: "campo-ajuda", texto: `Mostrando ${filtrados.length} de ${_cacheClientes.length} contato(s)` }));
+  listaContatosEl.appendChild(tabelaContatos(filtrados));
+}
+
+function _construirBarraAZ() {
+  const container = document.getElementById("contatos-az");
+  if (container.childElementCount) return; // já construída
+  const letras = ["TODOS", ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("")];
+  for (const letra of letras) {
+    const botao = el("button", { type: "button", texto: letra, "aria-pressed": String(letra === _contatosFiltroLetra) });
+    botao.addEventListener("click", () => {
+      _contatosFiltroLetra = letra;
+      for (const filho of container.children) filho.setAttribute("aria-pressed", String(filho.textContent === letra));
+      renderizarListaContatos();
+    });
+    container.appendChild(botao);
+  }
+}
+
+async function abrirContato(clienteId) {
+  document.getElementById("contatos-vista-lista").hidden = true;
+  document.getElementById("contatos-vista-detalhe").hidden = false;
+  document.getElementById("contato-detalhe-nome").textContent = "Carregando…";
+  _selecionarSubabaContato("cadastro");
+  const resultadoContatoCadastro = document.getElementById("resultado-contato-cadastro");
+  limpar(resultadoContatoCadastro);
+  try {
+    const cliente_registro = await _buscarJson(`/clientes/${clienteId}`);
+    document.getElementById("contato-detalhe-nome").textContent = cliente_registro.nome || "(sem nome)";
+    document.getElementById("contato-nome").value = cliente_registro.nome || "";
+    document.getElementById("contato-cpf-cnpj").value = cliente_registro.cpf_cnpj || "";
+    document.getElementById("contato-telefone").value = cliente_registro.telefone || "";
+    document.getElementById("contato-email").value = cliente_registro.email || "";
+    document.getElementById("contato-observacoes").value = cliente_registro.observacoes || "";
+    formContatoCadastro.dataset.clienteId = clienteId;
+    await _renderizarProcessosVinculados(clienteId);
+  } catch (erro) {
+    document.getElementById("contato-detalhe-nome").textContent = "Erro ao carregar contato";
+    mostrarErro(resultadoContatoCadastro, erro.message);
+  }
+}
+
+function voltarParaContatos() {
+  document.getElementById("contatos-vista-detalhe").hidden = true;
+  document.getElementById("contatos-vista-lista").hidden = false;
+  renderizarListaContatos();
+}
+
+function _selecionarSubabaContato(nome) {
+  const ativarCadastro = nome === "cadastro";
+  document.getElementById("contato-subaba-cadastro-botao").setAttribute("aria-selected", String(ativarCadastro));
+  document.getElementById("contato-subaba-processos-botao").setAttribute("aria-selected", String(!ativarCadastro));
+  document.getElementById("contato-subaba-cadastro").hidden = !ativarCadastro;
+  document.getElementById("contato-subaba-processos").hidden = ativarCadastro;
+}
+
+async function _renderizarProcessosVinculados(clienteId) {
+  const container = document.getElementById("contato-processos-vinculados");
+  limpar(container);
+  container.appendChild(el("p", { class: "app-espera" }, ["Carregando…"]));
+  try {
+    const { casos } = await _buscarJson("/casos");
+    _cacheCasos = casos || [];
+    const vinculados = _cacheCasos.filter(
+      (caso) => caso.cliente_id === clienteId || (caso.clientes_adicionais || []).includes(clienteId)
+    );
+    limpar(container);
+    if (!vinculados.length) {
+      container.appendChild(notificacao("info", "Nenhum processo vinculado a este contato ainda"));
+      return;
+    }
+    container.appendChild(tabelaCasos(vinculados));
+  } catch (erro) {
+    limpar(container);
+    mostrarErro(container, erro.message);
+  }
 }
 
 function _resumoEventoCaso(evento) {
@@ -1938,7 +2087,7 @@ function cartaoPendente(p) {
   const acoes = el("div", { class: "resultado-acoes" });
   anexarBotaoCadastrarCaso(acoes, p.numero_processo, () => {
     card.remove();
-    carregarClientesECasos();
+    carregarCasosPagina();
   });
   const botaoDescartar = el("button", {
     class: "cds--btn cds--btn--danger--tertiary cds--btn--sm", type: "button", texto: "Descartar",
@@ -1973,12 +2122,26 @@ async function carregarPendentes() {
   }
 }
 
-async function carregarClientesECasos() {
-  if (!exigirCliente(document.getElementById("lista-clientes"))) return;
-  const listaClientesEl = document.getElementById("lista-clientes");
+async function carregarContatos() {
+  const listaContatosEl = document.getElementById("lista-contatos");
+  if (!exigirCliente(listaContatosEl)) return;
+  _construirBarraAZ();
+  limpar(listaContatosEl);
+  listaContatosEl.appendChild(el("p", { class: "app-espera" }, ["Carregando…"]));
+  try {
+    const { clientes } = await _buscarJson("/clientes");
+    _cacheClientes = clientes || [];
+    renderizarListaContatos();
+  } catch (erro) {
+    limpar(listaContatosEl);
+    mostrarErro(listaContatosEl, erro.message);
+  }
+}
+
+async function carregarCasosPagina() {
   const listaCasosEl = document.getElementById("lista-casos");
+  if (!exigirCliente(listaCasosEl)) return;
   const selectCliente = document.getElementById("caso-cliente");
-  limpar(listaClientesEl);
   limpar(listaCasosEl);
   carregarPendentes();
   try {
@@ -1986,15 +2149,10 @@ async function carregarClientesECasos() {
     _cacheClientes = clientes || [];
     limpar(selectCliente);
     if (!_cacheClientes.length) {
-      selectCliente.appendChild(el("option", { value: "" }, ["Cadastre um cliente primeiro"]));
+      selectCliente.appendChild(el("option", { value: "" }, ["Cadastre um contato primeiro"]));
     }
     for (const c of _cacheClientes) {
       selectCliente.appendChild(el("option", { value: c.id }, [c.nome]));
-    }
-    if (!_cacheClientes.length) {
-      listaClientesEl.appendChild(notificacao("info", "Nenhum cliente cadastrado ainda"));
-    } else {
-      for (const c of _cacheClientes) listaClientesEl.appendChild(cartaoCliente(c));
     }
 
     const { casos } = await _buscarJson("/casos");
@@ -2006,7 +2164,7 @@ async function carregarClientesECasos() {
     }
     renderizarCasosFavoritos();
   } catch (erro) {
-    mostrarErro(listaClientesEl, erro.message);
+    mostrarErro(listaCasosEl, erro.message);
   }
 }
 
@@ -2022,9 +2180,9 @@ formCliente.addEventListener("submit", async (evento) => {
   try {
     await _enviarJson("/clientes", dados);
     limpar(resultadoCliente);
-    resultadoCliente.appendChild(notificacao("success", "Cliente cadastrado"));
+    resultadoCliente.appendChild(notificacao("success", "Contato cadastrado"));
     formCliente.reset();
-    carregarClientesECasos();
+    carregarContatos();
   } catch (erro) {
     mostrarErro(resultadoCliente, erro.message);
   } finally {
@@ -2054,9 +2212,47 @@ formCaso.addEventListener("submit", async (evento) => {
     limpar(resultadoCaso);
     resultadoCaso.appendChild(notificacao("success", "Caso cadastrado"));
     formCaso.reset();
-    carregarClientesECasos();
+    carregarCasosPagina();
   } catch (erro) {
     mostrarErro(resultadoCaso, erro.message);
+  } finally {
+    pararEspera();
+  }
+});
+
+document.getElementById("contato-voltar").addEventListener("click", voltarParaContatos);
+document.getElementById("contato-subaba-cadastro-botao").addEventListener("click", () => _selecionarSubabaContato("cadastro"));
+document.getElementById("contato-subaba-processos-botao").addEventListener("click", () => _selecionarSubabaContato("processos"));
+document.getElementById("contatos-busca").addEventListener("input", (evento) => {
+  _contatosFiltroBusca = evento.target.value;
+  renderizarListaContatos();
+});
+
+const formContatoCadastro = document.getElementById("form-contato-cadastro");
+const resultadoContatoCadastro = document.getElementById("resultado-contato-cadastro");
+
+formContatoCadastro.addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  const clienteId = formContatoCadastro.dataset.clienteId;
+  if (!clienteId) return;
+  const botao = formContatoCadastro.querySelector("button[type=submit]");
+  const corpo = {
+    nome: document.getElementById("contato-nome").value.trim(),
+    cpf_cnpj: document.getElementById("contato-cpf-cnpj").value.trim(),
+    telefone: document.getElementById("contato-telefone").value.trim(),
+    email: document.getElementById("contato-email").value.trim(),
+    observacoes: document.getElementById("contato-observacoes").value.trim(),
+  };
+  const pararEspera = mostrarEspera(resultadoContatoCadastro, botao, "Salvando");
+  try {
+    const atualizado = await _enviarJson(`/clientes/${clienteId}`, corpo, "PATCH");
+    limpar(resultadoContatoCadastro);
+    resultadoContatoCadastro.appendChild(notificacao("success", "Contato atualizado"));
+    document.getElementById("contato-detalhe-nome").textContent = atualizado.nome;
+    const indice = _cacheClientes.findIndex((c) => c.id === clienteId);
+    if (indice !== -1) _cacheClientes[indice] = atualizado;
+  } catch (erro) {
+    mostrarErro(resultadoContatoCadastro, erro.message);
   } finally {
     pararEspera();
   }

@@ -2618,6 +2618,9 @@ class _AutenticacaoBearer:
         if caminho == "/clientes" and self.gestao is not None:
             await self._clientes(scope, receive, send)
             return
+        if caminho.startswith("/clientes/") and self.gestao is not None:
+            await self._cliente_detalhe(scope, receive, send, caminho[len("/clientes/"):])
+            return
         if caminho == "/casos" and self.gestao is not None:
             await self._casos(scope, receive, send)
             return
@@ -2870,6 +2873,42 @@ class _AutenticacaoBearer:
             await _json(send, 201, cliente)
             return
         await _responder(send, 404, b"Nao encontrado")
+
+    async def _cliente_detalhe(self, scope, receive, send, cliente_id: str):
+        """GET /clientes/<id>: o contato. PATCH /clientes/<id>: atualiza o cadastro (tela de
+        contato, aba Cadastro)."""
+        metodo = scope.get("method")
+        if not cliente_id or metodo not in ("GET", "PATCH"):
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        if metodo == "GET":
+            cliente_registro = self.gestao.obter_cliente(cliente_id)
+            if cliente_registro is None:
+                await _json(send, 404, _erro("Cliente não encontrado."))
+                return
+            await _json(send, 200, cliente_registro)
+            return
+        corpo = await _ler_corpo(receive)
+        try:
+            dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            await _json(send, 400, _erro("JSON inválido."))
+            return
+        nome = (dados.get("nome") or "").strip()
+        if not nome:
+            await _json(send, 400, _erro("Informe o nome do cliente."))
+            return
+        cliente_atualizado = self.gestao.atualizar_cliente(
+            cliente_id, nome=nome,
+            cpf_cnpj=(dados.get("cpf_cnpj") or "").strip() or None,
+            telefone=(dados.get("telefone") or "").strip() or None,
+            email=(dados.get("email") or "").strip() or None,
+            observacoes=(dados.get("observacoes") or "").strip() or None,
+        )
+        if cliente_atualizado is None:
+            await _json(send, 404, _erro("Cliente não encontrado."))
+            return
+        await _json(send, 200, cliente_atualizado)
 
     async def _casos(self, scope, receive, send):
         metodo = scope.get("method")
