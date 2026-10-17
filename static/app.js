@@ -2750,10 +2750,10 @@ async function carregarPublicacoesOab() {
       ));
       return;
     }
-    _publicacoesOabSelecionadas.clear();
     _atualizarBotoesLotePubOab();
 
     const checkboxTodos = el("input", { type: "checkbox", "aria-label": "Selecionar todas as publicações" });
+    checkboxTodos.checked = publicacoes.length > 0 && publicacoes.every((p) => _publicacoesOabSelecionadas.has(p.hash));
     checkboxTodos.addEventListener("change", () => {
       for (const p of publicacoes) {
         if (checkboxTodos.checked) _publicacoesOabSelecionadas.add(p.hash);
@@ -2789,7 +2789,10 @@ async function carregarPublicacoesOab() {
   }
 }
 
-document.getElementById("pub-oab-filtro-status").addEventListener("change", carregarPublicacoesOab);
+document.getElementById("pub-oab-filtro-status").addEventListener("change", () => {
+  _publicacoesOabSelecionadas.clear();
+  carregarPublicacoesOab();
+});
 document.getElementById("pub-oab-atualizar").addEventListener("click", carregarPublicacoesOab);
 document.getElementById("pub-oab-marcar-tratada").addEventListener("click", () => {
   _aplicarStatusPubOab(Array.from(_publicacoesOabSelecionadas), "tratada");
