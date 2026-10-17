@@ -1805,7 +1805,26 @@ function linhaContato(c) {
     c.email ? el("span", { texto: c.email }) : el("span", { class: "contato-sem-dado", texto: "Nenhum email" }),
   ]));
   tr.appendChild(el("td", { "data-label": "Etiquetas" }));
+
+  const botaoExcluir = el("button", {
+    class: "cds--btn cds--btn--danger--tertiary cds--btn--sm", type: "button", texto: "Excluir",
+  });
+  botaoExcluir.addEventListener("click", () => excluirContato(c.id, c.nome, botaoExcluir));
+  tr.appendChild(el("td", { "data-label": "Ações" }, [botaoExcluir]));
   return tr;
+}
+
+async function excluirContato(clienteId, nome, botao) {
+  if (!window.confirm(`Excluir o contato "${nome}"? Essa ação não pode ser desfeita.`)) return;
+  botao.disabled = true;
+  try {
+    await _enviarJson(`/clientes/${clienteId}`, {}, "DELETE");
+    _cacheClientes = _cacheClientes.filter((c) => c.id !== clienteId);
+    renderizarListaContatos();
+  } catch (erro) {
+    window.alert(erro.message);
+    botao.disabled = false;
+  }
 }
 
 function tabelaContatos(contatos) {
@@ -1817,6 +1836,7 @@ function tabelaContatos(contatos) {
       el("th", { texto: "Telefone" }),
       el("th", { texto: "E-mail" }),
       el("th", { texto: "Etiquetas" }),
+      el("th", { texto: "Ações" }),
     ]),
   ]);
   const tbody = el("tbody", {});
@@ -1909,6 +1929,18 @@ function _selecionarSubabaContato(nome) {
   document.getElementById("contato-subaba-processos").hidden = ativarCadastro;
 }
 
+function _renderizarCasosVinculadosNoContainer(container, clienteId) {
+  limpar(container);
+  const vinculados = _cacheCasos.filter(
+    (caso) => caso.cliente_id === clienteId || (caso.clientes_adicionais || []).includes(clienteId)
+  );
+  if (!vinculados.length) {
+    container.appendChild(notificacao("info", "Nenhum processo vinculado a este contato ainda"));
+    return;
+  }
+  container.appendChild(tabelaCasos(vinculados, () => _renderizarCasosVinculadosNoContainer(container, clienteId)));
+}
+
 async function _renderizarProcessosVinculados(clienteId) {
   const container = document.getElementById("contato-processos-vinculados");
   limpar(container);
@@ -1916,15 +1948,7 @@ async function _renderizarProcessosVinculados(clienteId) {
   try {
     const { casos } = await _buscarJson("/casos");
     _cacheCasos = casos || [];
-    const vinculados = _cacheCasos.filter(
-      (caso) => caso.cliente_id === clienteId || (caso.clientes_adicionais || []).includes(clienteId)
-    );
-    limpar(container);
-    if (!vinculados.length) {
-      container.appendChild(notificacao("info", "Nenhum processo vinculado a este contato ainda"));
-      return;
-    }
-    container.appendChild(tabelaCasos(vinculados));
+    _renderizarCasosVinculadosNoContainer(container, clienteId);
   } catch (erro) {
     limpar(container);
     mostrarErro(container, erro.message);
@@ -1964,7 +1988,7 @@ function linhaDoTempoCaso(eventos) {
   return lista;
 }
 
-function linhaCaso(caso) {
+function linhaCaso(caso, aoExcluir) {
   const nomeCliente = (id) => (_cacheClientes.find((c) => c.id === id) || {}).nome || id;
   const nomesClientes = [caso.cliente_id, ...(caso.clientes_adicionais || [])].map(nomeCliente);
   const tr = el("tr", {});
@@ -2012,7 +2036,7 @@ function linhaCaso(caso) {
   });
   const trTimeline = el("tr", {});
   trTimeline.hidden = true;
-  const celTimeline = el("td", { colspan: "5" }, [el("div", { class: "linha-tempo-area" })]);
+  const celTimeline = el("td", { colspan: "6" }, [el("div", { class: "linha-tempo-area" })]);
   trTimeline.appendChild(celTimeline);
   botaoTimeline.addEventListener("click", async () => {
     const abrindo = trTimeline.hidden;
@@ -2054,10 +2078,29 @@ function linhaCaso(caso) {
 
   tr.appendChild(el("td", { "data-label": "Últ. mov.", texto: formatarDataSimples(caso.ultima_movimentacao) }));
 
+  const botaoExcluirCaso = el("button", {
+    class: "cds--btn cds--btn--danger--tertiary cds--btn--sm", type: "button", texto: "Excluir",
+  });
+  botaoExcluirCaso.addEventListener("click", () => excluirCaso(caso.id, caso.titulo, botaoExcluirCaso, aoExcluir));
+  tr.appendChild(el("td", { "data-label": "Ações" }, [botaoExcluirCaso]));
+
   return [tr, trTimeline];
 }
 
-function tabelaCasos(casos) {
+async function excluirCaso(casoId, titulo, botao, aoExcluir) {
+  if (!window.confirm(`Excluir o caso "${titulo || "(sem título)"}"? Essa ação não pode ser desfeita.`)) return;
+  botao.disabled = true;
+  try {
+    await _enviarJson(`/casos/${casoId}`, {}, "DELETE");
+    _cacheCasos = _cacheCasos.filter((c) => c.id !== casoId);
+    if (aoExcluir) aoExcluir();
+  } catch (erro) {
+    window.alert(erro.message);
+    botao.disabled = false;
+  }
+}
+
+function tabelaCasos(casos, aoExcluir) {
   const ordenados = [...casos].sort((a, b) => (b.ultima_movimentacao || "").localeCompare(a.ultima_movimentacao || ""));
   const thead = el("thead", {}, [
     el("tr", {}, [
@@ -2066,11 +2109,12 @@ function tabelaCasos(casos) {
       el("th", { texto: "Cliente/Pasta" }),
       el("th", { texto: "Ação/Foro" }),
       el("th", { texto: "Últ. mov." }),
+      el("th", { texto: "Ações" }),
     ]),
   ]);
   const tbody = el("tbody", {});
   for (const caso of ordenados) {
-    for (const linha of linhaCaso(caso)) tbody.appendChild(linha);
+    for (const linha of linhaCaso(caso, aoExcluir)) tbody.appendChild(linha);
   }
   return el("div", { class: "tabela-responsiva-wrap" }, [el("table", { class: "tabela-responsiva tabela-casos" }, [thead, tbody])]);
 }
@@ -2157,15 +2201,21 @@ async function carregarCasosPagina() {
 
     const { casos } = await _buscarJson("/casos");
     _cacheCasos = casos || [];
-    if (!_cacheCasos.length) {
-      listaCasosEl.appendChild(notificacao("info", "Nenhum caso cadastrado ainda"));
-    } else {
-      listaCasosEl.appendChild(tabelaCasos(_cacheCasos));
-    }
-    renderizarCasosFavoritos();
+    _renderizarTabelaCasosPagina();
   } catch (erro) {
     mostrarErro(listaCasosEl, erro.message);
   }
+}
+
+function _renderizarTabelaCasosPagina() {
+  const listaCasosEl = document.getElementById("lista-casos");
+  limpar(listaCasosEl);
+  if (!_cacheCasos.length) {
+    listaCasosEl.appendChild(notificacao("info", "Nenhum caso cadastrado ainda"));
+  } else {
+    listaCasosEl.appendChild(tabelaCasos(_cacheCasos, _renderizarTabelaCasosPagina));
+  }
+  renderizarCasosFavoritos();
 }
 
 const formCliente = document.getElementById("form-cliente");
@@ -2255,6 +2305,23 @@ formContatoCadastro.addEventListener("submit", async (evento) => {
     mostrarErro(resultadoContatoCadastro, erro.message);
   } finally {
     pararEspera();
+  }
+});
+
+document.getElementById("contato-excluir").addEventListener("click", async () => {
+  const clienteId = formContatoCadastro.dataset.clienteId;
+  if (!clienteId) return;
+  const nome = document.getElementById("contato-nome").value.trim() || "este contato";
+  if (!window.confirm(`Excluir o contato "${nome}"? Essa ação não pode ser desfeita.`)) return;
+  const botao = document.getElementById("contato-excluir");
+  botao.disabled = true;
+  try {
+    await _enviarJson(`/clientes/${clienteId}`, {}, "DELETE");
+    _cacheClientes = _cacheClientes.filter((c) => c.id !== clienteId);
+    voltarParaContatos();
+  } catch (erro) {
+    mostrarErro(resultadoContatoCadastro, erro.message);
+    botao.disabled = false;
   }
 });
 

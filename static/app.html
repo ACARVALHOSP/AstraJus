@@ -85,11 +85,12 @@ body { margin: 0; min-height: 100dvh; }
 .contatos-az button[aria-pressed="true"] { color: var(--cds-interactive, #0f62fe); font-weight: 700; }
 .contatos-busca-campo { margin: 0; min-width: 240px; flex: 0 1 280px; }
 .contatos-tabela th:nth-child(1), .contatos-tabela td:nth-child(1) { width: 4%; }
-.contatos-tabela th:nth-child(2), .contatos-tabela td:nth-child(2) { width: 6%; }
-.contatos-tabela th:nth-child(3), .contatos-tabela td:nth-child(3) { width: 36%; }
-.contatos-tabela th:nth-child(4), .contatos-tabela td:nth-child(4) { width: 20%; }
-.contatos-tabela th:nth-child(5), .contatos-tabela td:nth-child(5) { width: 20%; }
-.contatos-tabela th:nth-child(6), .contatos-tabela td:nth-child(6) { width: 14%; }
+.contatos-tabela th:nth-child(2), .contatos-tabela td:nth-child(2) { width: 5%; }
+.contatos-tabela th:nth-child(3), .contatos-tabela td:nth-child(3) { width: 29%; }
+.contatos-tabela th:nth-child(4), .contatos-tabela td:nth-child(4) { width: 17%; }
+.contatos-tabela th:nth-child(5), .contatos-tabela td:nth-child(5) { width: 17%; }
+.contatos-tabela th:nth-child(6), .contatos-tabela td:nth-child(6) { width: 12%; }
+.contatos-tabela th:nth-child(7), .contatos-tabela td:nth-child(7) { width: 16%; }
 .contato-tipo-icone { display: inline-flex; color: var(--cds-text-secondary, #525252); }
 .contato-nome-link { color: var(--cds-link-primary, #0f62fe); background: none; border: none; padding: 0; font: inherit; font-size: 0.875rem; cursor: pointer; text-align: left; text-decoration: underline; }
 .contato-sem-dado { font-style: italic; color: var(--cds-text-secondary, #525252); }
@@ -117,11 +118,12 @@ body { margin: 0; min-height: 100dvh; }
 .pub-oab-tabela th:nth-child(8), .pub-oab-tabela td:nth-child(8) { width: 18%; }
 .pub-oab-texto-expandido { margin-top: 0.375rem; font-size: 0.8125rem; color: var(--cds-text-secondary, #525252); white-space: pre-line; }
 .caso-titulo-linha { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-weight: 600; }
-.tabela-casos th:nth-child(1), .tabela-casos td:nth-child(1) { width: 8%; }
-.tabela-casos th:nth-child(2), .tabela-casos td:nth-child(2) { width: 34%; }
-.tabela-casos th:nth-child(3), .tabela-casos td:nth-child(3) { width: 22%; }
-.tabela-casos th:nth-child(4), .tabela-casos td:nth-child(4) { width: 20%; }
-.tabela-casos th:nth-child(5), .tabela-casos td:nth-child(5) { width: 16%; }
+.tabela-casos th:nth-child(1), .tabela-casos td:nth-child(1) { width: 7%; }
+.tabela-casos th:nth-child(2), .tabela-casos td:nth-child(2) { width: 29%; }
+.tabela-casos th:nth-child(3), .tabela-casos td:nth-child(3) { width: 19%; }
+.tabela-casos th:nth-child(4), .tabela-casos td:nth-child(4) { width: 17%; }
+.tabela-casos th:nth-child(5), .tabela-casos td:nth-child(5) { width: 14%; }
+.tabela-casos th:nth-child(6), .tabela-casos td:nth-child(6) { width: 14%; }
 @media (max-width: 640px) {
   .tabela-responsiva-wrap { overflow-x: visible; border: none; }
   .tabela-responsiva { min-width: 0; }
@@ -590,7 +592,10 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <label class="cds--label" for="contato-observacoes">Observações</label>
 <input class="cds--text-input" id="contato-observacoes">
 </div>
+<div class="token-acoes campo-ajuda--largo">
 <button class="cds--btn cds--btn--primary" type="submit">Salvar alterações</button>
+<button class="cds--btn cds--btn--danger--tertiary" type="button" id="contato-excluir">Excluir contato</button>
+</div>
 </form>
 <div id="resultado-contato-cadastro" class="app-resultado" aria-live="polite"></div>
 </section>

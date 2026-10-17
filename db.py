@@ -366,6 +366,14 @@ class RegistroClientesCasos:
             )
             return [_linha_cliente(linha) for linha in cursor.fetchall()]
 
+    def excluir_cliente(self, cliente_id: str) -> bool:
+        """Devolve True se excluiu, False se o id não existia. Levanta sqlite3.IntegrityError
+        (não tratado aqui) se o cliente ainda for cliente_id principal de algum caso ou estiver
+        em caso_clientes - quem chama decide a mensagem (ver _cliente_detalhe em server.py)."""
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            cursor = conexao.execute("DELETE FROM clientes WHERE id = ?", (cliente_id,))
+            return cursor.rowcount > 0
+
     # Casos
 
     def criar_caso(
@@ -430,6 +438,26 @@ class RegistroClientesCasos:
                 }
                 for linha in cursor.fetchall()
             ]
+
+    def excluir_caso(self, caso_id: str) -> bool:
+        """Remove o caso e tudo que depende dele (processos, clientes adicionais, linha do
+        tempo). Publicações já capturadas (aba "Publicações por OAB") que apontavam pra este
+        caso voltam a "não tratada" em vez de serem apagadas - a publicação em si continua
+        existindo, só perde o vínculo. Devolve True se excluiu, False se o id não existia."""
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            cursor = conexao.execute("SELECT 1 FROM casos WHERE id = ?", (caso_id,))
+            if cursor.fetchone() is None:
+                return False
+            conexao.execute(
+                "UPDATE publicacoes_capturadas SET caso_id = NULL, status = 'nao_tratada' "
+                "WHERE caso_id = ?",
+                (caso_id,),
+            )
+            conexao.execute("DELETE FROM caso_eventos WHERE caso_id = ?", (caso_id,))
+            conexao.execute("DELETE FROM caso_clientes WHERE caso_id = ?", (caso_id,))
+            conexao.execute("DELETE FROM caso_processos WHERE caso_id = ?", (caso_id,))
+            conexao.execute("DELETE FROM casos WHERE id = ?", (caso_id,))
+            return True
 
     def casos_do_processo(self, numero_processo: str) -> list[str]:
         """IDs dos casos que incluem esse número de processo (0, 1 ou mais)."""

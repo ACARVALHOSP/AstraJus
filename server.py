@@ -21,6 +21,7 @@ import os
 import re
 import secrets
 import smtplib
+import sqlite3
 import ssl
 import statistics
 import sys
@@ -2876,9 +2877,11 @@ class _AutenticacaoBearer:
 
     async def _cliente_detalhe(self, scope, receive, send, cliente_id: str):
         """GET /clientes/<id>: o contato. PATCH /clientes/<id>: atualiza o cadastro (tela de
-        contato, aba Cadastro)."""
+        contato, aba Cadastro). DELETE /clientes/<id>: exclui o contato - recusado se ele ainda
+        for cliente principal ou adicional de algum caso (o caso tem que ser excluído ou
+        reatribuído primeiro)."""
         metodo = scope.get("method")
-        if not cliente_id or metodo not in ("GET", "PATCH"):
+        if not cliente_id or metodo not in ("GET", "PATCH", "DELETE"):
             await _responder(send, 404, b"Nao encontrado")
             return
         if metodo == "GET":
@@ -2887,6 +2890,20 @@ class _AutenticacaoBearer:
                 await _json(send, 404, _erro("Cliente não encontrado."))
                 return
             await _json(send, 200, cliente_registro)
+            return
+        if metodo == "DELETE":
+            try:
+                excluiu = self.gestao.excluir_cliente(cliente_id)
+            except sqlite3.IntegrityError:
+                await _json(send, 409, _erro(
+                    "Não é possível excluir: há um ou mais casos vinculados a este contato. "
+                    "Exclua ou reatribua esses casos primeiro."
+                ))
+                return
+            if not excluiu:
+                await _json(send, 404, _erro("Cliente não encontrado."))
+                return
+            await _json(send, 200, {"excluido": True})
             return
         corpo = await _ler_corpo(receive)
         try:
@@ -2962,9 +2979,19 @@ class _AutenticacaoBearer:
 
     async def _caso_detalhe(self, scope, send, caso_id: str):
         """GET /casos/<id>: o caso com sua linha do tempo (Fase 2) - publicações/movimentações
-        já monitoradas que o servidor ligou automaticamente a este caso."""
-        if scope.get("method") != "GET" or not caso_id:
+        já monitoradas que o servidor ligou automaticamente a este caso.
+        DELETE /casos/<id>: exclui o caso (e processos/clientes adicionais/linha do tempo
+        dele). Publicações já capturadas que apontavam pra ele voltam a "não tratada"."""
+        metodo = scope.get("method")
+        if not caso_id or metodo not in ("GET", "DELETE"):
             await _responder(send, 404, b"Nao encontrado")
+            return
+        if metodo == "DELETE":
+            excluiu = self.gestao.excluir_caso(caso_id)
+            if not excluiu:
+                await _json(send, 404, _erro("Caso não encontrado."))
+                return
+            await _json(send, 200, {"excluido": True})
             return
         caso = self.gestao.obter_caso(caso_id)
         if caso is None:
