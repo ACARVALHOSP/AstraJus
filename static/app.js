@@ -986,10 +986,10 @@ function abrirDemonstrativoPdf({ dataBase, dias, tipo, municipio, dia1, vencimen
   estilo.textContent = `
     body { font-family: Arial, Helvetica, sans-serif; color: #161616; margin: 2rem; }
     h1 { font-size: 1.25rem; margin: 0 0 0.25rem; }
-    p.base { margin: 0 0 1rem; color: #525252; font-size: 0.9rem; }
+    p.base { margin: 0 0 1rem; color: #525252; font-size: 0.8125rem; }
     .legenda { display: flex; flex-wrap: wrap; gap: 0.25rem 1.1rem; margin: 0 0 1rem; font-size: 0.8125rem; }
     .legenda-item { display: inline-flex; align-items: center; gap: 0.35rem; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
     th, td { border: 1px solid #c6c6c6; padding: 0.35rem 0.5rem; text-align: left; vertical-align: middle; }
     th { background: #f4f4f4; }
     td.col-icone { width: 1.75rem; text-align: center; }
@@ -1003,7 +1003,7 @@ function abrirDemonstrativoPdf({ dataBase, dias, tipo, municipio, dia1, vencimen
     tr.dia-provimento td.col-data, tr.dia-provimento td.col-dia, tr.dia-provimento td.col-prazo { color: #161616; }
     tr.venc td { font-weight: bold; background: #defbe6 !important; }
     .acoes { margin-bottom: 1rem; }
-    .aviso { margin-top: 1rem; font-size: 0.8rem; color: #525252; }
+    .aviso { margin-top: 1rem; font-size: 0.75rem; color: #525252; }
     @media print { .acoes { display: none; } }
   `;
   doc.head.appendChild(estilo);
