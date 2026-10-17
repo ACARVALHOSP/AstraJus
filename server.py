@@ -2406,6 +2406,7 @@ def _resolver_cliente_id(gestao: RegistroClientesCasos, item: dict) -> tuple[str
 
 def _criar_caso_validado(
     gestao: RegistroClientesCasos, dados: dict, publicacoes: "RegistroPublicacoesOAB | None" = None,
+    usuario_padrao: str | None = None,
 ) -> tuple[dict | None, dict | None]:
     """Valida o corpo de POST /casos. Aceita cliente_id (existente) ou cliente_novo (cria na
     hora) - é o que permite o botão "cadastrar como caso" da consulta pontual de processo.
@@ -2446,7 +2447,7 @@ def _criar_caso_validado(
     caso = gestao.criar_caso(
         cliente_id=cliente_id,
         titulo=(dados.get("titulo") or "").strip() or None,
-        responsavel=(dados.get("responsavel") or "").strip() or None,
+        responsavel=(dados.get("responsavel") or "").strip() or usuario_padrao or None,
         numeros_processo=numeros,
         agora=lambda: datetime.now(timezone.utc),
         clientes_adicionais=clientes_adicionais,
@@ -2595,6 +2596,8 @@ class _AutenticacaoBearer:
             await _responder(send, 401, b"Token ausente, invalido ou revogado",
                              cabecalhos_extra=[(b"www-authenticate", desafio)])
             return
+
+        scope["usuario"] = usuario
 
         if self.limitador and scope.get("method") == "POST" and caminho == "/mcp":
             permitido, espera, motivo = self.limitador.verificar(usuario)
@@ -2949,7 +2952,7 @@ class _AutenticacaoBearer:
             except (ValueError, UnicodeDecodeError):
                 await _json(send, 400, _erro("JSON inválido."))
                 return
-            caso, erro = _criar_caso_validado(self.gestao, dados, self.publicacoes)
+            caso, erro = _criar_caso_validado(self.gestao, dados, self.publicacoes, usuario_padrao=scope.get("usuario"))
             if erro:
                 await _json(send, 400, erro)
                 return

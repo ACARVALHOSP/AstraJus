@@ -2907,6 +2907,49 @@ document.getElementById("form-pub-oab-manual").addEventListener("submit", async 
   }
 });
 
+// ─── DataJud: busca ação/foro a partir de número de processo ─────────────────
+
+async function buscarAcaoForoDataJud(numerosCampo, campAcao, campForo, statusEl, botao) {
+  if (!cliente) { statusEl.textContent = "Cliente MCP não disponível."; return; }
+  const numeros = numerosCampo.value.split(",").map((s) => s.trim()).filter(Boolean);
+  if (!numeros.length) { statusEl.textContent = "Informe ao menos um número de processo."; return; }
+  const numero = numeros[0];
+  botao.disabled = true;
+  statusEl.textContent = "Consultando DataJud…";
+  try {
+    const dados = await cliente.chamarTool("consultar_processo_datajud", { numero_processo: numero });
+    const proc = (dados.processos || [])[0];
+    if (!proc) { statusEl.textContent = dados.mensagem || "Processo não encontrado."; return; }
+    if (proc.classe && !campAcao.value) campAcao.value = proc.classe;
+    if (proc.orgaoJulgador && !campForo.value) campForo.value = proc.orgaoJulgador;
+    statusEl.textContent = proc.classe ? "Preenchido." : "Sem dados de classe/órgão.";
+  } catch (err) {
+    statusEl.textContent = err.message || "Erro ao consultar DataJud.";
+  } finally {
+    botao.disabled = false;
+  }
+}
+
+document.getElementById("btn-datajud-modal").addEventListener("click", () =>
+  buscarAcaoForoDataJud(
+    document.getElementById("caso-processos"),
+    document.getElementById("caso-acao"),
+    document.getElementById("caso-foro"),
+    document.getElementById("status-datajud-modal"),
+    document.getElementById("btn-datajud-modal"),
+  )
+);
+
+document.getElementById("btn-datajud-detalhe").addEventListener("click", () =>
+  buscarAcaoForoDataJud(
+    document.getElementById("editar-caso-processos"),
+    document.getElementById("editar-caso-acao"),
+    document.getElementById("editar-caso-foro"),
+    document.getElementById("status-datajud-detalhe"),
+    document.getElementById("btn-datajud-detalhe"),
+  )
+);
+
 // ─── Vista de detalhe do caso ────────────────────────────────────────────────
 
 let _casoDetalheAtual = null;
