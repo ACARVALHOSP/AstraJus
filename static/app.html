@@ -92,6 +92,12 @@ body { margin: 0; min-height: 100dvh; }
 .contatos-az button:hover { background: var(--cds-layer-hover-01, #e8e8e8); }
 .contatos-az button[aria-pressed="true"] { color: var(--cds-interactive, #0f62fe); font-weight: 700; }
 .contatos-busca-campo { margin: 0; min-width: 240px; flex: 0 1 280px; }
+.caso-cliente-campo { position: relative; }
+.cliente-sugestoes { position: absolute; top: 100%; left: 0; right: 0; z-index: 9999; background: var(--cds-layer, #f4f4f4); border: 1px solid var(--cds-border-subtle, #e0e0e0); max-height: 12rem; overflow-y: auto; box-shadow: 0 4px 8px rgba(0,0,0,.12); }
+.cliente-sugestoes button { display: block; width: 100%; text-align: left; padding: 0.5rem 1rem; background: none; border: none; border-bottom: 1px solid var(--cds-border-subtle, #e0e0e0); cursor: pointer; font-size: var(--fonte-base); }
+.cliente-sugestoes button:hover, .cliente-sugestoes button:focus { background: var(--cds-layer-hover-01, #e8e8e8); outline: none; }
+.secao-cabecalho { display: flex; align-items: center; justify-content: space-between; margin: 0 0 0.5rem; }
+.secao-cabecalho .lista-rapida-titulo { margin: 0; }
 .contatos-tabela th:nth-child(1), .contatos-tabela td:nth-child(1) { width: 4%; }
 .contatos-tabela th:nth-child(2), .contatos-tabela td:nth-child(2) { width: 5%; }
 .contatos-tabela th:nth-child(3), .contatos-tabela td:nth-child(3) { width: 29%; }
@@ -533,33 +539,10 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <section id="aba-contatos" role="tabpanel" aria-labelledby="aba-contatos-botao" hidden>
 
 <div id="contatos-vista-lista">
-<h2 class="lista-rapida-titulo">Novo contato</h2>
-<form id="form-cliente" class="app-formulario">
-<div class="cds--form-item">
-<label class="cds--label" for="cliente-nome">Nome</label>
-<input class="cds--text-input" id="cliente-nome" name="nome" required>
+<div class="secao-cabecalho">
+<h2 class="lista-rapida-titulo">Contatos</h2>
+<button class="cds--btn cds--btn--primary cds--btn--sm" type="button" id="btn-novo-contato">Novo contato</button>
 </div>
-<div class="cds--form-item">
-<label class="cds--label" for="cliente-cpf-cnpj">CPF/CNPJ</label>
-<input class="cds--text-input" id="cliente-cpf-cnpj" name="cpf_cnpj">
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="cliente-telefone">Telefone</label>
-<input class="cds--text-input" id="cliente-telefone" name="telefone">
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="cliente-email">E-mail</label>
-<input class="cds--text-input" id="cliente-email" name="email" type="email">
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="cliente-observacoes">Observações</label>
-<input class="cds--text-input" id="cliente-observacoes" name="observacoes">
-</div>
-<button class="cds--btn cds--btn--primary" type="submit">Cadastrar contato</button>
-</form>
-<div id="resultado-cliente" class="app-resultado" aria-live="polite"></div>
-
-<h2 class="lista-rapida-titulo">Contatos cadastrados</h2>
 <div class="contatos-barra">
 <div class="contatos-az" id="contatos-az"></div>
 <div class="cds--form-item contatos-busca-campo">
@@ -620,38 +603,11 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <p class="campo-ajuda">Encontrados pelo monitoramento por OAB, ainda sem caso cadastrado. Vincule a um cliente ou descarte.</p>
 <div id="lista-pendentes" class="app-resultado"></div>
 
-<h2 class="lista-rapida-titulo">Novo caso</h2>
-<form id="form-caso" class="app-formulario">
-<div class="cds--form-item">
-<label class="cds--label" for="caso-cliente">Cliente</label>
-<select class="cds--text-input" id="caso-cliente" name="cliente_id" required></select>
+<div class="secao-cabecalho">
+<h2 class="lista-rapida-titulo">Casos</h2>
+<button class="cds--btn cds--btn--primary cds--btn--sm" type="button" id="btn-novo-caso">Novo caso</button>
 </div>
-<div class="cds--form-item">
-<label class="cds--label" for="caso-titulo">Título</label>
-<input class="cds--text-input" id="caso-titulo" name="titulo" placeholder="Ex.: Cobrança de honorários">
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="caso-responsavel">Responsável</label>
-<input class="cds--text-input" id="caso-responsavel" name="responsavel">
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="caso-acao">Ação</label>
-<input class="cds--text-input" id="caso-acao" name="acao" placeholder="Ex.: Cumprimento de sentença">
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="caso-foro">Foro</label>
-<input class="cds--text-input" id="caso-foro" name="foro" placeholder="Ex.: 3ª Vara Cível">
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="caso-processos">Número(s) de processo</label>
-<input class="cds--text-input" id="caso-processos" name="numeros_processo" placeholder="1006314-27.2023.8.26.0005, ...">
-<span class="campo-ajuda">Separe por vírgula se houver mais de um (ex.: recurso do mesmo caso).</span>
-</div>
-<button class="cds--btn cds--btn--primary" type="submit">Cadastrar caso</button>
-</form>
-<div id="resultado-caso" class="app-resultado" aria-live="polite"></div>
-
-<h2 class="lista-rapida-titulo">Casos cadastrados</h2>
+<h2 class="lista-rapida-titulo" style="margin-top:1.5rem">Casos cadastrados</h2>
 <div id="lista-casos" class="app-resultado"></div>
 </section>
 
@@ -710,6 +666,95 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <footer class="app-rodape">
 <a href="/guia">Guia do usuário</a> · <a href="/cadastro">Pedir um token</a>
 </footer>
+
+<!-- Modal: Novo contato -->
+<div class="cds--modal" id="modal-novo-contato" role="dialog" aria-modal="true" aria-labelledby="modal-novo-contato-titulo">
+<div class="cds--modal-container cds--modal-container--sm">
+<div class="cds--modal-header">
+<p class="cds--modal-header__heading" id="modal-novo-contato-titulo">Novo contato</p>
+<button class="cds--modal-close" type="button" id="modal-novo-contato-fechar" aria-label="Fechar">
+<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="20" height="20" fill="currentColor"><path d="M17.41 16 24 9.41 22.59 8 16 14.59 9.41 8 8 9.41 14.59 16 8 22.59 9.41 24 16 17.41 22.59 24 24 22.59 17.41 16z"/></svg>
+</button>
+</div>
+<div class="cds--modal-content">
+<form id="form-cliente" class="app-formulario">
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-nome">Nome</label>
+<input class="cds--text-input" id="cliente-nome" name="nome" required>
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-cpf-cnpj">CPF/CNPJ</label>
+<input class="cds--text-input" id="cliente-cpf-cnpj" name="cpf_cnpj">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-telefone">Telefone</label>
+<input class="cds--text-input" id="cliente-telefone" name="telefone">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-email">E-mail</label>
+<input class="cds--text-input" id="cliente-email" name="email" type="email">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-observacoes">Observações</label>
+<input class="cds--text-input" id="cliente-observacoes" name="observacoes">
+</div>
+</form>
+<div id="resultado-cliente" class="app-resultado" aria-live="polite"></div>
+</div>
+<div class="cds--modal-footer">
+<button class="cds--btn cds--btn--secondary" type="button" data-fechar-modal="modal-novo-contato">Cancelar</button>
+<button class="cds--btn cds--btn--primary" type="submit" form="form-cliente">Cadastrar contato</button>
+</div>
+</div>
+</div>
+
+<!-- Modal: Novo caso -->
+<div class="cds--modal" id="modal-novo-caso" role="dialog" aria-modal="true" aria-labelledby="modal-novo-caso-titulo">
+<div class="cds--modal-container cds--modal-container--sm">
+<div class="cds--modal-header">
+<p class="cds--modal-header__heading" id="modal-novo-caso-titulo">Novo caso</p>
+<button class="cds--modal-close" type="button" id="modal-novo-caso-fechar" aria-label="Fechar">
+<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="20" height="20" fill="currentColor"><path d="M17.41 16 24 9.41 22.59 8 16 14.59 9.41 8 8 9.41 14.59 16 8 22.59 9.41 24 16 17.41 22.59 24 24 22.59 17.41 16z"/></svg>
+</button>
+</div>
+<div class="cds--modal-content">
+<form id="form-caso" class="app-formulario">
+<div class="cds--form-item caso-cliente-campo">
+<label class="cds--label" for="caso-cliente-busca">Cliente</label>
+<input class="cds--text-input" id="caso-cliente-busca" autocomplete="off" placeholder="Digite para buscar...">
+<input type="hidden" id="caso-cliente" name="cliente_id">
+<div id="caso-cliente-sugestoes" class="cliente-sugestoes" hidden></div>
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="caso-titulo">Título</label>
+<input class="cds--text-input" id="caso-titulo" name="titulo" placeholder="Ex.: Cobrança de honorários">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="caso-responsavel">Responsável</label>
+<input class="cds--text-input" id="caso-responsavel" name="responsavel">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="caso-acao">Ação</label>
+<input class="cds--text-input" id="caso-acao" name="acao" placeholder="Ex.: Cumprimento de sentença">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="caso-foro">Foro</label>
+<input class="cds--text-input" id="caso-foro" name="foro" placeholder="Ex.: 3ª Vara Cível">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="caso-processos">Número(s) de processo</label>
+<input class="cds--text-input" id="caso-processos" name="numeros_processo" placeholder="1006314-27.2023.8.26.0005, ...">
+<span class="campo-ajuda">Separe por vírgula se houver mais de um.</span>
+</div>
+</form>
+<div id="resultado-caso" class="app-resultado" aria-live="polite"></div>
+</div>
+<div class="cds--modal-footer">
+<button class="cds--btn cds--btn--secondary" type="button" data-fechar-modal="modal-novo-caso">Cancelar</button>
+<button class="cds--btn cds--btn--primary" type="submit" form="form-caso">Cadastrar caso</button>
+</div>
+</div>
+</div>
 
 <script src="/static/app.js" defer></script>
 </body>

@@ -1766,6 +1766,32 @@ formJurimetria.addEventListener("submit", async (evento) => {
 
 document.getElementById("botao-atualizar-monitoramentos").addEventListener("click", carregarMonitoramentos);
 
+// --- Modais Carbon -----------------------------------------------------------------------
+
+function abrirModal(id) {
+  const modal = document.getElementById(id);
+  if (!modal) return;
+  modal.classList.add("is-visible");
+  const primeiro = modal.querySelector("input, select, textarea, button:not(.cds--modal-close)");
+  if (primeiro) primeiro.focus();
+}
+
+function fecharModal(id) {
+  const modal = document.getElementById(id);
+  if (!modal) return;
+  modal.classList.remove("is-visible");
+}
+
+document.addEventListener("click", (ev) => {
+  const alvo = ev.target.closest("[data-fechar-modal]");
+  if (alvo) fecharModal(alvo.dataset.fecharModal);
+});
+
+document.querySelectorAll(".cds--modal").forEach((modal) => {
+  modal.addEventListener("click", (ev) => { if (ev.target === modal) fecharModal(modal.id); });
+  modal.addEventListener("keydown", (ev) => { if (ev.key === "Escape") fecharModal(modal.id); });
+});
+
 // --- Clientes e casos (Fase 1 da gestão de escritório) ------------------------------------
 //
 // /clientes e /casos são endpoints HTTP simples (não tools MCP, mesmo padrão das árvores do
@@ -2185,21 +2211,11 @@ async function carregarContatos() {
 async function carregarCasosPagina() {
   const listaCasosEl = document.getElementById("lista-casos");
   if (!exigirCliente(listaCasosEl)) return;
-  const selectCliente = document.getElementById("caso-cliente");
   limpar(listaCasosEl);
   carregarPendentes();
   try {
-    const { clientes } = await _buscarJson("/clientes");
+    const [{ clientes }, { casos }] = await Promise.all([_buscarJson("/clientes"), _buscarJson("/casos")]);
     _cacheClientes = clientes || [];
-    limpar(selectCliente);
-    if (!_cacheClientes.length) {
-      selectCliente.appendChild(el("option", { value: "" }, ["Cadastre um contato primeiro"]));
-    }
-    for (const c of _cacheClientes) {
-      selectCliente.appendChild(el("option", { value: c.id }, [c.nome]));
-    }
-
-    const { casos } = await _buscarJson("/casos");
     _cacheCasos = casos || [];
     _renderizarTabelaCasosPagina();
   } catch (erro) {
@@ -2224,14 +2240,14 @@ const resultadoCliente = document.getElementById("resultado-cliente");
 formCliente.addEventListener("submit", async (evento) => {
   evento.preventDefault();
   if (!exigirCliente(resultadoCliente)) return;
-  const botao = formCliente.querySelector("button[type=submit]");
+  const botao = document.querySelector("button[form='form-cliente'][type='submit']");
   const dados = Object.fromEntries(new FormData(formCliente).entries());
   const pararEspera = mostrarEspera(resultadoCliente, botao, "Cadastrando cliente");
   try {
     await _enviarJson("/clientes", dados);
-    limpar(resultadoCliente);
-    resultadoCliente.appendChild(notificacao("success", "Contato cadastrado"));
+    fecharModal("modal-novo-contato");
     formCliente.reset();
+    limpar(resultadoCliente);
     carregarContatos();
   } catch (erro) {
     mostrarErro(resultadoCliente, erro.message);
@@ -2246,10 +2262,16 @@ const resultadoCaso = document.getElementById("resultado-caso");
 formCaso.addEventListener("submit", async (evento) => {
   evento.preventDefault();
   if (!exigirCliente(resultadoCaso)) return;
-  const botao = formCaso.querySelector("button[type=submit]");
+  const clienteId = document.getElementById("caso-cliente").value;
+  if (!clienteId) {
+    mostrarErro(resultadoCaso, "Selecione um cliente.");
+    document.getElementById("caso-cliente-busca").focus();
+    return;
+  }
+  const botao = document.querySelector("button[form='form-caso'][type='submit']");
   const numeros = document.getElementById("caso-processos").value.split(",").map((s) => s.trim()).filter(Boolean);
   const corpo = {
-    cliente_id: document.getElementById("caso-cliente").value,
+    cliente_id: clienteId,
     titulo: document.getElementById("caso-titulo").value.trim(),
     responsavel: document.getElementById("caso-responsavel").value.trim(),
     acao: document.getElementById("caso-acao").value.trim(),
@@ -2259,9 +2281,10 @@ formCaso.addEventListener("submit", async (evento) => {
   const pararEspera = mostrarEspera(resultadoCaso, botao, "Cadastrando caso");
   try {
     await _enviarJson("/casos", corpo);
-    limpar(resultadoCaso);
-    resultadoCaso.appendChild(notificacao("success", "Caso cadastrado"));
+    fecharModal("modal-novo-caso");
     formCaso.reset();
+    document.getElementById("caso-cliente-busca").value = "";
+    document.getElementById("caso-cliente").value = "";
     carregarCasosPagina();
   } catch (erro) {
     mostrarErro(resultadoCaso, erro.message);
@@ -2269,6 +2292,61 @@ formCaso.addEventListener("submit", async (evento) => {
     pararEspera();
   }
 });
+
+document.getElementById("btn-novo-contato").addEventListener("click", () => abrirModal("modal-novo-contato"));
+document.getElementById("modal-novo-contato-fechar").addEventListener("click", () => fecharModal("modal-novo-contato"));
+document.getElementById("btn-novo-caso").addEventListener("click", async () => {
+  if (!_cacheClientes.length) {
+    try { const { clientes } = await _buscarJson("/clientes"); _cacheClientes = clientes || []; } catch { /* segue */ }
+  }
+  abrirModal("modal-novo-caso");
+});
+document.getElementById("modal-novo-caso-fechar").addEventListener("click", () => fecharModal("modal-novo-caso"));
+
+// Typeahead: campo de busca de cliente no form-caso
+(function () {
+  const busca = document.getElementById("caso-cliente-busca");
+  const hidden = document.getElementById("caso-cliente");
+  const lista = document.getElementById("caso-cliente-sugestoes");
+
+  function mostrarSugestoes(termo) {
+    limpar(lista);
+    const filtrados = _cacheClientes.filter((c) => c.nome.toLowerCase().includes(termo.toLowerCase()));
+    if (!filtrados.length) { lista.hidden = true; return; }
+    filtrados.slice(0, 10).forEach((c) => {
+      const btn = el("button", { type: "button", texto: c.nome });
+      btn.addEventListener("mousedown", (ev) => {
+        ev.preventDefault();
+        busca.value = c.nome;
+        hidden.value = c.id;
+        lista.hidden = true;
+      });
+      lista.appendChild(btn);
+    });
+    lista.hidden = false;
+  }
+
+  busca.addEventListener("input", () => {
+    hidden.value = "";
+    mostrarSugestoes(busca.value);
+  });
+  busca.addEventListener("focus", () => { if (busca.value) mostrarSugestoes(busca.value); });
+  busca.addEventListener("blur", () => { setTimeout(() => { lista.hidden = true; }, 150); });
+  busca.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") { lista.hidden = true; }
+    if (ev.key === "ArrowDown") {
+      const primeiro = lista.querySelector("button");
+      if (primeiro) { ev.preventDefault(); primeiro.focus(); }
+    }
+  });
+  lista.addEventListener("keydown", (ev) => {
+    if (ev.key === "ArrowDown") { const next = document.activeElement.nextElementSibling; if (next) next.focus(); }
+    if (ev.key === "ArrowUp") {
+      const prev = document.activeElement.previousElementSibling;
+      if (prev) prev.focus(); else busca.focus();
+    }
+  });
+})();
 
 document.getElementById("contato-voltar").addEventListener("click", voltarParaContatos);
 document.getElementById("contato-subaba-cadastro-botao").addEventListener("click", () => _selecionarSubabaContato("cadastro"));
