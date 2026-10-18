@@ -3439,3 +3439,24 @@ document.getElementById("form-atividade").addEventListener("submit", async (even
     pararEspera();
   }
 });
+
+// Date Picker - range (Carbon + flatpickr): dois campos ligados a um único calendário.
+// Os IDs originais são mantidos, então o resto do app continua lendo `.value` normalmente.
+// `allowInput: true` é obrigatório: sem ele o flatpickr marca os inputs como `readonly`,
+// e um input readonly é excluído da validação HTML5 (`required`) e recusa digitação.
+function _inicializarDatePickerRange(idInicio, idFim, opcoes) {
+  const elInicio = document.getElementById(idInicio);
+  const elFim = document.getElementById(idFim);
+  if (!elInicio || !elFim || typeof window.flatpickr !== "function") return;
+  window.flatpickr(elInicio, Object.assign({
+    altInput: false,
+    allowInput: true,
+    locale: window.flatpickr.l10ns && window.flatpickr.l10ns.pt,
+    plugins: [new window.rangePlugin({ input: elFim })],
+  }, opcoes));
+}
+
+// dateFormat define exatamente o texto entregue em `.value` (o formato que o backend espera).
+_inicializarDatePickerRange("pub-data-inicio", "pub-data-fim", { dateFormat: "Y-m-d" });
+_inicializarDatePickerRange("jur-data-inicio", "jur-data-fim", { dateFormat: "d/m/Y" });
+_inicializarDatePickerRange("pub-oab-manual-data-inicio", "pub-oab-manual-data-fim", { dateFormat: "Y-m-d" });

@@ -291,6 +291,9 @@ body { margin: 0; min-height: 100dvh; }
 .atividade-titulo.concluida { text-decoration: line-through; color: var(--cds-text-secondary, #525252); }
 .atividade-meta { font-size: var(--fonte-ajuda); color: var(--cds-text-secondary, #525252); margin: 0; }
 .atividade-acoes { display: flex; gap: 0.5rem; flex-shrink: 0; }
+/* Date Picker - range: classes usadas pelo markup do componente que não existem no styles.min.css vendorizado. */
+.cds--date-picker__input-wrapper { position: relative; }
+.cds--date-picker__separator { align-self: center; padding: 0 0.25rem; color: var(--cds-text-secondary, #525252); }
 </style>
 </head>
 <body class="cds--white">
@@ -402,12 +405,27 @@ body { margin: 0; min-height: 100dvh; }
 <span class="campo-ajuda">Só identifica o monitoramento na aba "Publicações por OAB" - não entra na busca.</span>
 </div>
 <div class="cds--form-item">
+<div class="cds--date-picker cds--date-picker--range" data-date-picker data-date-picker-type="range">
+<div class="cds--date-picker-container">
 <label class="cds--label" for="pub-data-inicio">Publicado a partir de</label>
-<input class="cds--text-input" id="pub-data-inicio" name="data_disponibilizacao_inicio" type="date">
+<div class="cds--date-picker__input-wrapper">
+<svg class="cds--date-picker__icon" width="16" height="16" viewBox="0 0 32 32" aria-hidden="true">
+<path d="M26 4h-4V2h-2v2H12V2h-2v2H6a2 2 0 0 0-2 2v20a2 2 0 0 0 2 2h20a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2ZM6 6h20v4H6Zm0 20V12h20v14Z"></path>
+</svg>
+<input class="cds--date-picker__input cds--date-picker__input--md" id="pub-data-inicio" name="data_disponibilizacao_inicio" placeholder="aaaa-mm-dd" data-date-picker-input data-date-picker-input-from>
 </div>
-<div class="cds--form-item">
+</div>
+<span class="cds--date-picker__separator">–</span>
+<div class="cds--date-picker-container">
 <label class="cds--label" for="pub-data-fim">Publicado até</label>
-<input class="cds--text-input" id="pub-data-fim" name="data_disponibilizacao_fim" type="date">
+<div class="cds--date-picker__input-wrapper">
+<svg class="cds--date-picker__icon" width="16" height="16" viewBox="0 0 32 32" aria-hidden="true">
+<path d="M26 4h-4V2h-2v2H12V2h-2v2H6a2 2 0 0 0-2 2v20a2 2 0 0 0 2 2h20a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2ZM6 6h20v4H6Zm0 20V12h20v14Z"></path>
+</svg>
+<input class="cds--date-picker__input cds--date-picker__input--md" id="pub-data-fim" name="data_disponibilizacao_fim" placeholder="aaaa-mm-dd" data-date-picker-input data-date-picker-input-to>
+</div>
+</div>
+</div>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="pub-itens">Itens por página</label>
@@ -465,12 +483,27 @@ grau do TJSP). As demais ideias ao final ainda são só conceitos de próximos p
 </div>
 
 <div class="cds--form-item">
+<div class="cds--date-picker cds--date-picker--range" data-date-picker data-date-picker-type="range">
+<div class="cds--date-picker-container">
 <label class="cds--label" for="jur-data-inicio">Data de disponibilização - início</label>
-<input class="cds--text-input" id="jur-data-inicio" placeholder="dd/mm/aaaa">
+<div class="cds--date-picker__input-wrapper">
+<svg class="cds--date-picker__icon" width="16" height="16" viewBox="0 0 32 32" aria-hidden="true">
+<path d="M26 4h-4V2h-2v2H12V2h-2v2H6a2 2 0 0 0-2 2v20a2 2 0 0 0 2 2h20a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2ZM6 6h20v4H6Zm0 20V12h20v14Z"></path>
+</svg>
+<input class="cds--date-picker__input cds--date-picker__input--md" id="jur-data-inicio" placeholder="dd/mm/aaaa" data-date-picker-input data-date-picker-input-from>
 </div>
-<div class="cds--form-item">
+</div>
+<span class="cds--date-picker__separator">–</span>
+<div class="cds--date-picker-container">
 <label class="cds--label" for="jur-data-fim">Data de disponibilização - fim</label>
-<input class="cds--text-input" id="jur-data-fim" placeholder="dd/mm/aaaa">
+<div class="cds--date-picker__input-wrapper">
+<svg class="cds--date-picker__icon" width="16" height="16" viewBox="0 0 32 32" aria-hidden="true">
+<path d="M26 4h-4V2h-2v2H12V2h-2v2H6a2 2 0 0 0-2 2v20a2 2 0 0 0 2 2h20a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2ZM6 6h20v4H6Zm0 20V12h20v14Z"></path>
+</svg>
+<input class="cds--date-picker__input cds--date-picker__input--md" id="jur-data-fim" placeholder="dd/mm/aaaa" data-date-picker-input data-date-picker-input-to>
+</div>
+</div>
+</div>
 </div>
 
 <div class="cds--form-item">
@@ -745,12 +778,27 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <input class="cds--text-input" type="text" id="pub-oab-manual-nome">
 </div>
 <div class="cds--form-item">
+<div class="cds--date-picker cds--date-picker--range" data-date-picker data-date-picker-type="range">
+<div class="cds--date-picker-container">
 <label class="cds--label" for="pub-oab-manual-data-inicio">Data início</label>
-<input class="cds--text-input" type="date" id="pub-oab-manual-data-inicio" required>
+<div class="cds--date-picker__input-wrapper">
+<svg class="cds--date-picker__icon" width="16" height="16" viewBox="0 0 32 32" aria-hidden="true">
+<path d="M26 4h-4V2h-2v2H12V2h-2v2H6a2 2 0 0 0-2 2v20a2 2 0 0 0 2 2h20a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2ZM6 6h20v4H6Zm0 20V12h20v14Z"></path>
+</svg>
+<input class="cds--date-picker__input cds--date-picker__input--md" id="pub-oab-manual-data-inicio" placeholder="aaaa-mm-dd" required data-date-picker-input data-date-picker-input-from>
 </div>
-<div class="cds--form-item">
+</div>
+<span class="cds--date-picker__separator">–</span>
+<div class="cds--date-picker-container">
 <label class="cds--label" for="pub-oab-manual-data-fim">Data fim</label>
-<input class="cds--text-input" type="date" id="pub-oab-manual-data-fim" required>
+<div class="cds--date-picker__input-wrapper">
+<svg class="cds--date-picker__icon" width="16" height="16" viewBox="0 0 32 32" aria-hidden="true">
+<path d="M26 4h-4V2h-2v2H12V2h-2v2H6a2 2 0 0 0-2 2v20a2 2 0 0 0 2 2h20a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2ZM6 6h20v4H6Zm0 20V12h20v14Z"></path>
+</svg>
+<input class="cds--date-picker__input cds--date-picker__input--md" id="pub-oab-manual-data-fim" placeholder="aaaa-mm-dd" required data-date-picker-input data-date-picker-input-to>
+</div>
+</div>
+</div>
 </div>
 <button class="cds--btn cds--btn--primary cds--btn--sm" type="submit" id="pub-oab-manual-botao">Capturar agora</button>
 </form>
@@ -874,6 +922,9 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 </div>
 
+<script src="/static/carbon/flatpickr.min.js"></script>
+<script src="/static/carbon/flatpickr-l10n-pt.js"></script>
+<script src="/static/carbon/flatpickr-rangePlugin.js"></script>
 <script src="/static/app.js" defer></script>
 <div class="cds--modal" id="modal-atividade" role="dialog" aria-modal="true" aria-labelledby="modal-atividade-titulo">
 <div class="cds--modal-container cds--modal-container--sm">

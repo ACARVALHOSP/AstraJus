@@ -2543,6 +2543,18 @@ class _AutenticacaoBearer:
             else:
                 await _responder(send, 404, b"Nao encontrado")
             return
+        if caminho in (
+            "/static/carbon/flatpickr.min.js",
+            "/static/carbon/flatpickr-l10n-pt.js",
+            "/static/carbon/flatpickr-rangePlugin.js",
+        ) and scope.get("method") == "GET":
+            # flatpickr (calendário do Date Picker do Carbon), vendorizado - sem dados sensíveis
+            js = Path(__file__).resolve().parent / caminho.lstrip("/")
+            if js.is_file():
+                await _responder(send, 200, js.read_bytes(), tipo="application/javascript; charset=utf-8")
+            else:
+                await _responder(send, 404, b"Nao encontrado")
+            return
         if caminho == "/app" and scope.get("method") == "GET":
             # painel público: a pessoa cola o próprio token no navegador, o servidor não autentica a página
             pagina = Path(__file__).resolve().parent / "static" / "app.html"
