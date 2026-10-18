@@ -305,11 +305,27 @@ seu-dominio.com {
 }
 ```
 
+### Deploy automático (GitHub Actions)
+
+Todo push na branch `main` dispara `.github/workflows/deploy.yml`: valida a sintaxe
+(Python + JS), conecta na VPS via SSH com uma deploy key dedicada, dá `git pull`,
+reconstrói a imagem Docker, reinicia o container e confere `/healthz`. A pasta
+`/root/apps/cnj-processual` na VPS é um clone git (remote `origin`, acessado por uma
+deploy key própria, somente leitura). Segredos usados pelo workflow (`VPS_SSH_KEY`,
+`VPS_HOST`, `VPS_USER`) ficam em Settings → Secrets and variables → Actions do repositório.
+
+Acompanhar/disparar manualmente: aba **Actions** do GitHub, ou `gh workflow run deploy.yml`.
+
+### Rebuild e restart manual (fallback)
+
+Só necessário se o deploy automático estiver indisponível - normalmente já roda sozinho.
+
 ```bash
-# Rebuild e restart após atualização
-docker build -t cnj-processual .
-docker rm -f cnj-processual
-docker run -d --name cnj-processual --restart unless-stopped \
+ssh admin@<host-vps>
+sudo git -C /root/apps/cnj-processual pull --ff-only origin main
+sudo docker build -t cnj-processual /root/apps/cnj-processual
+sudo docker rm -f cnj-processual
+sudo docker run -d --name cnj-processual --restart unless-stopped \
   -p 127.0.0.1:8000:8000 \
   -v /root/apps/cnj-processual/dados:/app/dados \
   --env-file /root/apps/cnj-processual/.env \
