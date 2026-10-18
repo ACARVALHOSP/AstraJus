@@ -2772,6 +2772,11 @@ function _irParaConsultaProcesso(numeroProcesso) {
   if (abaProcesso) selecionarAba(abaProcesso);
   const campo = document.getElementById("numero-processo");
   if (campo) campo.value = numeroProcesso || "";
+  const campTribunal = document.getElementById("tribunal");
+  if (campTribunal && !campTribunal.value) {
+    const sigla = _siglaTribunal(numeroProcesso || "");
+    if (sigla) campTribunal.value = sigla;
+  }
 }
 
 const _publicacoesOabSelecionadas = new Set();
@@ -3221,15 +3226,39 @@ function _abrirModalAtividade(casoId, atividade = null) {
   abrirModal("modal-atividade");
 }
 
+// Chave = J (segmento, 1 dígito) + TT (código do tribunal, 2 dígitos), posições 13-15 do CNJ sem máscara.
 const _tribunalMap = {
-  "8260": "tjsp", "8190": "tjrj", "8210": "tjmg", "8250": "tjrs", "8240": "tjpr",
-  "8120": "tjba", "8060": "tjce", "8170": "tjpe", "8080": "tjdf", "8090": "tjgo",
-  "4013": "trf1", "4025": "trf2", "4036": "trf3", "4047": "trf4", "4058": "trf5",
+  // Tribunais superiores
+  "100": "stf",  "300": "stj",  "700": "stm",
+  // Justiça Federal — TRF
+  "401": "trf1", "402": "trf2", "403": "trf3", "404": "trf4", "405": "trf5", "406": "trf6",
+  // Justiça do Trabalho — TRT
+  "501": "trt1",  "502": "trt2",  "503": "trt3",  "504": "trt4",  "505": "trt5",
+  "506": "trt6",  "507": "trt7",  "508": "trt8",  "509": "trt9",  "510": "trt10",
+  "511": "trt11", "512": "trt12", "513": "trt13", "514": "trt14", "515": "trt15",
+  "516": "trt16", "517": "trt17", "518": "trt18", "519": "trt19", "520": "trt20",
+  "521": "trt21", "522": "trt22", "523": "trt23", "524": "trt24",
+  // Justiça Eleitoral — TRE
+  "601": "treac", "602": "treal", "603": "treap", "604": "tream", "605": "treba",
+  "606": "trece", "607": "tredf", "608": "trees", "609": "trego", "610": "trema",
+  "611": "tremt", "612": "trems", "613": "tremg", "614": "trepa", "615": "trepb",
+  "616": "trepr", "617": "trepe", "618": "trepi", "619": "trerj", "620": "trern",
+  "621": "trers", "622": "trero", "623": "trerr", "624": "tresc", "625": "trese",
+  "626": "tresp", "627": "treto",
+  // Justiça Estadual — TJ (TT = ordem alfabética dos estados)
+  "801": "tjac",  "802": "tjal",  "803": "tjap",  "804": "tjam",  "805": "tjba",
+  "806": "tjce",  "807": "tjdft", "808": "tjes",  "809": "tjgo",  "810": "tjma",
+  "811": "tjmt",  "812": "tjms",  "813": "tjmg",  "814": "tjpa",  "815": "tjpb",
+  "816": "tjpr",  "817": "tjpe",  "818": "tjpi",  "819": "tjrj",  "820": "tjrn",
+  "821": "tjrs",  "822": "tjro",  "823": "tjrr",  "824": "tjsc",  "825": "tjse",
+  "826": "tjsp",  "827": "tjto",
+  // Justiça Militar Estadual
+  "913": "tjmmg", "921": "tjmrs", "926": "tjmsp",
 };
 function _siglaTribunal(num) {
   const digitos = num.replace(/\D/g, "");
   if (digitos.length === 20) {
-    const cod = digitos.substring(13, 17);
+    const cod = digitos.substring(13, 16); // J (1 dígito) + TT (2 dígitos)
     return _tribunalMap[cod] || null;
   }
   return null;
