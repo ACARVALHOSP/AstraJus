@@ -1093,3 +1093,14 @@ class CacheDataJud:
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             cursor = conexao.execute("DELETE FROM cache_datajud WHERE criado_em < ?", (corte,))
             return cursor.rowcount
+
+    def stats(self) -> dict:
+        """Retorna {"total": N, "validos": M} sem remover entradas expiradas."""
+        import time as _time
+        corte = _time.time() - self.ttl_s
+        with self._trava, _abrir(self.caminho) as conexao:
+            (total,) = conexao.execute("SELECT COUNT(*) FROM cache_datajud").fetchone()
+            (validos,) = conexao.execute(
+                "SELECT COUNT(*) FROM cache_datajud WHERE criado_em >= ?", (corte,)
+            ).fetchone()
+        return {"total": total, "validos": validos}
