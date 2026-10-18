@@ -865,6 +865,26 @@ class RegistroPublicacoesOAB:
             )
             return cursor.rowcount
 
+    def listar_por_caso(self, caso_id: str) -> list[dict]:
+        """Publicações vinculadas a um caso específico, mais recentes primeiro."""
+        with _abrir(self.caminho) as conexao:
+            cursor = conexao.execute(
+                "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, "
+                "caso_id, criado_em FROM publicacoes_capturadas WHERE caso_id = ? "
+                "ORDER BY criado_em DESC",
+                (caso_id,),
+            )
+            return [_linha_publicacao(linha) for linha in cursor.fetchall()]
+
+    def vincular_caso(self, hash_publicacao: str, caso_id: str | None) -> bool:
+        """Vincula ou desvincula (caso_id=None) uma publicação de um caso. Retorna True se achou."""
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            cursor = conexao.execute(
+                "UPDATE publicacoes_capturadas SET caso_id = ? WHERE hash = ?",
+                (caso_id, hash_publicacao),
+            )
+            return cursor.rowcount > 0
+
 
 def _linha_publicacao(linha) -> dict:
     hash_, monitoramento_id, nome_pesquisado, numero_processo, dados, status, caso_id, criado_em = linha

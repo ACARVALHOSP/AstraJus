@@ -639,6 +639,8 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <button class="sub-aba-botao sub-aba-ativa" id="caso-subaba-cadastro-botao" role="tab" aria-selected="true" aria-controls="caso-subaba-cadastro" type="button">Cadastro</button>
 <button class="sub-aba-botao" id="caso-subaba-partes-botao" role="tab" aria-selected="false" aria-controls="caso-subaba-partes" type="button">Partes</button>
 <button class="sub-aba-botao" id="caso-subaba-atividades-botao" role="tab" aria-selected="false" aria-controls="caso-subaba-atividades" type="button">Atividades</button>
+<button class="sub-aba-botao" id="caso-subaba-publicacoes-botao" role="tab" aria-selected="false" aria-controls="caso-subaba-publicacoes" type="button">Publicações</button>
+<button class="sub-aba-botao" id="caso-subaba-movimentacoes-botao" role="tab" aria-selected="false" aria-controls="caso-subaba-movimentacoes" type="button">Movimentações</button>
 </div>
 
 <section id="caso-subaba-cadastro" role="tabpanel">
@@ -700,6 +702,22 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <button class="cds--btn cds--btn--primary cds--btn--sm" type="button" id="btn-nova-atividade">Nova atividade</button>
 </div>
 <div id="lista-atividades" class="app-resultado"></div>
+</section>
+
+<section id="caso-subaba-publicacoes" role="tabpanel" hidden>
+<div class="secao-cabecalho">
+<h3 class="lista-rapida-titulo">Publicações vinculadas</h3>
+</div>
+<div id="lista-publicacoes-caso" class="app-resultado"></div>
+</section>
+
+<section id="caso-subaba-movimentacoes" role="tabpanel" hidden>
+<div class="secao-cabecalho">
+<h3 class="lista-rapida-titulo">Movimentações</h3>
+<button class="cds--btn cds--btn--secondary cds--btn--sm" type="button" id="btn-buscar-movimentacoes">Buscar no DataJud</button>
+</div>
+<p id="movimentacoes-status" class="app-resultado" style="color:var(--cds-text-secondary,#525252);font-size:0.875rem"></p>
+<div id="lista-movimentacoes" class="app-resultado"></div>
 </section>
 
 </div><!-- #caso-vista-detalhe -->

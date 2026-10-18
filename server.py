@@ -2639,6 +2639,13 @@ class _AutenticacaoBearer:
             aid = int(rest) if rest.isdigit() else None
             await self._atividades_do_caso(scope, receive, send, caso_id, aid)
             return
+        if caminho.startswith("/casos/") and "/publicacoes" in caminho \
+                and self.publicacoes is not None and self.gestao is not None:
+            partes = caminho[len("/casos/"):].split("/publicacoes")
+            caso_id = partes[0].rstrip("/")
+            pub_hash = partes[1].strip("/") if len(partes) > 1 else ""
+            await self._publicacoes_do_caso(scope, receive, send, caso_id, pub_hash or None)
+            return
         if caminho.startswith("/casos/") and self.gestao is not None:
             await self._caso_detalhe(scope, receive, send, caminho[len("/casos/"):])
             return
@@ -3136,6 +3143,31 @@ class _AutenticacaoBearer:
             agora=lambda: datetime.now(timezone.utc),
         )
         await _json(send, 201, {"evento_id": resultado.get("id"), "link": resultado.get("htmlLink")})
+
+    # --- Publicações vinculadas a um caso -------------------------------------
+
+    async def _publicacoes_do_caso(self, scope, receive, send, caso_id: str, pub_hash: str | None):
+        metodo = scope.get("method")
+        if metodo == "GET" and pub_hash is None:
+            pubs = self.publicacoes.listar_por_caso(caso_id)
+            await _json(send, 200, {"publicacoes": pubs})
+        elif metodo == "POST" and pub_hash is None:
+            try:
+                corpo = json.loads(await _ler_corpo(receive))
+            except Exception:
+                await _json(send, 400, _erro("JSON inválido."))
+                return
+            h = (corpo.get("hash") or "").strip()
+            if not h:
+                await _json(send, 400, _erro("hash obrigatório."))
+                return
+            ok = self.publicacoes.vincular_caso(h, caso_id)
+            await _json(send, 200 if ok else 404, {"vinculada": ok})
+        elif metodo == "DELETE" and pub_hash:
+            ok = self.publicacoes.vincular_caso(pub_hash, None)
+            await _json(send, 200 if ok else 404, {"desvinculada": ok})
+        else:
+            await _responder(send, 405, b"Method Not Allowed")
 
     # --- Publicações por OAB (log geral, captura a cada 24h) -------------------
 

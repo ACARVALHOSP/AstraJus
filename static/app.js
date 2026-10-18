@@ -2966,7 +2966,7 @@ function voltarParaCasos() {
 }
 
 function _selecionarSubabaCaso(nome) {
-  for (const n of ["cadastro", "partes", "atividades"]) {
+  for (const n of ["cadastro", "partes", "atividades", "publicacoes", "movimentacoes"]) {
     document.getElementById(`caso-subaba-${n}`).hidden = n !== nome;
     const btn = document.getElementById(`caso-subaba-${n}-botao`);
     btn.classList.toggle("sub-aba-ativa", n === nome);
@@ -3083,10 +3083,138 @@ function _abrirModalAtividade(casoId, atividade = null) {
   abrirModal("modal-atividade");
 }
 
+async function _carregarPublicacoesCaso(casoId) {
+  const lista = document.getElementById("lista-publicacoes-caso");
+  limpar(lista);
+  try {
+    const resp = await _buscarJson(`/casos/${casoId}/publicacoes`);
+    const pubs = resp.publicacoes || [];
+    if (!pubs.length) {
+      lista.textContent = "Nenhuma publicação vinculada a este caso.";
+      return;
+    }
+    const ul = document.createElement("ul");
+    ul.style.cssText = "list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:0.75rem";
+    for (const pub of pubs) {
+      const dados = pub.dados || {};
+      const li = document.createElement("li");
+      li.style.cssText = "border:1px solid var(--cds-border-subtle,#e0e0e0);border-radius:4px;padding:0.75rem 1rem";
+      const data = (pub.criado_em || "").substring(0, 10);
+      const numero = pub.numero_processo || "";
+      const texto = dados.texto || dados.teor || dados.conteudo || "";
+      li.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:1rem">
+        <div>
+          <strong style="font-size:0.875rem">${_escaparHtml(numero || pub.nome_pesquisado || "Publicação")}</strong>
+          <span style="font-size:0.75rem;color:var(--cds-text-secondary,#525252);margin-left:0.5rem">${data}</span>
+        </div>
+        <button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" data-hash="${_escaparHtml(pub.hash)}" data-caso="${_escaparHtml(casoId)}">Desvincular</button>
+      </div>
+      ${texto ? `<p style="margin:0.5rem 0 0;font-size:0.8125rem;color:var(--cds-text-secondary,#525252);white-space:pre-wrap">${_escaparHtml(texto.substring(0, 300))}${texto.length > 300 ? "…" : ""}</p>` : ""}`;
+      li.querySelector("button").addEventListener("click", async (e) => {
+        const h = e.currentTarget.dataset.hash;
+        const cid = e.currentTarget.dataset.caso;
+        if (!window.confirm("Desvincular esta publicação do caso?")) return;
+        try {
+          await _enviarJson(`/casos/${cid}/publicacoes/${h}`, {}, "DELETE");
+          await _carregarPublicacoesCaso(cid);
+        } catch (err) { window.alert(err.message); }
+      });
+      ul.appendChild(li);
+    }
+    lista.appendChild(ul);
+  } catch (erro) {
+    lista.textContent = `Erro: ${erro.message}`;
+  }
+}
+
+async function _buscarMovimentacoes(casoId) {
+  const statusEl = document.getElementById("movimentacoes-status");
+  const lista = document.getElementById("lista-movimentacoes");
+  limpar(lista);
+  statusEl.textContent = "";
+  const resp = await _buscarJson(`/casos/${casoId}`);
+  const numeros = resp.numeros_processo || [];
+  if (!numeros.length) {
+    statusEl.textContent = "Nenhum número de processo vinculado a este caso.";
+    return;
+  }
+  statusEl.textContent = `Consultando ${numeros.length} processo(s) no DataJud…`;
+  const botao = document.getElementById("btn-buscar-movimentacoes");
+  botao.disabled = true;
+  let todasMovs = [];
+  let erros = [];
+  const _tribunalMap = {
+    "8260": "tjsp", "8190": "tjrj", "8210": "tjmg", "8250": "tjrs", "8240": "tjpr",
+    "8120": "tjba", "8060": "tjce", "8260": "tjsp", "4013": "trf1", "4025": "trf2",
+    "4036": "trf3", "4047": "trf4", "4058": "trf5",
+  };
+  function _siglaTribunal(num) {
+    const digitos = num.replace(/\D/g, "");
+    if (digitos.length === 20) {
+      const cod = digitos.substring(13, 17);
+      return _tribunalMap[cod] || null;
+    }
+    return null;
+  }
+  for (const num of numeros) {
+    const tribunal = _siglaTribunal(num);
+    if (!tribunal) { erros.push(`${num}: não foi possível determinar o tribunal`); continue; }
+    try {
+      const dados = await cliente.chamarTool("consultar_processo_datajud", { numero_processo: num, tribunal });
+      if (dados.erro || !dados.encontrado) { erros.push(`${num}: ${dados.mensagem || "não encontrado"}`); continue; }
+      for (const proc of (dados.processos || [])) {
+        for (const m of (proc.movimentos || [])) {
+          todasMovs.push({ numero: num, grau: proc.grau_descricao || proc.grau, ...m });
+        }
+      }
+    } catch (e) {
+      erros.push(`${num}: ${e.message}`);
+    }
+  }
+  botao.disabled = false;
+  if (!todasMovs.length && !erros.length) {
+    statusEl.textContent = "Nenhuma movimentação encontrada.";
+    return;
+  }
+  if (erros.length) statusEl.textContent = erros.join(" | ");
+  else statusEl.textContent = "";
+  todasMovs.sort((a, b) => (b.dataHora || b.data || "").localeCompare(a.dataHora || a.data || ""));
+  const ul = document.createElement("ul");
+  ul.style.cssText = "list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:0.5rem";
+  for (const m of todasMovs) {
+    const li = document.createElement("li");
+    li.style.cssText = "border-left:3px solid var(--cds-link-primary,#0f62fe);padding:0.5rem 0.75rem;font-size:0.875rem";
+    const data = (m.dataHora || "").substring(0, 10);
+    const nome = m.nome || String(m.codigo || "");
+    const complemento = (m.complementosTabelados || [])[0]?.descricao || "";
+    const grau = m.grau ? ` · ${m.grau}` : "";
+    li.innerHTML = `<span style="color:var(--cds-text-secondary,#525252);font-size:0.75rem">${data} · ${_escaparHtml(m.numero)}${grau}</span><br>
+      <strong>${_escaparHtml(nome)}</strong>${complemento ? `<br><span style="color:var(--cds-text-secondary,#525252)">${_escaparHtml(complemento)}</span>` : ""}`;
+    ul.appendChild(li);
+  }
+  lista.appendChild(ul);
+}
+
+function _escaparHtml(str) {
+  return String(str || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
 document.getElementById("caso-voltar").addEventListener("click", voltarParaCasos);
 document.getElementById("caso-subaba-cadastro-botao").addEventListener("click", () => _selecionarSubabaCaso("cadastro"));
 document.getElementById("caso-subaba-partes-botao").addEventListener("click", () => _selecionarSubabaCaso("partes"));
 document.getElementById("caso-subaba-atividades-botao").addEventListener("click", () => _selecionarSubabaCaso("atividades"));
+document.getElementById("caso-subaba-publicacoes-botao").addEventListener("click", () => {
+  _selecionarSubabaCaso("publicacoes");
+  const casoId = document.getElementById("form-caso-editar").dataset.casoId;
+  if (casoId) _carregarPublicacoesCaso(casoId);
+});
+document.getElementById("caso-subaba-movimentacoes-botao").addEventListener("click", () => {
+  _selecionarSubabaCaso("movimentacoes");
+});
+document.getElementById("btn-buscar-movimentacoes").addEventListener("click", () => {
+  const casoId = document.getElementById("form-caso-editar").dataset.casoId;
+  if (casoId) _buscarMovimentacoes(casoId);
+});
 
 document.getElementById("btn-nova-atividade").addEventListener("click", () => {
   const casoId = document.getElementById("form-caso-editar").dataset.casoId;
