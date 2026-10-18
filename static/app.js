@@ -3260,6 +3260,76 @@ document.getElementById("form-caso-editar").addEventListener("submit", async (ev
   }
 });
 
+document.getElementById("btn-buscar-partes").addEventListener("click", () => {
+  const casoId = document.getElementById("form-caso-partes").dataset.casoId;
+  if (casoId) _buscarPartesDJEN(casoId);
+});
+
+async function _buscarPartesDJEN(casoId) {
+  const statusEl = document.getElementById("status-partes-djen");
+  const botao = document.getElementById("btn-buscar-partes");
+  statusEl.textContent = "Buscando…";
+  botao.disabled = true;
+
+  try {
+    // 1. Tenta extrair das publicações já vinculadas ao caso
+    let destinatarios = [];
+    let advogados = [];
+    const respPubs = await _buscarJson(`/casos/${casoId}/publicacoes`);
+    for (const pub of (respPubs.publicacoes || [])) {
+      const d = pub.dados || {};
+      destinatarios.push(...(d.destinatarios || []));
+      advogados.push(...(d.destinatarioadvogados || []));
+    }
+
+    // 2. Se não achou nada nas publicações vinculadas, consulta DJEN diretamente
+    if (!destinatarios.length && !advogados.length) {
+      const respCaso = await _buscarJson(`/casos/${casoId}`);
+      const numeros = respCaso.numeros_processo || [];
+      for (const num of numeros) {
+        try {
+          const r = await cliente.chamarTool("consultar_publicacoes_djen", { numero_processo: num });
+          if (r.erro) continue;
+          for (const item of (r.itens || [])) {
+            destinatarios.push(...(item.destinatarios || []));
+            advogados.push(...(item.destinatarioadvogados || []));
+          }
+        } catch (_) { /* ignora falha por processo */ }
+      }
+    }
+
+    if (!destinatarios.length && !advogados.length) {
+      statusEl.textContent = "Nenhuma parte encontrada no DJEN para este caso.";
+      return;
+    }
+
+    // Deduplica por nome
+    const _nomes = (arr) => [...new Set(arr.map((x) => (x.nome || "").trim()).filter(Boolean))];
+
+    const ativos  = _nomes(destinatarios.filter((d) => /AT(IVO)?$/i.test(d.polo || "")));
+    const passivos = _nomes(destinatarios.filter((d) => /PA(SSIVO)?$/i.test(d.polo || "")));
+    // Polo desconhecido: junta em ativos se não tiver nenhum dos lados ainda
+    if (!ativos.length && !passivos.length) {
+      ativos.push(..._nomes(destinatarios));
+    }
+    const advsNomes = _nomes(advogados);
+
+    const campoAutor = document.getElementById("editar-caso-autor");
+    const campoReu   = document.getElementById("editar-caso-reu");
+    const campoAdvs  = document.getElementById("editar-caso-advogados");
+
+    if (ativos.length  && !campoAutor.value) campoAutor.value = ativos.join(", ");
+    if (passivos.length && !campoReu.value)  campoReu.value   = passivos.join(", ");
+    if (advsNomes.length && !campoAdvs.value) campoAdvs.value = advsNomes.join(", ");
+
+    statusEl.textContent = "Preenchido. Revise e salve.";
+  } catch (err) {
+    statusEl.textContent = err.message || "Erro ao buscar partes.";
+  } finally {
+    botao.disabled = false;
+  }
+}
+
 document.getElementById("form-caso-partes").addEventListener("submit", async (evento) => {
   evento.preventDefault();
   const casoId = evento.target.dataset.casoId;
