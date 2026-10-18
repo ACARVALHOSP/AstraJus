@@ -497,6 +497,9 @@ function selecionarAba(alvo) {
     aba.botao.setAttribute("aria-selected", String(ativa));
     aba.painel.hidden = !ativa;
   }
+  // Expande o grupo do item ativo caso esteja colapsado
+  const submenu = alvo.botao.closest(".cds--side-nav__item")?.querySelector(".cds--side-nav__submenu");
+  if (submenu) submenu.setAttribute("aria-expanded", "true");
   alvo.botao.focus();
   if (alvo.painel.id === "aba-historico") { renderizarListaRapida(); renderizarCasosFavoritos(); }
   if (alvo.painel.id === "aba-monitoramentos") carregarMonitoramentos();
@@ -506,6 +509,13 @@ function selecionarAba(alvo) {
 }
 
 for (const aba of abas) aba.botao.addEventListener("click", () => selecionarAba(aba));
+
+// Accordion da Side Nav — toggle de grupo ao clicar no título
+document.querySelectorAll(".cds--side-nav__submenu").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    btn.setAttribute("aria-expanded", String(btn.getAttribute("aria-expanded") !== "true"));
+  });
+});
 
 // --- Consulta de processo (DataJud) -----------------------------------------------------------
 
