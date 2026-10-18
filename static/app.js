@@ -3234,21 +3234,9 @@ async function _buscarMovimentacoes(casoId) {
   }
   if (erros.length) mostrarAviso(statusEl, erros.join(" | "));
   else limpar(statusEl);
-  todasMovs.sort((a, b) => (b.dataHora || b.data || "").localeCompare(a.dataHora || a.data || ""));
-  const ul = document.createElement("ul");
-  ul.style.cssText = "list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:0.5rem";
-  for (const m of todasMovs) {
-    const li = document.createElement("li");
-    li.style.cssText = "border-left:3px solid var(--cds-link-primary,#0f62fe);padding:0.5rem 0.75rem;font-size:0.875rem";
-    const data = (m.dataHora || "").substring(0, 10);
-    const nome = m.nome || String(m.codigo || "");
-    const complemento = (m.complementosTabelados || [])[0]?.descricao || "";
-    const grau = m.grau ? ` · ${m.grau}` : "";
-    li.innerHTML = `<span style="color:var(--cds-text-secondary,#525252);font-size:0.75rem">${data} · ${_escaparHtml(m.numero)}${grau}</span><br>
-      <strong>${_escaparHtml(nome)}</strong>${complemento ? `<br><span style="color:var(--cds-text-secondary,#525252)">${_escaparHtml(complemento)}</span>` : ""}`;
-    ul.appendChild(li);
-  }
-  lista.appendChild(ul);
+  // Mesmo componente de linha do tempo da aba "Processo (DataJud)" (agrupa tramitação,
+  // categoriza decisões/petições e tem filtros) - ver linhaDoTempoMovimentos().
+  lista.appendChild(linhaDoTempoMovimentos(todasMovs));
 }
 
 function _escaparHtml(str) {
