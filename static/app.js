@@ -1435,6 +1435,7 @@ function cartaoMonitoramento(m) {
   const acoes = el("div", { class: "resultado-acoes" });
   const botaoRemover = el("button", { class: "cds--btn cds--btn--danger--tertiary cds--btn--sm", type: "button", texto: "Remover" });
   botaoRemover.addEventListener("click", async () => {
+    if (!(await confirmarAcao("Remover monitoramento? O escritório deixará de receber alertas por e-mail para este processo. Esta ação não pode ser desfeita.", { titulo: "Remover monitoramento", textoConfirmar: "Remover" }))) return;
     botaoRemover.disabled = true;
     try {
       await cliente.chamarTool("remover_monitoramento", { id: m.id });
@@ -1938,7 +1939,7 @@ function linhaContato(c) {
 }
 
 async function excluirContato(clienteId, nome, botao) {
-  if (!(await confirmarAcao(`Excluir o contato "${nome}"? Essa ação não pode ser desfeita.`))) return;
+  if (!(await confirmarAcao(`Excluir o cliente "${nome}"? Essa ação não pode ser desfeita.`))) return;
   botao.disabled = true;
   try {
     await _enviarJson(`/clientes/${clienteId}`, {}, "DELETE");
@@ -1988,15 +1989,15 @@ function renderizarListaContatos() {
   const listaContatosEl = document.getElementById("lista-contatos");
   limpar(listaContatosEl);
   if (!_cacheClientes.length) {
-    listaContatosEl.appendChild(notificacao("info", "Nenhum contato cadastrado ainda"));
+    listaContatosEl.appendChild(notificacao("info", "Nenhum cliente cadastrado ainda"));
     return;
   }
   const filtrados = _contatosFiltrados();
   if (!filtrados.length) {
-    listaContatosEl.appendChild(notificacao("info", "Nenhum contato encontrado com esse filtro"));
+    listaContatosEl.appendChild(notificacao("info", "Nenhum cliente encontrado com esse filtro"));
     return;
   }
-  listaContatosEl.appendChild(el("p", { class: "campo-ajuda", texto: `Mostrando ${filtrados.length} de ${_cacheClientes.length} contato(s)` }));
+  listaContatosEl.appendChild(el("p", { class: "campo-ajuda", texto: `Mostrando ${filtrados.length} de ${_cacheClientes.length} cliente(s)` }));
   listaContatosEl.appendChild(tabelaContatos(filtrados));
 }
 
@@ -2033,7 +2034,7 @@ async function abrirContato(clienteId) {
     formContatoCadastro.dataset.clienteId = clienteId;
     await _renderizarProcessosVinculados(clienteId);
   } catch (erro) {
-    document.getElementById("contato-detalhe-nome").textContent = "Erro ao carregar contato";
+    document.getElementById("contato-detalhe-nome").textContent = "Erro ao carregar cliente";
     mostrarErro(resultadoContatoCadastro, erro.message);
   }
 }
@@ -2058,7 +2059,7 @@ function _renderizarCasosVinculadosNoContainer(container, clienteId) {
     (caso) => caso.cliente_id === clienteId || (caso.clientes_adicionais || []).includes(clienteId)
   );
   if (!vinculados.length) {
-    container.appendChild(notificacao("info", "Nenhum processo vinculado a este contato ainda"));
+    container.appendChild(notificacao("info", "Nenhum processo vinculado a este cliente ainda"));
     return;
   }
   container.appendChild(tabelaCasos(vinculados, () => _renderizarCasosVinculadosNoContainer(container, clienteId)));
@@ -2490,7 +2491,7 @@ formContatoCadastro.addEventListener("submit", async (evento) => {
   try {
     const atualizado = await _enviarJson(`/clientes/${clienteId}`, corpo, "PATCH");
     limpar(resultadoContatoCadastro);
-    resultadoContatoCadastro.appendChild(notificacao("success", "Contato atualizado"));
+    resultadoContatoCadastro.appendChild(notificacao("success", "Cliente atualizado"));
     document.getElementById("contato-detalhe-nome").textContent = atualizado.nome;
     const indice = _cacheClientes.findIndex((c) => c.id === clienteId);
     if (indice !== -1) _cacheClientes[indice] = atualizado;
@@ -2504,8 +2505,8 @@ formContatoCadastro.addEventListener("submit", async (evento) => {
 document.getElementById("contato-excluir").addEventListener("click", async () => {
   const clienteId = formContatoCadastro.dataset.clienteId;
   if (!clienteId) return;
-  const nome = document.getElementById("contato-nome").value.trim() || "este contato";
-  if (!(await confirmarAcao(`Excluir o contato "${nome}"? Essa ação não pode ser desfeita.`))) return;
+  const nome = document.getElementById("contato-nome").value.trim() || "este cliente";
+  if (!(await confirmarAcao(`Excluir o cliente "${nome}"? Essa ação não pode ser desfeita.`))) return;
   const botao = document.getElementById("contato-excluir");
   botao.disabled = true;
   try {
