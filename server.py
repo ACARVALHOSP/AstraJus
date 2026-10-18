@@ -323,12 +323,15 @@ def _extrair_processo_datajud(fonte: dict) -> dict:
             item["complementosTabelados"] = mov["complementosTabelados"]
         movimentos.append(item)
 
+    assuntos = [(a.get("nome") or "") for a in (fonte.get("assuntos") or []) if a.get("nome")]
+
     return {
         "numeroProcesso": fonte.get("numeroProcesso"),
         "tribunal": fonte.get("tribunal"),
         "grau": fonte.get("grau"),
         "grau_descricao": _DESCRICAO_GRAU.get(fonte.get("grau") or "", fonte.get("grau")),
         "classe": (fonte.get("classe") or {}).get("nome"),
+        "assuntos": assuntos,
         "dataAjuizamento": fonte.get("dataAjuizamento"),
         "orgaoJulgador": (fonte.get("orgaoJulgador") or {}).get("nome"),
         "totalMovimentos": len(movimentos),

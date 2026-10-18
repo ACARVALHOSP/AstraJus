@@ -2498,7 +2498,10 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
           if (dados.erro) throw new ErroMCP(200, dados.mensagem || "Falha ao consultar o DataJud.");
           const proc = (dados.processos || [])[0];
           if (!proc) throw new ErroMCP(200, dados.mensagem || "Processo não encontrado no DataJud.");
-          if (proc.classe) campoAcao.value = proc.classe;
+          if (proc.classe) {
+            const partes = [proc.classe, ...(proc.assuntos || [])].filter(Boolean);
+            campoAcao.value = partes.join(" - ");
+          }
           if (proc.orgaoJulgador) campoForo.value = proc.orgaoJulgador;
           statusDataJud.textContent = "Ação/foro preenchidos.";
           botaoDataJud.textContent = "Atualizar classe/órgão do DataJud";
@@ -2927,7 +2930,10 @@ async function buscarAcaoForoDataJud(numerosCampo, campAcao, campForo, statusEl,
     if (dados.erro) { statusEl.textContent = dados.mensagem || "Erro no DataJud."; return; }
     const proc = (dados.processos || [])[0];
     if (!proc) { statusEl.textContent = dados.mensagem || "Processo não encontrado."; return; }
-    if (proc.classe && !campAcao.value) campAcao.value = proc.classe;
+    if (proc.classe && !campAcao.value) {
+      const partes = [proc.classe, ...(proc.assuntos || [])].filter(Boolean);
+      campAcao.value = partes.join(" - ");
+    }
     if (proc.orgaoJulgador && !campForo.value) campForo.value = proc.orgaoJulgador;
     statusEl.textContent = proc.classe ? "Preenchido." : "Sem dados de classe/órgão.";
   } catch (err) {
