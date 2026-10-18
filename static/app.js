@@ -3100,7 +3100,7 @@ function voltarParaCasos() {
 }
 
 function _selecionarSubabaCaso(nome) {
-  for (const n of ["cadastro", "partes", "atividades", "publicacoes", "movimentacoes"]) {
+  for (const n of ["cadastro", "partes", "atividades", "publicacoes", "movimentacoes", "vinculos"]) {
     document.getElementById(`caso-subaba-${n}`).hidden = n !== nome;
     const btn = document.getElementById(`caso-subaba-${n}-botao`);
     btn.classList.toggle("sub-aba-ativa", n === nome);
@@ -3322,6 +3322,125 @@ function _escaparHtml(str) {
   return String(str || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 
+// ─── Vínculos entre casos ────────────────────────────────────────────────────
+
+const _ROTULO_TIPO_VINCULO = {
+  recurso: "Recurso",
+  apenso: "Apenso",
+  execucao: "Execução de sentença",
+  cautelar: "Cautelar / Tutela",
+  relacionado: "Relacionado",
+};
+
+async function _carregarVinculos(casoId) {
+  const lista = document.getElementById("lista-vinculos");
+  limpar(lista);
+  try {
+    const { vinculos } = await _buscarJson(`/casos/${casoId}/vinculos`);
+    _renderizarVinculos(casoId, vinculos || []);
+  } catch (erro) {
+    mostrarErro(lista, erro.message);
+  }
+  await _popularSelectCasos(casoId);
+}
+
+async function _popularSelectCasos(casoAtualId) {
+  const sel = document.getElementById("vinculos-caso-select");
+  // Preserva a opção em branco e repõe o resto
+  while (sel.options.length > 1) sel.remove(1);
+  try {
+    const { casos } = await _buscarJson("/casos");
+    for (const c of (casos || [])) {
+      if (c.id === casoAtualId) continue;
+      const opt = document.createElement("option");
+      opt.value = c.id;
+      opt.textContent = (c.titulo || "(sem título)") + (c.acao ? ` — ${c.acao}` : "");
+      sel.appendChild(opt);
+    }
+  } catch (_) { /* silencioso — select fica com só a opção em branco */ }
+}
+
+function _renderizarVinculos(casoId, vinculos) {
+  const lista = document.getElementById("lista-vinculos");
+  limpar(lista);
+  if (!vinculos.length) {
+    lista.appendChild(notificacao("info", "Nenhum caso vinculado"));
+    return;
+  }
+  const thead = el("thead", {}, [
+    el("tr", {}, [
+      el("th", {}, [document.createTextNode("Caso")]),
+      el("th", {}, [document.createTextNode("Cliente")]),
+      el("th", {}, [document.createTextNode("Ação / Tipo")]),
+      el("th", {}, [document.createTextNode("Vínculo")]),
+      el("th", {}, [document.createTextNode("")]),
+    ]),
+  ]);
+  const tbody = el("tbody", {});
+  for (const v of vinculos) {
+    const titulo = v.titulo || "(sem título)";
+    const btnRemover = el("button", {
+      class: "cds--btn cds--btn--ghost cds--btn--sm",
+      type: "button",
+      "aria-label": `Remover vínculo com ${titulo}`,
+    }, [document.createTextNode("Remover")]);
+    btnRemover.addEventListener("click", async () => {
+      btnRemover.disabled = true;
+      try {
+        await _enviarJson(`/casos/${casoId}/vinculos/${v.caso_id}`, {}, "DELETE");
+        mostrarToast("success", "Vínculo removido", `"${titulo}" desvinculado.`);
+        await _carregarVinculos(casoId);
+      } catch (erro) {
+        mostrarToast("error", "Erro", erro.message);
+        btnRemover.disabled = false;
+      }
+    });
+    const linkCaso = el("a", { href: "#", class: "cds--link" }, [document.createTextNode(titulo)]);
+    linkCaso.addEventListener("click", (e) => { e.preventDefault(); abrirCaso(v.caso_id); });
+    tbody.appendChild(el("tr", {}, [
+      el("td", {}, [linkCaso]),
+      el("td", {}, [document.createTextNode(v.cliente_nome || "—")]),
+      el("td", {}, [document.createTextNode(v.acao || "—")]),
+      el("td", {}, [document.createTextNode(_ROTULO_TIPO_VINCULO[v.tipo] || v.tipo)]),
+      el("td", {}, [btnRemover]),
+    ]));
+  }
+  lista.appendChild(
+    el("div", { class: "tabela-responsiva-wrap" }, [
+      el("table", { class: "tabela-responsiva tabela-vinculos" }, [thead, tbody]),
+    ]),
+  );
+}
+
+document.getElementById("form-vinculos-adicionar").addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  const casoId = document.getElementById("form-caso-editar").dataset.casoId;
+  if (!casoId) return;
+  const resultado = document.getElementById("vinculos-resultado");
+  limpar(resultado);
+  const outroId = document.getElementById("vinculos-caso-select").value;
+  const tipo = document.getElementById("vinculos-tipo-select").value;
+  if (!outroId) {
+    resultado.appendChild(notificacao("error", "Selecione um caso."));
+    return;
+  }
+  const botao = evento.target.querySelector("button[type=submit]");
+  botao.disabled = true;
+  try {
+    await _enviarJson(`/casos/${casoId}/vinculos`, { caso_vinculado_id: outroId, tipo });
+    limpar(resultado);
+    document.getElementById("vinculos-caso-select").value = "";
+    document.getElementById("vinculos-tipo-select").value = "relacionado";
+    document.getElementById("vinculos-adicionar-painel").open = false;
+    mostrarToast("success", "Vínculo criado", "Caso vinculado com sucesso.");
+    await _carregarVinculos(casoId);
+  } catch (erro) {
+    resultado.appendChild(notificacao("error", erro.message));
+  } finally {
+    botao.disabled = false;
+  }
+});
+
 document.getElementById("caso-voltar").addEventListener("click", voltarParaCasos);
 document.getElementById("caso-subaba-cadastro-botao").addEventListener("click", () => _selecionarSubabaCaso("cadastro"));
 document.getElementById("caso-subaba-partes-botao").addEventListener("click", () => _selecionarSubabaCaso("partes"));
@@ -3333,6 +3452,11 @@ document.getElementById("caso-subaba-publicacoes-botao").addEventListener("click
 });
 document.getElementById("caso-subaba-movimentacoes-botao").addEventListener("click", () => {
   _selecionarSubabaCaso("movimentacoes");
+});
+document.getElementById("caso-subaba-vinculos-botao").addEventListener("click", () => {
+  _selecionarSubabaCaso("vinculos");
+  const casoId = document.getElementById("form-caso-editar").dataset.casoId;
+  if (casoId) _carregarVinculos(casoId);
 });
 document.getElementById("btn-buscar-movimentacoes").addEventListener("click", () => {
   const casoId = document.getElementById("form-caso-editar").dataset.casoId;

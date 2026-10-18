@@ -2661,6 +2661,12 @@ class _AutenticacaoBearer:
             pub_hash = partes[1].strip("/") if len(partes) > 1 else ""
             await self._publicacoes_do_caso(scope, receive, send, caso_id, pub_hash or None)
             return
+        if caminho.startswith("/casos/") and "/vinculos" in caminho and self.gestao is not None:
+            partes = caminho[len("/casos/"):].split("/vinculos")
+            caso_id = partes[0].rstrip("/")
+            vinculado_id = partes[1].strip("/") if len(partes) > 1 else ""
+            await self._vinculos_do_caso(scope, receive, send, caso_id, vinculado_id or None)
+            return
         if caminho.startswith("/casos/") and self.gestao is not None:
             await self._caso_detalhe(scope, receive, send, caminho[len("/casos/"):])
             return
@@ -3195,6 +3201,55 @@ class _AutenticacaoBearer:
             await _json(send, 200 if ok else 404, {"desvinculada": ok})
         else:
             await _responder(send, 405, b"Method Not Allowed")
+
+    # --- Vínculos entre casos -------------------------------------------------
+
+    async def _vinculos_do_caso(
+        self, scope, receive, send, caso_id: str, vinculado_id: str | None,
+    ):
+        """GET /casos/<id>/vinculos
+        POST /casos/<id>/vinculos              {caso_vinculado_id, tipo}
+        DELETE /casos/<id>/vinculos/<vid>"""
+        metodo = scope.get("method")
+        if not caso_id:
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        if metodo == "GET" and vinculado_id is None:
+            vinculos = self.gestao.listar_vinculos_do_caso(caso_id)
+            await _json(send, 200, {"vinculos": vinculos})
+            return
+        if metodo == "POST" and vinculado_id is None:
+            try:
+                dados = json.loads((await _ler_corpo(receive) or b"").decode("utf-8") or "{}")
+            except (ValueError, UnicodeDecodeError):
+                await _json(send, 400, _erro("JSON inválido."))
+                return
+            outro_id = (dados.get("caso_vinculado_id") or "").strip()
+            tipo = (dados.get("tipo") or "relacionado").strip()
+            tipos_validos = {"recurso", "apenso", "execucao", "cautelar", "relacionado"}
+            if not outro_id:
+                await _json(send, 400, _erro("Informe caso_vinculado_id."))
+                return
+            if tipo not in tipos_validos:
+                await _json(send, 400, _erro(f"tipo inválido. Use: {', '.join(sorted(tipos_validos))}."))
+                return
+            try:
+                vinculo = self.gestao.adicionar_vinculo(
+                    caso_id, outro_id, tipo, agora=lambda: datetime.now(timezone.utc),
+                )
+            except ValueError as exc:
+                await _json(send, 409, _erro(str(exc)))
+                return
+            if vinculo is None:
+                await _json(send, 404, _erro("Um dos casos não foi encontrado."))
+                return
+            await _json(send, 201, vinculo)
+            return
+        if metodo == "DELETE" and vinculado_id:
+            removeu = self.gestao.remover_vinculo(caso_id, vinculado_id)
+            await _json(send, 200 if removeu else 404, {"removido": removeu})
+            return
+        await _responder(send, 405, b"Method Not Allowed")
 
     # --- Publicações por OAB (log geral, captura a cada 24h) -------------------
 
