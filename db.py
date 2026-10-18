@@ -202,6 +202,8 @@ def _migrar_colunas_casos(conexao: sqlite3.Connection) -> None:
             conexao.execute("ALTER TABLE casos ADD COLUMN reu TEXT")
         if "advogados" not in colunas:
             conexao.execute("ALTER TABLE casos ADD COLUMN advogados TEXT")
+        if "desfecho" not in colunas:
+            conexao.execute("ALTER TABLE casos ADD COLUMN desfecho TEXT")
 
 
 def _migrar_remover_calendar_evento_id(conexao: sqlite3.Connection) -> None:
@@ -495,7 +497,7 @@ class RegistroClientesCasos:
         with _abrir(self.caminho) as conexao:
             linha = conexao.execute(
                 "SELECT id, cliente_id, titulo, responsavel, status, drive_pasta_id, "
-                "criado_em, acao, foro, autor, reu, advogados "
+                "criado_em, acao, foro, autor, reu, advogados, desfecho "
                 "FROM casos WHERE id = ?",
                 (caso_id,),
             ).fetchone()
@@ -511,15 +513,16 @@ class RegistroClientesCasos:
         self, caso_id: str, titulo: str | None, responsavel: str | None,
         acao: str | None, foro: str | None, autor: str | None, reu: str | None,
         advogados: str | None, numeros_processo: list[str] | None = None,
+        desfecho: str | None = None,
     ) -> dict | None:
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             cursor = conexao.execute("SELECT 1 FROM casos WHERE id = ?", (caso_id,))
             if cursor.fetchone() is None:
                 return None
             conexao.execute(
-                "UPDATE casos SET titulo=?, responsavel=?, acao=?, foro=?, autor=?, reu=?, advogados=? "
+                "UPDATE casos SET titulo=?, responsavel=?, acao=?, foro=?, autor=?, reu=?, advogados=?, desfecho=? "
                 "WHERE id = ?",
-                (titulo, responsavel, acao, foro, autor, reu, advogados, caso_id),
+                (titulo, responsavel, acao, foro, autor, reu, advogados, desfecho or None, caso_id),
             )
             if numeros_processo is not None:
                 conexao.execute("DELETE FROM caso_processos WHERE caso_id = ?", (caso_id,))
@@ -533,7 +536,7 @@ class RegistroClientesCasos:
         with _abrir(self.caminho) as conexao:
             cursor = conexao.execute(
                 "SELECT id, cliente_id, titulo, responsavel, status, drive_pasta_id, "
-                "criado_em, acao, foro, autor, reu, advogados "
+                "criado_em, acao, foro, autor, reu, advogados, desfecho "
                 "FROM casos ORDER BY criado_em DESC"
             )
             return [
@@ -898,12 +901,12 @@ def _linha_cliente(linha) -> dict:
 
 
 def _linha_caso(linha) -> dict:
-    id_, cliente_id, titulo, responsavel, status, drive_pasta_id, criado_em, acao, foro, autor, reu, advogados = linha
+    id_, cliente_id, titulo, responsavel, status, drive_pasta_id, criado_em, acao, foro, autor, reu, advogados, desfecho = linha
     return {
         "id": id_, "cliente_id": cliente_id, "titulo": titulo, "responsavel": responsavel,
         "status": status, "drive_pasta_id": drive_pasta_id,
         "criado_em": criado_em, "acao": acao, "foro": foro,
-        "autor": autor, "reu": reu, "advogados": advogados,
+        "autor": autor, "reu": reu, "advogados": advogados, "desfecho": desfecho,
     }
 
 

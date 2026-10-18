@@ -3048,6 +3048,7 @@ class _AutenticacaoBearer:
                 reu=dados.get("reu"),
                 advogados=dados.get("advogados"),
                 numeros_processo=numeros,
+                desfecho=dados.get("desfecho"),
             )
             if caso is None:
                 await _json(send, 404, _erro("Caso não encontrado."))

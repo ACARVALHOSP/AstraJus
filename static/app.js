@@ -2134,6 +2134,9 @@ function linhaCaso(caso, aoExcluir) {
   if (caso.monitorado) {
     linhaTitulo.appendChild(el("span", { class: "cds--tag cds--tag--green cds--tag--sm", texto: "Monitorado" }));
   }
+  if (caso.desfecho && _ROTULO_DESFECHO_CASO[caso.desfecho]) {
+    linhaTitulo.appendChild(el("span", { class: "cds--tag cds--tag--purple cds--tag--sm", texto: _ROTULO_DESFECHO_CASO[caso.desfecho] }));
+  }
   celTitulo.appendChild(linhaTitulo);
 
   const processos = caso.processos || [];
@@ -3124,6 +3127,7 @@ async function abrirCaso(casoId) {
     document.getElementById("editar-caso-responsavel").value = caso.responsavel || "";
     document.getElementById("editar-caso-acao").value = caso.acao || "";
     document.getElementById("editar-caso-foro").value = caso.foro || "";
+    document.getElementById("editar-caso-desfecho").value = caso.desfecho || "";
     document.getElementById("editar-caso-processos").value = (caso.processos || []).join(", ");
     document.getElementById("editar-caso-autor").value = caso.autor || "";
     document.getElementById("editar-caso-reu").value = caso.reu || "";
@@ -3322,6 +3326,16 @@ function _escaparHtml(str) {
   return String(str || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 
+const _ROTULO_DESFECHO_CASO = {
+  procedente: "Procedente",
+  procedente_parcial: "Parc. procedente",
+  improcedente: "Improcedente",
+  acordo: "Acordo",
+  extinto: "Extinto s/ mérito",
+  provido: "Provido",
+  desprovido: "Desprovido",
+};
+
 // ─── Vínculos entre casos ────────────────────────────────────────────────────
 
 const _ROTULO_TIPO_VINCULO = {
@@ -3481,6 +3495,7 @@ document.getElementById("form-caso-editar").addEventListener("submit", async (ev
     responsavel: document.getElementById("editar-caso-responsavel").value.trim(),
     acao: document.getElementById("editar-caso-acao").value.trim(),
     foro: document.getElementById("editar-caso-foro").value.trim(),
+    desfecho: document.getElementById("editar-caso-desfecho").value || null,
     numeros_processo: numeros,
   };
   const pararEspera = mostrarEspera(resultado, botao, "Salvando");
