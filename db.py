@@ -85,7 +85,6 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 foro TEXT,
                 status TEXT NOT NULL DEFAULT 'ativo',
                 drive_pasta_id TEXT,
-                calendar_evento_id TEXT,
                 criado_em TEXT NOT NULL
             );
 
@@ -148,7 +147,7 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 numero_processo TEXT,
                 dados TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'nao_tratada',
-                caso_id TEXT,
+                caso_id TEXT REFERENCES casos(id) ON DELETE SET NULL,
                 criado_em TEXT NOT NULL
             );
 
@@ -172,6 +171,8 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
             """
         )
         _migrar_colunas_casos(conexao)
+        _migrar_remover_calendar_evento_id(conexao)
+        _migrar_fk_publicacoes_capturadas(conexao)
 
 
 def _migrar_colunas_casos(conexao: sqlite3.Connection) -> None:
@@ -189,6 +190,58 @@ def _migrar_colunas_casos(conexao: sqlite3.Connection) -> None:
             conexao.execute("ALTER TABLE casos ADD COLUMN reu TEXT")
         if "advogados" not in colunas:
             conexao.execute("ALTER TABLE casos ADD COLUMN advogados TEXT")
+
+
+def _migrar_remover_calendar_evento_id(conexao: sqlite3.Connection) -> None:
+    """calendar_evento_id nunca foi escrita por nenhum código (o evento criado na agenda vai
+    pra caso_eventos, a linha do tempo) - coluna morta desde sempre. Remove em bancos antigos
+    que ainda a têm (precisa de SQLite 3.35+; python:3.12-slim já vem com uma bem mais nova)."""
+    colunas = {linha[1] for linha in conexao.execute("PRAGMA table_info(casos)")}
+    if "calendar_evento_id" not in colunas:
+        return
+    with conexao:
+        conexao.execute("ALTER TABLE casos DROP COLUMN calendar_evento_id")
+
+
+def _migrar_fk_publicacoes_capturadas(conexao: sqlite3.Connection) -> None:
+    """publicacoes_capturadas.caso_id não tinha FOREIGN KEY declarado - a única referência a
+    casos(id) no banco sem proteção nenhuma (se um caso fosse apagado por um caminho que não
+    excluir_caso(), a publicação ficava órfã em silêncio). Reconstrói a tabela com REFERENCES
+    casos(id) ON DELETE SET NULL - ALTER TABLE não adiciona constraint em coluna existente,
+    então o jeito é recriar a tabela (procedimento padrão do próprio SQLite pra isso)."""
+    fks = conexao.execute("PRAGMA foreign_key_list(publicacoes_capturadas)").fetchall()
+    if any(fk[2] == "casos" for fk in fks):
+        return  # já migrado
+    with conexao:
+        # zera caso_id que já estejam órfãos (apontando pra um caso que não existe mais),
+        # senão o INSERT abaixo falha com violação da FK nova ao copiar os dados.
+        conexao.execute(
+            "UPDATE publicacoes_capturadas SET caso_id = NULL "
+            "WHERE caso_id IS NOT NULL AND caso_id NOT IN (SELECT id FROM casos)"
+        )
+        conexao.execute(
+            """
+            CREATE TABLE publicacoes_capturadas_novo (
+                hash TEXT PRIMARY KEY,
+                monitoramento_id TEXT,
+                nome_pesquisado TEXT,
+                numero_processo TEXT,
+                dados TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'nao_tratada',
+                caso_id TEXT REFERENCES casos(id) ON DELETE SET NULL,
+                criado_em TEXT NOT NULL
+            )
+            """
+        )
+        conexao.execute(
+            "INSERT INTO publicacoes_capturadas_novo "
+            "(hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, caso_id, criado_em) "
+            "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, caso_id, criado_em "
+            "FROM publicacoes_capturadas"
+        )
+        conexao.execute("DROP TABLE publicacoes_capturadas")
+        conexao.execute("ALTER TABLE publicacoes_capturadas_novo RENAME TO publicacoes_capturadas")
+        conexao.execute("CREATE INDEX IF NOT EXISTS idx_publicacoes_status ON publicacoes_capturadas (status)")
 
 
 def migrar_de_json_se_necessario(caminho_banco: Path, dados_dir: Path) -> None:
@@ -430,7 +483,7 @@ class RegistroClientesCasos:
         with _abrir(self.caminho) as conexao:
             linha = conexao.execute(
                 "SELECT id, cliente_id, titulo, responsavel, status, drive_pasta_id, "
-                "calendar_evento_id, criado_em, acao, foro, autor, reu, advogados "
+                "criado_em, acao, foro, autor, reu, advogados "
                 "FROM casos WHERE id = ?",
                 (caso_id,),
             ).fetchone()
@@ -468,7 +521,7 @@ class RegistroClientesCasos:
         with _abrir(self.caminho) as conexao:
             cursor = conexao.execute(
                 "SELECT id, cliente_id, titulo, responsavel, status, drive_pasta_id, "
-                "calendar_evento_id, criado_em, acao, foro, autor, reu, advogados "
+                "criado_em, acao, foro, autor, reu, advogados "
                 "FROM casos ORDER BY criado_em DESC"
             )
             return [
@@ -476,7 +529,7 @@ class RegistroClientesCasos:
                     **_linha_caso(linha),
                     "processos": self._processos_do_caso(conexao, linha[0]),
                     "clientes_adicionais": self._clientes_adicionais_do_caso(conexao, linha[0]),
-                    "ultima_movimentacao": self._ultima_movimentacao_do_caso(conexao, linha[0], linha[7]),
+                    "ultima_movimentacao": self._ultima_movimentacao_do_caso(conexao, linha[0], linha[6]),
                     "monitorado": self._caso_tem_publicacao_monitorada(conexao, linha[0]),
                 }
                 for linha in cursor.fetchall()
@@ -751,10 +804,10 @@ def _linha_cliente(linha) -> dict:
 
 
 def _linha_caso(linha) -> dict:
-    id_, cliente_id, titulo, responsavel, status, drive_pasta_id, calendar_evento_id, criado_em, acao, foro, autor, reu, advogados = linha
+    id_, cliente_id, titulo, responsavel, status, drive_pasta_id, criado_em, acao, foro, autor, reu, advogados = linha
     return {
         "id": id_, "cliente_id": cliente_id, "titulo": titulo, "responsavel": responsavel,
-        "status": status, "drive_pasta_id": drive_pasta_id, "calendar_evento_id": calendar_evento_id,
+        "status": status, "drive_pasta_id": drive_pasta_id,
         "criado_em": criado_em, "acao": acao, "foro": foro,
         "autor": autor, "reu": reu, "advogados": advogados,
     }
