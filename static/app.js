@@ -204,14 +204,17 @@ function mostrarEspera(container, botao, titulo) {
   botao.disabled = true;
   limpar(container);
   const inicio = Date.now();
+  // O cronômetro fica num span aria-hidden para não re-anunciar a cada segundo em leitores de tela
+  const cronometro = el("span", { "aria-hidden": "true" });
   const texto = el("p", { class: "app-espera" }, [
     el("span", { class: "espera-spinner", "aria-hidden": "true" }),
-    `${titulo}… 0s`,
+    `${titulo}…`,
+    cronometro,
   ]);
   container.appendChild(texto);
   const atualizar = () => {
     const seg = Math.round((Date.now() - inicio) / 1000);
-    texto.lastChild.textContent = `${titulo}… ${seg}s`;
+    cronometro.textContent = ` ${seg}s`;
   };
   const temporizador = setInterval(atualizar, 1000);
   return () => {
@@ -495,6 +498,7 @@ function selecionarAba(alvo) {
   for (const aba of abas) {
     const ativa = aba === alvo;
     aba.botao.setAttribute("aria-selected", String(ativa));
+    aba.botao.tabIndex = ativa ? 0 : -1;
     aba.painel.hidden = !ativa;
   }
   // Expande o grupo do item ativo caso esteja colapsado
@@ -509,6 +513,22 @@ function selecionarAba(alvo) {
 }
 
 for (const aba of abas) aba.botao.addEventListener("click", () => selecionarAba(aba));
+
+// Roving tabindex: apenas o tab ativo é acessível via Tab; os outros com tabIndex=-1
+for (const aba of abas) aba.botao.tabIndex = aba.botao.getAttribute("aria-selected") === "true" ? 0 : -1;
+
+// Navegação por setas na tablist vertical (WAI-ARIA 1.1 §3.3.5)
+for (const aba of abas) {
+  aba.botao.addEventListener("keydown", (ev) => {
+    const idx = abas.indexOf(aba);
+    let alvo = null;
+    if (ev.key === "ArrowDown") alvo = abas[(idx + 1) % abas.length];
+    else if (ev.key === "ArrowUp") alvo = abas[(idx - 1 + abas.length) % abas.length];
+    else if (ev.key === "Home") alvo = abas[0];
+    else if (ev.key === "End") alvo = abas[abas.length - 1];
+    if (alvo) { ev.preventDefault(); selecionarAba(alvo); }
+  });
+}
 
 // Accordion da Side Nav — toggle de grupo ao clicar no título
 document.querySelectorAll(".cds--side-nav__submenu").forEach((btn) => {
@@ -1907,6 +1927,7 @@ document.addEventListener("keydown", (ev) => {
 
 let _cacheClientes = [];
 let _cacheCasos = [];
+let _filtroCasos = "";
 
 function _iconePessoa() {
   const ns = "http://www.w3.org/2000/svg";
@@ -2351,10 +2372,23 @@ async function carregarCasosPagina() {
 function _renderizarTabelaCasosPagina() {
   const listaCasosEl = document.getElementById("lista-casos");
   limpar(listaCasosEl);
-  if (!_cacheCasos.length) {
-    listaCasosEl.appendChild(notificacao("info", "Nenhum caso cadastrado ainda"));
+  const nomeCliente = (id) => (_cacheClientes.find((c) => c.id === id) || {}).nome || "";
+  const termo = _filtroCasos.toLowerCase().trim();
+  const filtrados = termo
+    ? _cacheCasos.filter((c) => {
+        const textos = [
+          c.titulo, c.acao, c.foro, c.responsavel,
+          nomeCliente(c.cliente_id),
+          ...(c.clientes_adicionais || []).map(nomeCliente),
+          ...(c.processos || []),
+        ].map((t) => (t || "").toLowerCase());
+        return textos.some((t) => t.includes(termo));
+      })
+    : _cacheCasos;
+  if (!filtrados.length) {
+    listaCasosEl.appendChild(notificacao("info", termo ? "Nenhum caso corresponde ao filtro." : "Nenhum caso cadastrado ainda"));
   } else {
-    listaCasosEl.appendChild(tabelaCasos(_cacheCasos, _renderizarTabelaCasosPagina));
+    listaCasosEl.appendChild(tabelaCasos(filtrados, _renderizarTabelaCasosPagina));
   }
   renderizarCasosFavoritos();
 }
@@ -2405,12 +2439,13 @@ formCaso.addEventListener("submit", async (evento) => {
   };
   const pararEspera = mostrarEspera(resultadoCaso, botao, "Cadastrando caso");
   try {
-    await _enviarJson("/casos", corpo);
+    const novoCaso = await _enviarJson("/casos", corpo);
     fecharModal("modal-novo-caso");
     formCaso.reset();
     document.getElementById("caso-cliente-busca").value = "";
     document.getElementById("caso-cliente").value = "";
     carregarCasosPagina();
+    if (novoCaso && novoCaso.id) abrirCaso(novoCaso.id);
   } catch (erro) {
     mostrarErro(resultadoCaso, erro.message);
   } finally {
@@ -2428,6 +2463,12 @@ document.getElementById("btn-novo-caso").addEventListener("click", async () => {
 });
 document.getElementById("modal-novo-caso-fechar").addEventListener("click", () => fecharModal("modal-novo-caso"));
 document.getElementById("modal-cadastrar-caso-publicacao-fechar").addEventListener("click", () => fecharModal("modal-cadastrar-caso-publicacao"));
+
+// Filtro de texto ao vivo na lista de casos
+document.getElementById("casos-busca").addEventListener("input", function () {
+  _filtroCasos = this.value;
+  _renderizarTabelaCasosPagina();
+});
 
 // Typeahead: campo de busca de cliente no form-caso
 (function () {

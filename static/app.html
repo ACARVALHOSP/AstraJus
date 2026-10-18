@@ -343,7 +343,7 @@ nav.cds--side-nav {
 
 <div class="app-layout">
 
-<nav class="cds--side-nav cds--side-nav--fixed" aria-label="Tipo de consulta">
+<nav class="cds--side-nav cds--side-nav--fixed" aria-label="Navegação principal">
 <div class="cds--side-nav__navigation">
 <ul class="cds--side-nav__items" role="tablist" aria-orientation="vertical">
 <li role="presentation" class="cds--side-nav__item">
@@ -716,6 +716,11 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <button class="cds--btn cds--btn--primary cds--btn--sm" type="button" id="btn-novo-caso">Novo caso</button>
 </div>
 <h2 class="lista-rapida-titulo" style="margin-top:1.5rem">Casos cadastrados</h2>
+<div class="contatos-barra" style="margin-top:0.5rem">
+<div class="cds--form-item contatos-busca-campo" style="margin:0;max-width:320px">
+<input class="cds--text-input" type="search" id="casos-busca" placeholder="Filtrar por título, cliente, ação, processo…">
+</div>
+</div>
 <div id="lista-casos" class="app-resultado"></div>
 </div><!-- #caso-vista-lista -->
 
@@ -1063,7 +1068,9 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="cds--modal-container cds--modal-container--sm">
 <div class="cds--modal-header">
 <p class="cds--modal-header__heading" id="modal-atividade-titulo">Nova atividade</p>
-<button class="cds--modal-close" type="button" id="modal-atividade-fechar" aria-label="Fechar">✕</button>
+<button class="cds--modal-close" type="button" id="modal-atividade-fechar" aria-label="Fechar">
+<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="20" height="20" fill="currentColor"><path d="M17.41 16 24 9.41 22.59 8 16 14.59 9.41 8 8 9.41 14.59 16 8 22.59 9.41 24 16 17.41 22.59 24 24 22.59 17.41 16z"/></svg>
+</button>
 </div>
 <div class="cds--modal-content">
 <form id="form-atividade">
