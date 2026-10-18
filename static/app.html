@@ -131,6 +131,15 @@ body { margin: 0; min-height: 100dvh; }
 .pub-oab-tabela th:nth-child(7), .pub-oab-tabela td:nth-child(7) { width: 11%; }
 .pub-oab-tabela th:nth-child(8), .pub-oab-tabela td:nth-child(8) { width: 18%; }
 .pub-oab-texto-expandido { margin-top: 0.375rem; font-size: var(--fonte-base); color: var(--cds-text-secondary, #525252); white-space: pre-line; }
+.vinculos-adicionar { margin-top: 1.5rem; border: 1px solid var(--cds-border-subtle, #e0e0e0); padding: 0.75rem 1rem; }
+.vinculos-adicionar summary { cursor: pointer; font-weight: 600; }
+.vinculos-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; margin-top: 0.75rem; }
+.vinculos-form .cds--form-item { display: flex; flex-direction: column; min-width: 12rem; }
+.tabela-vinculos th:nth-child(1), .tabela-vinculos td:nth-child(1) { width: 32%; }
+.tabela-vinculos th:nth-child(2), .tabela-vinculos td:nth-child(2) { width: 22%; }
+.tabela-vinculos th:nth-child(3), .tabela-vinculos td:nth-child(3) { width: 18%; }
+.tabela-vinculos th:nth-child(4), .tabela-vinculos td:nth-child(4) { width: 15%; }
+.tabela-vinculos th:nth-child(5), .tabela-vinculos td:nth-child(5) { width: 13%; }
 .caso-titulo-linha { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-weight: 600; }
 .tabela-casos th:nth-child(1), .tabela-casos td:nth-child(1) { width: 7%; }
 .tabela-casos th:nth-child(2), .tabela-casos td:nth-child(2) { width: 29%; }
@@ -674,6 +683,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <button class="sub-aba-botao" id="caso-subaba-atividades-botao" role="tab" aria-selected="false" aria-controls="caso-subaba-atividades" type="button">Atividades</button>
 <button class="sub-aba-botao" id="caso-subaba-publicacoes-botao" role="tab" aria-selected="false" aria-controls="caso-subaba-publicacoes" type="button">Publicações</button>
 <button class="sub-aba-botao" id="caso-subaba-movimentacoes-botao" role="tab" aria-selected="false" aria-controls="caso-subaba-movimentacoes" type="button">Movimentações</button>
+<button class="sub-aba-botao" id="caso-subaba-vinculos-botao" role="tab" aria-selected="false" aria-controls="caso-subaba-vinculos" type="button">Vínculos</button>
 </div>
 
 <section id="caso-subaba-cadastro" role="tabpanel">
@@ -693,6 +703,19 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-foro">Foro / Vara</label>
 <input class="cds--text-input" type="text" id="editar-caso-foro" name="foro">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="editar-caso-desfecho">Desfecho</label>
+<select class="cds--select-input" id="editar-caso-desfecho" name="desfecho">
+<option value="">— Em andamento —</option>
+<option value="procedente">Procedente</option>
+<option value="procedente_parcial">Parcialmente procedente</option>
+<option value="improcedente">Improcedente</option>
+<option value="acordo">Acordo / Transação</option>
+<option value="extinto">Extinto sem resolução do mérito</option>
+<option value="provido">Provido (recurso)</option>
+<option value="desprovido">Desprovido (recurso)</option>
+</select>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-processos">Números de processo (separados por vírgula)</label>
@@ -753,6 +776,39 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 <div id="movimentacoes-status"></div>
 <div id="lista-movimentacoes" class="app-resultado"></div>
+</section>
+
+
+<section id="caso-subaba-vinculos" role="tabpanel" hidden>
+<div class="secao-cabecalho">
+<h3 class="lista-rapida-titulo">Casos vinculados</h3>
+</div>
+<div id="lista-vinculos" class="app-resultado"></div>
+<details class="vinculos-adicionar" id="vinculos-adicionar-painel">
+<summary>Vincular outro caso</summary>
+<form id="form-vinculos-adicionar" class="vinculos-form">
+<div class="cds--form-item">
+<label class="cds--label" for="vinculos-caso-select">Caso</label>
+<select class="cds--select-input" id="vinculos-caso-select">
+<option value="">— selecione —</option>
+</select>
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="vinculos-tipo-select">Tipo de vínculo</label>
+<select class="cds--select-input" id="vinculos-tipo-select">
+<option value="relacionado">Relacionado</option>
+<option value="recurso">Recurso</option>
+<option value="apenso">Apenso</option>
+<option value="execucao">Execução de sentença</option>
+<option value="cautelar">Cautelar / Tutela</option>
+</select>
+</div>
+<div id="vinculos-resultado" class="app-resultado"></div>
+<div class="form-acoes-detalhe">
+<button class="cds--btn cds--btn--primary cds--btn--sm" type="submit">Adicionar vínculo</button>
+</div>
+</form>
+</details>
 </section>
 
 </div><!-- #caso-vista-detalhe -->

@@ -163,11 +163,23 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 criado_em TEXT NOT NULL
             );
 
+            -- Vínculos entre casos: recurso, apenso, execução de sentença, etc.
+            -- A relação é simétrica: uma linha (A, B, tipo) é visível de ambos os lados.
+            CREATE TABLE IF NOT EXISTS caso_vinculos (
+                caso_id TEXT NOT NULL REFERENCES casos(id) ON DELETE CASCADE,
+                caso_vinculado_id TEXT NOT NULL REFERENCES casos(id) ON DELETE CASCADE,
+                tipo TEXT NOT NULL DEFAULT 'relacionado',
+                criado_em TEXT NOT NULL,
+                PRIMARY KEY (caso_id, caso_vinculado_id),
+                CHECK (caso_id != caso_vinculado_id)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_caso_processos_numero ON caso_processos (numero_processo);
             CREATE INDEX IF NOT EXISTS idx_casos_cliente ON casos (cliente_id);
             CREATE INDEX IF NOT EXISTS idx_caso_eventos_caso ON caso_eventos (caso_id);
             CREATE INDEX IF NOT EXISTS idx_publicacoes_status ON publicacoes_capturadas (status);
             CREATE INDEX IF NOT EXISTS idx_caso_atividades_caso ON caso_atividades (caso_id);
+            CREATE INDEX IF NOT EXISTS idx_caso_vinculos_vinculado ON caso_vinculos (caso_vinculado_id);
             """
         )
         _migrar_colunas_casos(conexao)
@@ -190,6 +202,8 @@ def _migrar_colunas_casos(conexao: sqlite3.Connection) -> None:
             conexao.execute("ALTER TABLE casos ADD COLUMN reu TEXT")
         if "advogados" not in colunas:
             conexao.execute("ALTER TABLE casos ADD COLUMN advogados TEXT")
+        if "desfecho" not in colunas:
+            conexao.execute("ALTER TABLE casos ADD COLUMN desfecho TEXT")
 
 
 def _migrar_remover_calendar_evento_id(conexao: sqlite3.Connection) -> None:
@@ -483,7 +497,7 @@ class RegistroClientesCasos:
         with _abrir(self.caminho) as conexao:
             linha = conexao.execute(
                 "SELECT id, cliente_id, titulo, responsavel, status, drive_pasta_id, "
-                "criado_em, acao, foro, autor, reu, advogados "
+                "criado_em, acao, foro, autor, reu, advogados, desfecho "
                 "FROM casos WHERE id = ?",
                 (caso_id,),
             ).fetchone()
@@ -499,15 +513,16 @@ class RegistroClientesCasos:
         self, caso_id: str, titulo: str | None, responsavel: str | None,
         acao: str | None, foro: str | None, autor: str | None, reu: str | None,
         advogados: str | None, numeros_processo: list[str] | None = None,
+        desfecho: str | None = None,
     ) -> dict | None:
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             cursor = conexao.execute("SELECT 1 FROM casos WHERE id = ?", (caso_id,))
             if cursor.fetchone() is None:
                 return None
             conexao.execute(
-                "UPDATE casos SET titulo=?, responsavel=?, acao=?, foro=?, autor=?, reu=?, advogados=? "
+                "UPDATE casos SET titulo=?, responsavel=?, acao=?, foro=?, autor=?, reu=?, advogados=?, desfecho=? "
                 "WHERE id = ?",
-                (titulo, responsavel, acao, foro, autor, reu, advogados, caso_id),
+                (titulo, responsavel, acao, foro, autor, reu, advogados, desfecho or None, caso_id),
             )
             if numeros_processo is not None:
                 conexao.execute("DELETE FROM caso_processos WHERE caso_id = ?", (caso_id,))
@@ -521,7 +536,7 @@ class RegistroClientesCasos:
         with _abrir(self.caminho) as conexao:
             cursor = conexao.execute(
                 "SELECT id, cliente_id, titulo, responsavel, status, drive_pasta_id, "
-                "criado_em, acao, foro, autor, reu, advogados "
+                "criado_em, acao, foro, autor, reu, advogados, desfecho "
                 "FROM casos ORDER BY criado_em DESC"
             )
             return [
@@ -553,8 +568,90 @@ class RegistroClientesCasos:
             conexao.execute("DELETE FROM caso_eventos WHERE caso_id = ?", (caso_id,))
             conexao.execute("DELETE FROM caso_clientes WHERE caso_id = ?", (caso_id,))
             conexao.execute("DELETE FROM caso_processos WHERE caso_id = ?", (caso_id,))
+            # caso_vinculos usa ON DELETE CASCADE, mas SQLite não executa CASCADE por padrão
+            # sem PRAGMA foreign_keys=ON (que não ativamos globalmente). Remove manualmente.
+            conexao.execute(
+                "DELETE FROM caso_vinculos WHERE caso_id = ? OR caso_vinculado_id = ?",
+                (caso_id, caso_id),
+            )
             conexao.execute("DELETE FROM casos WHERE id = ?", (caso_id,))
             return True
+
+    # Vínculos entre casos
+
+    def listar_vinculos_do_caso(self, caso_id: str) -> list[dict]:
+        """Retorna todos os casos vinculados a `caso_id`, independente de qual lado da relação
+        este caso ocupa. Cada item inclui dados básicos do caso vinculado e o tipo do vínculo."""
+        with _abrir(self.caminho) as conexao:
+            cursor = conexao.execute(
+                """
+                SELECT
+                    CASE WHEN v.caso_id = ? THEN v.caso_vinculado_id ELSE v.caso_id END AS outro_id,
+                    v.tipo,
+                    c.titulo,
+                    c.acao,
+                    c.status,
+                    cli.nome AS cliente_nome
+                FROM caso_vinculos v
+                JOIN casos c
+                    ON c.id = CASE WHEN v.caso_id = ? THEN v.caso_vinculado_id ELSE v.caso_id END
+                LEFT JOIN clientes cli ON cli.id = c.cliente_id
+                WHERE v.caso_id = ? OR v.caso_vinculado_id = ?
+                ORDER BY v.criado_em ASC
+                """,
+                (caso_id, caso_id, caso_id, caso_id),
+            )
+            return [
+                {
+                    "caso_id": linha[0],
+                    "tipo": linha[1],
+                    "titulo": linha[2],
+                    "acao": linha[3],
+                    "status": linha[4],
+                    "cliente_nome": linha[5],
+                }
+                for linha in cursor.fetchall()
+            ]
+
+    def adicionar_vinculo(self, caso_id: str, caso_vinculado_id: str, tipo: str, agora) -> dict | None:
+        """Cria o vínculo entre dois casos. Devolve o vínculo criado, ou None se algum dos
+        casos não existe. Levanta ValueError se caso_id == caso_vinculado_id ou se o vínculo
+        já existe em qualquer direção."""
+        if caso_id == caso_vinculado_id:
+            raise ValueError("Um caso não pode ser vinculado a si mesmo.")
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            ids = {
+                r[0] for r in conexao.execute(
+                    "SELECT id FROM casos WHERE id IN (?, ?)", (caso_id, caso_vinculado_id)
+                )
+            }
+            if caso_id not in ids or caso_vinculado_id not in ids:
+                return None
+            # Impede duplicata em qualquer direção antes de tentar inserir.
+            existe = conexao.execute(
+                "SELECT 1 FROM caso_vinculos WHERE (caso_id=? AND caso_vinculado_id=?) "
+                "OR (caso_id=? AND caso_vinculado_id=?)",
+                (caso_id, caso_vinculado_id, caso_vinculado_id, caso_id),
+            ).fetchone()
+            if existe:
+                raise ValueError("Este vínculo já existe.")
+            conexao.execute(
+                "INSERT INTO caso_vinculos (caso_id, caso_vinculado_id, tipo, criado_em) "
+                "VALUES (?, ?, ?, ?)",
+                (caso_id, caso_vinculado_id, tipo, agora().isoformat()),
+            )
+        vinculos = self.listar_vinculos_do_caso(caso_id)
+        return next((v for v in vinculos if v["caso_id"] == caso_vinculado_id), None)
+
+    def remover_vinculo(self, caso_id: str, caso_vinculado_id: str) -> bool:
+        """Remove o vínculo entre dois casos (em qualquer direção). Devolve True se removeu."""
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            cursor = conexao.execute(
+                "DELETE FROM caso_vinculos WHERE (caso_id=? AND caso_vinculado_id=?) "
+                "OR (caso_id=? AND caso_vinculado_id=?)",
+                (caso_id, caso_vinculado_id, caso_vinculado_id, caso_id),
+            )
+            return cursor.rowcount > 0
 
     def listar_atividades(self, caso_id: str) -> list[dict]:
         with _abrir(self.caminho) as conexao:
@@ -804,12 +901,12 @@ def _linha_cliente(linha) -> dict:
 
 
 def _linha_caso(linha) -> dict:
-    id_, cliente_id, titulo, responsavel, status, drive_pasta_id, criado_em, acao, foro, autor, reu, advogados = linha
+    id_, cliente_id, titulo, responsavel, status, drive_pasta_id, criado_em, acao, foro, autor, reu, advogados, desfecho = linha
     return {
         "id": id_, "cliente_id": cliente_id, "titulo": titulo, "responsavel": responsavel,
         "status": status, "drive_pasta_id": drive_pasta_id,
         "criado_em": criado_em, "acao": acao, "foro": foro,
-        "autor": autor, "reu": reu, "advogados": advogados,
+        "autor": autor, "reu": reu, "advogados": advogados, "desfecho": desfecho,
     }
 
 
