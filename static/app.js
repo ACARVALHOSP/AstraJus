@@ -409,8 +409,11 @@ async function renderizarCasosFavoritos() {
         el("span", { texto: caso.titulo || "(sem título)" }),
         el("div", {}, [
           el("button", {
-            class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Abrir em Casos",
-            onclick: () => selecionarAba(abas.find((a) => a.painel.id === "aba-casos")),
+            class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Abrir",
+            onclick: () => {
+              selecionarAba(abas.find((a) => a.painel.id === "aba-casos"));
+              abrirCaso(caso.id);
+            },
           }),
           el("button", {
             class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Remover",
@@ -1823,6 +1826,67 @@ document.querySelectorAll(".cds--modal").forEach((modal) => {
   modal.addEventListener("keydown", (ev) => { if (ev.key === "Escape") fecharModal(modal.id); });
 });
 
+// Substitui window.confirm() por um modal Carbon: devolve uma Promise<boolean> (true = confirmou).
+function confirmarAcao(mensagem, opcoes = {}) {
+  const { titulo = "Confirmar ação", textoConfirmar = "Confirmar" } = opcoes;
+  return new Promise((resolve) => {
+    const modal = document.getElementById("modal-confirmar");
+    const botaoOk = document.getElementById("modal-confirmar-ok");
+    const botaoCancelar = document.getElementById("modal-confirmar-cancelar");
+    const botaoFechar = document.getElementById("modal-confirmar-fechar");
+    let resolvido = false;
+
+    function limparListeners() {
+      botaoOk.removeEventListener("click", aoConfirmar);
+      botaoCancelar.removeEventListener("click", aoCancelar);
+      botaoFechar.removeEventListener("click", aoCancelar);
+      modal.removeEventListener("keydown", aoTeclado);
+      modal.removeEventListener("click", aoClicarFundo);
+    }
+    function concluir(valor) {
+      if (resolvido) return;
+      resolvido = true;
+      limparListeners();
+      fecharModal("modal-confirmar");
+      resolve(valor);
+    }
+    const aoConfirmar = () => concluir(true);
+    const aoCancelar = () => concluir(false);
+    const aoTeclado = (ev) => { if (ev.key === "Escape") concluir(false); };
+    const aoClicarFundo = (ev) => { if (ev.target === modal) concluir(false); };
+
+    document.getElementById("modal-confirmar-titulo").textContent = titulo;
+    const corpo = document.getElementById("modal-confirmar-corpo");
+    limpar(corpo);
+    corpo.appendChild(el("p", { texto: mensagem }));
+    botaoOk.textContent = textoConfirmar;
+
+    botaoOk.addEventListener("click", aoConfirmar);
+    botaoCancelar.addEventListener("click", aoCancelar);
+    botaoFechar.addEventListener("click", aoCancelar);
+    modal.addEventListener("keydown", aoTeclado);
+    modal.addEventListener("click", aoClicarFundo);
+
+    abrirModal("modal-confirmar");
+  });
+}
+
+// ComboButton das linhas de Publicações por OAB: fecha o menu aberto ao clicar fora ou Esc.
+function _fecharTodosComboMenusOab() {
+  document.querySelectorAll(".pub-oab-combo-menu:not([hidden])").forEach((menu) => {
+    menu.hidden = true;
+    menu.classList.remove("cds--menu--open", "cds--menu--shown");
+    const trigger = menu.closest(".pub-oab-combo")?.querySelector(".cds--menu-button__trigger");
+    if (trigger) trigger.setAttribute("aria-expanded", "false");
+  });
+}
+document.addEventListener("click", (ev) => {
+  if (!ev.target.closest(".pub-oab-combo")) _fecharTodosComboMenusOab();
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") _fecharTodosComboMenusOab();
+});
+
 // --- Clientes e casos (Fase 1 da gestão de escritório) ------------------------------------
 //
 // /clientes e /casos são endpoints HTTP simples (não tools MCP, mesmo padrão das árvores do
@@ -1872,7 +1936,7 @@ function linhaContato(c) {
 }
 
 async function excluirContato(clienteId, nome, botao) {
-  if (!window.confirm(`Excluir o contato "${nome}"? Essa ação não pode ser desfeita.`)) return;
+  if (!(await confirmarAcao(`Excluir o contato "${nome}"? Essa ação não pode ser desfeita.`))) return;
   botao.disabled = true;
   try {
     await _enviarJson(`/clientes/${clienteId}`, {}, "DELETE");
@@ -2159,7 +2223,7 @@ function linhaCaso(caso, aoExcluir) {
 }
 
 async function excluirCaso(casoId, titulo, botao, aoExcluir) {
-  if (!window.confirm(`Excluir o caso "${titulo || "(sem título)"}"? Essa ação não pode ser desfeita.`)) return;
+  if (!(await confirmarAcao(`Excluir o caso "${titulo || "(sem título)"}"? Essa ação não pode ser desfeita.`))) return;
   botao.disabled = true;
   try {
     await _enviarJson(`/casos/${casoId}`, {}, "DELETE");
@@ -2436,7 +2500,7 @@ document.getElementById("contato-excluir").addEventListener("click", async () =>
   const clienteId = formContatoCadastro.dataset.clienteId;
   if (!clienteId) return;
   const nome = document.getElementById("contato-nome").value.trim() || "este contato";
-  if (!window.confirm(`Excluir o contato "${nome}"? Essa ação não pode ser desfeita.`)) return;
+  if (!(await confirmarAcao(`Excluir o contato "${nome}"? Essa ação não pode ser desfeita.`))) return;
   const botao = document.getElementById("contato-excluir");
   botao.disabled = true;
   try {
@@ -2452,9 +2516,9 @@ document.getElementById("contato-excluir").addEventListener("click", async () =>
 // Botão "Cadastrar como caso" no resultado da consulta de processo (DataJud): abre um mini
 // formulário inline, sem precisar trocar de aba. Cria o cliente na hora se for novo (Fase 1).
 function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) {
-  const { rotulo, tituloModal, nomeSugerido, tituloSugerido, partes, tribunal, hashPublicacao, dadosPublicacao } = opcoes;
+  const { rotulo, tituloModal, nomeSugerido, tituloSugerido, partes, tribunal, hashPublicacao, dadosPublicacao, classeBotao } = opcoes;
   const botao = el("button", {
-    class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: rotulo || "Cadastrar como caso",
+    class: classeBotao || "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: rotulo || "Cadastrar como caso",
   });
   acoes.appendChild(botao);
 
@@ -2470,7 +2534,7 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
 
     const usaCheckboxesPartes = Boolean(partes && partes.length);
 
-    const selectCliente = el("select", { class: "cds--text-input" }, [
+    const selectCliente = el("select", { class: "cds--select-input" }, [
       el("option", { value: "" }, ["+ Novo cliente"]),
       ..._cacheClientes.map((c) => el("option", { value: c.id }, [c.nome])),
     ]);
@@ -2812,54 +2876,69 @@ function linhaPublicacaoOab(p) {
     );
   }
 
-  if (p.status !== "tratada" && p.numero_processo) {
-    anexarBotaoCadastrarCaso(acoesLinha, p.numero_processo, () => {
+  // ComboButton Carbon: ação primária "Adc. Caso" + menu com "Marcar como Tratada" e "Arquivar".
+  const comboContainer = el("div", { class: "cds--combo-button__container cds--combo-button__container--sm pub-oab-combo" });
+  const primaryWrap = el("div", { class: "cds--combo-button__primary-action" });
+  const podeAdcCaso = p.status !== "tratada" && Boolean(p.numero_processo);
+  if (podeAdcCaso) {
+    anexarBotaoCadastrarCaso(primaryWrap, p.numero_processo, () => {
       _statusGeralPubOab("Caso cadastrado a partir da publicação.");
       carregarPublicacoesOab();
     }, {
-      rotulo: "+",
+      rotulo: "Adc. Caso",
       tituloModal: "Cadastrar cliente e caso",
       nomeSugerido: p.nome_pesquisado || "",
       tituloSugerido: d.nomeClasse || d.tipoComunicacao || "",
       hashPublicacao: p.hash || null,
       dadosPublicacao: d,
       tribunal: (d.siglaTribunal || "").toLowerCase() || null,
+      classeBotao: "cds--btn cds--btn--primary cds--btn--sm",
     });
+  } else {
+    primaryWrap.appendChild(el("button", {
+      class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Adc. Caso", disabled: "disabled",
+      title: p.status === "tratada" ? "Já está tratada" : "Sem número de processo identificado",
+    }));
   }
+  comboContainer.appendChild(primaryWrap);
 
+  const iconeChevron = _elSvg(document, "svg", { width: "16", height: "16", viewBox: "0 0 16 16", "aria-hidden": "true" }, [
+    _elSvg(document, "path", { d: "M8 11 3 6l.7-.7L8 9.6l4.3-4.3.7.7z", fill: "currentColor" }),
+  ]);
+  const botaoTrigger = el("button", {
+    class: "cds--btn cds--btn--primary cds--btn--sm cds--combo-button__trigger cds--menu-button__trigger",
+    type: "button", "aria-haspopup": "true", "aria-expanded": "false", "aria-label": "Mais ações",
+  }, [iconeChevron]);
+  comboContainer.appendChild(botaoTrigger);
+
+  const menu = el("ul", { class: "cds--menu pub-oab-combo-menu", role: "menu" });
+  menu.hidden = true;
   if (p.status !== "tratada") {
-    const botaoCheck = el("button", {
-      class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "✓",
-      title: "Marcar tratada", "aria-label": "Marcar tratada",
-    });
-    botaoCheck.addEventListener("click", () => _aplicarStatusPubOab([p.hash], "tratada"));
-    acoesLinha.appendChild(botaoCheck);
+    const itemTratada = el("li", { class: "cds--menu-item", role: "menuitem" }, [
+      el("div", { class: "cds--menu-item__label", texto: "Marcar como Tratada" }),
+    ]);
+    itemTratada.addEventListener("click", () => { _fecharTodosComboMenusOab(); _aplicarStatusPubOab([p.hash], "tratada"); });
+    menu.appendChild(itemTratada);
   }
-
-  const menuWrap = el("div", { class: "pub-oab-menu" });
-  const botaoMenu = el("button", {
-    class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "⋮",
-    "aria-label": "Mais ações", "aria-haspopup": "true", "aria-expanded": "false",
-  });
-  const listaMenu = el("div", { class: "pub-oab-menu-lista" });
-  listaMenu.hidden = true;
   if (p.status !== "arquivada") {
-    const opcaoArquivar = el("button", { type: "button", texto: "Arquivar" });
-    opcaoArquivar.addEventListener("click", () => { listaMenu.hidden = true; botaoMenu.setAttribute("aria-expanded", "false"); _aplicarStatusPubOab([p.hash], "arquivada"); });
-    listaMenu.appendChild(opcaoArquivar);
+    const itemArquivar = el("li", { class: "cds--menu-item", role: "menuitem" }, [
+      el("div", { class: "cds--menu-item__label", texto: "Arquivar" }),
+    ]);
+    itemArquivar.addEventListener("click", () => { _fecharTodosComboMenusOab(); _aplicarStatusPubOab([p.hash], "arquivada"); });
+    menu.appendChild(itemArquivar);
   }
-  if (p.status !== "nao_tratada") {
-    const opcaoNaoTratada = el("button", { type: "button", texto: "Marcar não tratada" });
-    opcaoNaoTratada.addEventListener("click", () => { listaMenu.hidden = true; botaoMenu.setAttribute("aria-expanded", "false"); _aplicarStatusPubOab([p.hash], "nao_tratada"); });
-    listaMenu.appendChild(opcaoNaoTratada);
-  }
-  botaoMenu.addEventListener("click", () => {
-    listaMenu.hidden = !listaMenu.hidden;
-    botaoMenu.setAttribute("aria-expanded", listaMenu.hidden ? "false" : "true");
+  botaoTrigger.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const abrindo = menu.hidden;
+    _fecharTodosComboMenusOab();
+    if (abrindo) {
+      menu.hidden = false;
+      menu.classList.add("cds--menu--open", "cds--menu--shown");
+      botaoTrigger.setAttribute("aria-expanded", "true");
+    }
   });
-  menuWrap.appendChild(botaoMenu);
-  menuWrap.appendChild(listaMenu);
-  acoesLinha.appendChild(menuWrap);
+  comboContainer.appendChild(menu);
+  acoesLinha.appendChild(comboContainer);
 
   celAcoes.appendChild(acoesLinha);
   tr.appendChild(celAcoes);
@@ -3111,7 +3190,7 @@ function _renderizarAtividades(casoId, atividades) {
     const btnExcluir = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "✕" });
     btnExcluir.setAttribute("aria-label", "Excluir atividade");
     btnExcluir.addEventListener("click", async () => {
-      if (!window.confirm(`Excluir "${atv.titulo}"?`)) return;
+      if (!(await confirmarAcao(`Excluir "${atv.titulo}"?`))) return;
       try {
         await _enviarJson(`/casos/${casoId}/atividades/${atv.id}`, {}, "DELETE");
         await _carregarAtividades(casoId);
@@ -3182,7 +3261,7 @@ async function _carregarPublicacoesCaso(casoId) {
       li.querySelector("button").addEventListener("click", async (e) => {
         const h = e.currentTarget.dataset.hash;
         const cid = e.currentTarget.dataset.caso;
-        if (!window.confirm("Desvincular esta publicação do caso?")) return;
+        if (!(await confirmarAcao("Desvincular esta publicação do caso?"))) return;
         try {
           await _enviarJson(`/casos/${cid}/publicacoes/${h}`, {}, "DELETE");
           await _carregarPublicacoesCaso(cid);
@@ -3393,7 +3472,7 @@ document.getElementById("btn-excluir-caso").addEventListener("click", async () =
   const casoId = document.getElementById("form-caso-editar").dataset.casoId;
   if (!casoId) return;
   const titulo = document.getElementById("editar-caso-titulo").value || "(sem título)";
-  if (!window.confirm(`Excluir o caso "${titulo}"? Essa ação não pode ser desfeita.`)) return;
+  if (!(await confirmarAcao(`Excluir o caso "${titulo}"? Essa ação não pode ser desfeita.`))) return;
   const botao = document.getElementById("btn-excluir-caso");
   botao.disabled = true;
   try {
