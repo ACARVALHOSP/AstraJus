@@ -1,4 +1,4 @@
-# CNJ Processual
+# AstraJus
 
 Sistema de gestão processual para escritórios de advocacia brasileiros, combinando um **servidor MCP** (Model Context Protocol) para consulta judicial e um **painel web** completo para gerenciamento de clientes, casos e atividades.
 
