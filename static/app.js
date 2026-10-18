@@ -2126,9 +2126,9 @@ function linhaCaso(caso, aoExcluir) {
   tr.appendChild(celCliente);
 
   const celAcaoForo = el("td", { "data-label": "Ação/Foro" }, [
-    el("div", { texto: caso.acao || "-" }),
+    el("span", { class: "cds--tag cds--tag--blue cds--tag--sm", texto: caso.acao || "-" }),
   ]);
-  if (caso.foro) celAcaoForo.appendChild(el("div", { class: "campo-ajuda", texto: caso.foro }));
+  if (caso.foro) celAcaoForo.appendChild(el("span", { class: "cds--tag cds--tag--gray cds--tag--sm", texto: caso.foro }));
   tr.appendChild(celAcaoForo);
 
   tr.appendChild(el("td", { "data-label": "Últ. mov.", texto: formatarDataSimples(caso.ultima_movimentacao) }));
