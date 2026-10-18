@@ -196,6 +196,75 @@ def _html_para_texto(conteudo: str | None) -> str:
     return extrator.texto()
 
 
+# --- Circuit breaker (DJEN e DataJud) ----------------------------------------
+
+
+class CircuitBreaker:
+    """Evita chamadas a APIs com falha persistente: após N falhas consecutivas o circuito abre e
+    permanece assim por cooldown_s segundos; depois vai a semi-aberto e uma única sonda confirma
+    se a API voltou.
+
+    Thread-safe via threading.Lock (asyncio + APScheduler podem correr em threads diferentes).
+    """
+
+    FECHADO = "fechado"
+    ABERTO = "aberto"
+    SEMI_ABERTO = "semi_aberto"
+
+    def __init__(self, nome: str, falhas_para_abrir: int = 3, cooldown_s: float = 300.0, agora=time.time) -> None:
+        self.nome = nome
+        self.falhas_para_abrir = falhas_para_abrir
+        self.cooldown_s = cooldown_s
+        self._agora = agora
+        self._estado = self.FECHADO
+        self._falhas_consecutivas = 0
+        self._aberto_em: float | None = None
+        self._lock = threading.Lock()
+
+    def pode_tentar(self) -> bool:
+        """True se pode prosseguir. Circuito aberto retorna False até o cooldown expirar; então
+        vai a semi-aberto e permite uma única tentativa de sonda."""
+        with self._lock:
+            if self._estado == self.FECHADO:
+                return True
+            if self._estado == self.ABERTO:
+                if self._agora() - (self._aberto_em or 0) >= self.cooldown_s:
+                    self._estado = self.SEMI_ABERTO
+                    log.info("CircuitBreaker %s: semi-aberto — testando disponibilidade", self.nome)
+                    return True
+                return False
+            return True  # SEMI_ABERTO: permite a sonda
+
+    def registrar_sucesso(self) -> None:
+        with self._lock:
+            self._falhas_consecutivas = 0
+            if self._estado != self.FECHADO:
+                log.info("CircuitBreaker %s: fechado — API disponível novamente", self.nome)
+            self._estado = self.FECHADO
+
+    def registrar_falha(self) -> None:
+        with self._lock:
+            self._falhas_consecutivas += 1
+            if self._estado == self.SEMI_ABERTO or self._falhas_consecutivas >= self.falhas_para_abrir:
+                self._estado = self.ABERTO
+                self._aberto_em = self._agora()
+                log.warning(
+                    "CircuitBreaker %s: aberto após %d falha(s) consecutiva(s) — próxima tentativa em %ds",
+                    self.nome, self._falhas_consecutivas, int(self.cooldown_s),
+                )
+
+    @property
+    def estado(self) -> str:
+        with self._lock:
+            return self._estado
+
+
+# 3 falhas consecutivas abrem o circuito; DJEN reabre em 5 min, DataJud em 10 min
+# (DataJud costuma ficar fora por mais tempo em horário de pico).
+_CIRCUIT_DJEN = CircuitBreaker("DJEN", falhas_para_abrir=3, cooldown_s=300.0)
+_CIRCUIT_DATAJUD = CircuitBreaker("DataJud", falhas_para_abrir=3, cooldown_s=600.0)
+
+
 # --- Tool 1: DataJud ---------------------------------------------------------
 
 @mcp.tool()
@@ -293,22 +362,27 @@ async def _datajud_post_com_retry(url: str, headers: dict, corpo: dict):
                 if resp.status_code in (429, 502, 503, 504):
                     ultimo_problema = f"HTTP {resp.status_code} da API DataJud (sobrecarga ou gateway lento)"
                 elif resp.status_code in (401, 403):
+                    _CIRCUIT_DATAJUD.registrar_sucesso()  # API respondeu; erro é de autenticação
                     return _erro(
                         f"HTTP {resp.status_code} da API DataJud: chave de API rejeitada. "
                         "O CNJ pode ter rotacionado a chave pública; consulte "
                         "https://datajud-wiki.cnj.jus.br/api-publica/ e defina DATAJUD_API_KEY."
                     )
                 elif resp.status_code == 404:
+                    _CIRCUIT_DATAJUD.registrar_sucesso()  # API respondeu; tribunal inválido
                     return _erro("HTTP 404 da API DataJud: sigla de tribunal provavelmente inválida.")
                 elif resp.status_code >= 400:
+                    _CIRCUIT_DATAJUD.registrar_sucesso()  # API respondeu com erro de cliente
                     return _erro(f"HTTP {resp.status_code} da API DataJud: {resp.text[:300]}")
                 else:
+                    _CIRCUIT_DATAJUD.registrar_sucesso()
                     return resp
 
             log.warning("DataJud tentativa %d/%d falhou: %s", tentativa, DATAJUD_TENTATIVAS, ultimo_problema)
             if tentativa < DATAJUD_TENTATIVAS:
                 await asyncio.sleep(DATAJUD_BACKOFF_S * tentativa)
 
+    _CIRCUIT_DATAJUD.registrar_falha()
     return _erro(
         f"Falha ao consultar o DataJud após {DATAJUD_TENTATIVAS} tentativas ({ultimo_problema}). "
         "A API é instável em horários de pico; tente novamente em alguns minutos."
@@ -473,18 +547,22 @@ async def _djen_get_com_retry(url: str, params: dict | None = None):
                 ultimo_problema = f"erro de conexão: {exc}"
             else:
                 if resp.status_code == 403:
+                    _CIRCUIT_DJEN.registrar_sucesso()  # API respondeu; geo-bloqueio não é falha da API
                     return _erro(_mensagem_geobloqueio())
                 if resp.status_code in DJEN_STATUS_TRANSITORIOS:
                     ultimo_problema = f"HTTP {resp.status_code}"
                 elif resp.status_code >= 400:
+                    _CIRCUIT_DJEN.registrar_sucesso()  # API respondeu com erro de cliente
                     return _erro(f"HTTP {resp.status_code} da API do DJEN: {resp.text[:300]}")
                 else:
+                    _CIRCUIT_DJEN.registrar_sucesso()
                     return resp
 
             log.warning("DJEN tentativa %d/%d falhou: %s", tentativa, DJEN_TENTATIVAS, ultimo_problema)
             if tentativa < DJEN_TENTATIVAS:
                 await asyncio.sleep(DJEN_BACKOFF_S)
 
+    _CIRCUIT_DJEN.registrar_falha()
     return _erro(f"Falha ao consultar o DJEN após {DJEN_TENTATIVAS} tentativas ({ultimo_problema}).")
 
 
@@ -1711,6 +1789,13 @@ async def _capturar_publicacoes_oab(
 ) -> None:
     """Confere todo monitoramento por OAB e grava as publicações achadas no log da aba. Chamada
     pelo job do APScheduler a cada 24h; os testes chamam direto, com um relógio injetado."""
+    if not _CIRCUIT_DJEN.pode_tentar():
+        log.warning("CircuitBreaker DJEN: aberto — ciclo de captura OAB ignorado (cooldown ativo)")
+        return
+    sonda = await _djen_get_com_retry(DJEN_BASE_URL, params={"pagina": 1, "itensPorPagina": 1})
+    if isinstance(sonda, dict):
+        log.warning("CircuitBreaker DJEN: API indisponível na sonda — ciclo de captura OAB ignorado")
+        return
     for id_monitoramento, monitoramento in list(registro.carregar().items()):
         criterio = monitoramento.get("criterio") or {}
         if not criterio.get("numero_oab"):
@@ -1776,6 +1861,13 @@ async def _verificar_monitoramentos_pendentes(
     Chamada pelo job do APScheduler a cada MONITORAMENTO_INTERVALO_HORAS; os testes chamam direto,
     com um relógio e um 'enviar' injetados."""
     if smtp is None:
+        return
+    if not _CIRCUIT_DJEN.pode_tentar():
+        log.warning("CircuitBreaker DJEN: aberto — ciclo de verificação de monitoramentos ignorado (cooldown ativo)")
+        return
+    sonda = await _djen_get_com_retry(DJEN_BASE_URL, params={"pagina": 1, "itensPorPagina": 1})
+    if isinstance(sonda, dict):
+        log.warning("CircuitBreaker DJEN: API indisponível na sonda — ciclo de verificação de monitoramentos ignorado")
         return
     enviar_fn = enviar or (lambda destino, criterio, itens: _enviar_aviso_monitoramento(smtp, destino, criterio, itens))
     agora_dt = agora()
