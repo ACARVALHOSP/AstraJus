@@ -34,29 +34,47 @@ body { margin: 0; min-height: 100dvh; }
   display: flex; align-items: flex-start; gap: 2rem;
   max-width: clamp(960px, 90vw, 1600px); margin: 0 auto; padding: 1.5rem 1rem 3rem;
 }
-.app-sidebar { flex: 0 0 220px; position: sticky; top: 1.5rem; }
-.app-sidebar-nav {
-  list-style: none; margin: 0; padding: 0 0 0.5rem; display: flex; flex-direction: column; gap: 0.125rem;
-  border-right: 1px solid var(--cds-border-subtle, #e0e0e0);
+/* Carbon Side Nav overrides — strip fixed/absolute positioning so it fits the flex layout */
+nav.cds--side-nav {
+  position: sticky; top: 1.5rem; inset: unset;
+  flex: 0 0 16rem; max-inline-size: 16rem;
+  block-size: auto; max-block-size: calc(100dvh - 3rem);
+  overflow-y: auto; overflow-x: hidden;
+  border-inline-end: 1px solid var(--cds-border-subtle, #e0e0e0);
+  transition: none; will-change: auto;
 }
-.app-sidebar-link {
-  display: block; width: 100%; text-align: left; padding: 0.75rem 1rem;
-  border: none; border-left: 3px solid transparent; background: none; cursor: pointer;
-  font-size: var(--fonte-base); color: var(--cds-text-primary, #161616); font-family: inherit;
+/* Category header buttons — static, not interactive */
+.cds--side-nav__submenu[tabindex="-1"] { cursor: default; pointer-events: none; }
+/* Buttons inside menu need same treatment as anchors */
+.cds--side-nav__menu button.cds--side-nav__link {
+  block-size: 2rem; min-block-size: 2rem; padding-inline-start: 2rem;
+  inline-size: 100%; text-align: start; background: none; border: 0; font-family: inherit;
+  color: inherit; cursor: pointer;
 }
-.app-sidebar-link:hover { background: var(--cds-layer-hover-01, #e8e8e8); }
-.app-sidebar-link:focus-visible { outline: 2px solid var(--cds-focus, #0f62fe); outline-offset: -2px; }
-.app-sidebar-link[aria-selected="true"] {
-  border-left-color: var(--cds-interactive, #0f62fe); background: var(--cds-layer-selected-01, #e0e0e0); font-weight: 600;
+/* Active tab state → Carbon current-link visuals */
+.cds--side-nav__link[aria-selected="true"] { background-color: var(--cds-background-selected, hsla(0,0%,55.3%,.2)); }
+.cds--side-nav__link[aria-selected="true"] .cds--side-nav__link-text { color: var(--cds-text-primary, #161616); font-weight: 600; }
+.cds--side-nav__link[aria-selected="true"]::before {
+  position: absolute; background-color: var(--cds-border-interactive, #0f62fe);
+  content: ""; inline-size: 3px; inset-block: 0; inset-inline-start: 0;
 }
-.app-sidebar-nav-grupo .cds--label { display: block; padding: 0.75rem 1rem 0.125rem; margin: 0; }
 .app-corpo { flex: 1 1 auto; min-width: 0; }
 @media (max-width: 768px) {
   .app-layout { flex-direction: column; gap: 1rem; }
-  .app-sidebar { position: static; width: 100%; flex-basis: auto; }
-  .app-sidebar-nav { flex-direction: row; overflow-x: auto; padding: 0 0 0.5rem; border-right: none; border-bottom: 1px solid var(--cds-border-subtle, #e0e0e0); }
-  .app-sidebar-link { border-left: none; border-bottom: 3px solid transparent; white-space: nowrap; }
-  .app-sidebar-link[aria-selected="true"] { border-left-color: transparent; border-bottom-color: var(--cds-interactive, #0f62fe); }
+  nav.cds--side-nav {
+    position: static; flex: none; width: 100%; max-inline-size: 100%;
+    block-size: auto; max-block-size: none;
+    border-inline-end: none; border-block-end: 1px solid var(--cds-border-subtle, #e0e0e0);
+    overflow-x: auto; overflow-y: visible;
+  }
+  .cds--side-nav__navigation { display: flex; }
+  .cds--side-nav__items { display: flex !important; flex-direction: row; padding-block: 0; }
+  .cds--side-nav__item { flex: none; }
+  .cds--side-nav__submenu { display: none !important; }
+  .cds--side-nav__menu { max-block-size: none !important; visibility: visible !important; display: flex; }
+  .cds--side-nav__menu-item { flex: none; }
+  .cds--side-nav__menu button.cds--side-nav__link { padding-inline-start: 1rem; white-space: nowrap; block-size: 3rem; min-block-size: 3rem; }
+  .cds--side-nav__link[aria-selected="true"]::before { inset-inline: 0; inset-block: auto; block-size: 3px; inline-size: auto; inset-block-end: 0; }
 }
 .app-formulario {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -325,37 +343,63 @@ body { margin: 0; min-height: 100dvh; }
 
 <div class="app-layout">
 
-<nav class="app-sidebar" aria-label="Tipo de consulta">
-<ul class="app-sidebar-nav" role="tablist" aria-orientation="vertical">
-<li role="presentation" class="app-sidebar-nav-grupo"><p class="cds--label">Consulta</p></li>
-<li role="presentation">
-<button class="app-sidebar-link" id="aba-processo-botao" role="tab" aria-selected="false" aria-controls="aba-processo" type="button">Consultar processo</button>
+<nav class="cds--side-nav cds--side-nav--expanded" aria-label="Tipo de consulta">
+<div class="cds--side-nav__navigation">
+<ul class="cds--side-nav__items" role="tablist" aria-orientation="vertical">
+<li role="presentation" class="cds--side-nav__item">
+<button class="cds--side-nav__submenu" type="button" aria-expanded="true" tabindex="-1" aria-hidden="true">
+<span class="cds--side-nav__submenu-title">Consulta</span>
+</button>
+<ul class="cds--side-nav__menu" role="presentation">
+<li role="presentation" class="cds--side-nav__menu-item">
+<button class="cds--side-nav__link" id="aba-processo-botao" role="tab" aria-selected="false" aria-controls="aba-processo" type="button"><span class="cds--side-nav__link-text">Consultar processo</span></button>
 </li>
-<li role="presentation">
-<button class="app-sidebar-link" id="aba-publicacoes-botao" role="tab" aria-selected="false" aria-controls="aba-publicacoes" type="button">Consultar publicações</button>
-</li>
-<li role="presentation" class="app-sidebar-nav-grupo"><p class="cds--label">Escritório</p></li>
-<li role="presentation">
-<button class="app-sidebar-link" id="aba-contatos-botao" role="tab" aria-selected="false" aria-controls="aba-contatos" type="button">Clientes</button>
-</li>
-<li role="presentation">
-<button class="app-sidebar-link" id="aba-casos-botao" role="tab" aria-selected="false" aria-controls="aba-casos" type="button">Casos</button>
-</li>
-<li role="presentation" class="app-sidebar-nav-grupo"><p class="cds--label">Monitoramento</p></li>
-<li role="presentation">
-<button class="app-sidebar-link" id="aba-monitoramentos-botao" role="tab" aria-selected="false" aria-controls="aba-monitoramentos" type="button">Monitoramentos</button>
-</li>
-<li role="presentation">
-<button class="app-sidebar-link" id="aba-publicacoes-oab-botao" role="tab" aria-selected="false" aria-controls="aba-publicacoes-oab" type="button">Publicações monitoradas</button>
-</li>
-<li role="presentation" class="app-sidebar-nav-grupo"><p class="cds--label">Ferramentas</p></li>
-<li role="presentation">
-<button class="app-sidebar-link" id="aba-jurimetria-botao" role="tab" aria-selected="false" aria-controls="aba-jurimetria" type="button">Jurimetria</button>
-</li>
-<li role="presentation">
-<button class="app-sidebar-link" id="aba-historico-botao" role="tab" aria-selected="false" aria-controls="aba-historico" type="button">Histórico e favoritos</button>
+<li role="presentation" class="cds--side-nav__menu-item">
+<button class="cds--side-nav__link" id="aba-publicacoes-botao" role="tab" aria-selected="false" aria-controls="aba-publicacoes" type="button"><span class="cds--side-nav__link-text">Consultar publicações</span></button>
 </li>
 </ul>
+</li>
+<li role="presentation" class="cds--side-nav__item">
+<button class="cds--side-nav__submenu" type="button" aria-expanded="true" tabindex="-1" aria-hidden="true">
+<span class="cds--side-nav__submenu-title">Escritório</span>
+</button>
+<ul class="cds--side-nav__menu" role="presentation">
+<li role="presentation" class="cds--side-nav__menu-item">
+<button class="cds--side-nav__link" id="aba-contatos-botao" role="tab" aria-selected="false" aria-controls="aba-contatos" type="button"><span class="cds--side-nav__link-text">Clientes</span></button>
+</li>
+<li role="presentation" class="cds--side-nav__menu-item">
+<button class="cds--side-nav__link" id="aba-casos-botao" role="tab" aria-selected="false" aria-controls="aba-casos" type="button"><span class="cds--side-nav__link-text">Casos</span></button>
+</li>
+</ul>
+</li>
+<li role="presentation" class="cds--side-nav__item">
+<button class="cds--side-nav__submenu" type="button" aria-expanded="true" tabindex="-1" aria-hidden="true">
+<span class="cds--side-nav__submenu-title">Monitoramento</span>
+</button>
+<ul class="cds--side-nav__menu" role="presentation">
+<li role="presentation" class="cds--side-nav__menu-item">
+<button class="cds--side-nav__link" id="aba-monitoramentos-botao" role="tab" aria-selected="false" aria-controls="aba-monitoramentos" type="button"><span class="cds--side-nav__link-text">Monitoramentos</span></button>
+</li>
+<li role="presentation" class="cds--side-nav__menu-item">
+<button class="cds--side-nav__link" id="aba-publicacoes-oab-botao" role="tab" aria-selected="false" aria-controls="aba-publicacoes-oab" type="button"><span class="cds--side-nav__link-text">Publicações monitoradas</span></button>
+</li>
+</ul>
+</li>
+<li role="presentation" class="cds--side-nav__item">
+<button class="cds--side-nav__submenu" type="button" aria-expanded="true" tabindex="-1" aria-hidden="true">
+<span class="cds--side-nav__submenu-title">Ferramentas</span>
+</button>
+<ul class="cds--side-nav__menu" role="presentation">
+<li role="presentation" class="cds--side-nav__menu-item">
+<button class="cds--side-nav__link" id="aba-jurimetria-botao" role="tab" aria-selected="false" aria-controls="aba-jurimetria" type="button"><span class="cds--side-nav__link-text">Jurimetria</span></button>
+</li>
+<li role="presentation" class="cds--side-nav__menu-item">
+<button class="cds--side-nav__link" id="aba-historico-botao" role="tab" aria-selected="false" aria-controls="aba-historico" type="button"><span class="cds--side-nav__link-text">Histórico e favoritos</span></button>
+</li>
+</ul>
+</li>
+</ul>
+</div>
 </nav>
 
 <main id="conteudo" class="app-corpo">
