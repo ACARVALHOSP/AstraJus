@@ -9,3 +9,8 @@ Basta fazer merge na branch `main` — o pipeline roda sozinho:
 
 Não é necessário nenhum comando manual de deploy. Após o merge, acompanhe o status em:
 `https://github.com/ACARVALHOSP/AstraJus/actions`
+
+## Fluxo após cada alteração
+Sempre que concluir uma alteração, perguntar ao usuário:
+1. Quer criar um PR?
+2. Quer fazer merge para main (e disparar o deploy)?
