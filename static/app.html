@@ -43,8 +43,8 @@ nav.cds--side-nav {
   border-inline-end: 1px solid var(--cds-border-subtle, #e0e0e0);
   transition: none; will-change: auto;
 }
-/* Category header buttons — static, not interactive */
-.cds--side-nav__submenu[tabindex="-1"] { cursor: default; pointer-events: none; }
+/* Category header buttons — não permitem hover visual quando já-ativos no grupo */
+.cds--side-nav__item--active > .cds--side-nav__submenu:hover { background: none; }
 /* Buttons inside menu need same treatment as anchors */
 .cds--side-nav__menu button.cds--side-nav__link {
   block-size: 2rem; min-block-size: 2rem; padding-inline-start: 2rem;
@@ -343,11 +343,11 @@ nav.cds--side-nav {
 
 <div class="app-layout">
 
-<nav class="cds--side-nav cds--side-nav--expanded" aria-label="Tipo de consulta">
+<nav class="cds--side-nav cds--side-nav--fixed" aria-label="Tipo de consulta">
 <div class="cds--side-nav__navigation">
 <ul class="cds--side-nav__items" role="tablist" aria-orientation="vertical">
 <li role="presentation" class="cds--side-nav__item">
-<button class="cds--side-nav__submenu" type="button" aria-expanded="true" tabindex="-1" aria-hidden="true">
+<button class="cds--side-nav__submenu" type="button" aria-expanded="true">
 <span class="cds--side-nav__submenu-title">Consulta</span>
 </button>
 <ul class="cds--side-nav__menu" role="presentation">
@@ -360,7 +360,7 @@ nav.cds--side-nav {
 </ul>
 </li>
 <li role="presentation" class="cds--side-nav__item">
-<button class="cds--side-nav__submenu" type="button" aria-expanded="true" tabindex="-1" aria-hidden="true">
+<button class="cds--side-nav__submenu" type="button" aria-expanded="true">
 <span class="cds--side-nav__submenu-title">Escritório</span>
 </button>
 <ul class="cds--side-nav__menu" role="presentation">
@@ -373,7 +373,7 @@ nav.cds--side-nav {
 </ul>
 </li>
 <li role="presentation" class="cds--side-nav__item">
-<button class="cds--side-nav__submenu" type="button" aria-expanded="true" tabindex="-1" aria-hidden="true">
+<button class="cds--side-nav__submenu" type="button" aria-expanded="true">
 <span class="cds--side-nav__submenu-title">Monitoramento</span>
 </button>
 <ul class="cds--side-nav__menu" role="presentation">
@@ -386,7 +386,7 @@ nav.cds--side-nav {
 </ul>
 </li>
 <li role="presentation" class="cds--side-nav__item">
-<button class="cds--side-nav__submenu" type="button" aria-expanded="true" tabindex="-1" aria-hidden="true">
+<button class="cds--side-nav__submenu" type="button" aria-expanded="true">
 <span class="cds--side-nav__submenu-title">Ferramentas</span>
 </button>
 <ul class="cds--side-nav__menu" role="presentation">
