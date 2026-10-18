@@ -1263,6 +1263,7 @@ function cartaoPublicacao(item) {
       tituloSugerido: item.nomeClasse || item.tipoComunicacao || "",
       partes: nomesPartes,
       tribunal: (item.siglaTribunal || "").toLowerCase() || null,
+      hashPublicacao: item.hash || null,
     });
   }
 
@@ -2201,7 +2202,7 @@ function cartaoPendente(p) {
   anexarBotaoCadastrarCaso(acoes, p.numero_processo, () => {
     card.remove();
     carregarCasosPagina();
-  });
+  }, { hashPublicacao: d.hash || null });
   const botaoDescartar = el("button", {
     class: "cds--btn cds--btn--danger--tertiary cds--btn--sm", type: "button", texto: "Descartar",
   });
@@ -2345,6 +2346,7 @@ document.getElementById("btn-novo-caso").addEventListener("click", async () => {
   abrirModal("modal-novo-caso");
 });
 document.getElementById("modal-novo-caso-fechar").addEventListener("click", () => fecharModal("modal-novo-caso"));
+document.getElementById("modal-cadastrar-caso-publicacao-fechar").addEventListener("click", () => fecharModal("modal-cadastrar-caso-publicacao"));
 
 // Typeahead: campo de busca de cliente no form-caso
 (function () {
@@ -2449,17 +2451,13 @@ document.getElementById("contato-excluir").addEventListener("click", async () =>
 // Botão "Cadastrar como caso" no resultado da consulta de processo (DataJud): abre um mini
 // formulário inline, sem precisar trocar de aba. Cria o cliente na hora se for novo (Fase 1).
 function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) {
-  const { rotulo, nomeSugerido, tituloSugerido, partes, tribunal } = opcoes;
+  const { rotulo, nomeSugerido, tituloSugerido, partes, tribunal, hashPublicacao } = opcoes;
   const botao = el("button", {
     class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: rotulo || "Cadastrar como caso",
   });
   acoes.appendChild(botao);
 
   botao.addEventListener("click", async () => {
-    if (botao.nextSibling && botao.nextSibling.classList && botao.nextSibling.classList.contains("mini-form-caso")) {
-      botao.nextSibling.remove();
-      return;
-    }
     if (!_cacheClientes.length) {
       try {
         const { clientes } = await _buscarJson("/clientes");
@@ -2577,8 +2575,18 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
           if (!nomeNovo) throw new ErroMCP(400, "Informe o nome do novo cliente ou escolha um existente.");
           corpo.cliente_novo = { nome: nomeNovo };
         }
-        await _enviarJson("/casos", corpo);
-        miniForm.replaceWith(notificacao("success", "Caso cadastrado"));
+        const casoCriado = await _enviarJson("/casos", corpo);
+        let publicacaoVinculada = false;
+        if (hashPublicacao) {
+          try {
+            await _enviarJson(`/casos/${casoCriado.id}/publicacoes`, { hash: hashPublicacao });
+            publicacaoVinculada = true;
+          } catch (erroVinculo) {
+            mostrarToast("warning", "Caso criado", `Caso cadastrado, mas não foi possível vincular a publicação: ${erroVinculo.message}`);
+          }
+        }
+        fecharModal("modal-cadastrar-caso-publicacao");
+        mostrarToast("success", "Caso cadastrado", publicacaoVinculada ? "Caso criado e publicação vinculada." : "Caso criado.");
         if (aoSalvar) aoSalvar();
       } catch (erro) {
         statusMini.textContent = erro.message;
@@ -2598,7 +2606,11 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
       botaoSalvar,
       statusMini,
     ]);
-    botao.insertAdjacentElement("afterend", miniForm);
+    const corpoModal = document.getElementById("modal-cadastrar-caso-publicacao-corpo");
+    limpar(corpoModal);
+    document.getElementById("modal-cadastrar-caso-publicacao-titulo").textContent = rotulo || "Cadastrar como caso";
+    corpoModal.appendChild(miniForm);
+    abrirModal("modal-cadastrar-caso-publicacao");
   });
 }
 
