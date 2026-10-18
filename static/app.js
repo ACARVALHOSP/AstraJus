@@ -2918,10 +2918,12 @@ async function buscarAcaoForoDataJud(numerosCampo, campAcao, campForo, statusEl,
   const numeros = numerosCampo.value.split(",").map((s) => s.trim()).filter(Boolean);
   if (!numeros.length) { statusEl.textContent = "Informe ao menos um número de processo."; return; }
   const numero = numeros[0];
+  const tribunal = _siglaTribunal(numero);
+  if (!tribunal) { statusEl.textContent = "Não foi possível determinar o tribunal pelo número informado."; return; }
   botao.disabled = true;
   statusEl.textContent = "Consultando DataJud…";
   try {
-    const dados = await cliente.chamarTool("consultar_processo_datajud", { numero_processo: numero });
+    const dados = await cliente.chamarTool("consultar_processo_datajud", { numero_processo: numero, tribunal });
     if (dados.erro) { statusEl.textContent = dados.mensagem || "Erro no DataJud."; return; }
     const proc = (dados.processos || [])[0];
     if (!proc) { statusEl.textContent = dados.mensagem || "Processo não encontrado."; return; }
@@ -3083,6 +3085,20 @@ function _abrirModalAtividade(casoId, atividade = null) {
   abrirModal("modal-atividade");
 }
 
+const _tribunalMap = {
+  "8260": "tjsp", "8190": "tjrj", "8210": "tjmg", "8250": "tjrs", "8240": "tjpr",
+  "8120": "tjba", "8060": "tjce", "8170": "tjpe", "8080": "tjdf", "8090": "tjgo",
+  "4013": "trf1", "4025": "trf2", "4036": "trf3", "4047": "trf4", "4058": "trf5",
+};
+function _siglaTribunal(num) {
+  const digitos = num.replace(/\D/g, "");
+  if (digitos.length === 20) {
+    const cod = digitos.substring(13, 17);
+    return _tribunalMap[cod] || null;
+  }
+  return null;
+}
+
 async function _carregarPublicacoesCaso(casoId) {
   const lista = document.getElementById("lista-publicacoes-caso");
   limpar(lista);
@@ -3143,19 +3159,6 @@ async function _buscarMovimentacoes(casoId) {
   botao.disabled = true;
   let todasMovs = [];
   let erros = [];
-  const _tribunalMap = {
-    "8260": "tjsp", "8190": "tjrj", "8210": "tjmg", "8250": "tjrs", "8240": "tjpr",
-    "8120": "tjba", "8060": "tjce", "8260": "tjsp", "4013": "trf1", "4025": "trf2",
-    "4036": "trf3", "4047": "trf4", "4058": "trf5",
-  };
-  function _siglaTribunal(num) {
-    const digitos = num.replace(/\D/g, "");
-    if (digitos.length === 20) {
-      const cod = digitos.substring(13, 17);
-      return _tribunalMap[cod] || null;
-    }
-    return null;
-  }
   for (const num of numeros) {
     const tribunal = _siglaTribunal(num);
     if (!tribunal) { erros.push(`${num}: não foi possível determinar o tribunal`); continue; }
