@@ -2452,7 +2452,7 @@ document.getElementById("contato-excluir").addEventListener("click", async () =>
 // Botão "Cadastrar como caso" no resultado da consulta de processo (DataJud): abre um mini
 // formulário inline, sem precisar trocar de aba. Cria o cliente na hora se for novo (Fase 1).
 function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) {
-  const { rotulo, nomeSugerido, tituloSugerido, partes, tribunal, hashPublicacao, dadosPublicacao } = opcoes;
+  const { rotulo, tituloModal, nomeSugerido, tituloSugerido, partes, tribunal, hashPublicacao, dadosPublicacao } = opcoes;
   const botao = el("button", {
     class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: rotulo || "Cadastrar como caso",
   });
@@ -2613,7 +2613,7 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
     ]);
     const corpoModal = document.getElementById("modal-cadastrar-caso-publicacao-corpo");
     limpar(corpoModal);
-    document.getElementById("modal-cadastrar-caso-publicacao-titulo").textContent = rotulo || "Cadastrar como caso";
+    document.getElementById("modal-cadastrar-caso-publicacao-titulo").textContent = tituloModal || rotulo || "Cadastrar como caso";
     corpoModal.appendChild(miniForm);
     abrirModal("modal-cadastrar-caso-publicacao");
   });
@@ -2813,25 +2813,18 @@ function linhaPublicacaoOab(p) {
   }
 
   if (p.status !== "tratada" && p.numero_processo) {
-    const botaoMais = el("button", {
-      class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "+",
-      title: "Cadastrar como caso", "aria-label": "Cadastrar como caso",
+    anexarBotaoCadastrarCaso(acoesLinha, p.numero_processo, () => {
+      _statusGeralPubOab("Caso cadastrado a partir da publicação.");
+      carregarPublicacoesOab();
+    }, {
+      rotulo: "+",
+      tituloModal: "Cadastrar cliente e caso",
+      nomeSugerido: p.nome_pesquisado || "",
+      tituloSugerido: d.nomeClasse || d.tipoComunicacao || "",
+      hashPublicacao: p.hash || null,
+      dadosPublicacao: d,
+      tribunal: (d.siglaTribunal || "").toLowerCase() || null,
     });
-    botaoMais.addEventListener("click", async () => {
-      const sugestao = p.nome_pesquisado || "";
-      const nome = (window.prompt("Nome do cliente para este caso:", sugestao) || "").trim();
-      if (!nome) return;
-      botaoMais.disabled = true;
-      try {
-        await _enviarJson(`/publicacoes-oab/${p.hash}/criar-caso`, { nome_cliente: nome });
-        _statusGeralPubOab("Caso cadastrado a partir da publicação.");
-        carregarPublicacoesOab();
-      } catch (erro) {
-        _statusGeralPubOab(erro.message, true);
-        botaoMais.disabled = false;
-      }
-    });
-    acoesLinha.appendChild(botaoMais);
   }
 
   if (p.status !== "tratada") {
