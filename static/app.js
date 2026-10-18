@@ -3202,7 +3202,7 @@ async function _buscarMovimentacoes(casoId) {
   limpar(lista);
   limpar(statusEl);
   const resp = await _buscarJson(`/casos/${casoId}`);
-  const numeros = resp.numeros_processo || [];
+  const numeros = resp.processos || [];
   if (!numeros.length) {
     mostrarAviso(statusEl, "Nenhum número de processo vinculado a este caso.");
     return;
