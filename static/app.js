@@ -2772,6 +2772,11 @@ function _irParaConsultaProcesso(numeroProcesso) {
   if (abaProcesso) selecionarAba(abaProcesso);
   const campo = document.getElementById("numero-processo");
   if (campo) campo.value = numeroProcesso || "";
+  const campTribunal = document.getElementById("tribunal");
+  if (campTribunal && !campTribunal.value) {
+    const sigla = _siglaTribunal(numeroProcesso || "");
+    if (sigla) campTribunal.value = sigla;
+  }
 }
 
 const _publicacoesOabSelecionadas = new Set();
