@@ -4,7 +4,7 @@ Tools expostas:
 - consultar_processo_datajud: metadados e movimentações de processo (API Pública DataJud).
 - consultar_publicacoes_djen: publicações/intimações no DJEN (API Comunica PJe).
 - baixar_certidao_djen: baixa a certidão PDF de uma publicação e salva em arquivo temporário.
-- buscar_feriados_forenses: feriados forenses do TJSP por município/comarca e ano, para cálculo de prazo.
+- buscar_feriados_forenses: feriados forenses por município/comarca, ano e tribunal (TJSP via API oficial; demais tribunais calculado por UF).
 
 Transporte: stdio. Atenção: nada deve ser impresso em stdout (ele é o canal do protocolo);
 logs vão para stderr.
@@ -538,6 +538,139 @@ FERIADOS_ANO_MIN = 2013  # mais antigo disponível no seletor da página do TJSP
 
 _RE_DATA_MS_TJSP = re.compile(r"/Date\((\d+)\)")
 
+# ── Feriados nacionais e estaduais (para tribunais além do TJSP) ──────────────
+
+_FERIADOS_NACIONAIS_FIXOS: list[tuple[str, str]] = [
+    ("01-01", "Confraternização Universal"),
+    ("04-21", "Tiradentes"),
+    ("05-01", "Dia do Trabalho"),
+    ("09-07", "Independência do Brasil"),
+    ("10-12", "Nossa Sra. Aparecida"),
+    ("11-02", "Finados"),
+    ("11-15", "Proclamação da República"),
+    ("11-20", "Dia da Consciência Negra"),
+    ("12-25", "Natal"),
+]
+
+# Feriados estaduais exclusivos (MM-DD, descrição) — não incluem os nacionais já listados acima.
+# Fonte: legislações estaduais; lista conservadora (apenas feriados com lei estadual consolidada).
+_FERIADOS_ESTADUAIS: dict[str, list[tuple[str, str]]] = {
+    "AC": [("01-23", "Dia do Estado do Acre"), ("06-15", "Aniversário de Rio Branco"),
+           ("09-05", "Dia da Amazônia"), ("11-17", "Tratado de Petrópolis")],
+    "AL": [("09-16", "Emancipação Política de Alagoas")],
+    "AM": [("09-05", "Elevação à Categoria de Província")],
+    "AP": [("09-13", "Criação do Território Federal do Amapá")],
+    "BA": [("07-02", "Independência da Bahia")],
+    "CE": [("03-25", "Data Magna do Ceará")],
+    "DF": [],
+    "ES": [("05-23", "Colonização do Espírito Santo")],
+    "GO": [("10-24", "Pedra Fundamental de Goiânia")],
+    "MA": [("07-28", "Adesão do Maranhão à Independência do Brasil")],
+    "MG": [("12-08", "Nossa Sra. da Imaculada Conceição")],
+    "MS": [("10-11", "Criação do Estado de Mato Grosso do Sul")],
+    "MT": [],
+    "PA": [("08-15", "Adesão do Pará à Independência do Brasil")],
+    "PB": [("08-05", "Fundação da Paraíba")],
+    "PE": [("03-06", "Revolução Pernambucana")],
+    "PI": [("10-19", "Dia do Piauí")],
+    "PR": [("12-19", "Emancipação Política do Paraná")],
+    "RJ": [("04-23", "Dia de São Jorge")],
+    "RN": [("10-03", "Mártires de Cunhaú e Uruaçu")],
+    "RO": [("01-04", "Criação do Estado de Rondônia"), ("06-18", "Dia do Evangélico")],
+    "RR": [("10-05", "Criação do Território de Roraima")],
+    "RS": [("09-20", "Revolução Farroupilha")],
+    "SC": [("11-25", "Dia de Santa Catarina")],
+    "SE": [("07-08", "Autonomia Política de Sergipe")],
+    "SP": [("07-09", "Revolução Constitucionalista de 1932")],
+    "TO": [("10-05", "Criação do Estado do Tocantins")],
+}
+
+# UF sede de cada TRT (usado quando o tribunal é TRT e não TJSP)
+_TRT_UF: dict[str, str] = {
+    "trt1": "RJ", "trt2": "SP", "trt3": "MG", "trt4": "RS", "trt5": "BA",
+    "trt6": "PE", "trt7": "CE", "trt8": "PA", "trt9": "PR", "trt10": "DF",
+    "trt11": "AM", "trt12": "SC", "trt13": "PB", "trt14": "RO", "trt15": "SP",
+    "trt16": "MA", "trt17": "ES", "trt18": "GO", "trt19": "AL", "trt20": "SE",
+    "trt21": "RN", "trt22": "PI", "trt23": "MT", "trt24": "MS",
+}
+
+# UF sede de cada TRF
+_TRF_UF: dict[str, str] = {
+    "trf1": "DF", "trf2": "RJ", "trf3": "SP", "trf4": "RS", "trf5": "PE", "trf6": "MG",
+}
+
+
+def _pascoa(ano: int) -> datetime:
+    """Algoritmo de Meeus/Jones/Butcher — retorna a data da Páscoa como objeto date."""
+    from datetime import date
+    a = ano % 19
+    b = ano // 100
+    c = ano % 100
+    d = b // 4
+    e = b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i = c // 4
+    k = c % 4
+    l_ = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l_) // 451
+    mes = (h + l_ - 7 * m + 114) // 31
+    dia = ((h + l_ - 7 * m + 114) % 31) + 1
+    return date(ano, mes, dia)
+
+
+def _uf_do_tribunal(tribunal: str) -> str | None:
+    """Retorna a UF sede do tribunal a partir da sigla (ex.: 'tjsp' → 'SP', 'trt15' → 'SP')."""
+    t = (tribunal or "").lower().strip()
+    if t.startswith("tj"):
+        uf = t[2:]
+        if uf == "dft":
+            return "DF"
+        if len(uf) == 2:
+            return uf.upper()
+        return {"mmg": "MG", "msp": "SP", "mrs": "RS"}.get(uf)
+    if t in _TRT_UF:
+        return _TRT_UF[t]
+    if t in _TRF_UF:
+        return _TRF_UF[t]
+    if t in ("stj", "stf", "stm", "cnj"):
+        return "DF"
+    return None
+
+
+def _calcular_feriados_nacionais_e_estaduais(uf: str | None, ano: int) -> dict:
+    """Computa feriados nacionais + estaduais sem chamada de rede.
+    Retorna o mesmo formato que buscar_feriados_forenses."""
+    from datetime import date
+    feriados: dict[str, str] = {}
+
+    for mmdd, desc in _FERIADOS_NACIONAIS_FIXOS:
+        feriados[f"{ano}-{mmdd}"] = desc
+
+    pascoa = _pascoa(ano)
+    for delta, desc in [
+        (-48, "Segunda-feira de Carnaval"),
+        (-47, "Terça-feira de Carnaval"),
+        (-2,  "Sexta-feira Santa"),
+        (0,   "Páscoa"),
+        (60,  "Corpus Christi"),
+    ]:
+        feriados[(pascoa + timedelta(days=delta)).isoformat()] = desc
+
+    uf_upper = (uf or "").upper()
+    for mmdd, desc in _FERIADOS_ESTADUAIS.get(uf_upper, []):
+        feriados.setdefault(f"{ano}-{mmdd}", desc)
+
+    lista = sorted([{"data": d, "descricao": n} for d, n in feriados.items()], key=lambda x: x["data"])
+    return {
+        "municipio": uf_upper or "federal",
+        "uf": uf_upper or None,
+        "ano": ano,
+        "fonte": "calculado",
+        "feriados": lista,
+    }
+
 
 def _dir_feriados_forenses() -> Path:
     caminho = Path(os.environ.get("CNJ_MCP_FERIADOS_DIR", "feriados_forenses"))
@@ -545,10 +678,11 @@ def _dir_feriados_forenses() -> Path:
     return caminho
 
 
-def _chave_cache_feriados(municipio: str, ano: int) -> str:
+def _chave_cache_feriados(municipio: str, ano: int, tribunal: str = "tjsp") -> str:
     normalizado = _sem_acento_cjpg(municipio).strip().replace(" ", "_")
     normalizado = re.sub(r"[^a-z0-9_]", "", normalizado) or "municipio"
-    return f"{normalizado}_{ano}"
+    trib = re.sub(r"[^a-z0-9]", "", (tribunal or "tjsp").lower()) or "tjsp"
+    return f"{trib}_{normalizado}_{ano}"
 
 
 async def _tjsp_buscar_municipios(termo: str) -> list[dict]:
@@ -588,8 +722,8 @@ async def _tjsp_buscar_feriados(nome_municipio: str, codigo_municipio: int, ano:
     return feriados
 
 
-def _feriados_do_cache(municipio: str, ano: int) -> dict | None:
-    arquivo = _dir_feriados_forenses() / f"{_chave_cache_feriados(municipio, ano)}.json"
+def _feriados_do_cache(municipio: str, ano: int, tribunal: str = "tjsp") -> dict | None:
+    arquivo = _dir_feriados_forenses() / f"{_chave_cache_feriados(municipio, ano, tribunal)}.json"
     if not arquivo.is_file():
         return None
     if time.time() - arquivo.stat().st_mtime > FERIADOS_CACHE_TTL_S:
@@ -600,28 +734,42 @@ def _feriados_do_cache(municipio: str, ano: int) -> dict | None:
         return None
 
 
-def _salvar_feriados_no_cache(municipio: str, ano: int, resultado: dict) -> None:
-    arquivo = _dir_feriados_forenses() / f"{_chave_cache_feriados(municipio, ano)}.json"
+def _salvar_feriados_no_cache(municipio: str, ano: int, resultado: dict, tribunal: str = "tjsp") -> None:
+    arquivo = _dir_feriados_forenses() / f"{_chave_cache_feriados(municipio, ano, tribunal)}.json"
     arquivo.write_text(json.dumps(resultado, ensure_ascii=False), encoding="utf-8")
 
 
 @mcp.tool()
-async def buscar_feriados_forenses(municipio: str, ano: int) -> dict:
-    """Feriados forenses do TJSP para um município/comarca e ano (fonte oficial:
-    tjsp.jus.br/CanaisComunicacao/Feriados/ExpedienteForense). Usado para calcular prazos
-    processuais em dias úteis - a contagem deve excluir sábados, domingos e essas datas.
+async def buscar_feriados_forenses(municipio: str, ano: int, tribunal: str = "tjsp") -> dict:
+    """Feriados forenses para um município/comarca e ano, usado para calcular prazos processuais
+    em dias úteis (excluir sábados, domingos e feriados).
+
+    Para TJSP (padrão), consulta a fonte oficial tjsp.jus.br.
+    Para outros tribunais (ex: "tjrj", "trf3", "trt15"), calcula feriados nacionais +
+    estaduais correspondentes ao tribunal informado, sem chamada de rede externa.
+
     Resultado fica em cache por até 1 dia."""
     municipio = (municipio or "").strip()
+    tribunal = (tribunal or "tjsp").strip().lower()
     if not municipio:
         return _erro("informe o município/comarca.")
     ano_atual = datetime.now(timezone.utc).year
     if not (FERIADOS_ANO_MIN <= ano <= ano_atual + 1):
-        return _erro(f"ano fora do intervalo suportado pelo TJSP ({FERIADOS_ANO_MIN}-{ano_atual + 1}).")
+        return _erro(f"ano fora do intervalo suportado ({FERIADOS_ANO_MIN}-{ano_atual + 1}).")
 
-    em_cache = _feriados_do_cache(municipio, ano)
+    em_cache = _feriados_do_cache(municipio, ano, tribunal)
     if em_cache is not None:
         return em_cache
 
+    # Tribunais não-TJSP: calcular sem rede
+    if tribunal != "tjsp":
+        uf = _uf_do_tribunal(tribunal)
+        resultado = _calcular_feriados_nacionais_e_estaduais(uf, ano)
+        resultado["municipio"] = municipio
+        _salvar_feriados_no_cache(municipio, ano, resultado, tribunal)
+        return resultado
+
+    # TJSP: fonte oficial
     try:
         candidatos = await _tjsp_buscar_municipios(municipio)
     except httpx.HTTPError as exc:
@@ -641,7 +789,7 @@ async def buscar_feriados_forenses(municipio: str, ano: int) -> dict:
         "ano": ano,
         "feriados": feriados,
     }
-    _salvar_feriados_no_cache(municipio, ano, resultado)
+    _salvar_feriados_no_cache(municipio, ano, resultado, tribunal)
     return resultado
 
 
