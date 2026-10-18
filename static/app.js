@@ -914,20 +914,20 @@ function gerarDemonstrativoPrazo(dataBaseISO, dias, tipo, feriados) {
   return { linhas, dia1, vencimento: atual };
 }
 
-const _cacheFeriados = new Map(); // `${municipio}|${ano}` -> Map(iso -> descricao)
+const _cacheFeriados = new Map(); // `${tribunal}|${municipio}|${ano}` -> Map(iso -> descricao)
 
-async function _buscarFeriadosAno(municipio, ano) {
-  const chave = `${municipio}|${ano}`;
+async function _buscarFeriadosAno(municipio, ano, tribunal = "tjsp") {
+  const chave = `${tribunal}|${municipio}|${ano}`;
   if (_cacheFeriados.has(chave)) return _cacheFeriados.get(chave);
-  const dados = await cliente.chamarTool("buscar_feriados_forenses", { municipio, ano });
+  const dados = await cliente.chamarTool("buscar_feriados_forenses", { municipio, ano, tribunal });
   if (dados.erro) throw new Error(dados.mensagem);
   const mapa = new Map((dados.feriados || []).map((f) => [f.data, f.descricao || "Feriado forense"]));
   _cacheFeriados.set(chave, mapa);
   return mapa;
 }
 
-async function _uniaoFeriados(municipio, anos) {
-  const mapas = await Promise.all(anos.map((ano) => _buscarFeriadosAno(municipio, ano)));
+async function _uniaoFeriados(municipio, anos, tribunal = "tjsp") {
+  const mapas = await Promise.all(anos.map((ano) => _buscarFeriadosAno(municipio, ano, tribunal)));
   const uniao = new Map();
   for (const mapa of mapas) for (const [data, descricao] of mapa) uniao.set(data, descricao);
   return uniao;
@@ -935,16 +935,16 @@ async function _uniaoFeriados(municipio, anos) {
 
 // Calcula o demonstrativo completo buscando os feriados necessários; se o vencimento cair num ano
 // ainda não buscado (prazo longo), busca também esse ano e recalcula.
-async function calcularPrazoComFeriados(dataBaseISO, dias, tipo, municipio) {
+async function calcularPrazoComFeriados(dataBaseISO, dias, tipo, municipio, tribunal = "tjsp") {
   if (!cliente) throw new Error("Informe o seu token e conecte antes de calcular o prazo.");
   const anoBase = Number(dataBaseISO.slice(0, 4));
   let anos = [anoBase, anoBase + 1];
-  let feriados = await _uniaoFeriados(municipio, anos);
+  let feriados = await _uniaoFeriados(municipio, anos, tribunal);
   let resultado = gerarDemonstrativoPrazo(dataBaseISO, dias, tipo, feriados);
   const anoVencimento = Number(resultado.vencimento.slice(0, 4));
   if (anoVencimento > anoBase + 1) {
     anos = [...anos, anoVencimento];
-    feriados = await _uniaoFeriados(municipio, anos);
+    feriados = await _uniaoFeriados(municipio, anos, tribunal);
     resultado = gerarDemonstrativoPrazo(dataBaseISO, dias, tipo, feriados);
   }
   return resultado;
@@ -1105,6 +1105,7 @@ function abrirDemonstrativoPdf({ dataBase, dias, tipo, municipio, dia1, vencimen
 
 function painelCalculoPrazo(item) {
   const dataBase = (item.data_disponibilizacao || "").slice(0, 10);
+  const tribunal = (item.siglaTribunal || "").toLowerCase() || "tjsp";
   const painel = el("div", { class: "prazo-painel", hidden: "" });
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dataBase)) {
@@ -1126,8 +1127,9 @@ function painelCalculoPrazo(item) {
   const botaoCalcular = el("button", { class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Calcular" });
   const resultadoEl = el("div", { class: "prazo-resultado" });
 
+  const fonteFeriados = tribunal === "tjsp" ? "feriados forenses do TJSP (fonte oficial)" : `feriados nacionais + estaduais calculados para ${tribunal.toUpperCase()}`;
   painel.appendChild(
-    el("p", { class: "campo-ajuda", texto: `Base: disponibilizado em ${formatarDataSimples(dataBase)}. A contagem exclui sábados, domingos e os feriados forenses do município informado.` })
+    el("p", { class: "campo-ajuda", texto: `Base: disponibilizado em ${formatarDataSimples(dataBase)}. A contagem exclui sábados, domingos e ${fonteFeriados}.` })
   );
   painel.appendChild(
     el("div", { class: "prazo-painel-grade" }, [
@@ -1153,12 +1155,12 @@ function painelCalculoPrazo(item) {
     botaoCalcular.textContent = "Calculando…";
     try {
       const tipo = campoTipo.value;
-      const { dia1, vencimento, linhas } = await calcularPrazoComFeriados(dataBase, dias, tipo, municipio);
+      const { dia1, vencimento, linhas } = await calcularPrazoComFeriados(dataBase, dias, tipo, municipio, tribunal);
       resultadoEl.appendChild(
         notificacao(
           "success",
           `Vencimento: ${formatarDataSimples(vencimento)}`,
-          `Início da contagem (dia 1): ${formatarDataSimples(dia1)} · ${dias} dia(s) úteis em ${municipio}`
+          `Início da contagem (dia 1): ${formatarDataSimples(dia1)} · ${dias} dia(s) úteis em ${municipio} (${tribunal.toUpperCase()})`
         )
       );
       resultadoEl.appendChild(
