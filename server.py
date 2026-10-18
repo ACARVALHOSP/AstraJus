@@ -3177,6 +3177,18 @@ class _AutenticacaoBearer:
                 await _json(send, 400, _erro("hash obrigatório."))
                 return
             ok = self.publicacoes.vincular_caso(h, caso_id)
+            if not ok:
+                # Publicação ainda não existia no log (ex.: resultado de busca avulsa no DJEN ou
+                # processo pendente de triagem, que não passam pela captura de monitoramento por
+                # OAB) - se o cliente mandou os dados da publicação, grava agora já vinculada.
+                dados_publicacao = corpo.get("dados")
+                if isinstance(dados_publicacao, dict):
+                    self.publicacoes.registrar(
+                        h, None, corpo.get("nome_pesquisado"), corpo.get("numero_processo"),
+                        dados_publicacao, "tratada", caso_id,
+                        lambda: datetime.now(timezone.utc),
+                    )
+                    ok = True
             await _json(send, 200 if ok else 404, {"vinculada": ok})
         elif metodo == "DELETE" and pub_hash:
             ok = self.publicacoes.vincular_caso(pub_hash, None)

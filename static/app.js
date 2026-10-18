@@ -1264,6 +1264,7 @@ function cartaoPublicacao(item) {
       partes: nomesPartes,
       tribunal: (item.siglaTribunal || "").toLowerCase() || null,
       hashPublicacao: item.hash || null,
+      dadosPublicacao: item,
     });
   }
 
@@ -2202,7 +2203,7 @@ function cartaoPendente(p) {
   anexarBotaoCadastrarCaso(acoes, p.numero_processo, () => {
     card.remove();
     carregarCasosPagina();
-  }, { hashPublicacao: d.hash || null });
+  }, { hashPublicacao: d.hash || null, dadosPublicacao: d });
   const botaoDescartar = el("button", {
     class: "cds--btn cds--btn--danger--tertiary cds--btn--sm", type: "button", texto: "Descartar",
   });
@@ -2451,7 +2452,7 @@ document.getElementById("contato-excluir").addEventListener("click", async () =>
 // Botão "Cadastrar como caso" no resultado da consulta de processo (DataJud): abre um mini
 // formulário inline, sem precisar trocar de aba. Cria o cliente na hora se for novo (Fase 1).
 function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) {
-  const { rotulo, nomeSugerido, tituloSugerido, partes, tribunal, hashPublicacao } = opcoes;
+  const { rotulo, nomeSugerido, tituloSugerido, partes, tribunal, hashPublicacao, dadosPublicacao } = opcoes;
   const botao = el("button", {
     class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: rotulo || "Cadastrar como caso",
   });
@@ -2579,7 +2580,11 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
         let publicacaoVinculada = false;
         if (hashPublicacao) {
           try {
-            await _enviarJson(`/casos/${casoCriado.id}/publicacoes`, { hash: hashPublicacao });
+            await _enviarJson(`/casos/${casoCriado.id}/publicacoes`, {
+              hash: hashPublicacao,
+              numero_processo: numeroProcesso || null,
+              dados: dadosPublicacao || null,
+            });
             publicacaoVinculada = true;
           } catch (erroVinculo) {
             mostrarToast("warning", "Caso criado", `Caso cadastrado, mas não foi possível vincular a publicação: ${erroVinculo.message}`);
