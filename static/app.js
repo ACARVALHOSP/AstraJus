@@ -2125,9 +2125,19 @@ function linhaCaso(caso, aoExcluir) {
   }
   tr.appendChild(celCliente);
 
-  const celAcaoForo = el("td", { "data-label": "Ação/Foro" }, [
-    el("span", { class: "cds--tag cds--tag--blue cds--tag--sm", texto: caso.acao || "-" }),
-  ]);
+  const containerAcao = el("div", { style: "display:flex; flex-wrap:wrap; gap:4px" });
+  const pedacosAcao = (caso.acao || "").split(" - ").map((pedaco) => pedaco.trim()).filter(Boolean);
+  if (pedacosAcao.length === 0) {
+    containerAcao.appendChild(el("span", { class: "cds--tag cds--tag--blue cds--tag--sm", texto: "-" }));
+  } else {
+    pedacosAcao.forEach((pedaco, indice) => {
+      containerAcao.appendChild(el("span", {
+        class: indice === 0 ? "cds--tag cds--tag--blue cds--tag--sm" : "cds--tag cds--tag--teal cds--tag--sm",
+        texto: pedaco,
+      }));
+    });
+  }
+  const celAcaoForo = el("td", { "data-label": "Ação/Foro" }, [containerAcao]);
   if (caso.foro) celAcaoForo.appendChild(el("span", { class: "cds--tag cds--tag--gray cds--tag--sm", texto: caso.foro }));
   tr.appendChild(celAcaoForo);
 
