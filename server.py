@@ -281,6 +281,9 @@ _SEM_MONITORAMENTO = asyncio.Semaphore(MONITORAMENTO_MAX_CONCORRENTES)
 _FALHAS_MONITORAMENTO: dict[str, int] = {}
 _PROXIMA_TENTATIVA_MONITORAMENTO: dict[str, float] = {}
 
+# Momento em que o processo subiu (usado para calcular uptime no /healthz).
+_INICIO_SERVIDOR: float = time.time()
+
 
 @mcp.tool()
 async def status_apis() -> dict:
@@ -2888,7 +2891,7 @@ class _AutenticacaoBearer:
 
         caminho = scope.get("path", "")
         if caminho == "/healthz":
-            await _responder(send, 200, b"ok")
+            await _healthz(send)
             return
         if caminho == "/cadastro":
             if scope.get("method") == "POST":
@@ -3760,6 +3763,52 @@ async def _ler_corpo(receive) -> bytes | None:
         partes.append(bloco)
         if not mensagem.get("more_body"):
             return b"".join(partes)
+
+
+async def _healthz(send) -> None:
+    """Responde ao /healthz com JSON rico: circuit breakers, cache DataJud e backoff de monitoramentos."""
+    agora = time.time()
+
+    def _info_cb(cb: CircuitBreaker) -> dict:
+        with cb._lock:
+            estado = cb._estado
+            falhas = cb._falhas_consecutivas
+            if estado == CircuitBreaker.ABERTO and cb._aberto_em is not None:
+                restante = max(0.0, cb.cooldown_s - (agora - cb._aberto_em))
+            else:
+                restante = 0.0
+        return {"estado": estado, "falhas_consecutivas": falhas, "cooldown_restante_s": round(restante, 1)}
+
+    cache_stats: dict
+    if _CACHE_DATAJUD is not None:
+        try:
+            cache_stats = await asyncio.to_thread(_CACHE_DATAJUD.stats)
+            cache_stats["ttl_s"] = _CACHE_DATAJUD.ttl_s
+        except Exception:
+            cache_stats = {"erro": "indisponivel"}
+    else:
+        cache_stats = {"total": 0, "validos": 0, "ttl_s": 0}
+
+    agora_ts = agora
+    em_backoff = sum(
+        1 for ts in _PROXIMA_TENTATIVA_MONITORAMENTO.values() if ts > agora_ts
+    )
+
+    payload = {
+        "status": "ok",
+        "uptime_s": round(agora - _INICIO_SERVIDOR, 1),
+        "circuit_breakers": {
+            "datajud": _info_cb(_CIRCUIT_DATAJUD),
+            "djen": _info_cb(_CIRCUIT_DJEN),
+        },
+        "cache_datajud": cache_stats,
+        "monitoramentos": {
+            "em_backoff": em_backoff,
+            "com_falhas": len(_FALHAS_MONITORAMENTO),
+        },
+    }
+    corpo = json.dumps(payload, ensure_ascii=False).encode()
+    await _responder(send, 200, corpo, tipo="application/json; charset=utf-8")
 
 
 async def _responder(send, status: int, corpo: bytes, tipo: str = "text/plain; charset=utf-8",
