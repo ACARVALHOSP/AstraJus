@@ -173,6 +173,33 @@ function mostrarErro(container, mensagem) {
   container.appendChild(notificacao("error", "Não foi possível concluir", mensagem));
 }
 
+function mostrarSucesso(container, mensagem) {
+  limpar(container);
+  container.appendChild(notificacao("success", mensagem));
+}
+
+function mostrarAviso(container, mensagem) {
+  limpar(container);
+  container.appendChild(notificacao("warning", "Atenção", mensagem));
+}
+
+function mostrarToast(tipo, titulo, mensagem, duracao = 5000) {
+  const container = document.getElementById("toast-global");
+  if (!container) { if (tipo === "error") window.alert(mensagem || titulo); return; }
+  const ntf = notificacao(tipo, titulo, mensagem || "");
+  ntf.style.cssText += ";pointer-events:all;box-shadow:0 2px 6px rgba(0,0,0,.2)";
+  const fechar = document.createElement("button");
+  fechar.setAttribute("aria-label", "Fechar");
+  fechar.setAttribute("type", "button");
+  fechar.className = "cds--inline-notification__close-button";
+  fechar.innerHTML = "✕";
+  fechar.style.cssText = "border:none;background:transparent;cursor:pointer;padding:0.5rem;font-size:1rem;line-height:1;opacity:.7";
+  fechar.addEventListener("click", () => ntf.remove());
+  ntf.querySelector(".cds--inline-notification__details").after(fechar);
+  container.appendChild(ntf);
+  setTimeout(() => { if (ntf.parentNode) ntf.remove(); }, duracao);
+}
+
 function mostrarEspera(container, botao, titulo) {
   botao.disabled = true;
   limpar(container);
@@ -696,12 +723,12 @@ async function acompanharBusca(criterio, botao, statusEl) {
   try {
     const dados = await cliente.chamarTool("monitorar_publicacoes", criterio);
     if (dados.erro) {
-      statusEl.appendChild(el("span", { class: "resultado-aviso", texto: dados.mensagem }));
+      mostrarErro(statusEl, dados.mensagem);
     } else {
-      statusEl.appendChild(el("span", { texto: "Você será avisado por e-mail quando sair publicação nova." }));
+      mostrarSucesso(statusEl, "Você será avisado por e-mail quando sair publicação nova.");
     }
   } catch (erro) {
-    statusEl.appendChild(el("span", { class: "resultado-aviso", texto: erro.message }));
+    mostrarErro(statusEl, erro.message);
   } finally {
     botao.disabled = false;
     botao.textContent = textoOriginal;
@@ -980,7 +1007,7 @@ function abrirDemonstrativoPdf({ dataBase, dias, tipo, municipio, dia1, vencimen
   // branco), mas perdemos a referência pra preenchê-la.
   const janela = window.open("", "_blank", "width=860,height=900");
   if (!janela) {
-    window.alert("O navegador bloqueou a nova janela. Permita pop-ups para este site e tente novamente.");
+    mostrarToast("warning", "Pop-up bloqueado", "Permita pop-ups para este site e tente novamente.");
     return;
   }
   const doc = janela.document;
@@ -1078,9 +1105,7 @@ function painelCalculoPrazo(item) {
   const painel = el("div", { class: "prazo-painel", hidden: "" });
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dataBase)) {
-    painel.appendChild(
-      el("p", { class: "resultado-aviso", texto: "Publicação sem data de disponibilização - não é possível calcular o prazo." })
-    );
+    painel.appendChild(notificacao("warning", "Atenção", "Publicação sem data de disponibilização - não é possível calcular o prazo."));
     return painel;
   }
 
@@ -1115,7 +1140,7 @@ function painelCalculoPrazo(item) {
     const dias = Number(campoDias.value);
     limpar(resultadoEl);
     if (!Number.isInteger(dias) || dias < 1) {
-      resultadoEl.appendChild(el("p", { class: "resultado-aviso", texto: "Informe um número de dias válido." }));
+      mostrarAviso(resultadoEl, "Informe um número de dias válido.");
       return;
     }
     const municipio = campoMunicipio.value.trim() || "São Paulo";
@@ -1147,7 +1172,7 @@ function painelCalculoPrazo(item) {
         anexarBotaoEventoAgenda(resultadoEl, item.numeroprocessocommascara, vencimento, `Prazo: ${dias} dias (${municipio})`);
       }
     } catch (erro) {
-      resultadoEl.appendChild(el("p", { class: "resultado-aviso", texto: erro.message }));
+      mostrarErro(resultadoEl, erro.message);
     } finally {
       botaoCalcular.disabled = false;
       botaoCalcular.textContent = textoOriginal;
@@ -1256,17 +1281,17 @@ async function baixarCertidao(hash, botao, statusEl) {
   try {
     const dados = await cliente.chamarTool("baixar_certidao_djen", { hash });
     if (dados.erro) {
-      statusEl.appendChild(el("span", { class: "resultado-aviso", texto: dados.mensagem }));
+      mostrarErro(statusEl, dados.mensagem);
       return;
     }
     if (dados.link_download) {
       window.open(dados.link_download, "_blank", "noopener,noreferrer");
-      statusEl.appendChild(el("span", { texto: `Link aberto. Válido por ${dados.validade_link || "15 minutos"}.` }));
+      mostrarSucesso(statusEl, `Link aberto. Válido por ${dados.validade_link || "15 minutos"}.`);
     } else {
-      statusEl.appendChild(el("span", { class: "resultado-aviso", texto: dados.aviso || "Não foi possível gerar o link." }));
+      mostrarAviso(statusEl, dados.aviso || "Não foi possível gerar o link.");
     }
   } catch (erro) {
-    statusEl.appendChild(el("span", { class: "resultado-aviso", texto: erro.message }));
+    mostrarErro(statusEl, erro.message);
   } finally {
     botao.disabled = false;
     botao.textContent = textoOriginal;
@@ -1852,7 +1877,7 @@ async function excluirContato(clienteId, nome, botao) {
     _cacheClientes = _cacheClientes.filter((c) => c.id !== clienteId);
     renderizarListaContatos();
   } catch (erro) {
-    window.alert(erro.message);
+    mostrarToast("error", "Erro", erro.message);
     botao.disabled = false;
   }
 }
@@ -2129,7 +2154,7 @@ async function excluirCaso(casoId, titulo, botao, aoExcluir) {
     _cacheCasos = _cacheCasos.filter((c) => c.id !== casoId);
     if (aoExcluir) aoExcluir();
   } catch (erro) {
-    window.alert(erro.message);
+    mostrarToast("error", "Erro", erro.message);
     botao.disabled = false;
   }
 }
@@ -2492,7 +2517,8 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
         if (botaoDataJud.disabled) return; // já consultando - evita disparo duplicado
         botaoDataJud.disabled = true;
         botaoDataJud.textContent = "Consultando…";
-        statusDataJud.textContent = "Pode levar até 2min, aguarde…";
+        limpar(statusDataJud);
+        statusDataJud.appendChild(notificacao("info", "Consultando DataJud…", "Pode levar até 2min, aguarde."));
         try {
           const dados = await cliente.chamarTool("consultar_processo_datajud", { tribunal, numero_processo: numeroProcesso });
           if (dados.erro) throw new ErroMCP(200, dados.mensagem || "Falha ao consultar o DataJud.");
@@ -2503,10 +2529,10 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
             campoAcao.value = partes.join(" - ");
           }
           if (proc.orgaoJulgador) campoForo.value = proc.orgaoJulgador;
-          statusDataJud.textContent = "Ação/foro preenchidos.";
+          mostrarSucesso(statusDataJud, "Ação/foro preenchidos.");
           botaoDataJud.textContent = "Atualizar classe/órgão do DataJud";
         } catch (erro) {
-          statusDataJud.textContent = erro.message || "Falha ao consultar o DataJud (sem detalhes do servidor).";
+          mostrarErro(statusDataJud, erro.message || "Falha ao consultar o DataJud (sem detalhes do servidor).");
           botaoDataJud.textContent = rotuloOriginalDataJud;
         } finally {
           botaoDataJud.disabled = false;
@@ -2917,27 +2943,28 @@ document.getElementById("form-pub-oab-manual").addEventListener("submit", async 
 // ─── DataJud: busca ação/foro a partir de número de processo ─────────────────
 
 async function buscarAcaoForoDataJud(numerosCampo, campAcao, campForo, statusEl, botao) {
-  if (!cliente) { statusEl.textContent = "Cliente MCP não disponível."; return; }
+  if (!cliente) { mostrarErro(statusEl, "Cliente MCP não disponível."); return; }
   const numeros = numerosCampo.value.split(",").map((s) => s.trim()).filter(Boolean);
-  if (!numeros.length) { statusEl.textContent = "Informe ao menos um número de processo."; return; }
+  if (!numeros.length) { mostrarAviso(statusEl, "Informe ao menos um número de processo."); return; }
   const numero = numeros[0];
   const tribunal = _siglaTribunal(numero);
-  if (!tribunal) { statusEl.textContent = "Não foi possível determinar o tribunal pelo número informado."; return; }
+  if (!tribunal) { mostrarAviso(statusEl, "Não foi possível determinar o tribunal pelo número informado."); return; }
   botao.disabled = true;
-  statusEl.textContent = "Consultando DataJud…";
+  limpar(statusEl);
+  statusEl.appendChild(notificacao("info", "Consultando DataJud…"));
   try {
     const dados = await cliente.chamarTool("consultar_processo_datajud", { numero_processo: numero, tribunal });
-    if (dados.erro) { statusEl.textContent = dados.mensagem || "Erro no DataJud."; return; }
+    if (dados.erro) { mostrarErro(statusEl, dados.mensagem || "Erro no DataJud."); return; }
     const proc = (dados.processos || [])[0];
-    if (!proc) { statusEl.textContent = dados.mensagem || "Processo não encontrado."; return; }
+    if (!proc) { mostrarAviso(statusEl, dados.mensagem || "Processo não encontrado."); return; }
     if (proc.classe && !campAcao.value) {
       const partes = [proc.classe, ...(proc.assuntos || [])].filter(Boolean);
       campAcao.value = partes.join(" - ");
     }
     if (proc.orgaoJulgador && !campForo.value) campForo.value = proc.orgaoJulgador;
-    statusEl.textContent = proc.classe ? "Preenchido." : "Sem dados de classe/órgão.";
+    proc.classe ? mostrarSucesso(statusEl, "Preenchido.") : mostrarAviso(statusEl, "Sem dados de classe/órgão.");
   } catch (err) {
-    statusEl.textContent = err.message || "Erro ao consultar DataJud.";
+    mostrarErro(statusEl, err.message || "Erro ao consultar DataJud.");
   } finally {
     botao.disabled = false;
   }
@@ -3043,7 +3070,7 @@ function _renderizarAtividades(casoId, atividades) {
         atv.status = atualizada.status;
       } catch (erro) {
         check.checked = !check.checked;
-        window.alert(erro.message);
+        mostrarToast("error", "Erro", erro.message);
       }
     });
     item.appendChild(check);
@@ -3068,7 +3095,7 @@ function _renderizarAtividades(casoId, atividades) {
       try {
         await _enviarJson(`/casos/${casoId}/atividades/${atv.id}`, {}, "DELETE");
         await _carregarAtividades(casoId);
-      } catch (err) { window.alert(err.message); }
+      } catch (err) { mostrarToast("error", "Erro", err.message); }
     });
     acoes.appendChild(btnEditar);
     acoes.appendChild(btnExcluir);
@@ -3139,7 +3166,7 @@ async function _carregarPublicacoesCaso(casoId) {
         try {
           await _enviarJson(`/casos/${cid}/publicacoes/${h}`, {}, "DELETE");
           await _carregarPublicacoesCaso(cid);
-        } catch (err) { window.alert(err.message); }
+        } catch (err) { mostrarToast("error", "Erro", err.message); }
       });
       ul.appendChild(li);
     }
@@ -3153,14 +3180,14 @@ async function _buscarMovimentacoes(casoId) {
   const statusEl = document.getElementById("movimentacoes-status");
   const lista = document.getElementById("lista-movimentacoes");
   limpar(lista);
-  statusEl.textContent = "";
+  limpar(statusEl);
   const resp = await _buscarJson(`/casos/${casoId}`);
   const numeros = resp.numeros_processo || [];
   if (!numeros.length) {
-    statusEl.textContent = "Nenhum número de processo vinculado a este caso.";
+    mostrarAviso(statusEl, "Nenhum número de processo vinculado a este caso.");
     return;
   }
-  statusEl.textContent = `Consultando ${numeros.length} processo(s) no DataJud…`;
+  statusEl.appendChild(notificacao("info", `Consultando ${numeros.length} processo(s) no DataJud…`));
   const botao = document.getElementById("btn-buscar-movimentacoes");
   botao.disabled = true;
   let todasMovs = [];
@@ -3182,11 +3209,11 @@ async function _buscarMovimentacoes(casoId) {
   }
   botao.disabled = false;
   if (!todasMovs.length && !erros.length) {
-    statusEl.textContent = "Nenhuma movimentação encontrada.";
+    mostrarAviso(statusEl, "Nenhuma movimentação encontrada.");
     return;
   }
-  if (erros.length) statusEl.textContent = erros.join(" | ");
-  else statusEl.textContent = "";
+  if (erros.length) mostrarAviso(statusEl, erros.join(" | "));
+  else limpar(statusEl);
   todasMovs.sort((a, b) => (b.dataHora || b.data || "").localeCompare(a.dataHora || a.data || ""));
   const ul = document.createElement("ul");
   ul.style.cssText = "list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:0.5rem";
@@ -3268,7 +3295,8 @@ document.getElementById("btn-buscar-partes").addEventListener("click", () => {
 async function _buscarPartesDJEN(casoId) {
   const statusEl = document.getElementById("status-partes-djen");
   const botao = document.getElementById("btn-buscar-partes");
-  statusEl.textContent = "Buscando…";
+  limpar(statusEl);
+  statusEl.appendChild(notificacao("info", "Buscando…"));
   botao.disabled = true;
 
   try {
@@ -3299,7 +3327,7 @@ async function _buscarPartesDJEN(casoId) {
     }
 
     if (!destinatarios.length && !advogados.length) {
-      statusEl.textContent = "Nenhuma parte encontrada no DJEN para este caso.";
+      mostrarAviso(statusEl, "Nenhuma parte encontrada no DJEN para este caso.");
       return;
     }
 
@@ -3322,9 +3350,9 @@ async function _buscarPartesDJEN(casoId) {
     if (passivos.length && !campoReu.value)  campoReu.value   = passivos.join(", ");
     if (advsNomes.length && !campoAdvs.value) campoAdvs.value = advsNomes.join(", ");
 
-    statusEl.textContent = "Preenchido. Revise e salve.";
+    mostrarSucesso(statusEl, "Preenchido. Revise e salve.");
   } catch (err) {
-    statusEl.textContent = err.message || "Erro ao buscar partes.";
+    mostrarErro(statusEl, err.message || "Erro ao buscar partes.");
   } finally {
     botao.disabled = false;
   }

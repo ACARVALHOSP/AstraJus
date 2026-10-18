@@ -1,352 +1,321 @@
-# cnj-processual
+# CNJ Processual
 
-Servidor MCP (Model Context Protocol) em Python para consulta processual judicial brasileira, usando as APIs públicas do CNJ:
+Sistema de gestão processual para escritórios de advocacia brasileiros, combinando um **servidor MCP** (Model Context Protocol) para consulta judicial e um **painel web** completo para gerenciamento de clientes, casos e atividades.
 
-| Tool | O que faz | API |
-|---|---|---|
-| `consultar_processo_datajud` | Metadados e movimentações de um processo (classe, órgão julgador, movimentos) | DataJud (CNJ) |
-| `consultar_publicacoes_djen` | Publicações e intimações no Diário de Justiça Eletrônico Nacional, por processo ou OAB | Comunica PJe (DJEN) |
-| `baixar_certidao_djen` | Baixa a certidão PDF de uma publicação e devolve o caminho do arquivo salvo | Comunica PJe (DJEN) |
+## Visão Geral
 
-Transporte: **stdio**. SDK: `mcp` (FastMCP) + `httpx` assíncrono.
+Plataforma integrada que conecta as APIs públicas do CNJ (DataJud e DJEN) a um fluxo de trabalho jurídico completo. Permite consultar processos, monitorar publicações no Diário da Justiça Eletrônico, gerenciar clientes e casos, e integrar com Google Drive e Google Calendar — tudo em um único servidor Python leve, implantável via Docker.
 
-## Licença
+## Status de Implementação
 
-Este projeto é distribuído sob a [PolyForm Noncommercial License 1.0.0](LICENSE.md): o código é
-público e qualquer uso não comercial é livre (estudo, pesquisa, testes, uso pessoal). **Uso
-comercial exige uma licença separada**, incluindo hospedar este serviço para terceiros, cobrar por
-acesso, ou usar dentro de uma empresa com fins lucrativos. Para licenciamento comercial, contato:
-acarvalho.adv.sp@gmail.com
+### ✅ Funcionalidades Concluídas (Produção)
 
-A folha de estilos do Carbon Design System em `static/carbon/` é de terceiros, sob licença Apache
-2.0 própria. Veja `static/carbon/LICENSE-carbon.txt` e `static/carbon/README.txt`.
+**Servidor MCP — Consulta Processual**
 
-## 1. Instalação
+- Consulta de processos e movimentações via API Pública DataJud (todos os tribunais)
+- Consulta de publicações e intimações no DJEN (API Comunica PJe)
+- Download de certidão PDF de publicação com retenção de 7 dias
+- Busca de feriados forenses do TJSP por município/comarca e ano
+- Análise de perfil decisório de magistrado (jurimetria CJPG)
 
-Requer Python 3.10+.
+**Monitoramento Automático**
 
-Com `pip`:
+- Monitoramento recorrente de processo ou OAB no DJEN (verificação a cada 6 horas)
+- Notificação por e-mail com resumo e link quando surge publicação nova
+- Limite de 5 monitoramentos por usuário; expiração automática após 180 dias sem publicação
+- Renovação automática do prazo a cada publicação encontrada
+
+**Painel Web (`/app`)**
+
+- Autenticação via token Bearer (sem cookies, compatível com MCP)
+- Consulta pontual com histórico local de pesquisas (por dispositivo, não sincronizado)
+- Favoritos de processo (tribunal + número) para acesso rápido
+
+**Gestão de Clientes**
+
+- CRUD completo com busca e paginação
+- Abertura em modal com Carbon Design System
+- Typeahead para seleção de clientes em formulários
+
+**Gestão de Casos**
+
+- CRUD completo com vínculo a cliente
+- Preenchimento automático de responsável (usuário logado) ao criar caso
+- Busca de ação/tipo e foro/vara via DataJud no modal de criação e na vista de detalhe
+- Vista de detalhe com sub-abas: Cadastro | Partes | Atividades
+- Edição inline de título, responsável, ação, foro e números de processo
+- Partes processuais: autor, réu e advogados
+- Gerenciamento de atividades (tarefas) por caso com tipo, status, data, hora e observações
+
+**Integrações Google**
+
+- Google Drive: criação de pasta por caso
+- Google Calendar: criação de evento por caso
+
+**Infraestrutura**
+
+- Servidor ASGI Python puro (sem framework web externo)
+- SQLite com migrações automáticas via `PRAGMA table_info`
+- Usuários com autenticação HMAC-SHA256; criação via CLI
+- Transporte MCP via HTTP (Streamable HTTP) e stdio
+- Docker com usuário sem privilégios (uid 10001)
+- Caddy como proxy reverso com HTTPS automático
+
+### ⏳ Planejado
+
+| Funcionalidade | Status |
+|---|---|
+| Publicações OAB no DJEN | Backend ✅ / Frontend ⏳ |
+| Integração completa Google Drive (upload) | ⏳ |
+| Relatórios e métricas de casos | ⏳ |
+| Exportação de dados | ⏳ |
+
+## Stack Técnica
+
+| Camada | Tecnologia |
+|---|---|
+| Backend | Python 3.12, asyncio, ASGI puro |
+| Protocolo IA | MCP 1.30+ (Streamable HTTP + stdio) |
+| Frontend | HTML/JS vanilla, Carbon Design System (white theme) |
+| Banco de dados | SQLite (ephemeral connections) |
+| Agendamento | APScheduler 3.x (monitoramentos) |
+| HTTP client | httpx |
+| Deploy | Docker, Caddy (proxy reverso + HTTPS) |
+| APIs externas | DataJud CNJ, DJEN (Comunica PJe), CJPG, Google APIs |
+
+## Pré-requisitos
+
+- **Python** 3.10+
+- **Docker** (para deploy em produção)
+- **Caddy** (proxy reverso, configurado separadamente no VPS)
+
+## Início Rápido
+
+### Desenvolvimento Local
 
 ```bash
+# 1. Criar e ativar ambiente virtual
 python -m venv .venv
-.venv\Scripts\activate          # Windows
-# source .venv/bin/activate     # Linux/macOS
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
+# 2. Instalar dependências
 pip install -e .
-```
 
-Ou com `uv`:
+# 3. Criar usuário administrador
+python server.py --criar-usuario meu-usuario
 
-```bash
-uv sync
-```
-
-## 2. Rodar standalone (teste)
-
-```bash
+# 4. Iniciar servidor
 python server.py
+# Painel web disponível em http://localhost:8000/app
+# Servidor MCP disponível em http://localhost:8000/mcp
 ```
 
-O processo fica aguardando mensagens MCP via stdin/stdout, então sem um cliente ele parece travado. Isso é esperado. Logs vão para stderr.
-
-Para testar as tools sem o protocolo MCP, chamando as funções diretamente contra as APIs reais:
+### Docker (Produção)
 
 ```bash
-python test_manual.py
+# Build da imagem
+docker build -t cnj-processual .
+
+# Criar usuário (antes de iniciar o container em produção)
+# Gerar token e guardar em segurança
+docker run --rm -v /dados:/app/dados \
+  -e CNJ_MCP_USUARIOS=/app/dados/usuarios.json \
+  cnj-processual python server.py --criar-usuario admin
+
+# Iniciar container
+docker run -d --name cnj-processual --restart unless-stopped \
+  -p 127.0.0.1:8000:8000 \
+  -v /dados:/app/dados \
+  --env-file .env \
+  cnj-processual
 ```
 
-O script usa o processo `1006314-27.2023.8.26.0005` (TJSP) como caso de teste. Ele precisa de acesso à internet a partir de um IP brasileiro, porque o DJEN bloqueia IPs de fora do Brasil.
-
-## 3. Registrar no Hermes
-
-Adicione a seção `mcp_servers` ao `config.yaml` do Hermes (no perfil em uso). Use o Python do venv com caminho absoluto:
-
-```yaml
-mcp_servers:
-  cnj-processual:
-    command: "C:\\Users\\ariel\\mcp-servers\\cnj-processual\\.venv\\Scripts\\python.exe"
-    args: ["C:\\Users\\ariel\\mcp-servers\\cnj-processual\\server.py"]
-    # Opcional: sobrescreve a chave pública do DataJud se o CNJ rotacioná-la.
-    env:
-      DATAJUD_API_KEY: ""
-```
-
-No Linux/macOS, use o caminho `.venv/bin/python`. Se preferir não definir `DATAJUD_API_KEY`, remova o bloco `env`: o servidor usa a chave pública padrão.
-
-## 4. Uso de cada tool
-
-### `consultar_processo_datajud`
-
-Parâmetros:
-- `tribunal` (obrigatório): sigla minúscula, ex: `"tjsp"`, `"trf1"`, `"stj"`.
-- `numero_processo` (obrigatório): 20 dígitos, com ou sem máscara.
-
-Exemplo:
-
-```json
-{
-  "tribunal": "tjsp",
-  "numero_processo": "1006314-27.2023.8.26.0005"
-}
-```
-
-Retorno (resumido):
-
-```json
-{
-  "encontrado": true,
-  "total": 1,
-  "processos": [
-    {
-      "numeroProcesso": "10063142720238260005",
-      "tribunal": "TJSP",
-      "grau": "G1",
-      "classe": "EMBARGOS DE TERCEIRO CÍVEL",
-      "dataAjuizamento": "...",
-      "orgaoJulgador": "...",
-      "totalMovimentos": 42,
-      "movimentos": [
-        {"codigo": 123, "nome": "Conclusos para despacho", "dataHora": "2026-08-19T10:00:00"}
-      ]
-    }
-  ]
-}
-```
-
-Se o processo não existir no tribunal informado, o retorno é `{"encontrado": false, "mensagem": "..."}`. Isso não é erro.
-
-Limitações:
-- **Não traz nomes de partes.** A API DataJud não expõe esse dado por política de proteção de dados.
-- **A API é lenta e instável.** Observamos respostas de cerca de 48s e, em horários de pico, HTTP 504 e 429. A tool usa timeout de 70s e 2 tentativas antes de reportar falha. Uma consulta pode levar mais de um minuto.
-
-### `consultar_publicacoes_djen`
-
-Exige ao menos um entre `numero_processo` e `numero_oab`. Todos os parâmetros são opcionais.
-
-Parâmetros:
-- `numero_processo`: 20 dígitos, máscara removida automaticamente.
-- `sigla_tribunal`: ex: `"TJSP"`.
-- `numero_oab`: ex: `"330659"`.
-- `uf_oab`: 2 letras, ex: `"SP"`.
-- `data_disponibilizacao_inicio`, `data_disponibilizacao_fim`: `YYYY-MM-DD`.
-- `pagina` (padrão 1), `itens_por_pagina` (padrão 50).
-
-Exemplo por processo:
-
-```json
-{
-  "numero_processo": "1006314-27.2023.8.26.0005",
-  "itens_por_pagina": 5
-}
-```
-
-Exemplo por OAB e período:
-
-```json
-{
-  "numero_oab": "330659",
-  "uf_oab": "SP",
-  "data_disponibilizacao_inicio": "2026-08-01",
-  "data_disponibilizacao_fim": "2026-08-31"
-}
-```
-
-Retorno (resumido):
-
-```json
-{
-  "total": 14,
-  "pagina": 1,
-  "itens": [
-    {
-      "data_disponibilizacao": "2026-08-20",
-      "siglaTribunal": "TJSP",
-      "nomeOrgao": "UPJ da 1ª a 5ª Varas Cíveis - Regional V - São Miguel Paulista",
-      "tipoComunicacao": "Intimação",
-      "tipoDocumento": "DESPACHO/DECISÃO",
-      "nomeClasse": "EMBARGOS DE TERCEIRO CíVEL",
-      "numeroprocessocommascara": "1006314-27.2023.8.26.0005",
-      "hash": "2wyKMz7lRxOsxkeiyTKBA82YEJaAPk",
-      "link": "https://...",
-      "destinatarios": [{"nome": "...", "polo": "A"}],
-      "destinatarioadvogados": [{"nome": "...", "numero_oab": "330659", "uf_oab": "SP"}],
-      "texto": "Texto da publicação em texto puro..."
-    }
-  ]
-}
-```
-
-Limitações:
-- **Busca por OAB pode ser incompleta.** Tribunais gravam a OAB com sufixos variados (`"123456"`, `"123456-O"`, `"123456-A"`). A v1 não tenta esses sufixos automaticamente.
-- **HTTP 403** significa geo-bloqueio: o IP de saída está fora do Brasil.
-- **Falhas transitórias** (timeout, erro de conexão, HTTP 500, 502, 503 ou 504) são repetidas uma vez antes de virar erro.
-- **Intervalo de datas:** `data_disponibilizacao_inicio` não pode ser posterior a `data_disponibilizacao_fim`.
-
-### `baixar_certidao_djen`
-
-Parâmetro:
-- `hash`: valor do campo `hash` retornado por `consultar_publicacoes_djen`.
-
-Exemplo:
-
-```json
-{
-  "hash": "2wyKMz7lRxOsxkeiyTKBA82YEJaAPk"
-}
-```
-
-Retorno:
-
-```json
-{
-  "arquivo": "C:\\Users\\ariel\\AppData\\Local\\Temp\\cnj-processual\\certidoes\\certidao_2wyKMz7lRxOsxkeiyTKBA82YEJaAPk.pdf",
-  "bytes": 61383
-}
-```
-
-O PDF fica em `<diretório temporário>/cnj-processual/certidoes/`. O conteúdo binário não vai na resposta MCP. A cada novo download, certidões com mais de 7 dias são removidas dessa pasta.
-
-## Servidor compartilhado (HTTP)
-
-Para que outras pessoas usem o servidor sem instalar nada, ele pode rodar como serviço HTTP, com autenticação por token.
-
-### Rodar localmente em modo HTTP (teste)
-
-```bash
-python server.py --criar-usuario ana
-python server.py --transport http --host 127.0.0.1 --port 8000
-```
-
-O primeiro comando cria o usuário `ana` e mostra o token **uma única vez**. O endpoint MCP fica em `http://127.0.0.1:8000/mcp`. `GET /healthz` responde `ok` sem token, para o health check da hospedagem.
-
-### Cadastro pelo próprio usuário (por e-mail)
-
-Com SMTP configurado, o servidor expõe `/cadastro`. A pessoa informa o e-mail, e o token chega **só nesse e-mail**. A página nunca mostra o token.
-
-- A resposta é a mesma para qualquer e-mail válido, então ninguém descobre quais endereços já têm acesso.
-- Pedir de novo gera um token novo e invalida o anterior. É assim que quem perdeu o token recupera o acesso.
-- Limites: 3 pedidos por minuto e 30 por dia por IP (o IP vem do último `X-Forwarded-For`, que o Caddy preenche), e 1 e-mail por minuto e 5 por dia por endereço.
-- Se o administrador revogar um usuário, o cadastro público **não** reativa esse acesso.
-- Se o envio falhar, o token anterior continua valendo e nenhum usuário é alterado.
-
-Variáveis SMTP (sem `CNJ_SMTP_HOST`, o cadastro fica desligado):
-
-| Variável | Padrão | Função |
-|---|---|---|
-| `CNJ_SMTP_HOST` | (vazio) | Servidor SMTP. Liga o cadastro público |
-| `CNJ_SMTP_PORTA` | `587` | `465` usa SSL direto; as demais portas usam STARTTLS |
-| `CNJ_SMTP_USUARIO` | (vazio) | Usuário de autenticação no SMTP |
-| `CNJ_SMTP_SENHA` | (vazio) | Senha ou chave de API do SMTP. Guarde como segredo |
-| `CNJ_SMTP_REMETENTE` | igual ao usuário | Endereço que aparece como remetente |
-
-Com um provedor transacional (ex.: Amazon SES, Mailgun, Brevo), use as credenciais que ele fornece. Confirme também que o domínio do remetente está verificado no provedor, senão os e-mails caem em spam ou são recusados.
-
-### Gerenciar usuários
-
-Cada pessoa tem o próprio token. Os comandos abaixo rodam no mesmo ambiente do servidor (no host, use o shell da plataforma):
-
-```bash
-python server.py --criar-usuario ana      # cria e mostra o token (uma vez)
-python server.py --listar-usuarios        # lista usuários, sem mostrar tokens
-python server.py --revogar-usuario ana    # revoga: o token para de valer na hora
-```
-
-#### Página administrativa (sem shell)
-
-Com `CNJ_MCP_ADMIN_TOKEN` definido (mínimo de 24 caracteres), o servidor expõe `/admin`. Ali dá para criar e revogar usuários pelo navegador. Cada ação exige o token administrativo, e o token de um novo usuário aparece uma vez. Sem `CNJ_MCP_ADMIN_TOKEN`, a página não existe. Sem o token administrativo, a página não mostra a lista de usuários.
-
-- Use só em HTTPS (a plataforma costuma fornecer) e guarde o token administrativo como variável secreta.
-- O token administrativo é separado dos tokens de usuário: quem tem um não consegue usar o outro.
-
-- Os nomes aceitam de 2 a 40 caracteres minúsculos, números, `.`, `_` e `-`.
-- O arquivo de usuários guarda só o **hash SHA-256** de cada token. Se alguém perder o token, revogue e crie outro.
-- A revogação vale sem reiniciar o servidor, porque o arquivo é relido a cada requisição.
-- Cada requisição autenticada é registrada no log com o nome do usuário, método e caminho. O conteúdo das consultas não é registrado.
-- O servidor não sobe em modo HTTP sem pelo menos um usuário ativo.
-
-### Variáveis de ambiente
-
-| Variável | Padrão | Função |
-|---|---|---|
-| `CNJ_MCP_TRANSPORT` | `stdio` | `stdio` (uso local) ou `http` (servidor compartilhado) |
-| `CNJ_MCP_HOST` | `127.0.0.1` | Interface de escuta. Use `0.0.0.0` em hospedagem |
-| `CNJ_MCP_PORT` | `8000` | Porta HTTP |
-| `CNJ_MCP_USUARIOS` | `usuarios.json` | Caminho do arquivo de usuários. Em hospedagem, aponte para um volume persistente |
-| `CNJ_MCP_HOSTS_PERMITIDOS` | (vazio) | Domínio público do servidor, ex.: `mcp.seudominio.com.br`. Sem ele, o SDK recusa requisições que chegam por um domínio (HTTP 421) |
-| `CNJ_MCP_ADMIN_TOKEN` | (vazio) | Habilita a página `/admin` (mínimo de 24 caracteres). Vazio = página desabilitada |
-| `CNJ_MCP_LIMITE_POR_MINUTO` | `20` | Máximo de requisições ao `/mcp` por usuário por minuto. `0` desliga |
-| `CNJ_MCP_LIMITE_DIARIO` | `300` | Máximo de requisições ao `/mcp` por usuário por dia. `0` desliga |
-| `DATAJUD_API_KEY` | chave pública do CNJ | Override da chave do DataJud |
-
-### Hospedagem
-
-O DJEN bloqueia IPs fora do Brasil, então o serviço precisa rodar em uma região brasileira (por exemplo, São Paulo). Qualquer plataforma que aceite Docker serve. Passos gerais:
-
-1. Crie o serviço a partir deste repositório. O `Dockerfile` já está pronto.
-2. Monte um **volume persistente** e aponte `CNJ_MCP_USUARIOS` para um arquivo dentro dele (ex.: `/data/usuarios.json`). Sem volume, os usuários somem a cada novo deploy.
-3. Pelo shell do serviço na plataforma, rode `python server.py --criar-usuario NOME` para cada pessoa e envie o token por um canal seguro.
-4. Use o `/healthz` como health check e exponha a porta 8000 com HTTPS (a plataforma costuma fornecer).
-
-### Conectar clientes ao servidor compartilhado
-
-Cada pessoa usa o próprio token. Claude Code:
-
-```bash
-claude mcp add --transport http cnj-processual https://SEU-SERVIDOR/mcp --header "Authorization: Bearer TOKEN-DA-PESSOA"
-```
-
-Claude Desktop (via ponte `mcp-remote`, que precisa de Node.js) em `claude_desktop_config.json`:
+### Configuração do Claude Desktop (MCP stdio)
 
 ```json
 {
   "mcpServers": {
     "cnj-processual": {
-      "command": "npx",
-      "args": ["mcp-remote", "https://SEU-SERVIDOR/mcp", "--header", "Authorization: Bearer TOKEN-DA-PESSOA"]
+      "command": "python",
+      "args": ["/caminho/para/server.py"]
     }
   }
 }
 ```
 
-### Instalação automática (para quem usa o servidor compartilhado)
+## Estrutura do Projeto
 
-Os scripts em `instalador/` validam o token no servidor e configuram o Claude Code e o Claude Desktop, sem editar JSON à mão. Eles mantêm as outras configurações e fazem backup do arquivo do Claude Desktop antes de alterá-lo.
-
-Windows (PowerShell):
-
-```powershell
-.\instalador\instalar-windows.ps1
+```
+cnj-processual/
+├── server.py              # Servidor MCP + ASGI web, roteamento, autenticação
+├── db.py                  # Camada de dados: SQLite, migrações, CRUD
+├── google_integracao.py   # Integração Google Drive e Calendar
+├── static/
+│   ├── app.html           # Painel web (Carbon Design System)
+│   ├── app.js             # Lógica frontend (MCP client, casos, clientes)
+│   └── cadastro.js        # Formulários de cadastro
+├── instalador/
+│   ├── instalar-unix.sh   # Instalador para Linux/macOS
+│   └── instalar-windows.ps1  # Instalador para Windows
+├── pyproject.toml
+├── Dockerfile
+└── CONTEXT.md             # Glossário de domínio
 ```
 
-macOS ou Linux:
+## Ferramentas MCP
+
+| Tool | Descrição |
+|---|---|
+| `consultar_processo_datajud` | Metadados e movimentações de processo via DataJud |
+| `consultar_publicacoes_djen` | Publicações/intimações no DJEN por OAB ou número de processo |
+| `baixar_certidao_djen` | Baixa certidão PDF de uma publicação |
+| `buscar_feriados_forenses` | Feriados forenses do TJSP por comarca e ano |
+| `consultar_jurimetria_cjpg` | Perfil decisório de magistrado (CJPG) |
+| `monitorar_publicacoes` | Configura monitoramento recorrente no DJEN |
+| `listar_monitoramentos` | Lista monitoramentos ativos do usuário |
+| `remover_monitoramento` | Remove um monitoramento |
+| `perfil_decisorio_magistrado` | Análise de jurimetria por magistrado |
+
+## Endpoints da API Web
+
+### Autenticação
+
+```
+POST /auth/login         Login — retorna token Bearer
+```
+
+### Clientes
+
+```
+GET    /clientes                  Listar clientes (paginado)
+POST   /clientes                  Criar cliente
+GET    /clientes/<id>             Obter cliente
+PATCH  /clientes/<id>             Atualizar cliente
+DELETE /clientes/<id>             Excluir cliente
+```
+
+### Casos
+
+```
+GET    /casos                     Listar casos (paginado)
+POST   /casos                     Criar caso (responsável auto-preenchido)
+GET    /casos/<id>                Obter caso
+PATCH  /casos/<id>                Atualizar caso (cadastro ou partes)
+DELETE /casos/<id>                Excluir caso
+```
+
+### Atividades de Caso
+
+```
+GET    /casos/<id>/atividades          Listar atividades
+POST   /casos/<id>/atividades          Criar atividade
+PATCH  /casos/<id>/atividades/<aid>    Atualizar atividade
+DELETE /casos/<id>/atividades/<aid>    Excluir atividade
+```
+
+### Monitoramentos
+
+```
+GET    /monitoramentos            Listar monitoramentos do usuário
+POST   /monitoramentos            Criar monitoramento
+DELETE /monitoramentos/<id>       Remover monitoramento
+```
+
+## Variáveis de Ambiente
+
+| Variável | Padrão | Descrição |
+|---|---|---|
+| `CNJ_MCP_TRANSPORT` | `http` | Transporte MCP (`http` ou `stdio`) |
+| `CNJ_MCP_HOST` | `0.0.0.0` | Host de escuta |
+| `CNJ_MCP_PORT` | `8000` | Porta de escuta |
+| `CNJ_MCP_USUARIOS` | `./usuarios.json` | Caminho do arquivo de usuários |
+| `CNJ_MCP_BANCO` | `<dir_usuarios>/cnj.db` | Caminho do banco SQLite |
+| `CNJ_MCP_ARVORES_CJPG_DIR` | `./arvores_cjpg` | Cache de árvores CJPG |
+| `CNJ_MCP_FERIADOS_DIR` | `./feriados_forenses` | Cache de feriados |
+| `DATAJUD_API_KEY` | *(chave pública CNJ)* | Chave da API DataJud |
+| `CNJ_SMTP_HOST` | — | Host SMTP para notificações |
+| `CNJ_SMTP_PORT` | `587` | Porta SMTP |
+| `CNJ_SMTP_USER` | — | Usuário SMTP |
+| `CNJ_SMTP_PASSWORD` | — | Senha SMTP |
+| `CNJ_SMTP_FROM` | — | E-mail remetente das notificações |
+
+## Gestão de Usuários (CLI)
 
 ```bash
-bash instalador/instalar-unix.sh
+# Criar usuário e obter token
+python server.py --criar-usuario nome-do-usuario
+
+# Listar usuários cadastrados
+python server.py --listar-usuarios
 ```
 
-Os dois pedem o token sem mostrá-lo na tela. Para uso sem interação, defina `CNJ_TOKEN`. Se o servidor for outro, passe `-Url` (Windows) ou `--url` (macOS/Linux). Para pular um dos aplicativos, use `-SemClaudeCode`/`-SemClaudeDesktop` ou `--sem-claude-code`/`--sem-claude-desktop`.
+> **Docker:** use `docker exec cnj-processual python server.py --criar-usuario nome`
 
-O script do Claude Desktop precisa de Node.js instalado (para o `npx`).
+## Schema do Banco de Dados
 
-Quem recebe um token consome a cota da hospedagem e acessa as consultas. Se a pessoa deixar de usar o serviço, revogue o token.
+```
+usuarios          — autenticação e tokens
+clientes          — pessoas físicas ou jurídicas atendidas
+casos             — processos vinculados a clientes
+  └ caso_atividades — tarefas e eventos do caso
+monitoramentos    — acompanhamentos recorrentes no DJEN
+publicacoes_oab   — publicações encontradas por monitoramento
+integracao_google — tokens OAuth2 por usuário
+```
 
-Quando um usuário passa do limite, o servidor responde HTTP 429 com `Retry-After`. Os limites valem por usuário, então um usuário não consome a cota dos outros.
+## Arquitetura
 
-Os contadores de limite ficam em memória, por processo. Se a hospedagem rodar mais de uma instância, cada uma conta separadamente. Para um limite exato entre instâncias, seria preciso um armazenamento compartilhado (ex.: Redis).
-
-### Privacidade
-
-As publicações do DJEN contêm dados pessoais de partes e advogados. Quem hospeda o serviço compartilhado passa a tratar esses dados (inclusive pela LGPD). Antes de abrir o acesso a outras pessoas, defina quem pode usar, por quanto tempo e para qual finalidade.
-
-## Tratamento de erros
-
-Nenhuma exceção sai das tools. Toda falha volta como `{"erro": true, "mensagem": "..."}` com texto legível para o modelo ou para o usuário.
+```
+Claude Desktop / qualquer cliente MCP
+        │  MCP (stdio ou HTTP)
+        ▼
+   server.py  ──── FastMCP (tools de consulta judicial)
+        │
+        ├── ASGI handler (/app, /auth, /clientes, /casos, /monitoramentos)
+        │       └── db.py (SQLite — migrações automáticas)
+        │
+        ├── APScheduler (verificação de monitoramentos a cada 6h)
+        │       └── DJEN API → e-mail SMTP
+        │
+        └── APIs externas
+                ├── DataJud CNJ (processos)
+                ├── DJEN / Comunica PJe (publicações)
+                ├── CJPG (jurimetria)
+                └── Google Drive + Calendar
+```
 
 ## Desenvolvimento
 
-- `server.py`: servidor MCP e as três tools.
-- `test_unit.py`: testes unitários offline (31 casos), com respostas HTTP simuladas. Não precisam de rede nem de IP brasileiro:
-  ```bash
-  python -m unittest test_unit -v
-  ```
-- `test_manual.py`: teste de ponta a ponta contra as APIs reais. Sai com código 1 se alguma verificação falhar.
-- A chave pública do DataJud está em `server.py` (`DATAJUD_API_KEY_PADRAO`), com origem documentada em https://datajud-wiki.cnj.jus.br/api-publica/. Se o CNJ rotacioná-la, defina a variável de ambiente `DATAJUD_API_KEY`.
+```bash
+# Testes unitários
+python -m pytest test_unit.py
+
+# Testes manuais de integração
+python test_manual.py
+```
+
+## Deploy em Produção (VPS + Caddy)
+
+O servidor escuta em `127.0.0.1:8000`; o Caddy faz o proxy reverso com HTTPS automático.
+
+```bash
+# Configuração mínima do Caddyfile
+seu-dominio.com {
+    reverse_proxy 127.0.0.1:8000
+}
+```
+
+```bash
+# Rebuild e restart após atualização
+docker build -t cnj-processual .
+docker rm -f cnj-processual
+docker run -d --name cnj-processual --restart unless-stopped \
+  -p 127.0.0.1:8000:8000 \
+  -v /root/apps/cnj-processual/dados:/app/dados \
+  --env-file /root/apps/cnj-processual/.env \
+  cnj-processual
+```
+
+## Licença
+
+Veja [LICENSE.md](LICENSE.md).
