@@ -11,6 +11,7 @@ Não é necessário nenhum comando manual de deploy. Após o merge, acompanhe o 
 `https://github.com/ACARVALHOSP/AstraJus/actions`
 
 ## Fluxo após cada alteração
-Sempre que concluir uma alteração, perguntar ao usuário:
-1. Quer criar um PR?
-2. Quer fazer merge para main (e disparar o deploy)?
+Sempre que concluir uma alteração:
+1. Perguntar: quer criar um PR?
+2. Perguntar: quer fazer merge para main (e disparar o deploy)?
+3. Após o merge, verificar imediatamente o status do workflow `deploy.yml` via GitHub Actions API e reportar o resultado (success / failure).
