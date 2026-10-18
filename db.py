@@ -180,6 +180,14 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
             CREATE INDEX IF NOT EXISTS idx_publicacoes_status ON publicacoes_capturadas (status);
             CREATE INDEX IF NOT EXISTS idx_caso_atividades_caso ON caso_atividades (caso_id);
             CREATE INDEX IF NOT EXISTS idx_caso_vinculos_vinculado ON caso_vinculos (caso_vinculado_id);
+
+            -- Cache de resultados do DataJud: evita re-consultar a API lenta para o mesmo processo
+            -- num curto intervalo. TTL verificado na leitura (criado_em + TTL_S > now).
+            CREATE TABLE IF NOT EXISTS cache_datajud (
+                chave TEXT PRIMARY KEY,
+                resultado TEXT NOT NULL,
+                criado_em REAL NOT NULL
+            );
             """
         )
         _migrar_colunas_casos(conexao)
@@ -1043,3 +1051,45 @@ def _linha_publicacao(linha) -> dict:
         "numero_processo": numero_processo, "dados": json.loads(dados), "status": status,
         "caso_id": caso_id, "criado_em": criado_em,
     }
+
+
+class CacheDataJud:
+    """Cache SQLite para resultados do DataJud. Cada entrada expira após `ttl_s` segundos.
+
+    `obter` devolve o dict gravado ou None (ausente/expirado).
+    `gravar` persiste o resultado; `limpar_expirados` é chamado de tempos em tempos para
+    evitar acúmulo de entradas velhas.
+    """
+
+    def __init__(self, caminho: str | Path, ttl_s: float = 3600.0) -> None:
+        self.caminho = Path(caminho)
+        self.ttl_s = ttl_s
+        self._trava = threading.Lock()
+
+    def obter(self, chave: str) -> dict | None:
+        import time as _time
+        with self._trava, _abrir(self.caminho) as conexao:
+            linha = conexao.execute(
+                "SELECT resultado, criado_em FROM cache_datajud WHERE chave = ?", (chave,)
+            ).fetchone()
+        if linha is None:
+            return None
+        resultado_json, criado_em = linha
+        if _time.time() - criado_em > self.ttl_s:
+            return None  # expirado; não remove aqui para evitar write sob lock de leitura
+        return json.loads(resultado_json)
+
+    def gravar(self, chave: str, resultado: dict) -> None:
+        import time as _time
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute(
+                "INSERT OR REPLACE INTO cache_datajud (chave, resultado, criado_em) VALUES (?, ?, ?)",
+                (chave, json.dumps(resultado), _time.time()),
+            )
+
+    def limpar_expirados(self) -> int:
+        import time as _time
+        corte = _time.time() - self.ttl_s
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            cursor = conexao.execute("DELETE FROM cache_datajud WHERE criado_em < ?", (corte,))
+            return cursor.rowcount

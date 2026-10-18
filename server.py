@@ -42,8 +42,8 @@ from urllib.parse import parse_qs, urlsplit
 import db as _db
 import google_integracao
 from db import (
-    RegistroClientesCasos, RegistroIntegracaoGoogle, RegistroMonitoramentos, RegistroPublicacoesOAB,
-    RegistroUsuarios,
+    CacheDataJud, RegistroClientesCasos, RegistroIntegracaoGoogle, RegistroMonitoramentos,
+    RegistroPublicacoesOAB, RegistroUsuarios,
 )
 
 import httpx
@@ -90,6 +90,11 @@ MONITORAMENTO_MAX_POR_USUARIO = 5
 MONITORAMENTO_INTERVALO_HORAS = 6
 MONITORAMENTO_EXPIRACAO_DIAS = 180
 MONITORAMENTO_MAX_HASHES_LEMBRADOS = 50
+
+DATAJUD_CACHE_TTL_S = 3600.0  # resultados do DataJud ficam em cache por 1 hora
+MONITORAMENTO_AVISO_EXPIRACAO_DIAS = 30  # avisa por e-mail N dias antes de expirar
+MONITORAMENTO_BACKOFF_MAX_HORAS = 48.0   # teto do backoff exponencial por monitoramento
+MONITORAMENTO_MAX_CONCORRENTES = 3       # semáforo para o loop de verificação/captura
 
 # Graus de jurisdição usados pelo DataJud no campo "grau".
 _DESCRICAO_GRAU = {
@@ -264,6 +269,44 @@ class CircuitBreaker:
 _CIRCUIT_DJEN = CircuitBreaker("DJEN", falhas_para_abrir=3, cooldown_s=300.0)
 _CIRCUIT_DATAJUD = CircuitBreaker("DataJud", falhas_para_abrir=3, cooldown_s=600.0)
 
+# Cache de resultados DataJud (inicializado em _principal quando o banco está disponível).
+_CACHE_DATAJUD: "CacheDataJud | None" = None
+
+# Semáforo: limita chamadas DJEN simultâneas nos ciclos de monitoramento/captura.
+_SEM_MONITORAMENTO = asyncio.Semaphore(MONITORAMENTO_MAX_CONCORRENTES)
+
+# Backoff por monitoramento: contadores em memória, não persistidos (resetam ao reiniciar o servidor).
+# _FALHAS_MONITORAMENTO[id] = número de falhas consecutivas sem publicação acessível.
+# _PROXIMA_TENTATIVA_MONITORAMENTO[id] = timestamp unix da próxima tentativa permitida.
+_FALHAS_MONITORAMENTO: dict[str, int] = {}
+_PROXIMA_TENTATIVA_MONITORAMENTO: dict[str, float] = {}
+
+
+@mcp.tool()
+async def status_apis() -> dict:
+    """Retorna o estado atual dos circuit breakers do DataJud e do DJEN.
+
+    Útil para diagnosticar lentidão ou indisponibilidade antes de acionar monitoramentos.
+    Campos por API: estado (fechado / aberto / semi_aberto), falhas_consecutivas,
+    cooldown_restante_s (segundos até próxima sonda; 0 se circuito fechado).
+    """
+    agora = time.time()
+
+    def _info(cb: CircuitBreaker) -> dict:
+        with cb._lock:
+            estado = cb._estado
+            falhas = cb._falhas_consecutivas
+            if estado == CircuitBreaker.ABERTO and cb._aberto_em is not None:
+                restante = max(0.0, cb.cooldown_s - (agora - cb._aberto_em))
+            else:
+                restante = 0.0
+        return {"estado": estado, "falhas_consecutivas": falhas, "cooldown_restante_s": round(restante, 1)}
+
+    return {
+        "datajud": _info(_CIRCUIT_DATAJUD),
+        "djen": _info(_CIRCUIT_DJEN),
+    }
+
 
 # --- Tool 1: DataJud ---------------------------------------------------------
 
@@ -306,6 +349,13 @@ async def consultar_processo_datajud(tribunal: str, numero_processo: str) -> dic
                 "Formato CNJ: NNNNNNN-DD.AAAA.J.TR.OOOO."
             )
 
+        chave_cache = f"{tribunal_norm}:{numero}"
+        if _CACHE_DATAJUD is not None:
+            resultado_cache = await asyncio.to_thread(_CACHE_DATAJUD.obter, chave_cache)
+            if resultado_cache is not None:
+                log.info("DataJud cache hit: %s/%s", tribunal_norm, numero)
+                return resultado_cache
+
         url = f"{DATAJUD_BASE_URL}/api_publica_{tribunal_norm}/_search"
         headers = {
             "Authorization": f"APIKey {_datajud_api_key()}",
@@ -336,7 +386,10 @@ async def consultar_processo_datajud(tribunal: str, numero_processo: str) -> dic
             }
 
         processos = [_extrair_processo_datajud(h.get("_source") or {}) for h in hits.get("hits") or []]
-        return {"encontrado": True, "total": total, "processos": processos}
+        resultado = {"encontrado": True, "total": total, "processos": processos}
+        if _CACHE_DATAJUD is not None:
+            await asyncio.to_thread(_CACHE_DATAJUD.gravar, chave_cache, resultado)
+        return resultado
 
     except Exception as exc:  # nunca deixar exceção vazar para o protocolo MCP
         log.exception("Falha inesperada em consultar_processo_datajud")
@@ -1802,6 +1855,34 @@ def _enviar_aviso_monitoramento(cfg: ConfiguracaoSMTP, destino: str, criterio: d
             servidor.send_message(mensagem)
 
 
+def _enviar_aviso_expiracao(cfg: ConfiguracaoSMTP, destino: str, criterio: dict, dias_restantes: int) -> None:
+    """E-mail avisando que o monitoramento expirará em breve."""
+    descricao = criterio.get("numero_processo") or f"OAB {criterio.get('numero_oab')}/{criterio.get('uf_oab') or '?'}"
+    url_base = os.environ.get("CNJ_MCP_URL_PUBLICA", "").strip().rstrip("/")
+    link = f"{url_base}/app" if url_base else "/app"
+
+    mensagem = EmailMessage()
+    mensagem["Subject"] = f"cnj-processual: monitoramento de {descricao} expira em {dias_restantes} dia(s)"
+    mensagem["From"] = cfg.remetente
+    mensagem["To"] = destino
+    mensagem.set_content(
+        f"Olá,\n\n"
+        f"O seu monitoramento de {descricao} expirará em {dias_restantes} dia(s).\n\n"
+        f"Para renová-lo, acesse: {link}\n\n"
+        'Caso não queira mais receber estes avisos, remova o monitoramento em "Meus monitoramentos".\n'
+    )
+    contexto = ssl.create_default_context()
+    if cfg.porta == 465:
+        with smtplib.SMTP_SSL(cfg.host, cfg.porta, context=contexto, timeout=30) as servidor:
+            servidor.login(cfg.usuario, cfg.senha)
+            servidor.send_message(mensagem)
+    else:
+        with smtplib.SMTP(cfg.host, cfg.porta, timeout=30) as servidor:
+            servidor.starttls(context=contexto)
+            servidor.login(cfg.usuario, cfg.senha)
+            servidor.send_message(mensagem)
+
+
 def _atualizar_apos_aviso(dados: dict, id_monitoramento: str, hashes: list[str], expira_em: str):
     if id_monitoramento not in dados:
         return False
@@ -1809,10 +1890,34 @@ def _atualizar_apos_aviso(dados: dict, id_monitoramento: str, hashes: list[str],
     dados[id_monitoramento]["expira_em"] = expira_em
 
 
+def _marcar_aviso_expiracao(dados: dict, id_monitoramento: str, agora_iso: str):
+    if id_monitoramento not in dados:
+        return False
+    dados[id_monitoramento]["ultimo_aviso_expiracao"] = agora_iso
+
+
+def _calcular_proxima_tentativa(id_monitoramento: str) -> float:
+    """Devolve o timestamp unix da próxima tentativa com backoff exponencial (6h→12h→24h→48h)."""
+    falhas = _FALHAS_MONITORAMENTO.get(id_monitoramento, 0) + 1
+    _FALHAS_MONITORAMENTO[id_monitoramento] = falhas
+    horas = min(MONITORAMENTO_INTERVALO_HORAS * (2 ** (falhas - 1)), MONITORAMENTO_BACKOFF_MAX_HORAS)
+    proximo = time.time() + horas * 3600
+    _PROXIMA_TENTATIVA_MONITORAMENTO[id_monitoramento] = proximo
+    log.info("Monitoramento %s: backoff %dh (falha %d)", id_monitoramento, int(horas), falhas)
+    return proximo
+
+
 async def _verificar_um_monitoramento(
     registro: RegistroMonitoramentos, id_monitoramento: str, monitoramento: dict, enviar_fn, agora_dt,
     gestao: "RegistroClientesCasos | None" = None,
+    smtp: "ConfiguracaoSMTP | None" = None,
 ) -> None:
+    # Backoff: se ainda está na janela de espera, pula este ciclo.
+    proxima = _PROXIMA_TENTATIVA_MONITORAMENTO.get(id_monitoramento, 0.0)
+    if time.time() < proxima:
+        log.debug("Monitoramento %s: backoff ativo, pulando ciclo", id_monitoramento)
+        return
+
     criterio = monitoramento.get("criterio") or {}
     params = {
         "numeroProcesso": criterio.get("numero_processo"),
@@ -1826,14 +1931,20 @@ async def _verificar_um_monitoramento(
 
     resposta = await _djen_get_com_retry(DJEN_BASE_URL, params=params)
     if isinstance(resposta, dict):
-        # instabilidade transitória do DJEN: tenta de novo no próximo ciclo, sem expirar nem avisar erro
+        # instabilidade transitória do DJEN: aplica backoff e tenta de novo no próximo ciclo
         log.warning("Monitoramento %s: DJEN indisponível neste ciclo (%s)", id_monitoramento, resposta.get("mensagem"))
+        _calcular_proxima_tentativa(id_monitoramento)
         return
 
     dados_resp, erro_json = _json_da_resposta(resposta)
     if erro_json or not isinstance(dados_resp, dict):
         log.warning("Monitoramento %s: resposta inesperada do DJEN", id_monitoramento)
+        _calcular_proxima_tentativa(id_monitoramento)
         return
+
+    # Sucesso: limpa estado de backoff.
+    _FALHAS_MONITORAMENTO.pop(id_monitoramento, None)
+    _PROXIMA_TENTATIVA_MONITORAMENTO.pop(id_monitoramento, None)
 
     itens = [_extrair_publicacao_djen(item) for item in dados_resp.get("items") or []]
     hashes_vistos = set(monitoramento.get("hashes_notificados") or [])
@@ -1872,6 +1983,22 @@ async def _verificar_um_monitoramento(
     expira_em = monitoramento.get("expira_em")
     if expira_em and datetime.fromisoformat(expira_em) <= agora_dt:
         registro.atualizar(lambda d: d.pop(id_monitoramento, None) if id_monitoramento in d else False)
+        return
+
+    # Aviso de expiração próxima: envia e-mail uma única vez quando restam <= 30 dias.
+    if smtp is not None and expira_em:
+        dias_restantes = (datetime.fromisoformat(expira_em) - agora_dt).days
+        if 0 < dias_restantes <= MONITORAMENTO_AVISO_EXPIRACAO_DIAS:
+            ultimo_aviso = monitoramento.get("ultimo_aviso_expiracao")
+            if ultimo_aviso is None or (agora_dt - datetime.fromisoformat(ultimo_aviso)).days >= 7:
+                try:
+                    await asyncio.to_thread(
+                        _enviar_aviso_expiracao, smtp, monitoramento["usuario"], criterio, dias_restantes,
+                    )
+                    agora_iso = agora_dt.isoformat()
+                    registro.atualizar(lambda d: _marcar_aviso_expiracao(d, id_monitoramento, agora_iso))
+                except Exception:
+                    log.exception("Monitoramento %s: falha ao enviar aviso de expiração", id_monitoramento)
 
 
 # --- Captura de publicações por OAB a cada 24h (aba "Publicações por OAB") -------------------
@@ -1944,14 +2071,18 @@ async def _capturar_publicacoes_oab(
     if isinstance(sonda, dict):
         log.warning("CircuitBreaker DJEN: API indisponível na sonda — ciclo de captura OAB ignorado")
         return
-    for id_monitoramento, monitoramento in list(registro.carregar().items()):
-        criterio = monitoramento.get("criterio") or {}
-        if not criterio.get("numero_oab"):
-            continue  # monitoramento por número de processo específico não entra nesta aba
-        try:
-            await _capturar_um_monitoramento_oab(id_monitoramento, criterio, publicacoes, gestao, agora)
-        except Exception:
-            log.exception("Captura 24h (OAB): falha no monitoramento %s", id_monitoramento)
+    async def _capturar_com_sem(id_mon: str, criterio: dict) -> None:
+        async with _SEM_MONITORAMENTO:
+            try:
+                await _capturar_um_monitoramento_oab(id_mon, criterio, publicacoes, gestao, agora)
+            except Exception:
+                log.exception("Captura 24h (OAB): falha no monitoramento %s", id_mon)
+
+    await asyncio.gather(*[
+        _capturar_com_sem(id_mon, mon.get("criterio") or {})
+        for id_mon, mon in list(registro.carregar().items())
+        if (mon.get("criterio") or {}).get("numero_oab")
+    ])
 
 
 async def _capturar_publicacoes_oab_manual(
@@ -2019,11 +2150,18 @@ async def _verificar_monitoramentos_pendentes(
         return
     enviar_fn = enviar or (lambda destino, criterio, itens: _enviar_aviso_monitoramento(smtp, destino, criterio, itens))
     agora_dt = agora()
-    for id_monitoramento, monitoramento in list(registro.carregar().items()):
-        try:
-            await _verificar_um_monitoramento(registro, id_monitoramento, monitoramento, enviar_fn, agora_dt, gestao)
-        except Exception:
-            log.exception("Falha ao verificar monitoramento %s", id_monitoramento)
+
+    async def _verificar_com_sem(id_mon: str, mon: dict) -> None:
+        async with _SEM_MONITORAMENTO:
+            try:
+                await _verificar_um_monitoramento(registro, id_mon, mon, enviar_fn, agora_dt, gestao, smtp)
+            except Exception:
+                log.exception("Falha ao verificar monitoramento %s", id_mon)
+
+    await asyncio.gather(*[
+        _verificar_com_sem(id_mon, mon)
+        for id_mon, mon in list(registro.carregar().items())
+    ])
 
 
 # --- Sincronização periódica do Google Calendar (Fase 4: metade "Calendar -> sistema" do ------
@@ -4341,6 +4479,8 @@ def _principal() -> int:
     gestao = RegistroClientesCasos(banco_caminho)
     registro_google = RegistroIntegracaoGoogle(banco_caminho)
     publicacoes = RegistroPublicacoesOAB(banco_caminho)
+    global _CACHE_DATAJUD
+    _CACHE_DATAJUD = CacheDataJud(banco_caminho, ttl_s=DATAJUD_CACHE_TTL_S)
     google_client_id = os.environ.get("CNJ_GOOGLE_CLIENT_ID", "").strip() or None
     google_client_secret = os.environ.get("CNJ_GOOGLE_CLIENT_SECRET", "").strip() or None
     global _ESTADO_MONITORAMENTO
