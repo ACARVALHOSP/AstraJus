@@ -42,10 +42,19 @@ Plataforma integrada que conecta as APIs públicas do CNJ (DataJud e DJEN) a um 
 - CRUD completo com vínculo a cliente
 - Preenchimento automático de responsável (usuário logado) ao criar caso
 - Busca de ação/tipo e foro/vara via DataJud no modal de criação e na vista de detalhe
-- Vista de detalhe com sub-abas: Cadastro | Partes | Atividades
+- Vista de detalhe com sub-abas: Cadastro | Partes | Atividades | Publicações | Movimentações
 - Edição inline de título, responsável, ação, foro e números de processo
-- Partes processuais: autor, réu e advogados
+- Partes processuais: autor, réu e advogados; auto-preenchimento a partir de dados do DJEN
 - Gerenciamento de atividades (tarefas) por caso com tipo, status, data, hora e observações
+- Linha do tempo de movimentações via DataJud (sub-aba Movimentações)
+- Publicações do DJEN vinculadas ao caso (sub-aba Publicações)
+
+**Publicações por OAB**
+
+- Painel dedicado para publicações capturadas pelo monitoramento de OAB
+- Gerenciamento de status em lote (nova, lida, arquivada)
+- Captura manual sob demanda: OAB + intervalo de datas com Carbon Date Picker
+- Vinculação de publicação a caso existente ou cadastro de novo cliente e caso direto do painel
 
 **Integrações Google**
 
@@ -65,7 +74,6 @@ Plataforma integrada que conecta as APIs públicas do CNJ (DataJud e DJEN) a um 
 
 | Funcionalidade | Status |
 |---|---|
-| Publicações OAB no DJEN | Backend ✅ / Frontend ⏳ |
 | Integração completa Google Drive (upload) | ⏳ |
 | Relatórios e métricas de casos | ⏳ |
 | Exportação de dados | ⏳ |
@@ -152,13 +160,17 @@ cnj-processual/
 ├── google_integracao.py   # Integração Google Drive e Calendar
 ├── static/
 │   ├── app.html           # Painel web (Carbon Design System)
-│   ├── app.js             # Lógica frontend (MCP client, casos, clientes)
-│   └── cadastro.js        # Formulários de cadastro
+│   ├── app.js             # Lógica frontend (MCP client, casos, clientes, pub. OAB)
+│   ├── cadastro.js        # Formulários de cadastro
+│   └── agents/            # Prompts de agente (MCP tools em JSON)
+├── docs/
+│   └── agents/            # Orientações para agentes de IA no repositório
 ├── instalador/
 │   ├── instalar-unix.sh   # Instalador para Linux/macOS
 │   └── instalar-windows.ps1  # Instalador para Windows
 ├── pyproject.toml
 ├── Dockerfile
+├── AGENTS.md              # Instruções para agentes de IA
 └── CONTEXT.md             # Glossário de domínio
 ```
 
@@ -211,6 +223,15 @@ GET    /casos/<id>/atividades          Listar atividades
 POST   /casos/<id>/atividades          Criar atividade
 PATCH  /casos/<id>/atividades/<aid>    Atualizar atividade
 DELETE /casos/<id>/atividades/<aid>    Excluir atividade
+```
+
+### Publicações por OAB
+
+```
+GET    /publicacoes-oab                        Listar publicações capturadas por monitoramento de OAB
+POST   /publicacoes-oab/status                 Atualizar status em lote {hashes, status}
+POST   /publicacoes-oab/capturar-manual        Captura sob demanda {numero_oab, data_inicio, data_fim}
+POST   /publicacoes-oab/<hash>/criar-caso      Criar caso vinculado à publicação
 ```
 
 ### Monitoramentos
