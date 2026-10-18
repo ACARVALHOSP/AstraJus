@@ -1,0 +1,60 @@
+name: Deploy para VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-vps
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verifica sintaxe Python
+        run: python3 -m py_compile server.py db.py google_integracao.py
+
+      - name: Verifica sintaxe JavaScript
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node --check static/app.js
+
+      - name: Configura chave SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy via SSH (git pull + rebuild + restart)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" '
+            set -e
+            echo "== git pull =="
+            sudo git -C /root/apps/cnj-processual pull --ff-only origin main
+
+            echo "== docker build =="
+            sudo docker build -t cnj-processual /root/apps/cnj-processual
+
+            echo "== restart container =="
+            sudo docker rm -f cnj-processual || true
+            sudo docker run -d --name cnj-processual --restart unless-stopped \
+              -p 127.0.0.1:8000:8000 \
+              -v /root/apps/cnj-processual/dados:/app/dados \
+              --env-file /root/apps/cnj-processual/.env \
+              cnj-processual
+
+            sleep 3
+            echo "== status =="
+            sudo docker ps --filter name=cnj-processual
+          '
+
+      - name: Checa saúde do servidor
+        run: |
+          sleep 2
+          curl -fsS -o /dev/null -w "HTTP %{http_code}\n" "https://191-252-110-22.sslip.io/healthz"

@@ -10,6 +10,10 @@ usuarios.tmp
 oauth.json
 # Banco SQLite: dados locais (usuários, clientes, casos), não é material do repositório
 cnj.db
+banco.db
+# Pasta de dados em produção (banco, uploads) e backups manuais - nunca é material do repositório
+/dados/
+/backups/
 # Artefatos de execução local, sem relação com o código do projeto
 claude_run.err
 claude_run.json
