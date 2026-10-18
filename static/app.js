@@ -3333,7 +3333,7 @@ async function _buscarPartesDJEN(casoId) {
     // 2. Se não achou nada nas publicações vinculadas, consulta DJEN diretamente
     if (!destinatarios.length && !advogados.length) {
       const respCaso = await _buscarJson(`/casos/${casoId}`);
-      const numeros = respCaso.numeros_processo || [];
+      const numeros = respCaso.processos || [];
       for (const num of numeros) {
         try {
           const r = await cliente.chamarTool("consultar_publicacoes_djen", { numero_processo: num });
