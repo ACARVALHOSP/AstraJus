@@ -2440,12 +2440,27 @@ formCaso.addEventListener("submit", async (evento) => {
   const pararEspera = mostrarEspera(resultadoCaso, botao, "Cadastrando caso");
   try {
     const novoCaso = await _enviarJson("/casos", corpo);
-    fecharModal("modal-novo-caso");
     formCaso.reset();
     document.getElementById("caso-cliente-busca").value = "";
     document.getElementById("caso-cliente").value = "";
-    carregarCasosPagina();
-    if (novoCaso && novoCaso.id) abrirCaso(novoCaso.id);
+    _cacheCasos = [..._cacheCasos, novoCaso];
+    _renderizarTabelaCasosPagina();
+    limpar(resultadoCaso);
+    const divSucesso = el("div", {});
+    divSucesso.appendChild(notificacao("success", `Caso "${novoCaso.titulo || "sem título"}" cadastrado.`));
+    const btnAbrirCaso = el("button", {
+      class: "cds--btn cds--btn--primary cds--btn--sm",
+      type: "button",
+      style: "margin-top: 0.75rem; display: block;",
+      texto: "Abrir caso criado",
+    });
+    btnAbrirCaso.addEventListener("click", () => {
+      fecharModal("modal-novo-caso");
+      selecionarAba(abas.find((a) => a.painel.id === "aba-casos"));
+      abrirCaso(novoCaso.id);
+    });
+    divSucesso.appendChild(btnAbrirCaso);
+    resultadoCaso.appendChild(divSucesso);
   } catch (erro) {
     mostrarErro(resultadoCaso, erro.message);
   } finally {
@@ -2520,7 +2535,17 @@ document.getElementById("contato-subaba-cadastro-botao").addEventListener("click
 document.getElementById("contato-subaba-processos-botao").addEventListener("click", () => _selecionarSubabaContato("processos"));
 document.getElementById("contatos-busca").addEventListener("input", (evento) => {
   _contatosFiltroBusca = evento.target.value;
+  if (!_contatosFiltroBusca && _contatosFiltroLetra !== "TODOS") {
+    _contatosFiltroLetra = "TODOS";
+    const container = document.getElementById("contatos-az");
+    for (const filho of container.children) filho.setAttribute("aria-pressed", String(filho.textContent === "TODOS"));
+  }
   renderizarListaContatos();
+});
+
+document.getElementById("casos-busca").addEventListener("input", (evento) => {
+  _filtroCasos = evento.target.value;
+  _renderizarTabelaCasosPagina();
 });
 
 const formContatoCadastro = document.getElementById("form-contato-cadastro");
@@ -2975,6 +3000,53 @@ function linhaPublicacaoOab(p) {
 
   const menu = el("ul", { class: "cds--menu pub-oab-combo-menu", role: "menu" });
   menu.hidden = true;
+
+  // Vincular a caso existente: abre mini-form inline logo abaixo da linha.
+  const itemVincular = el("li", { class: "cds--menu-item", role: "menuitem" }, [
+    el("div", { class: "cds--menu-item__label", texto: "Vincular a caso existente" }),
+  ]);
+  let _trVincularForm = null;
+  itemVincular.addEventListener("click", () => {
+    _fecharTodosComboMenusOab();
+    if (_trVincularForm) { _trVincularForm.remove(); _trVincularForm = null; return; }
+    const status = el("p", { class: "campo-ajuda", style: "margin:0.25rem 0 0" });
+    const selectCasoVincular = el("select", { class: "cds--select-input" });
+    selectCasoVincular.appendChild(el("option", { value: "", texto: "— selecione o caso —" }));
+    (_cacheCasos || []).forEach((c) => {
+      selectCasoVincular.appendChild(el("option", { value: String(c.id), texto: c.titulo || "(sem título)" }));
+    });
+    const btnConfirmar = el("button", { class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Vincular" });
+    const btnCancelar = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Cancelar" });
+    const miniForm = el("div", { class: "mini-form-caso" }, [
+      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", texto: "Vincular ao caso" }), selectCasoVincular]),
+      el("div", { style: "display:flex;gap:0.5rem;flex-wrap:wrap" }, [btnConfirmar, btnCancelar]),
+      status,
+    ]);
+    btnCancelar.addEventListener("click", () => { if (_trVincularForm) { _trVincularForm.remove(); _trVincularForm = null; } });
+    btnConfirmar.addEventListener("click", async () => {
+      const casoId = selectCasoVincular.value;
+      if (!casoId) { status.textContent = "Selecione um caso."; return; }
+      btnConfirmar.disabled = true;
+      try {
+        await _enviarJson(`/casos/${casoId}/publicacoes`, {
+          hash: p.hash,
+          numero_processo: p.numero_processo || null,
+          dados: p.dados || null,
+        });
+        if (_trVincularForm) { _trVincularForm.remove(); _trVincularForm = null; }
+        mostrarToast("success", "Vinculada", "Publicação vinculada ao caso.");
+        carregarPublicacoesOab();
+      } catch (err) {
+        status.textContent = err.message;
+        btnConfirmar.disabled = false;
+      }
+    });
+    _trVincularForm = el("tr", {});
+    _trVincularForm.appendChild(el("td", { colspan: "8" }, [miniForm]));
+    tr.after(_trVincularForm);
+  });
+  menu.appendChild(itemVincular);
+
   if (p.status !== "tratada") {
     const itemTratada = el("li", { class: "cds--menu-item", role: "menuitem" }, [
       el("div", { class: "cds--menu-item__label", texto: "Marcar como Tratada" }),
@@ -3271,7 +3343,11 @@ function _abrirModalAtividade(casoId, atividade = null) {
   document.getElementById("atividade-id").value = atividade ? atividade.id : "";
   document.getElementById("atividade-tipo").value = atividade ? atividade.tipo : "tarefa";
   document.getElementById("atividade-titulo").value = atividade ? atividade.titulo : "";
-  document.getElementById("atividade-data").value = atividade ? (atividade.data || "") : "";
+  if (window._fpAtividadeData) {
+    window._fpAtividadeData.setDate(atividade ? (atividade.data || "") : "", false);
+  } else {
+    document.getElementById("atividade-data").value = atividade ? (atividade.data || "") : "";
+  }
   document.getElementById("atividade-hora").value = atividade ? (atividade.hora || "") : "";
   document.getElementById("atividade-observacoes").value = atividade ? (atividade.observacoes || "") : "";
   document.getElementById("modal-atividade-titulo").textContent = atividade ? "Editar atividade" : "Nova atividade";
@@ -3759,3 +3835,17 @@ function _inicializarDatePickerRange(idInicio, idFim, opcoes) {
 _inicializarDatePickerRange("pub-data-inicio", "pub-data-fim", { dateFormat: "Y-m-d" });
 _inicializarDatePickerRange("jur-data-inicio", "jur-data-fim", { dateFormat: "d/m/Y" });
 _inicializarDatePickerRange("pub-oab-manual-data-inicio", "pub-oab-manual-data-fim", { dateFormat: "Y-m-d" });
+
+// Date picker simples para atividade-data (sem range plugin).
+(function () {
+  const el = document.getElementById("atividade-data");
+  if (!el || typeof window.flatpickr !== "function") return;
+  const fp = window.flatpickr(el, {
+    altInput: false,
+    allowInput: true,
+    locale: window.flatpickr.l10ns && window.flatpickr.l10ns.pt,
+    dateFormat: "Y-m-d",
+  });
+  // Expõe a instância para que _abrirModalAtividade possa pré-popular via setDate().
+  window._fpAtividadeData = fp;
+})();
