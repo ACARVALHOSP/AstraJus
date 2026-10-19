@@ -504,7 +504,7 @@ function selecionarAba(alvo) {
   // Expande o grupo do item ativo caso esteja colapsado
   const submenu = alvo.botao.closest(".cds--side-nav__item")?.querySelector(".cds--side-nav__submenu");
   if (submenu) submenu.setAttribute("aria-expanded", "true");
-  alvo.botao.focus();
+  alvo.botao.focus({ preventScroll: true });
   if (alvo.painel.id === "aba-historico") { renderizarListaRapida(); renderizarCasosFavoritos(); }
   if (alvo.painel.id === "aba-monitoramentos") carregarMonitoramentos();
   if (alvo.painel.id === "aba-contatos") { voltarParaContatos(); carregarContatos(); }

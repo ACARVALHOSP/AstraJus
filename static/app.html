@@ -318,7 +318,19 @@ nav.cds--side-nav {
 .atividade-acoes { display: flex; gap: 0.5rem; flex-shrink: 0; }
 /* Date Picker - range: classes usadas pelo markup do componente que não existem no styles.min.css vendorizado. */
 .cds--date-picker__input-wrapper { position: relative; }
-.cds--date-picker__separator { align-self: center; padding: 0 0.25rem; color: var(--cds-text-secondary, #525252); }
+.cds--date-picker__separator { align-self: flex-end; padding: 0 0.25rem 0.5rem; color: var(--cds-text-secondary, #525252); }
+/* Sobrescreve inline-size fixo do Carbon vendorizado para que os inputs se adaptem ao grid */
+.cds--date-picker--range { display: flex; align-items: flex-end; flex-wrap: nowrap; gap: 0; }
+.cds--date-picker--range .cds--date-picker-container { flex: 1 1 120px; min-inline-size: 0; }
+.cds--date-picker--range .cds--date-picker-container,
+.cds--date-picker--range .cds--date-picker__input { inline-size: 100% !important; width: 100%; }
+/* Form-item que contém date range picker precisa de 2 colunas no auto-fit grid */
+.cds--form-item--range { grid-column: span 2; }
+@media (max-width: 500px) { .cds--form-item--range { grid-column: span 1; } }
+/* Header Acesso: ghost button aria-selected — troca box azul por indicador de borda inferior */
+#aba-acesso-botao[aria-selected="true"] { box-shadow: inset 0 -2px 0 var(--cds-interactive, #0f62fe); }
+/* Inputs numéricos estreitos */
+#jur-paginas, #pub-itens { max-inline-size: 7rem; }
 </style>
 </head>
 <body class="cds--white">
@@ -463,7 +475,7 @@ nav.cds--side-nav {
 <input class="cds--text-input" id="pub-nome-oab" placeholder="Ex.: advogado ou parte dono da OAB">
 <span class="campo-ajuda">Só identifica o monitoramento na aba "Publicações por OAB" - não entra na busca.</span>
 </div>
-<div class="cds--form-item">
+<div class="cds--form-item cds--form-item--range">
 <div class="cds--date-picker cds--date-picker--range" data-date-picker data-date-picker-type="range">
 <div class="cds--date-picker-container">
 <label class="cds--label" for="pub-data-inicio">Publicado a partir de</label>
@@ -541,7 +553,7 @@ grau do TJSP). As demais ideias ao final ainda são só conceitos de próximos p
 <span class="campo-ajuda">O nome entra automaticamente entre aspas na pesquisa livre. Obrigatório para o perfil do magistrado.</span>
 </div>
 
-<div class="cds--form-item">
+<div class="cds--form-item cds--form-item--range">
 <div class="cds--date-picker cds--date-picker--range" data-date-picker data-date-picker-type="range">
 <div class="cds--date-picker-container">
 <label class="cds--label" for="jur-data-inicio">Data de disponibilização - início</label>
