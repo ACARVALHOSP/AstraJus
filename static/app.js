@@ -602,18 +602,23 @@ function linhaDoTempoMovimentos(movimentos) {
     container.appendChild(entrada.tipo === "grupo" ? grupoLinhaTempo(entrada.itens) : itemLinhaTempo(entrada.mov, entrada.categoria));
   }
 
-  const filtros = el("div", { class: "linha-tempo-filtros", role: "group", "aria-label": "Filtrar por tipo de movimentação" });
+  const filtros = el("div", { class: "cds--content-switcher cds--content-switcher--light", role: "tablist", "aria-label": "Filtrar por tipo de movimentação" });
   const opcoes = [["todos", "Todos"], ["decisao", "Decisões"], ["peticao", "Petições"], ["tramitacao", "Tramitação"]];
   for (const [valor, rotulo] of opcoes) {
     const botao = el("button", {
-      class: "cds--btn cds--btn--ghost cds--btn--sm",
+      class: valor === "todos" ? "cds--content-switcher-btn cds--content-switcher--selected" : "cds--content-switcher-btn",
       type: "button",
-      "aria-pressed": valor === "todos" ? "true" : "false",
+      role: "tab",
+      "aria-selected": valor === "todos" ? "true" : "false",
       texto: rotulo,
     });
     botao.addEventListener("click", () => {
-      for (const outro of filtros.querySelectorAll("button")) outro.setAttribute("aria-pressed", "false");
-      botao.setAttribute("aria-pressed", "true");
+      for (const outro of filtros.querySelectorAll("button")) {
+        outro.classList.remove("cds--content-switcher--selected");
+        outro.setAttribute("aria-selected", "false");
+      }
+      botao.classList.add("cds--content-switcher--selected");
+      botao.setAttribute("aria-selected", "true");
       for (const item of container.children) {
         item.hidden = valor !== "todos" && item.dataset.categoria !== valor;
       }
