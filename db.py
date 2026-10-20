@@ -16,13 +16,14 @@ ficar com um handle do arquivo .db aberto indefinidamente, que no Windows impedi
 remover/renomear o arquivo enquanto o processo estivesse de pé.
 """
 
-import hmac
 import json
 import sqlite3
 import threading
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
+
+from _util import _hash_token
 
 
 def conectar(caminho: Path) -> sqlite3.Connection:
@@ -309,12 +310,6 @@ def _migrar_monitoramentos(conexao: sqlite3.Connection, caminho_json: Path) -> N
         )
 
 
-def _hash_token(token: str) -> str:
-    import hashlib
-
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
-
-
 class _RegistroJSON:
     """Base comum: tabela (chave TEXT PRIMARY KEY, dados TEXT NOT NULL), dados = JSON do
     registro inteiro, sem colunas tipadas. Replica o comportamento do arquivo JSON original
@@ -367,10 +362,15 @@ class RegistroUsuarios(_RegistroJSON):
     def identificar(self, token: str) -> str | None:
         """Devolve o nome do usuário dono do token, ou None se não existe ou foi revogado."""
         h = _hash_token(token)
-        for nome, registro in self.carregar().items():
-            if not registro.get("revogado") and hmac.compare_digest(registro.get("hash", ""), h):
-                return nome
-        return None
+        with _abrir(self.caminho) as conexao:
+            row = conexao.execute(
+                "SELECT nome FROM usuarios "
+                "WHERE json_extract(dados, '$.hash') = ? "
+                "AND (json_extract(dados, '$.revogado') IS NULL "
+                "     OR json_extract(dados, '$.revogado') = 0)",
+                (h,),
+            ).fetchone()
+        return row[0] if row else None
 
     def ativos(self) -> list[str]:
         return [nome for nome, r in self.carregar().items() if not r.get("revogado")]
@@ -542,20 +542,52 @@ class RegistroClientesCasos:
 
     def listar_casos(self) -> list[dict]:
         with _abrir(self.caminho) as conexao:
-            cursor = conexao.execute(
+            linhas = conexao.execute(
                 "SELECT id, cliente_id, titulo, responsavel, status, drive_pasta_id, "
                 "criado_em, acao, foro, autor, reu, advogados, desfecho "
                 "FROM casos ORDER BY criado_em DESC"
-            )
+            ).fetchall()
+            if not linhas:
+                return []
+
+            ids = [str(linha[0]) for linha in linhas]
+            ph = ",".join("?" * len(ids))
+
+            processos_map: dict[str, list[str]] = {i: [] for i in ids}
+            for caso_id, numero in conexao.execute(
+                f"SELECT caso_id, numero_processo FROM caso_processos WHERE caso_id IN ({ph})", ids
+            ):
+                processos_map[str(caso_id)].append(numero)
+
+            clientes_add_map: dict[str, list[str]] = {i: [] for i in ids}
+            for caso_id, cliente_id in conexao.execute(
+                f"SELECT caso_id, cliente_id FROM caso_clientes WHERE caso_id IN ({ph})", ids
+            ):
+                clientes_add_map[str(caso_id)].append(str(cliente_id))
+
+            ultima_mov_map: dict[str, str] = {}
+            for caso_id, max_criado in conexao.execute(
+                f"SELECT caso_id, MAX(criado_em) FROM caso_eventos WHERE caso_id IN ({ph}) GROUP BY caso_id",
+                ids,
+            ):
+                if max_criado:
+                    ultima_mov_map[str(caso_id)] = max_criado
+
+            monitorado_set: set[str] = set()
+            for (caso_id,) in conexao.execute(
+                f"SELECT DISTINCT caso_id FROM publicacoes_capturadas WHERE caso_id IN ({ph})", ids
+            ):
+                monitorado_set.add(str(caso_id))
+
             return [
                 {
                     **_linha_caso(linha),
-                    "processos": self._processos_do_caso(conexao, linha[0]),
-                    "clientes_adicionais": self._clientes_adicionais_do_caso(conexao, linha[0]),
-                    "ultima_movimentacao": self._ultima_movimentacao_do_caso(conexao, linha[0], linha[6]),
-                    "monitorado": self._caso_tem_publicacao_monitorada(conexao, linha[0]),
+                    "processos": processos_map[str(linha[0])],
+                    "clientes_adicionais": clientes_add_map[str(linha[0])],
+                    "ultima_movimentacao": ultima_mov_map.get(str(linha[0])) or linha[6],
+                    "monitorado": str(linha[0]) in monitorado_set,
                 }
-                for linha in cursor.fetchall()
+                for linha in linhas
             ]
 
     def excluir_caso(self, caso_id: str) -> bool:

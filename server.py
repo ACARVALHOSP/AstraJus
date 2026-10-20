@@ -41,6 +41,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import db as _db
 import google_integracao
+from _util import _hash_token
 from db import (
     CacheDataJud, RegistroClientesCasos, RegistroIntegracaoGoogle, RegistroMonitoramentos,
     RegistroPublicacoesOAB, RegistroUsuarios,
@@ -1635,11 +1636,6 @@ TERMOS_SECOES = [
         "Estes termos são regidos pela lei brasileira.",
     ]),
 ]
-
-
-def _hash_token(token: str) -> str:
-    """Tokens não são guardados em texto puro: só o SHA-256 vai para o arquivo de usuários."""
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def _mascarar_email(email: str) -> str:
@@ -4422,6 +4418,81 @@ def _smtp_do_ambiente() -> ConfiguracaoSMTP | None:
     )
 
 
+def _montar_app_http(
+    registro,
+    limitador,
+    admin_token: str | None,
+    cadastro,
+    oauth,
+    captcha,
+    site_captcha_key: str | None,
+    falhas,
+    gestao,
+    registro_google,
+    google_client_id: str | None,
+    google_client_secret: str | None,
+    publicacoes,
+):
+    """Constrói e retorna o app ASGI completo (AutenticacaoBearer envolvendo o MCP)."""
+    return _AutenticacaoBearer(
+        mcp.streamable_http_app(),
+        registro,
+        limitador,
+        admin_token,
+        cadastro,
+        oauth,
+        captcha,
+        site_captcha_key,
+        falhas=falhas,
+        gestao=gestao,
+        registro_google=registro_google,
+        google_client_id=google_client_id,
+        google_client_secret=google_client_secret,
+        publicacoes=publicacoes,
+    )
+
+
+def _montar_agendador(
+    smtp,
+    registro_monitoramentos,
+    gestao,
+    google_configurado: bool,
+    registro_google,
+    google_client_id: str | None,
+    google_client_secret: str | None,
+    publicacoes,
+):
+    """Monta e retorna um AsyncIOScheduler com todos os jobs periódicos configurados."""
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+    agendador = AsyncIOScheduler()
+    if smtp is not None:
+        agendador.add_job(
+            _verificar_monitoramentos_pendentes,
+            "interval",
+            hours=MONITORAMENTO_INTERVALO_HORAS,
+            args=[registro_monitoramentos, smtp],
+            kwargs={"gestao": gestao},
+        )
+        log.info("Monitoramento: verificação periódica a cada %dh.", MONITORAMENTO_INTERVALO_HORAS)
+    if google_configurado:
+        agendador.add_job(
+            _sincronizar_calendar_google_job,
+            "interval",
+            hours=1,
+            args=[registro_google, gestao, google_client_id, google_client_secret],
+        )
+        log.info("Google Calendar: sincronização periódica a cada 1h (se conectado em /admin).")
+    agendador.add_job(
+        _capturar_publicacoes_oab,
+        "interval",
+        hours=24,
+        args=[registro_monitoramentos, publicacoes, gestao],
+    )
+    log.info("Publicações por OAB: captura periódica a cada 24h.")
+    return agendador
+
+
 def _principal() -> int:
     parser = argparse.ArgumentParser(description="Servidor MCP cnj-processual.")
     parser.add_argument(
@@ -4537,10 +4608,11 @@ def _principal() -> int:
         registro_usuarios=registro, oauth=oauth, registro_monitoramentos=registro_monitoramentos, smtp=smtp,
     )
 
-    app = _AutenticacaoBearer(mcp.streamable_http_app(), registro, limitador, admin_token, cadastro, oauth,
-                              captcha, site_captcha or None, falhas=falhas, gestao=gestao,
-                              registro_google=registro_google, google_client_id=google_client_id,
-                              google_client_secret=google_client_secret, publicacoes=publicacoes)
+    app = _montar_app_http(
+        registro, limitador, admin_token, cadastro, oauth,
+        captcha, site_captcha or None, falhas, gestao,
+        registro_google, google_client_id, google_client_secret, publicacoes,
+    )
     log.info(
         "Servidor HTTP em http://%s:%d/mcp (%d usuário(s) ativo(s); cadastro %s; admin %s; monitoramento %s)",
         args.host, args.port, len(registro.ativos()),
@@ -4551,35 +4623,10 @@ def _principal() -> int:
     google_configurado = bool(google_client_id and google_client_secret)
 
     async def _servir() -> None:
-        from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
-        # O agendador roda sempre: a captura de publicações por OAB (24h) não depende de SMTP
-        # nem do Google, então não há mais um caso de "nada agendado".
-        agendador = AsyncIOScheduler()
-        if smtp is not None:
-            agendador.add_job(
-                _verificar_monitoramentos_pendentes,
-                "interval",
-                hours=MONITORAMENTO_INTERVALO_HORAS,
-                args=[registro_monitoramentos, smtp],
-                kwargs={"gestao": gestao},
-            )
-            log.info("Monitoramento: verificação periódica a cada %dh.", MONITORAMENTO_INTERVALO_HORAS)
-        if google_configurado:
-            agendador.add_job(
-                _sincronizar_calendar_google_job,
-                "interval",
-                hours=1,
-                args=[registro_google, gestao, google_client_id, google_client_secret],
-            )
-            log.info("Google Calendar: sincronização periódica a cada 1h (se conectado em /admin).")
-        agendador.add_job(
-            _capturar_publicacoes_oab,
-            "interval",
-            hours=24,
-            args=[registro_monitoramentos, publicacoes, gestao],
+        agendador = _montar_agendador(
+            smtp, registro_monitoramentos, gestao, google_configurado,
+            registro_google, google_client_id, google_client_secret, publicacoes,
         )
-        log.info("Publicações por OAB: captura periódica a cada 24h.")
         agendador.start()
 
         # access_log desligado: o log padrão do uvicorn gravaria a URL completa, inclusive os

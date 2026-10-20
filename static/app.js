@@ -392,16 +392,16 @@ async function renderizarCasosFavoritos() {
   const listaCasosFavoritos = document.getElementById("lista-casos-favoritos");
   if (!listaCasosFavoritos) return;
   const idsFavoritos = _lerLista(CHAVE_FAVORITOS_CASOS);
-  if (idsFavoritos.length && !_cacheCasos.length && cliente) {
+  if (idsFavoritos.length && !_cache.casos.length && cliente) {
     try {
       const resposta = await _buscarJson("/casos");
-      _cacheCasos = resposta.casos || [];
+      _cache.casos = resposta.casos || [];
     } catch {
       // segue com o cache vazio - a lista mostra "Nenhum caso favorito ainda" se não achar nada
     }
   }
   limpar(listaCasosFavoritos);
-  const casosFavoritos = idsFavoritos.map((id) => _cacheCasos.find((c) => c.id === id)).filter(Boolean);
+  const casosFavoritos = idsFavoritos.map((id) => _cache.casos.find((c) => c.id === id)).filter(Boolean);
   if (!casosFavoritos.length) {
     listaCasosFavoritos.appendChild(el("li", { class: "lista-rapida-vazio", texto: "Nenhum caso favorito ainda." }));
     return;
@@ -1930,8 +1930,7 @@ document.addEventListener("keydown", (ev) => {
 // /clientes e /casos são endpoints HTTP simples (não tools MCP, mesmo padrão das árvores do
 // CJPG acima): CRUD de apoio ao painel, não faz sentido expor isso a um agente de IA.
 
-let _cacheClientes = [];
-let _cacheCasos = [];
+const _cache = { clientes: [], casos: [] };
 let _filtroCasos = "";
 
 function _iconePessoa() {
@@ -1979,7 +1978,7 @@ async function excluirContato(clienteId, nome, botao) {
   botao.disabled = true;
   try {
     await _enviarJson(`/clientes/${clienteId}`, {}, "DELETE");
-    _cacheClientes = _cacheClientes.filter((c) => c.id !== clienteId);
+    _cache.clientes = _cache.clientes.filter((c) => c.id !== clienteId);
     renderizarListaContatos();
   } catch (erro) {
     mostrarToast("error", "Erro", erro.message);
@@ -2008,7 +2007,7 @@ let _contatosFiltroLetra = "TODOS";
 let _contatosFiltroBusca = "";
 
 function _contatosFiltrados() {
-  return _cacheClientes.filter((c) => {
+  return _cache.clientes.filter((c) => {
     if (_contatosFiltroLetra !== "TODOS") {
       const inicial = (c.nome || "").trim().charAt(0).toUpperCase();
       if (inicial !== _contatosFiltroLetra) return false;
@@ -2024,7 +2023,7 @@ function _contatosFiltrados() {
 function renderizarListaContatos() {
   const listaContatosEl = document.getElementById("lista-contatos");
   limpar(listaContatosEl);
-  if (!_cacheClientes.length) {
+  if (!_cache.clientes.length) {
     listaContatosEl.appendChild(notificacao("info", "Nenhum cliente cadastrado ainda"));
     return;
   }
@@ -2033,7 +2032,7 @@ function renderizarListaContatos() {
     listaContatosEl.appendChild(notificacao("info", "Nenhum cliente encontrado com esse filtro"));
     return;
   }
-  listaContatosEl.appendChild(el("p", { class: "campo-ajuda", texto: `Mostrando ${filtrados.length} de ${_cacheClientes.length} cliente(s)` }));
+  listaContatosEl.appendChild(el("p", { class: "campo-ajuda", texto: `Mostrando ${filtrados.length} de ${_cache.clientes.length} cliente(s)` }));
   listaContatosEl.appendChild(tabelaContatos(filtrados));
 }
 
@@ -2091,7 +2090,7 @@ function _selecionarSubabaContato(nome) {
 
 function _renderizarCasosVinculadosNoContainer(container, clienteId) {
   limpar(container);
-  const vinculados = _cacheCasos.filter(
+  const vinculados = _cache.casos.filter(
     (caso) => caso.cliente_id === clienteId || (caso.clientes_adicionais || []).includes(clienteId)
   );
   if (!vinculados.length) {
@@ -2107,7 +2106,7 @@ async function _renderizarProcessosVinculados(clienteId) {
   container.appendChild(el("p", { class: "app-espera" }, ["Carregando…"]));
   try {
     const { casos } = await _buscarJson("/casos");
-    _cacheCasos = casos || [];
+    _cache.casos = casos || [];
     _renderizarCasosVinculadosNoContainer(container, clienteId);
   } catch (erro) {
     limpar(container);
@@ -2149,7 +2148,7 @@ function linhaDoTempoCaso(eventos) {
 }
 
 function linhaCaso(caso, aoExcluir) {
-  const nomeCliente = (id) => (_cacheClientes.find((c) => c.id === id) || {}).nome || id;
+  const nomeCliente = (id) => (_cache.clientes.find((c) => c.id === id) || {}).nome || id;
   const nomesClientes = [caso.cliente_id, ...(caso.clientes_adicionais || [])].map(nomeCliente);
   const tr = el("tr", {});
 
@@ -2269,7 +2268,7 @@ async function excluirCaso(casoId, titulo, botao, aoExcluir) {
   botao.disabled = true;
   try {
     await _enviarJson(`/casos/${casoId}`, {}, "DELETE");
-    _cacheCasos = _cacheCasos.filter((c) => c.id !== casoId);
+    _cache.casos = _cache.casos.filter((c) => c.id !== casoId);
     if (aoExcluir) aoExcluir();
   } catch (erro) {
     mostrarToast("error", "Erro", erro.message);
@@ -2351,7 +2350,7 @@ async function carregarContatos() {
   listaContatosEl.appendChild(el("p", { class: "app-espera" }, ["Carregando…"]));
   try {
     const { clientes } = await _buscarJson("/clientes");
-    _cacheClientes = clientes || [];
+    _cache.clientes = clientes || [];
     renderizarListaContatos();
   } catch (erro) {
     limpar(listaContatosEl);
@@ -2366,8 +2365,8 @@ async function carregarCasosPagina() {
   carregarPendentes();
   try {
     const [{ clientes }, { casos }] = await Promise.all([_buscarJson("/clientes"), _buscarJson("/casos")]);
-    _cacheClientes = clientes || [];
-    _cacheCasos = casos || [];
+    _cache.clientes = clientes || [];
+    _cache.casos = casos || [];
     _renderizarTabelaCasosPagina();
   } catch (erro) {
     mostrarErro(listaCasosEl, erro.message);
@@ -2377,10 +2376,10 @@ async function carregarCasosPagina() {
 function _renderizarTabelaCasosPagina() {
   const listaCasosEl = document.getElementById("lista-casos");
   limpar(listaCasosEl);
-  const nomeCliente = (id) => (_cacheClientes.find((c) => c.id === id) || {}).nome || "";
+  const nomeCliente = (id) => (_cache.clientes.find((c) => c.id === id) || {}).nome || "";
   const termo = _filtroCasos.toLowerCase().trim();
   const filtrados = termo
-    ? _cacheCasos.filter((c) => {
+    ? _cache.casos.filter((c) => {
         const textos = [
           c.titulo, c.acao, c.foro, c.responsavel,
           nomeCliente(c.cliente_id),
@@ -2389,7 +2388,7 @@ function _renderizarTabelaCasosPagina() {
         ].map((t) => (t || "").toLowerCase());
         return textos.some((t) => t.includes(termo));
       })
-    : _cacheCasos;
+    : _cache.casos;
   if (!filtrados.length) {
     listaCasosEl.appendChild(notificacao("info", termo ? "Nenhum caso corresponde ao filtro." : "Nenhum caso cadastrado ainda"));
   } else {
@@ -2448,7 +2447,7 @@ formCaso.addEventListener("submit", async (evento) => {
     formCaso.reset();
     document.getElementById("caso-cliente-busca").value = "";
     document.getElementById("caso-cliente").value = "";
-    _cacheCasos = [..._cacheCasos, novoCaso];
+    _cache.casos = [..._cache.casos, novoCaso];
     _renderizarTabelaCasosPagina();
     limpar(resultadoCaso);
     const divSucesso = el("div", {});
@@ -2476,8 +2475,8 @@ formCaso.addEventListener("submit", async (evento) => {
 document.getElementById("btn-novo-contato").addEventListener("click", () => abrirModal("modal-novo-contato"));
 document.getElementById("modal-novo-contato-fechar").addEventListener("click", () => fecharModal("modal-novo-contato"));
 document.getElementById("btn-novo-caso").addEventListener("click", async () => {
-  if (!_cacheClientes.length) {
-    try { const { clientes } = await _buscarJson("/clientes"); _cacheClientes = clientes || []; } catch { /* segue */ }
+  if (!_cache.clientes.length) {
+    try { const { clientes } = await _buscarJson("/clientes"); _cache.clientes = clientes || []; } catch { /* segue */ }
   }
   abrirModal("modal-novo-caso");
 });
@@ -2498,7 +2497,7 @@ document.getElementById("casos-busca").addEventListener("input", function () {
 
   function mostrarSugestoes(termo) {
     limpar(lista);
-    const filtrados = _cacheClientes.filter((c) => c.nome.toLowerCase().includes(termo.toLowerCase()));
+    const filtrados = _cache.clientes.filter((c) => c.nome.toLowerCase().includes(termo.toLowerCase()));
     if (!filtrados.length) { lista.hidden = true; return; }
     filtrados.slice(0, 10).forEach((c) => {
       const btn = el("button", { type: "button", texto: c.nome });
@@ -2574,8 +2573,8 @@ formContatoCadastro.addEventListener("submit", async (evento) => {
     limpar(resultadoContatoCadastro);
     resultadoContatoCadastro.appendChild(notificacao("success", "Cliente atualizado"));
     document.getElementById("contato-detalhe-nome").textContent = atualizado.nome;
-    const indice = _cacheClientes.findIndex((c) => c.id === clienteId);
-    if (indice !== -1) _cacheClientes[indice] = atualizado;
+    const indice = _cache.clientes.findIndex((c) => c.id === clienteId);
+    if (indice !== -1) _cache.clientes[indice] = atualizado;
   } catch (erro) {
     mostrarErro(resultadoContatoCadastro, erro.message);
   } finally {
@@ -2592,7 +2591,7 @@ document.getElementById("contato-excluir").addEventListener("click", async () =>
   botao.disabled = true;
   try {
     await _enviarJson(`/clientes/${clienteId}`, {}, "DELETE");
-    _cacheClientes = _cacheClientes.filter((c) => c.id !== clienteId);
+    _cache.clientes = _cache.clientes.filter((c) => c.id !== clienteId);
     voltarParaContatos();
   } catch (erro) {
     mostrarErro(resultadoContatoCadastro, erro.message);
@@ -2610,10 +2609,10 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
   acoes.appendChild(botao);
 
   botao.addEventListener("click", async () => {
-    if (!_cacheClientes.length) {
+    if (!_cache.clientes.length) {
       try {
         const { clientes } = await _buscarJson("/clientes");
-        _cacheClientes = clientes || [];
+        _cache.clientes = clientes || [];
       } catch {
         // segue mesmo sem conseguir pré-carregar: o select só vai ficar com "Novo cliente"
       }
@@ -2623,7 +2622,7 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
 
     const selectCliente = el("select", { class: "cds--select-input" }, [
       el("option", { value: "" }, ["+ Novo cliente"]),
-      ..._cacheClientes.map((c) => el("option", { value: c.id }, [c.nome])),
+      ..._cache.clientes.map((c) => el("option", { value: c.id }, [c.nome])),
     ]);
     const campoNomeNovo = el("input", {
       class: "cds--text-input",
@@ -3017,7 +3016,7 @@ function linhaPublicacaoOab(p) {
     const status = el("p", { class: "campo-ajuda", style: "margin:0.25rem 0 0" });
     const selectCasoVincular = el("select", { class: "cds--select-input" });
     selectCasoVincular.appendChild(el("option", { value: "", texto: "— selecione o caso —" }));
-    (_cacheCasos || []).forEach((c) => {
+    (_cache.casos || []).forEach((c) => {
       selectCasoVincular.appendChild(el("option", { value: String(c.id), texto: c.titulo || "(sem título)" }));
     });
     const btnConfirmar = el("button", { class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Vincular" });
@@ -3668,8 +3667,8 @@ document.getElementById("form-caso-editar").addEventListener("submit", async (ev
     limpar(resultado);
     resultado.appendChild(notificacao("success", "Caso atualizado"));
     document.getElementById("caso-detalhe-titulo").textContent = atualizado.titulo || "(sem título)";
-    const indice = _cacheCasos.findIndex((c) => c.id === casoId);
-    if (indice !== -1) _cacheCasos[indice] = { ..._cacheCasos[indice], ...atualizado };
+    const indice = _cache.casos.findIndex((c) => c.id === casoId);
+    if (indice !== -1) _cache.casos[indice] = { ..._cache.casos[indice], ...atualizado };
   } catch (erro) {
     mostrarErro(resultado, erro.message);
   } finally {
@@ -3780,7 +3779,7 @@ document.getElementById("btn-excluir-caso").addEventListener("click", async () =
   botao.disabled = true;
   try {
     await _enviarJson(`/casos/${casoId}`, {}, "DELETE");
-    _cacheCasos = _cacheCasos.filter((c) => c.id !== casoId);
+    _cache.casos = _cache.casos.filter((c) => c.id !== casoId);
     voltarParaCasos();
     _renderizarTabelaCasosPagina();
   } catch (erro) {
