@@ -319,6 +319,45 @@ nav.cds--side-nav {
 /* Date Picker - range: classes usadas pelo markup do componente que não existem no styles.min.css vendorizado. */
 .cds--date-picker__input-wrapper { position: relative; }
 .cds--date-picker__separator { align-self: center; padding: 0 0.25rem; color: var(--cds-text-secondary, #525252); }
+
+/* ── Mobile usability ─────────────────────────────────────────────── */
+/* Sub-abas do caso: scroll horizontal em vez de overflow invisível */
+.sub-abas { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.sub-abas::-webkit-scrollbar { display: none; }
+.sub-aba-botao { white-space: nowrap; flex-shrink: 0; }
+
+/* Sub-tabs de contato: idem */
+.sub-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.sub-tabs::-webkit-scrollbar { display: none; }
+.sub-tab-link { white-space: nowrap; flex-shrink: 0; }
+
+/* Botões de análise da jurimetria: empilhar em telas estreitas */
+@media (max-width: 480px) {
+  .jurimetria-botoes { flex-direction: column; }
+  .jurimetria-botoes .cds--btn { width: 100%; justify-content: center; }
+}
+
+/* A-Z: touch target mínimo de 44px */
+.contatos-az button { min-height: 2.75rem; min-width: 2rem; padding: 0.25rem 0.5rem; }
+
+/* Barra de publicações OAB: empilhar filtros + ações em telas pequenas */
+@media (max-width: 540px) {
+  .pub-oab-barra { flex-direction: column; align-items: stretch; }
+  .pub-oab-filtros { flex-wrap: wrap; }
+  .pub-oab-acoes-lote { flex-wrap: wrap; }
+}
+
+/* Ações das linhas de resultado: não deixar botões saírem do card */
+@media (max-width: 480px) {
+  .resultado-acoes { flex-wrap: wrap; }
+  .pub-oab-acoes-linha { flex-wrap: wrap; }
+}
+
+/* Cabeçalho do app: encolher em telas muito pequenas */
+@media (max-width: 400px) {
+  .app-cabecalho { padding: 1rem 0.75rem; }
+  .app-layout { padding-inline: 0.75rem; }
+}
 </style>
 </head>
 <body class="cds--white">
