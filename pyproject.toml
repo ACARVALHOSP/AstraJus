@@ -15,4 +15,4 @@ dependencies = [
 ]
 
 [tool.setuptools]
-py-modules = ["server", "db", "google_integracao"]
+py-modules = ["server", "db", "_util", "google_integracao"]
