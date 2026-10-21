@@ -21,6 +21,8 @@ claude_run.json
 relatorio-auditoria.html
 # Estado local de ferramentas do agente (ex: lock de tarefas agendadas), sem relação com o projeto
 .claude/
+# Saída do skill graphify (grafo de conhecimento do código): gerado localmente, não é material do repositório
+/graphify-out/
 # Created by https://www.toptal.com/developers/gitignore/api/python
 # Edit at https://www.toptal.com/developers/gitignore?templates=python
 
