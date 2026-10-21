@@ -230,6 +230,11 @@ function formatarData(valor) {
   return data.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
+function _ddmmaaaaParaIso(valor) {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec((valor || "").trim());
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
+}
+
 function formatarDataSimples(valor) {
   if (!valor) return "não informado";
   const bruto = String(valor);
@@ -1432,9 +1437,9 @@ formPublicacoes.addEventListener("submit", (evento) => {
   if (sigla) args.sigla_tribunal = sigla.toUpperCase();
   const uf = document.getElementById("pub-uf-oab").value.trim();
   if (uf) args.uf_oab = uf.toUpperCase();
-  const inicio = document.getElementById("pub-data-inicio").value;
+  const inicio = _ddmmaaaaParaIso(document.getElementById("pub-data-inicio").value);
   if (inicio) args.data_disponibilizacao_inicio = inicio;
-  const fim = document.getElementById("pub-data-fim").value;
+  const fim = _ddmmaaaaParaIso(document.getElementById("pub-data-fim").value);
   if (fim) args.data_disponibilizacao_fim = fim;
   const itens = parseInt(document.getElementById("pub-itens").value, 10);
   if (itens > 0) args.itens_por_pagina = itens;
@@ -3697,21 +3702,49 @@ async function _carregarVinculos(casoId) {
   await _popularSelectCasos(casoId);
 }
 
+let _casosVinculoDisponiveis = [];
+
 async function _popularSelectCasos(casoAtualId) {
-  const sel = document.getElementById("vinculos-caso-select");
-  // Preserva a opção em branco e repõe o resto
-  while (sel.options.length > 1) sel.remove(1);
+  _casosVinculoDisponiveis = [];
+  const campoNumero = document.getElementById("vinculos-numero-processo");
+  const campoCasoId = document.getElementById("vinculos-caso-select");
+  const preview = document.getElementById("vinculos-preview");
+  campoNumero.value = "";
+  campoCasoId.value = "";
+  preview.hidden = true;
   try {
     const { casos } = await _buscarJson("/casos");
-    for (const c of (casos || [])) {
-      if (c.id === casoAtualId) continue;
-      const opt = document.createElement("option");
-      opt.value = c.id;
-      opt.textContent = (c.titulo || "(sem título)") + (c.acao ? ` — ${c.acao}` : "");
-      sel.appendChild(opt);
-    }
-  } catch (_) { /* silencioso — select fica com só a opção em branco */ }
+    _casosVinculoDisponiveis = (casos || []).filter((c) => c.id !== casoAtualId);
+  } catch (_) { /* silencioso — busca por número fica indisponível até recarregar */ }
 }
+
+function _buscarCasoPorNumeroProcesso() {
+  const campoNumero = document.getElementById("vinculos-numero-processo");
+  const campoCasoId = document.getElementById("vinculos-caso-select");
+  const preview = document.getElementById("vinculos-preview");
+  const digitado = _soDigitos(campoNumero.value);
+  if (!digitado) {
+    campoCasoId.value = "";
+    preview.hidden = true;
+    return;
+  }
+  const encontrado = _casosVinculoDisponiveis.find((c) =>
+    (c.processos || []).some((p) => _soDigitos(p) === digitado)
+  );
+  if (encontrado) {
+    campoCasoId.value = encontrado.id;
+    const parte = encontrado.autor || encontrado.reu || "(parte não informada)";
+    const acao = encontrado.acao || "(ação não informada)";
+    preview.textContent = `Parte: ${parte} · Ação: ${acao}` + (encontrado.titulo ? ` — ${encontrado.titulo}` : "");
+    preview.hidden = false;
+  } else {
+    campoCasoId.value = "";
+    preview.textContent = "Nenhum caso cadastrado com esse número de processo.";
+    preview.hidden = false;
+  }
+}
+
+document.getElementById("vinculos-numero-processo").addEventListener("input", _buscarCasoPorNumeroProcesso);
 
 function _renderizarVinculos(casoId, vinculos) {
   const lista = document.getElementById("lista-vinculos");
@@ -3783,6 +3816,8 @@ document.getElementById("form-vinculos-adicionar").addEventListener("submit", as
     await _enviarJson(`/casos/${casoId}/vinculos`, { caso_vinculado_id: outroId, tipo });
     limpar(resultado);
     document.getElementById("vinculos-caso-select").value = "";
+    document.getElementById("vinculos-numero-processo").value = "";
+    document.getElementById("vinculos-preview").hidden = true;
     document.getElementById("vinculos-tipo-select").value = "relacionado";
     document.getElementById("vinculos-adicionar-painel").open = false;
     mostrarToast("success", "Vínculo criado", "Caso vinculado com sucesso.");
@@ -4012,7 +4047,7 @@ function _inicializarDatePickerRange(idInicio, idFim, opcoes) {
 }
 
 // dateFormat define exatamente o texto entregue em `.value` (o formato que o backend espera).
-_inicializarDatePickerRange("pub-data-inicio", "pub-data-fim", { dateFormat: "Y-m-d" });
+_inicializarDatePickerRange("pub-data-inicio", "pub-data-fim", { dateFormat: "d/m/Y" });
 _inicializarDatePickerRange("jur-data-inicio", "jur-data-fim", { dateFormat: "d/m/Y" });
 _inicializarDatePickerRange("pub-oab-manual-data-inicio", "pub-oab-manual-data-fim", { dateFormat: "Y-m-d" });
 
