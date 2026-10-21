@@ -3081,6 +3081,12 @@ class _AutenticacaoBearer:
         if caminho.startswith("/casos/") and self.gestao is not None:
             await self._caso_detalhe(scope, receive, send, caminho[len("/casos/"):])
             return
+        if caminho == "/lancamentos" and self.gestao is not None:
+            await self._lancamentos(scope, receive, send)
+            return
+        if caminho.startswith("/lancamentos/") and self.gestao is not None:
+            await self._lancamento_detalhe(scope, receive, send, caminho[len("/lancamentos/"):])
+            return
         if caminho == "/pendentes" and self.gestao is not None:
             await _json(send, 200, {"pendentes": self.gestao.listar_pendentes()})
             return
@@ -3529,6 +3535,65 @@ class _AutenticacaoBearer:
             await _json(send, 404, _erro("Caso não encontrado."))
             return
         await _json(send, 200, {**caso, "eventos": self.gestao.eventos_do_caso(caso_id)})
+
+    async def _lancamentos(self, scope, receive, send) -> None:
+        """GET /lancamentos: lista todos os lançamentos financeiros.
+        POST /lancamentos: cria um lançamento (fase 1: só tipo HONORARIO tem tela no painel)."""
+        metodo = scope.get("method")
+        if metodo == "GET":
+            await _json(send, 200, {"lancamentos": self.gestao.listar_lancamentos()})
+            return
+        if metodo != "POST":
+            await _responder(send, 405, b"Metodo nao permitido")
+            return
+        corpo = await _ler_corpo(receive)
+        try:
+            dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            await _json(send, 400, _erro("JSON inválido."))
+            return
+        vencimento = (dados.get("vencimento") or "").strip()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", vencimento):
+            await _json(send, 400, _erro("Informe a data de vencimento (AAAA-MM-DD)."))
+            return
+        try:
+            valor = float(dados.get("valor"))
+        except (TypeError, ValueError):
+            await _json(send, 400, _erro("Informe o valor (número)."))
+            return
+        if valor <= 0:
+            await _json(send, 400, _erro("O valor deve ser maior que zero."))
+            return
+        descricao = (dados.get("descricao") or "").strip()
+        if not descricao:
+            await _json(send, 400, _erro("Informe a descrição."))
+            return
+        responsavel = (dados.get("responsavel") or "").strip()
+        if not responsavel:
+            await _json(send, 400, _erro("Informe o responsável."))
+            return
+        caso_id = (dados.get("caso_id") or "").strip()
+        if self.gestao.obter_caso(caso_id) is None:
+            await _json(send, 400, _erro("Selecione um processo/caso válido."))
+            return
+        cliente_id = (dados.get("cliente_id") or "").strip()
+        if self.gestao.obter_cliente(cliente_id) is None:
+            await _json(send, 400, _erro("Selecione um cliente válido."))
+            return
+        lancamento = self.gestao.criar_lancamento(
+            tipo="HONORARIO", vencimento=vencimento, valor=valor, descricao=descricao,
+            recorrente=bool(dados.get("recorrente")), caso_id=caso_id, cliente_id=cliente_id,
+            responsavel=responsavel, agora=lambda: datetime.now(timezone.utc),
+        )
+        await _json(send, 201, lancamento)
+
+    async def _lancamento_detalhe(self, scope, receive, send, lancamento_id: str) -> None:
+        """DELETE /lancamentos/<id>: exclui um lançamento."""
+        if scope.get("method") != "DELETE" or not lancamento_id:
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        excluiu = self.gestao.excluir_lancamento(lancamento_id)
+        await _json(send, 200 if excluiu else 404, {"excluido": excluiu})
 
     async def _atividades_do_caso(self, scope, receive, send, caso_id: str, aid: int | None):
         """GET /casos/<id>/atividades, POST /casos/<id>/atividades,

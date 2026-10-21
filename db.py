@@ -183,6 +183,24 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
             CREATE INDEX IF NOT EXISTS idx_caso_atividades_caso ON caso_atividades (caso_id);
             CREATE INDEX IF NOT EXISTS idx_caso_vinculos_vinculado ON caso_vinculos (caso_vinculado_id);
 
+            -- Módulo Financeiro - Lançamentos (fase 1: só o tipo Honorário é criado pela tela;
+            -- os demais tipos de lançamento seguem sem telas mapeadas ainda).
+            CREATE TABLE IF NOT EXISTS lancamentos_financeiros (
+                id TEXT PRIMARY KEY,
+                tipo TEXT NOT NULL DEFAULT 'HONORARIO',
+                vencimento TEXT NOT NULL,
+                valor REAL NOT NULL,
+                descricao TEXT NOT NULL,
+                recorrente INTEGER NOT NULL DEFAULT 0,
+                caso_id TEXT NOT NULL REFERENCES casos(id),
+                cliente_id TEXT NOT NULL REFERENCES clientes(id),
+                responsavel TEXT NOT NULL,
+                criado_em TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_lancamentos_caso ON lancamentos_financeiros (caso_id);
+            CREATE INDEX IF NOT EXISTS idx_lancamentos_cliente ON lancamentos_financeiros (cliente_id);
+
             -- Cache de resultados do DataJud: evita re-consultar a API lenta para o mesmo processo
             -- num curto intervalo. TTL verificado na leitura (criado_em + TTL_S > now).
             CREATE TABLE IF NOT EXISTS cache_datajud (
@@ -774,6 +792,43 @@ class RegistroClientesCasos:
             ).fetchone()
         return _linha_atividade(linha)
 
+    # Financeiro - Lançamentos
+
+    def criar_lancamento(
+        self, tipo: str, vencimento: str, valor: float, descricao: str, recorrente: bool,
+        caso_id: str, cliente_id: str, responsavel: str, agora,
+    ) -> dict:
+        novo_id = uuid.uuid4().hex
+        criado_em = agora().isoformat()
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute(
+                "INSERT INTO lancamentos_financeiros "
+                "(id, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, criado_em) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (novo_id, tipo, vencimento, valor, descricao, int(recorrente), caso_id, cliente_id, responsavel, criado_em),
+            )
+        with _abrir(self.caminho) as conexao:
+            linha = conexao.execute(
+                "SELECT id, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, criado_em "
+                "FROM lancamentos_financeiros WHERE id = ?", (novo_id,)
+            ).fetchone()
+        return _linha_lancamento(linha)
+
+    def listar_lancamentos(self) -> list[dict]:
+        with _abrir(self.caminho) as conexao:
+            cursor = conexao.execute(
+                "SELECT id, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, criado_em "
+                "FROM lancamentos_financeiros ORDER BY vencimento ASC, criado_em ASC"
+            )
+            return [_linha_lancamento(linha) for linha in cursor.fetchall()]
+
+    def excluir_lancamento(self, lancamento_id: str) -> bool:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            cursor = conexao.execute(
+                "DELETE FROM lancamentos_financeiros WHERE id = ?", (lancamento_id,)
+            )
+            return cursor.rowcount > 0
+
     def excluir_atividade(self, caso_id: str, aid: int) -> bool:
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             cursor = conexao.execute(
@@ -960,6 +1015,15 @@ def _linha_cliente(linha) -> dict:
         "id": id_, "nome": nome, "cpf_cnpj": cpf_cnpj, "telefone": telefone,
         "email": email, "observacoes": observacoes, "criado_em": criado_em,
         "asaas_customer_id": asaas_customer_id,
+    }
+
+
+def _linha_lancamento(linha) -> dict:
+    id_, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, criado_em = linha
+    return {
+        "id": id_, "tipo": tipo, "vencimento": vencimento, "valor": valor,
+        "descricao": descricao, "recorrente": bool(recorrente), "caso_id": caso_id,
+        "cliente_id": cliente_id, "responsavel": responsavel, "criado_em": criado_em,
     }
 
 

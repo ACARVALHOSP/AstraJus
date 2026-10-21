@@ -487,6 +487,7 @@ const abas = [
   { botao: document.getElementById("aba-casos-botao"), painel: document.getElementById("aba-casos") },
   { botao: document.getElementById("aba-publicacoes-oab-botao"), painel: document.getElementById("aba-publicacoes-oab") },
   { botao: document.getElementById("aba-integracoes-botao"), painel: document.getElementById("aba-integracoes") },
+  { botao: document.getElementById("aba-financeiro-botao"), painel: document.getElementById("aba-financeiro") },
 ];
 
 // Token salvo já conecta sozinho (ver carregarTokenSalvo) - pula a aba Acesso e vai direto pro uso.
@@ -512,6 +513,7 @@ function selecionarAba(alvo) {
   if (alvo.painel.id === "aba-casos") carregarCasosPagina();
   if (alvo.painel.id === "aba-publicacoes-oab") carregarPublicacoesOab();
   if (alvo.painel.id === "aba-integracoes") carregarStatusIntegracoes();
+  if (alvo.painel.id === "aba-financeiro") carregarLancamentos();
 }
 
 for (const aba of abas) aba.botao.addEventListener("click", () => selecionarAba(aba));
@@ -2318,6 +2320,102 @@ function tabelaCasos(casos, aoExcluir) {
   return el("div", { class: "tabela-responsiva-wrap" }, [el("table", { class: "tabela-responsiva tabela-casos" }, [thead, tbody])]);
 }
 
+// --- Financeiro --------------------------------------------------------------------------------
+
+function formatarMoeda(valor) {
+  return (Number(valor) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+async function carregarLancamentos() {
+  const container = document.getElementById("lista-lancamentos");
+  limpar(container);
+  container.appendChild(el("p", { class: "app-espera", texto: "Carregando…" }));
+  try {
+    const [{ lancamentos }] = await Promise.all([
+      _buscarJson("/lancamentos"),
+      _cache.clientes.length ? Promise.resolve() : _buscarJson("/clientes").then((r) => { _cache.clientes = r.clientes || []; }),
+      _cache.casos.length ? Promise.resolve() : _buscarJson("/casos").then((r) => { _cache.casos = r.casos || []; }),
+    ]);
+    _renderizarLancamentos(lancamentos || []);
+  } catch (erro) {
+    mostrarErro(container, erro.message);
+  }
+}
+
+function _renderizarLancamentos(lancamentos) {
+  const container = document.getElementById("lista-lancamentos");
+  limpar(container);
+  if (!lancamentos.length) {
+    container.appendChild(notificacao("info", "Nenhum lançamento cadastrado"));
+    return;
+  }
+  const nomeCliente = (id) => (_cache.clientes.find((c) => c.id === id) || {}).nome || id;
+  const tituloCaso = (id) => (_cache.casos.find((c) => c.id === id) || {}).titulo || "(sem título)";
+
+  const thead = el("thead", {}, [
+    el("tr", {}, [
+      el("th", { texto: "Vencimento" }),
+      el("th", { texto: "Valor" }),
+      el("th", { texto: "Descrição" }),
+      el("th", { texto: "Cliente" }),
+      el("th", { texto: "Caso" }),
+      el("th", { texto: "Responsável" }),
+      el("th", { texto: "Ações" }),
+    ]),
+  ]);
+  const tbody = el("tbody", {});
+  for (const lanc of lancamentos) {
+    const tr = el("tr", {}, [
+      el("td", { "data-label": "Vencimento", texto: lanc.vencimento }),
+      el("td", { "data-label": "Valor", texto: formatarMoeda(lanc.valor) }),
+      el("td", { "data-label": "Descrição", texto: lanc.descricao + (lanc.recorrente ? " (mensal)" : "") }),
+      el("td", { "data-label": "Cliente", texto: nomeCliente(lanc.cliente_id) }),
+      el("td", { "data-label": "Caso", texto: tituloCaso(lanc.caso_id) }),
+      el("td", { "data-label": "Responsável", texto: lanc.responsavel }),
+    ]);
+    const botaoExcluir = el("button", { class: "cds--btn cds--btn--danger--tertiary cds--btn--sm", type: "button", texto: "Excluir" });
+    botaoExcluir.addEventListener("click", () => _excluirLancamento(lanc.id, lanc.descricao, botaoExcluir));
+    tr.appendChild(el("td", { "data-label": "Ações" }, [botaoExcluir]));
+    tbody.appendChild(tr);
+  }
+  container.appendChild(el("div", { class: "tabela-responsiva-wrap" }, [el("table", { class: "tabela-responsiva tabela-lancamentos" }, [thead, tbody])]));
+}
+
+async function _excluirLancamento(id, descricao, botao) {
+  if (!(await confirmarAcao(`Excluir o lançamento "${descricao}"? Essa ação não pode ser desfeita.`))) return;
+  botao.disabled = true;
+  try {
+    await _enviarJson(`/lancamentos/${id}`, {}, "DELETE");
+    await carregarLancamentos();
+  } catch (erro) {
+    mostrarToast("error", "Erro", erro.message);
+    botao.disabled = false;
+  }
+}
+
+async function _abrirModalHonorario() {
+  if (!_cache.clientes.length) {
+    try { const { clientes } = await _buscarJson("/clientes"); _cache.clientes = clientes || []; } catch { /* segue */ }
+  }
+  if (!_cache.casos.length) {
+    try { const { casos } = await _buscarJson("/casos"); _cache.casos = casos || []; } catch { /* segue */ }
+  }
+  document.getElementById("form-honorario").reset();
+  limpar(document.getElementById("resultado-honorario"));
+
+  const selectCaso = document.getElementById("honorario-caso");
+  limpar(selectCaso);
+  selectCaso.appendChild(el("option", { value: "", texto: "— selecione o caso —" }));
+  for (const c of _cache.casos) selectCaso.appendChild(el("option", { value: c.id, texto: c.titulo || "(sem título)" }));
+
+  const selectCliente = document.getElementById("honorario-cliente");
+  limpar(selectCliente);
+  selectCliente.appendChild(el("option", { value: "", texto: "— selecione o cliente —" }));
+  for (const c of _cache.clientes) selectCliente.appendChild(el("option", { value: c.id, texto: c.nome }));
+
+  abrirModal("modal-honorario");
+}
+
 function cartaoPendente(p) {
   const d = p.dados || {};
   const card = el("article", { class: "cds--tile resultado-card" });
@@ -3876,3 +3974,49 @@ _inicializarDatePickerRange("pub-oab-manual-data-inicio", "pub-oab-manual-data-f
   // Expõe a instância para que _abrirModalAtividade possa pré-popular via setDate().
   window._fpAtividadeData = fp;
 })();
+
+// Date picker simples para honorario-vencimento (sem range plugin).
+(function () {
+  const el = document.getElementById("honorario-vencimento");
+  if (!el || typeof window.flatpickr !== "function") return;
+  window.flatpickr(el, {
+    altInput: false,
+    allowInput: true,
+    locale: window.flatpickr.l10ns && window.flatpickr.l10ns.pt,
+    dateFormat: "Y-m-d",
+  });
+})();
+
+document.getElementById("btn-novo-lancamento").addEventListener("click", () => abrirModal("modal-lancamento-tipo"));
+
+document.getElementById("btn-lancamento-tipo-honorario").addEventListener("click", async () => {
+  fecharModal("modal-lancamento-tipo");
+  await _abrirModalHonorario();
+});
+
+document.getElementById("modal-honorario-fechar").addEventListener("click", () => fecharModal("modal-honorario"));
+
+document.getElementById("form-honorario").addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  const botao = document.querySelector("button[form='form-honorario'][type='submit']");
+  const resultado = document.getElementById("resultado-honorario");
+  const corpo = {
+    vencimento: document.getElementById("honorario-vencimento").value.trim(),
+    valor: document.getElementById("honorario-valor").value,
+    descricao: document.getElementById("honorario-descricao").value.trim(),
+    recorrente: document.getElementById("honorario-recorrente").checked,
+    caso_id: document.getElementById("honorario-caso").value,
+    cliente_id: document.getElementById("honorario-cliente").value,
+    responsavel: document.getElementById("honorario-responsavel").value.trim(),
+  };
+  const pararEspera = mostrarEspera(resultado, botao, "Salvando");
+  try {
+    await _enviarJson("/lancamentos", corpo);
+    fecharModal("modal-honorario");
+    await carregarLancamentos();
+  } catch (erro) {
+    mostrarErro(resultado, erro.message);
+  } finally {
+    pararEspera();
+  }
+});
