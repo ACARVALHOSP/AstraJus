@@ -178,13 +178,13 @@ nav.cds--side-nav {
   .tabela-responsiva tr:has(+ tr td[colspan]) { border-bottom: none; border-bottom-left-radius: 0; border-bottom-right-radius: 0; margin-bottom: 0; }
   .tabela-responsiva tr:has(td[colspan]) { border-top: none; border-top-left-radius: 0; border-top-right-radius: 0; padding-top: 0; }
   .tabela-responsiva td { border-bottom: none; padding: 0.3rem 0; text-align: left; max-width: none; overflow: visible; text-overflow: clip; white-space: normal; }
-  .tabela-responsiva td::before {
+  .tabela-responsiva td::after {
     content: attr(data-label); display: block; font-size: var(--fonte-ajuda); font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.02em; color: var(--cds-text-secondary, #525252); margin-bottom: 0.125rem;
+    text-transform: uppercase; letter-spacing: 0.02em; color: var(--cds-text-secondary, #525252); margin-top: 0.125rem;
   }
   .tabela-responsiva td[data-label="Selecionar"] { padding-bottom: 0.5rem; border-bottom: 1px solid var(--cds-border-subtle, #e0e0e0); margin-bottom: 0.5rem; }
-  .tabela-responsiva td[data-label="Selecionar"]::before { display: none; }
-  .tabela-responsiva td[data-label="Favorito"]::before { display: none; }
+  .tabela-responsiva td[data-label="Selecionar"]::after { display: none; }
+  .tabela-responsiva td[data-label="Favorito"]::after { display: none; }
 }
 .pub-oab-acoes-linha { display: flex; gap: 0.25rem; align-items: center; flex-wrap: wrap; }
 .pub-oab-combo { position: relative; }
@@ -929,10 +929,10 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </select>
 </div>
 <div class="cds--form-item">
-<label class="cds--label" for="pagamentos-filtro-cliente">Cliente</label>
-<select class="cds--select-input" id="pagamentos-filtro-cliente">
-<option value="">— todos —</option>
-</select>
+<label class="cds--label" for="pagamentos-filtro-cliente-cpf">Cliente (CPF/CNPJ)</label>
+<input class="cds--text-input" type="text" id="pagamentos-filtro-cliente-cpf" inputmode="numeric" placeholder="Ex.: 123.456.789-00" autocomplete="off">
+<input type="hidden" id="pagamentos-filtro-cliente">
+<span class="campo-ajuda" id="pagamentos-filtro-cliente-status"></span>
 </div>
 </div>
 <div id="lista-pagamentos" class="app-resultado"></div>
@@ -967,23 +967,23 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <form id="form-contato-cadastro" class="app-formulario">
 <div class="cds--form-item">
 <label class="cds--label" for="contato-nome">Nome</label>
-<input class="cds--text-input" id="contato-nome" name="nome" autocomplete="name" required>
+<input class="cds--text-input" id="contato-nome" name="nome" placeholder="Ex.: Maria Aparecida Souza" autocomplete="name" required>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="contato-cpf-cnpj">CPF/CNPJ</label>
-<input class="cds--text-input" id="contato-cpf-cnpj" name="cpf_cnpj" autocomplete="off">
+<input class="cds--text-input" id="contato-cpf-cnpj" name="cpf_cnpj" inputmode="numeric" placeholder="Ex.: 123.456.789-00" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="contato-telefone">Telefone</label>
-<input class="cds--text-input" id="contato-telefone" name="telefone" autocomplete="tel">
+<input class="cds--text-input" id="contato-telefone" name="telefone" placeholder="Ex.: (11) 98211-3344" autocomplete="tel">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="contato-email">E-mail</label>
-<input class="cds--text-input" id="contato-email" name="email" type="email" autocomplete="email">
+<input class="cds--text-input" id="contato-email" name="email" type="email" placeholder="Ex.: maria.souza@example.com" autocomplete="email">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="contato-observacoes">Observações</label>
-<input class="cds--text-input" id="contato-observacoes" name="observacoes" autocomplete="off">
+<input class="cds--text-input" id="contato-observacoes" name="observacoes" placeholder="Ex.: indicação de cliente antigo" autocomplete="off">
 </div>
 <div class="token-acoes campo-ajuda--largo">
 <button class="cds--btn cds--btn--primary" type="submit">Salvar alterações</button>
@@ -1043,19 +1043,19 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <form id="form-caso-editar" class="form-detalhe">
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-titulo">Título do caso</label>
-<input class="cds--text-input" type="text" id="editar-caso-titulo" name="titulo" autocomplete="off">
+<input class="cds--text-input" type="text" id="editar-caso-titulo" name="titulo" placeholder="Ex.: Cobrança de honorários" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-responsavel">Responsável</label>
-<input class="cds--text-input" type="text" id="editar-caso-responsavel" name="responsavel" autocomplete="off">
+<input class="cds--text-input" type="text" id="editar-caso-responsavel" name="responsavel" placeholder="Ex.: Dra. Fernanda Reis" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-acao">Ação / Tipo</label>
-<input class="cds--text-input" type="text" id="editar-caso-acao" name="acao" autocomplete="off">
+<input class="cds--text-input" type="text" id="editar-caso-acao" name="acao" placeholder="Ex.: Cumprimento de sentença" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-foro">Foro / Vara</label>
-<input class="cds--text-input" type="text" id="editar-caso-foro" name="foro" autocomplete="off">
+<input class="cds--text-input" type="text" id="editar-caso-foro" name="foro" placeholder="Ex.: 3ª Vara Cível" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-desfecho">Desfecho</label>
@@ -1088,11 +1088,11 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <form id="form-caso-partes" class="form-detalhe">
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-autor">Autor</label>
-<input class="cds--text-input" type="text" id="editar-caso-autor" name="autor" autocomplete="off">
+<input class="cds--text-input" type="text" id="editar-caso-autor" name="autor" placeholder="Ex.: Maria Aparecida Souza" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-reu">Réu</label>
-<input class="cds--text-input" type="text" id="editar-caso-reu" name="reu" autocomplete="off">
+<input class="cds--text-input" type="text" id="editar-caso-reu" name="reu" placeholder="Ex.: Construtora Horizonte Ltda" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-advogados">Advogados</label>
@@ -1175,15 +1175,15 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <form id="form-pub-oab-manual" class="pub-oab-manual-form">
 <div class="cds--form-item">
 <label class="cds--label" for="pub-oab-manual-numero">Número OAB</label>
-<input class="cds--text-input" type="text" id="pub-oab-manual-numero" name="numero_oab" autocomplete="off" required>
+<input class="cds--text-input" type="text" id="pub-oab-manual-numero" name="numero_oab" placeholder="Ex.: 330659" autocomplete="off" required>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="pub-oab-manual-uf">UF OAB</label>
-<input class="cds--text-input" type="text" id="pub-oab-manual-uf" name="uf_oab" maxlength="2" placeholder="SP" autocomplete="off">
+<input class="cds--text-input" type="text" id="pub-oab-manual-uf" name="uf_oab" maxlength="2" placeholder="Ex.: SP" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="pub-oab-manual-nome">Nome (opcional)</label>
-<input class="cds--text-input" type="text" id="pub-oab-manual-nome" name="nome" autocomplete="off">
+<input class="cds--text-input" type="text" id="pub-oab-manual-nome" name="nome" placeholder="Ex.: advogado ou parte dono da OAB" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <div class="cds--date-picker cds--date-picker--range" data-date-picker data-date-picker-type="range">
@@ -1255,23 +1255,23 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <form id="form-cliente" class="app-formulario">
 <div class="cds--form-item">
 <label class="cds--label" for="cliente-nome">Nome</label>
-<input class="cds--text-input" id="cliente-nome" name="nome" autocomplete="name" required>
+<input class="cds--text-input" id="cliente-nome" name="nome" placeholder="Ex.: Maria Aparecida Souza" autocomplete="name" required>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="cliente-cpf-cnpj">CPF/CNPJ</label>
-<input class="cds--text-input" id="cliente-cpf-cnpj" name="cpf_cnpj" autocomplete="off">
+<input class="cds--text-input" id="cliente-cpf-cnpj" name="cpf_cnpj" inputmode="numeric" placeholder="Ex.: 123.456.789-00" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="cliente-telefone">Telefone</label>
-<input class="cds--text-input" id="cliente-telefone" name="telefone" autocomplete="tel">
+<input class="cds--text-input" id="cliente-telefone" name="telefone" placeholder="Ex.: (11) 98211-3344" autocomplete="tel">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="cliente-email">E-mail</label>
-<input class="cds--text-input" id="cliente-email" name="email" type="email" autocomplete="email">
+<input class="cds--text-input" id="cliente-email" name="email" type="email" placeholder="Ex.: maria.souza@example.com" autocomplete="email">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="cliente-observacoes">Observações</label>
-<input class="cds--text-input" id="cliente-observacoes" name="observacoes" autocomplete="off">
+<input class="cds--text-input" id="cliente-observacoes" name="observacoes" placeholder="Ex.: indicação de cliente antigo" autocomplete="off">
 </div>
 </form>
 <div id="resultado-cliente" class="app-resultado" aria-live="polite"></div>
@@ -1306,7 +1306,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="caso-responsavel">Responsável</label>
-<input class="cds--text-input" id="caso-responsavel" name="responsavel" autocomplete="off">
+<input class="cds--text-input" id="caso-responsavel" name="responsavel" placeholder="Ex.: Dra. Fernanda Reis" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="caso-acao">Ação</label>
@@ -1387,7 +1387,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="atividade-titulo">Título <span aria-hidden="true">*</span></label>
-<input class="cds--text-input" type="text" id="atividade-titulo" name="titulo" autocomplete="off" required>
+<input class="cds--text-input" type="text" id="atividade-titulo" name="titulo" placeholder="Ex.: Audiência de conciliação" autocomplete="off" required>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="atividade-data">Data</label>
@@ -1470,16 +1470,23 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <svg class="cds--date-picker__icon" width="16" height="16" viewBox="0 0 32 32" aria-hidden="true">
 <path d="M26 4h-4V2h-2v2H12V2h-2v2H6a2 2 0 0 0-2 2v20a2 2 0 0 0 2 2h20a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2ZM6 6h20v4H6Zm0 20V12h20v14Z"></path>
 </svg>
-<input class="cds--text-input" type="text" id="honorario-vencimento" name="vencimento" placeholder="aaaa-mm-dd" autocomplete="off" required>
+<input class="cds--text-input" type="text" id="honorario-vencimento" name="vencimento" placeholder="Ex.: 10/11/2026" autocomplete="off" required>
 </div>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="honorario-valor">Valor <span aria-hidden="true">*</span></label>
-<input class="cds--text-input" type="number" id="honorario-valor" name="valor" min="0.01" step="0.01" autocomplete="off" required>
+<input class="cds--text-input" type="number" id="honorario-valor" name="valor" min="0.01" step="0.01" placeholder="Ex.: 1500.00" autocomplete="off" required>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="honorario-descricao">Descrição <span aria-hidden="true">*</span></label>
 <input class="cds--text-input" type="text" id="honorario-descricao" name="descricao" placeholder="Ex.: Honorários iniciais, Parcela contratual" autocomplete="off" required>
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="honorario-direcao">Direção <span aria-hidden="true">*</span></label>
+<select class="cds--select-input" id="honorario-direcao" name="direcao" autocomplete="off">
+<option value="RECEITA" selected>A receber</option>
+<option value="DESPESA">A pagar</option>
+</select>
 </div>
 <label class="checkbox-lembrar"><input type="checkbox" id="honorario-recorrente"> Repetir mensalmente</label>
 <div class="cds--form-item">
@@ -1496,7 +1503,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="honorario-responsavel">Responsável <span aria-hidden="true">*</span></label>
-<input class="cds--text-input" type="text" id="honorario-responsavel" name="responsavel" autocomplete="off" required>
+<input class="cds--text-input" type="text" id="honorario-responsavel" name="responsavel" placeholder="Ex.: Dra. Fernanda Reis" autocomplete="off" required>
 </div>
 <div id="resultado-honorario" class="app-resultado"></div>
 </form>
@@ -1519,11 +1526,10 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="cds--modal-content">
 <form id="form-nova-cobranca">
 <div class="cds--form-item">
-<label class="cds--label" for="cobranca-cliente">Cliente <span aria-hidden="true">*</span></label>
-<select class="cds--select-input" id="cobranca-cliente" name="cliente_id" autocomplete="off" required>
-<option value="">— selecione o cliente —</option>
-</select>
-<span class="campo-ajuda">O cliente precisa ter CPF/CNPJ cadastrado.</span>
+<label class="cds--label" for="cobranca-cliente-cpf">Cliente (CPF/CNPJ) <span aria-hidden="true">*</span></label>
+<input class="cds--text-input" type="text" id="cobranca-cliente-cpf" inputmode="numeric" placeholder="Ex.: 123.456.789-00" autocomplete="off" required>
+<input type="hidden" id="cobranca-cliente" name="cliente_id">
+<span class="campo-ajuda" id="cobranca-cliente-status">Digite o CPF/CNPJ de um cliente já cadastrado.</span>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="cobranca-tipo">Tipo de cobrança <span aria-hidden="true">*</span></label>
@@ -1539,7 +1545,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="cobranca-valor"><span id="cobranca-valor-rotulo">Valor</span> <span aria-hidden="true">*</span></label>
-<input class="cds--text-input" type="number" id="cobranca-valor" name="valor" min="0.01" step="0.01" autocomplete="off" required>
+<input class="cds--text-input" type="number" id="cobranca-valor" name="valor" min="0.01" step="0.01" placeholder="Ex.: 1500.00" autocomplete="off" required>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="cobranca-vencimento">Vencimento <span aria-hidden="true">*</span></label>

@@ -195,7 +195,9 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 caso_id TEXT NOT NULL REFERENCES casos(id),
                 cliente_id TEXT NOT NULL REFERENCES clientes(id),
                 responsavel TEXT NOT NULL,
-                criado_em TEXT NOT NULL
+                criado_em TEXT NOT NULL,
+                direcao TEXT NOT NULL DEFAULT 'RECEITA',
+                pago INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE INDEX IF NOT EXISTS idx_lancamentos_caso ON lancamentos_financeiros (caso_id);
@@ -212,6 +214,7 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
         )
         _migrar_colunas_casos(conexao)
         _migrar_colunas_clientes(conexao)
+        _migrar_colunas_lancamentos(conexao)
         _migrar_remover_calendar_evento_id(conexao)
         _migrar_fk_publicacoes_capturadas(conexao)
 
@@ -222,6 +225,18 @@ def _migrar_colunas_clientes(conexao: sqlite3.Connection) -> None:
     if "asaas_customer_id" not in colunas:
         with conexao:
             conexao.execute("ALTER TABLE clientes ADD COLUMN asaas_customer_id TEXT")
+
+
+def _migrar_colunas_lancamentos(conexao: sqlite3.Connection) -> None:
+    """Bancos criados antes de `direcao`/`pago` existirem em `lancamentos_financeiros`
+    precisam do ALTER TABLE manual (lançamentos antigos nascem RECEITA/não pago, que já era o
+    comportamento implícito até aqui - só o tipo Honorário tinha tela, e é sempre a receber)."""
+    colunas = {linha[1] for linha in conexao.execute("PRAGMA table_info(lancamentos_financeiros)")}
+    with conexao:
+        if "direcao" not in colunas:
+            conexao.execute("ALTER TABLE lancamentos_financeiros ADD COLUMN direcao TEXT NOT NULL DEFAULT 'RECEITA'")
+        if "pago" not in colunas:
+            conexao.execute("ALTER TABLE lancamentos_financeiros ADD COLUMN pago INTEGER NOT NULL DEFAULT 0")
 
 
 def _migrar_colunas_casos(conexao: sqlite3.Connection) -> None:
@@ -241,6 +256,19 @@ def _migrar_colunas_casos(conexao: sqlite3.Connection) -> None:
             conexao.execute("ALTER TABLE casos ADD COLUMN advogados TEXT")
         if "desfecho" not in colunas:
             conexao.execute("ALTER TABLE casos ADD COLUMN desfecho TEXT")
+        if "numero" not in colunas:
+            conexao.execute("ALTER TABLE casos ADD COLUMN numero INTEGER")
+    if "numero" not in colunas:
+        _atribuir_numeros_casos_existentes(conexao)
+
+
+def _atribuir_numeros_casos_existentes(conexao: sqlite3.Connection) -> None:
+    """Bancos migrados ganham a coluna `numero` vazia - atribui sequencialmente por ordem de
+    criação, pra cada caso existente ter um identificador único e estável desde já."""
+    ids = [linha[0] for linha in conexao.execute("SELECT id FROM casos ORDER BY criado_em ASC")]
+    with conexao:
+        for indice, caso_id in enumerate(ids, start=1):
+            conexao.execute("UPDATE casos SET numero = ? WHERE id = ?", (indice, caso_id))
 
 
 def _migrar_remover_calendar_evento_id(conexao: sqlite3.Connection) -> None:
@@ -518,10 +546,11 @@ class RegistroClientesCasos:
         novo_id = uuid.uuid4().hex
         criado_em = agora().isoformat()
         with self._trava, _abrir(self.caminho) as conexao, conexao:
+            proximo_numero = conexao.execute("SELECT COALESCE(MAX(numero), 0) + 1 FROM casos").fetchone()[0]
             conexao.execute(
-                "INSERT INTO casos (id, cliente_id, titulo, responsavel, acao, foro, status, criado_em) "
-                "VALUES (?, ?, ?, ?, ?, ?, 'ativo', ?)",
-                (novo_id, cliente_id, titulo, responsavel, acao, foro, criado_em),
+                "INSERT INTO casos (id, cliente_id, titulo, responsavel, acao, foro, status, criado_em, numero) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'ativo', ?, ?)",
+                (novo_id, cliente_id, titulo, responsavel, acao, foro, criado_em, proximo_numero),
             )
             conexao.executemany(
                 "INSERT OR IGNORE INTO caso_processos (caso_id, numero_processo) VALUES (?, ?)",
@@ -545,7 +574,7 @@ class RegistroClientesCasos:
         with _abrir(self.caminho) as conexao:
             linha = conexao.execute(
                 "SELECT id, cliente_id, titulo, responsavel, status, drive_pasta_id, "
-                "criado_em, acao, foro, autor, reu, advogados, desfecho "
+                "criado_em, acao, foro, autor, reu, advogados, desfecho, numero "
                 "FROM casos WHERE id = ?",
                 (caso_id,),
             ).fetchone()
@@ -584,7 +613,7 @@ class RegistroClientesCasos:
         with _abrir(self.caminho) as conexao:
             linhas = conexao.execute(
                 "SELECT id, cliente_id, titulo, responsavel, status, drive_pasta_id, "
-                "criado_em, acao, foro, autor, reu, advogados, desfecho "
+                "criado_em, acao, foro, autor, reu, advogados, desfecho, numero "
                 "FROM casos ORDER BY criado_em DESC"
             ).fetchall()
             if not linhas:
@@ -794,33 +823,50 @@ class RegistroClientesCasos:
 
     # Financeiro - Lançamentos
 
+    _COLUNAS_LANCAMENTO = (
+        "id, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, "
+        "criado_em, direcao, pago"
+    )
+
     def criar_lancamento(
         self, tipo: str, vencimento: str, valor: float, descricao: str, recorrente: bool,
-        caso_id: str, cliente_id: str, responsavel: str, agora,
+        caso_id: str, cliente_id: str, responsavel: str, agora, direcao: str = "RECEITA",
     ) -> dict:
         novo_id = uuid.uuid4().hex
         criado_em = agora().isoformat()
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             conexao.execute(
                 "INSERT INTO lancamentos_financeiros "
-                "(id, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, criado_em) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (novo_id, tipo, vencimento, valor, descricao, int(recorrente), caso_id, cliente_id, responsavel, criado_em),
+                "(id, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, criado_em, direcao) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (novo_id, tipo, vencimento, valor, descricao, int(recorrente), caso_id, cliente_id, responsavel, criado_em, direcao),
             )
         with _abrir(self.caminho) as conexao:
             linha = conexao.execute(
-                "SELECT id, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, criado_em "
-                "FROM lancamentos_financeiros WHERE id = ?", (novo_id,)
+                f"SELECT {self._COLUNAS_LANCAMENTO} FROM lancamentos_financeiros WHERE id = ?", (novo_id,)
             ).fetchone()
         return _linha_lancamento(linha)
 
     def listar_lancamentos(self) -> list[dict]:
         with _abrir(self.caminho) as conexao:
             cursor = conexao.execute(
-                "SELECT id, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, criado_em "
+                f"SELECT {self._COLUNAS_LANCAMENTO} "
                 "FROM lancamentos_financeiros ORDER BY vencimento ASC, criado_em ASC"
             )
             return [_linha_lancamento(linha) for linha in cursor.fetchall()]
+
+    def atualizar_lancamento_pago(self, lancamento_id: str, pago: bool) -> dict | None:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            cursor = conexao.execute(
+                "UPDATE lancamentos_financeiros SET pago = ? WHERE id = ?", (int(pago), lancamento_id),
+            )
+            if cursor.rowcount == 0:
+                return None
+        with _abrir(self.caminho) as conexao:
+            linha = conexao.execute(
+                f"SELECT {self._COLUNAS_LANCAMENTO} FROM lancamentos_financeiros WHERE id = ?", (lancamento_id,)
+            ).fetchone()
+        return _linha_lancamento(linha)
 
     def excluir_lancamento(self, lancamento_id: str) -> bool:
         with self._trava, _abrir(self.caminho) as conexao, conexao:
@@ -1019,21 +1065,22 @@ def _linha_cliente(linha) -> dict:
 
 
 def _linha_lancamento(linha) -> dict:
-    id_, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, criado_em = linha
+    id_, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, criado_em, direcao, pago = linha
     return {
         "id": id_, "tipo": tipo, "vencimento": vencimento, "valor": valor,
         "descricao": descricao, "recorrente": bool(recorrente), "caso_id": caso_id,
         "cliente_id": cliente_id, "responsavel": responsavel, "criado_em": criado_em,
+        "direcao": direcao, "pago": bool(pago),
     }
 
 
 def _linha_caso(linha) -> dict:
-    id_, cliente_id, titulo, responsavel, status, drive_pasta_id, criado_em, acao, foro, autor, reu, advogados, desfecho = linha
+    id_, cliente_id, titulo, responsavel, status, drive_pasta_id, criado_em, acao, foro, autor, reu, advogados, desfecho, numero = linha
     return {
         "id": id_, "cliente_id": cliente_id, "titulo": titulo, "responsavel": responsavel,
         "status": status, "drive_pasta_id": drive_pasta_id,
         "criado_em": criado_em, "acao": acao, "foro": foro,
-        "autor": autor, "reu": reu, "advogados": advogados, "desfecho": desfecho,
+        "autor": autor, "reu": reu, "advogados": advogados, "desfecho": desfecho, "numero": numero,
     }
 
 

@@ -3678,20 +3678,39 @@ class _AutenticacaoBearer:
         if self.gestao.obter_cliente(cliente_id) is None:
             await _json(send, 400, _erro("Selecione um cliente válido."))
             return
+        direcao = (dados.get("direcao") or "RECEITA").strip().upper()
+        if direcao not in ("RECEITA", "DESPESA"):
+            await _json(send, 400, _erro("Direção inválida (use RECEITA ou DESPESA)."))
+            return
         lancamento = self.gestao.criar_lancamento(
             tipo="HONORARIO", vencimento=vencimento, valor=valor, descricao=descricao,
             recorrente=bool(dados.get("recorrente")), caso_id=caso_id, cliente_id=cliente_id,
-            responsavel=responsavel, agora=lambda: datetime.now(timezone.utc),
+            responsavel=responsavel, agora=lambda: datetime.now(timezone.utc), direcao=direcao,
         )
         await _json(send, 201, lancamento)
 
     async def _lancamento_detalhe(self, scope, receive, send, lancamento_id: str) -> None:
-        """DELETE /lancamentos/<id>: exclui um lançamento."""
-        if scope.get("method") != "DELETE" or not lancamento_id:
+        """DELETE /lancamentos/<id>: exclui um lançamento. PATCH /lancamentos/<id>: marca/
+        desmarca como pago (recebido, se direção RECEITA; pago, se DESPESA)."""
+        metodo = scope.get("method")
+        if not lancamento_id or metodo not in ("DELETE", "PATCH"):
             await _responder(send, 404, b"Nao encontrado")
             return
-        excluiu = self.gestao.excluir_lancamento(lancamento_id)
-        await _json(send, 200 if excluiu else 404, {"excluido": excluiu})
+        if metodo == "DELETE":
+            excluiu = self.gestao.excluir_lancamento(lancamento_id)
+            await _json(send, 200 if excluiu else 404, {"excluido": excluiu})
+            return
+        corpo = await _ler_corpo(receive)
+        try:
+            dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            await _json(send, 400, _erro("JSON inválido."))
+            return
+        lancamento = self.gestao.atualizar_lancamento_pago(lancamento_id, bool(dados.get("pago")))
+        if lancamento is None:
+            await _json(send, 404, _erro("Lançamento não encontrado."))
+            return
+        await _json(send, 200, lancamento)
 
     async def _atividades_do_caso(self, scope, receive, send, caso_id: str, aid: int | None):
         """GET /casos/<id>/atividades, POST /casos/<id>/atividades,
