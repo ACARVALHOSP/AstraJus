@@ -1957,6 +1957,7 @@ document.addEventListener("keydown", (ev) => {
 
 const _cache = { clientes: [], casos: [] };
 let _filtroCasos = "";
+let _visualizacaoCasos = "tabela";
 
 function _iconePessoa() {
   const ns = "http://www.w3.org/2000/svg";
@@ -2320,6 +2321,56 @@ function tabelaCasos(casos, aoExcluir) {
   return el("div", { class: "tabela-responsiva-wrap" }, [el("table", { class: "tabela-responsiva tabela-casos" }, [thead, tbody])]);
 }
 
+function cartoesCasos(casos, aoExcluir) {
+  const nomeCliente = (id) => (_cache.clientes.find((c) => c.id === id) || {}).nome || id;
+  const ordenados = [...casos].sort((a, b) => (b.ultima_movimentacao || "").localeCompare(a.ultima_movimentacao || ""));
+  const grade = el("div", { class: "grade-casos" });
+  for (const caso of ordenados) {
+    const card = el("article", { class: "cds--tile" });
+
+    const tituloLinha = el("div", { class: "caso-titulo-linha" }, [
+      el("span", { texto: caso.titulo || "(sem título)" }),
+    ]);
+    if (caso.monitorado) {
+      tituloLinha.appendChild(el("span", { class: "cds--tag cds--tag--green cds--tag--sm", texto: "Monitorado" }));
+    }
+    if (caso.desfecho && _ROTULO_DESFECHO_CASO[caso.desfecho]) {
+      tituloLinha.appendChild(el("span", { class: "cds--tag cds--tag--purple cds--tag--sm", texto: _ROTULO_DESFECHO_CASO[caso.desfecho] }));
+    }
+    card.appendChild(tituloLinha);
+
+    const nomesClientes = [caso.cliente_id, ...(caso.clientes_adicionais || [])].map(nomeCliente).filter(Boolean);
+    card.appendChild(el("p", { class: "campo-ajuda", texto: nomesClientes.join(", ") || "Sem cliente vinculado" }));
+
+    const containerAcao = el("div", { style: "display:flex; flex-wrap:wrap; gap:4px" });
+    const pedacosAcao = (caso.acao || "").split(" - ").map((pedaco) => pedaco.trim()).filter(Boolean);
+    if (pedacosAcao.length === 0) {
+      containerAcao.appendChild(el("span", { class: "cds--tag cds--tag--blue cds--tag--sm", texto: "-" }));
+    } else {
+      pedacosAcao.forEach((pedaco) => {
+        containerAcao.appendChild(el("span", { class: "cds--tag cds--tag--blue cds--tag--sm", texto: pedaco }));
+      });
+    }
+    if (caso.foro) containerAcao.appendChild(el("span", { class: "cds--tag cds--tag--gray cds--tag--sm", texto: caso.foro }));
+    card.appendChild(containerAcao);
+
+    card.appendChild(el("p", { class: "campo-ajuda", texto: `Últ. mov.: ${formatarDataSimples(caso.ultima_movimentacao)}` }));
+
+    const botaoAbrirCaso = el("button", {
+      class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Abrir",
+    });
+    botaoAbrirCaso.addEventListener("click", () => abrirCaso(caso.id));
+    const botaoExcluirCaso = el("button", {
+      class: "cds--btn cds--btn--danger--tertiary cds--btn--sm", type: "button", texto: "Excluir",
+    });
+    botaoExcluirCaso.addEventListener("click", () => excluirCaso(caso.id, caso.titulo, botaoExcluirCaso, aoExcluir));
+    card.appendChild(el("div", { style: "display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:auto" }, [botaoAbrirCaso, botaoExcluirCaso]));
+
+    grade.appendChild(card);
+  }
+  return grade;
+}
+
 // --- Financeiro --------------------------------------------------------------------------------
 
 function formatarMoeda(valor) {
@@ -2513,7 +2564,11 @@ function _renderizarTabelaCasosPagina() {
   if (!filtrados.length) {
     listaCasosEl.appendChild(notificacao("info", termo ? "Nenhum caso corresponde ao filtro." : "Nenhum caso cadastrado ainda"));
   } else {
-    listaCasosEl.appendChild(tabelaCasos(filtrados, _renderizarTabelaCasosPagina));
+    listaCasosEl.appendChild(
+      _visualizacaoCasos === "cards"
+        ? cartoesCasos(filtrados, _renderizarTabelaCasosPagina)
+        : tabelaCasos(filtrados, _renderizarTabelaCasosPagina)
+    );
   }
   renderizarCasosFavoritos();
 }
@@ -4020,3 +4075,28 @@ document.getElementById("form-honorario").addEventListener("submit", async (even
     pararEspera();
   }
 });
+
+// Alternância entre visualização em tabela e em cards na aba Casos.
+// Os botões vivem no HTML (fora de #lista-casos, que é recriado a cada render), então
+// os listeners são registrados uma única vez aqui e apenas re-renderizam a lista.
+(function () {
+  const switcher = document.getElementById("casos-vista-switcher");
+  const botaoTabela = document.getElementById("casos-vista-tabela-botao");
+  const botaoCards = document.getElementById("casos-vista-cards-botao");
+  if (!switcher || !botaoTabela || !botaoCards) return;
+
+  function selecionar(visualizacao) {
+    _visualizacaoCasos = visualizacao;
+    for (const outro of switcher.querySelectorAll("button")) {
+      outro.classList.remove("cds--content-switcher--selected");
+      outro.setAttribute("aria-selected", "false");
+    }
+    const ativo = visualizacao === "cards" ? botaoCards : botaoTabela;
+    ativo.classList.add("cds--content-switcher--selected");
+    ativo.setAttribute("aria-selected", "true");
+    _renderizarTabelaCasosPagina();
+  }
+
+  botaoTabela.addEventListener("click", () => selecionar("tabela"));
+  botaoCards.addEventListener("click", () => selecionar("cards"));
+})();

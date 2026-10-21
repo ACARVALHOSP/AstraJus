@@ -237,6 +237,12 @@ nav.cds--side-nav {
 .grade-integracoes h3 { font-size: var(--fonte-subtitulo); font-weight: 600; margin: 0; }
 .grade-integracoes p { margin: 0; font-size: var(--fonte-base); }
 
+.grade-casos {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem; margin: 1rem 0;
+}
+.grade-casos .cds--tile { display: flex; flex-direction: column; gap: 0.5rem; }
+
 .seletor-arvore {
   border: 1px solid var(--cds-border-subtle, #c6c6c6); border-radius: 4px;
   padding: 0.5rem; background: var(--cds-layer-01, #fff);
@@ -825,6 +831,10 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="contatos-barra" style="margin-top:0.5rem">
 <div class="cds--form-item contatos-busca-campo" style="margin:0;max-width:360px">
 <input class="cds--text-input" type="search" id="casos-busca" placeholder="Filtrar por título, cliente, ação, processo…" aria-label="Buscar casos" autocomplete="off">
+</div>
+<div class="cds--content-switcher cds--content-switcher--light" id="casos-vista-switcher" role="tablist" aria-label="Visualização da lista de casos">
+<button class="cds--content-switcher-btn cds--content-switcher--selected" type="button" id="casos-vista-tabela-botao" role="tab" aria-selected="true">Tabela</button>
+<button class="cds--content-switcher-btn" type="button" id="casos-vista-cards-botao" role="tab" aria-selected="false">Cards</button>
 </div>
 </div>
 <div id="lista-casos" class="app-resultado"></div>
