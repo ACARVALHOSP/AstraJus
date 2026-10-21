@@ -74,7 +74,8 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 telefone TEXT,
                 email TEXT,
                 observacoes TEXT,
-                criado_em TEXT NOT NULL
+                criado_em TEXT NOT NULL,
+                asaas_customer_id TEXT
             );
 
             CREATE TABLE IF NOT EXISTS casos (
@@ -192,8 +193,17 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
             """
         )
         _migrar_colunas_casos(conexao)
+        _migrar_colunas_clientes(conexao)
         _migrar_remover_calendar_evento_id(conexao)
         _migrar_fk_publicacoes_capturadas(conexao)
+
+
+def _migrar_colunas_clientes(conexao: sqlite3.Connection) -> None:
+    """Bancos criados antes da integração Asaas não têm asaas_customer_id em `clientes`."""
+    colunas = {linha[1] for linha in conexao.execute("PRAGMA table_info(clientes)")}
+    if "asaas_customer_id" not in colunas:
+        with conexao:
+            conexao.execute("ALTER TABLE clientes ADD COLUMN asaas_customer_id TEXT")
 
 
 def _migrar_colunas_casos(conexao: sqlite3.Connection) -> None:
@@ -423,7 +433,7 @@ class RegistroClientesCasos:
     def obter_cliente(self, cliente_id: str) -> dict | None:
         with _abrir(self.caminho) as conexao:
             linha = conexao.execute(
-                "SELECT id, nome, cpf_cnpj, telefone, email, observacoes, criado_em "
+                "SELECT id, nome, cpf_cnpj, telefone, email, observacoes, criado_em, asaas_customer_id "
                 "FROM clientes WHERE id = ?",
                 (cliente_id,),
             ).fetchone()
@@ -446,7 +456,7 @@ class RegistroClientesCasos:
         a mesma parte aparece em casos/publicações diferentes."""
         with _abrir(self.caminho) as conexao:
             linha = conexao.execute(
-                "SELECT id, nome, cpf_cnpj, telefone, email, observacoes, criado_em "
+                "SELECT id, nome, cpf_cnpj, telefone, email, observacoes, criado_em, asaas_customer_id "
                 "FROM clientes WHERE lower(nome) = lower(?) LIMIT 1",
                 (nome,),
             ).fetchone()
@@ -455,10 +465,22 @@ class RegistroClientesCasos:
     def listar_clientes(self) -> list[dict]:
         with _abrir(self.caminho) as conexao:
             cursor = conexao.execute(
-                "SELECT id, nome, cpf_cnpj, telefone, email, observacoes, criado_em "
+                "SELECT id, nome, cpf_cnpj, telefone, email, observacoes, criado_em, asaas_customer_id "
                 "FROM clientes ORDER BY nome"
             )
             return [_linha_cliente(linha) for linha in cursor.fetchall()]
+
+    def definir_asaas_customer_id(self, cliente_id: str, asaas_customer_id: str) -> dict | None:
+        """Guarda o customer_id devolvido pela Asaas ao cadastrar o cliente lá, pra não
+        recriá-lo a cada cobrança nova."""
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            cursor = conexao.execute(
+                "UPDATE clientes SET asaas_customer_id = ? WHERE id = ?",
+                (asaas_customer_id, cliente_id),
+            )
+            if cursor.rowcount == 0:
+                return None
+        return self.obter_cliente(cliente_id)
 
     def excluir_cliente(self, cliente_id: str) -> bool:
         """Devolve True se excluiu, False se o id não existia. Levanta sqlite3.IntegrityError
@@ -933,10 +955,11 @@ class RegistroIntegracaoGoogle:
 
 
 def _linha_cliente(linha) -> dict:
-    id_, nome, cpf_cnpj, telefone, email, observacoes, criado_em = linha
+    id_, nome, cpf_cnpj, telefone, email, observacoes, criado_em, asaas_customer_id = linha
     return {
         "id": id_, "nome": nome, "cpf_cnpj": cpf_cnpj, "telefone": telefone,
         "email": email, "observacoes": observacoes, "criado_em": criado_em,
+        "asaas_customer_id": asaas_customer_id,
     }
 
 

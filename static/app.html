@@ -227,6 +227,16 @@ nav.cds--side-nav {
 .grade-jurimetria .cds--tile p { margin: 0; font-size: var(--fonte-base); }
 .grade-jurimetria .cds--tag { align-self: flex-start; }
 
+.grade-integracoes {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem; margin: 1rem 0;
+}
+.grade-integracoes .cds--tile { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+.grade-integracoes .integracao-icone { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
+.grade-integracoes .integracao-icone img { max-width: 100%; max-height: 100%; }
+.grade-integracoes h3 { font-size: var(--fonte-subtitulo); font-weight: 600; margin: 0; }
+.grade-integracoes p { margin: 0; font-size: var(--fonte-base); }
+
 .seletor-arvore {
   border: 1px solid var(--cds-border-subtle, #c6c6c6); border-radius: 4px;
   padding: 0.5rem; background: var(--cds-layer-01, #fff);
@@ -437,6 +447,9 @@ nav.cds--side-nav {
 </li>
 <li role="presentation" class="cds--side-nav__menu-item">
 <button class="cds--side-nav__link" id="aba-historico-botao" role="tab" aria-selected="false" aria-controls="aba-historico" type="button"><span class="cds--side-nav__link-text">Histórico e favoritos</span></button>
+</li>
+<li role="presentation" class="cds--side-nav__menu-item">
+<button class="cds--side-nav__link" id="aba-integracoes-botao" role="tab" aria-selected="false" aria-controls="aba-integracoes" type="button"><span class="cds--side-nav__link-text">Integrações</span></button>
 </li>
 </ul>
 </li>
@@ -687,6 +700,34 @@ grau do TJSP). As demais ideias ao final ainda são só conceitos de próximos p
 Limitação conhecida: cada consulta ao CJPG tem um teto de ~10.000 resultados (limite do próprio índice de busca do TJSP).
 Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias buscas.
 </p>
+</section>
+
+<section id="aba-integracoes" role="tabpanel" aria-labelledby="aba-integracoes-botao" hidden>
+<p class="campo-ajuda">Conexões com serviços externos usados pelo escritório.</p>
+<div class="grade-integracoes">
+
+<div class="cds--tile">
+<div class="integracao-icone"><img src="/static/icons/google.svg" alt="" width="40" height="40"></div>
+<h3>Google</h3>
+<p>Agenda e Drive do escritório (conta institucional).</p>
+<span class="cds--tag cds--tag--sm" id="integracao-google-status">Verificando…</span>
+</div>
+
+<div class="cds--tile">
+<div class="integracao-icone"><img src="/static/icons/asaas.png" alt="" width="40" height="40"></div>
+<h3>Asaas</h3>
+<p>Cobranças e boletos.</p>
+<span class="cds--tag cds--tag--gray cds--tag--sm">Em breve</span>
+</div>
+
+<div class="cds--tile">
+<div class="integracao-icone"><img src="/static/icons/zapsign.svg" alt="" width="40" height="40"></div>
+<h3>ZapSign</h3>
+<p>Assinatura digital de documentos.</p>
+<span class="cds--tag cds--tag--gray cds--tag--sm">Em breve</span>
+</div>
+
+</div>
 </section>
 
 <section id="aba-contatos" role="tabpanel" aria-labelledby="aba-contatos-botao" hidden>

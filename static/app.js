@@ -486,6 +486,7 @@ const abas = [
   { botao: document.getElementById("aba-contatos-botao"), painel: document.getElementById("aba-contatos") },
   { botao: document.getElementById("aba-casos-botao"), painel: document.getElementById("aba-casos") },
   { botao: document.getElementById("aba-publicacoes-oab-botao"), painel: document.getElementById("aba-publicacoes-oab") },
+  { botao: document.getElementById("aba-integracoes-botao"), painel: document.getElementById("aba-integracoes") },
 ];
 
 // Token salvo já conecta sozinho (ver carregarTokenSalvo) - pula a aba Acesso e vai direto pro uso.
@@ -510,6 +511,7 @@ function selecionarAba(alvo) {
   if (alvo.painel.id === "aba-contatos") { voltarParaContatos(); carregarContatos(); }
   if (alvo.painel.id === "aba-casos") carregarCasosPagina();
   if (alvo.painel.id === "aba-publicacoes-oab") carregarPublicacoesOab();
+  if (alvo.painel.id === "aba-integracoes") carregarStatusIntegracoes();
 }
 
 for (const aba of abas) aba.botao.addEventListener("click", () => selecionarAba(aba));
@@ -1506,6 +1508,27 @@ async function carregarMonitoramentos() {
   } catch (erro) {
     limpar(resultadoMonitoramentos);
     mostrarErro(resultadoMonitoramentos, erro.message);
+  }
+}
+
+async function carregarStatusIntegracoes() {
+  const selo = document.getElementById("integracao-google-status");
+  if (!selo || !cliente) return;
+  selo.textContent = "Verificando…";
+  selo.className = "cds--tag cds--tag--sm";
+  try {
+    const resposta = await fetch("/integracoes/status", { headers: { Authorization: `Bearer ${cliente.token}` } });
+    const dados = await resposta.json();
+    if (dados.google) {
+      selo.textContent = "Conectado";
+      selo.className = "cds--tag cds--tag--green cds--tag--sm";
+    } else {
+      selo.textContent = "Não configurado";
+      selo.className = "cds--tag cds--tag--gray cds--tag--sm";
+    }
+  } catch {
+    selo.textContent = "Não foi possível verificar";
+    selo.className = "cds--tag cds--tag--gray cds--tag--sm";
   }
 }
 

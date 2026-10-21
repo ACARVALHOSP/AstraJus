@@ -2932,6 +2932,20 @@ class _AutenticacaoBearer:
             else:
                 await _responder(send, 404, b"Nao encontrado")
             return
+        if caminho.startswith("/static/icons/") and scope.get("method") == "GET":
+            # ícones das integrações (marcas oficiais), sem dados sensíveis
+            nome = caminho[len("/static/icons/"):]
+            if "/" in nome or ".." in nome:
+                await _responder(send, 404, b"Nao encontrado")
+                return
+            arquivo = Path(__file__).resolve().parent / "static" / "icons" / nome
+            tipos = {".svg": "image/svg+xml", ".png": "image/png"}
+            tipo = tipos.get(arquivo.suffix.lower())
+            if tipo and arquivo.is_file():
+                await _responder(send, 200, arquivo.read_bytes(), tipo=tipo)
+            else:
+                await _responder(send, 404, b"Nao encontrado")
+            return
         if caminho == "/app" and scope.get("method") == "GET":
             # painel público: a pessoa cola o próprio token no navegador, o servidor não autentica a página
             pagina = Path(__file__).resolve().parent / "static" / "app.html"
@@ -3009,6 +3023,10 @@ class _AutenticacaoBearer:
             return
         if caminho == "/cjpg-arvore/magistrados" and scope.get("method") == "GET":
             await _arvore_magistrados_http(send)
+            return
+
+        if caminho == "/integracoes/status" and scope.get("method") == "GET":
+            await _json(send, 200, {"google": self._google_configurado()})
             return
 
         if caminho == "/clientes" and self.gestao is not None:
