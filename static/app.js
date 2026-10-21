@@ -235,6 +235,57 @@ function _ddmmaaaaParaIso(valor) {
   return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
 }
 
+// Máscara live de CPF (11 dígitos) ou CNPJ (14 dígitos) - decide o formato pela quantidade de
+// dígitos já digitados, então o mesmo campo serve pra pessoa física e jurídica.
+function _aplicarMascaraCpfCnpj(input) {
+  input.addEventListener("input", () => {
+    const digitos = input.value.replace(/\D/g, "").slice(0, 14);
+    if (digitos.length <= 11) {
+      input.value = digitos
+        .replace(/(\d{3})(\d)/, "$1.$2")
+        .replace(/(\d{3})(\d)/, "$1.$2")
+        .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+    } else {
+      input.value = digitos
+        .replace(/(\d{2})(\d)/, "$1.$2")
+        .replace(/(\d{3})(\d)/, "$1.$2")
+        .replace(/(\d{3})(\d)/, "$1/$2")
+        .replace(/(\d{4})(\d{1,2})$/, "$1-$2");
+    }
+  });
+}
+
+// Máscara live de número de processo no padrão CNJ: NNNNNNN-DD.AAAA.J.TR.OOOO (20 dígitos).
+function _aplicarMascaraProcessoCNJ(input) {
+  input.addEventListener("input", () => {
+    const digitos = input.value.replace(/\D/g, "").slice(0, 20);
+    input.value = digitos
+      .replace(/(\d{7})(\d)/, "$1-$2")
+      .replace(/(\d{7}-\d{2})(\d)/, "$1.$2")
+      .replace(/(\d{7}-\d{2}\.\d{4})(\d)/, "$1.$2")
+      .replace(/(\d{7}-\d{2}\.\d{4}\.\d)(\d)/, "$1.$2")
+      .replace(/(\d{7}-\d{2}\.\d{4}\.\d\.\d{2})(\d)/, "$1.$2");
+  });
+}
+
+// Acha o cliente cadastrado cujo CPF/CNPJ bate com os dígitos informados (ignora a máscara).
+function _resolverClientePorCpf(digitos) {
+  if (!digitos) return null;
+  return _cache.clientes.find((c) => (c.cpf_cnpj || "").replace(/\D/g, "") === digitos) || null;
+}
+
+// Aplica as máscaras de CPF/CNPJ e número de processo (CNJ) nos campos que já existem na
+// página desde o carregamento - os campos criados dinamicamente (ex.: Pagamentos) recebem a
+// máscara direto no próprio trecho que os monta.
+for (const id of ["contato-cpf-cnpj", "cliente-cpf-cnpj"]) {
+  const campo = document.getElementById(id);
+  if (campo) _aplicarMascaraCpfCnpj(campo);
+}
+for (const id of ["numero-processo", "pub-numero-processo", "vinculos-numero-processo"]) {
+  const campo = document.getElementById(id);
+  if (campo) _aplicarMascaraProcessoCNJ(campo);
+}
+
 function formatarDataSimples(valor) {
   if (!valor) return "não informado";
   const bruto = String(valor);
@@ -2210,7 +2261,7 @@ function linhaCaso(caso, aoExcluir) {
 
   const celTitulo = el("td", { "data-label": "Título" });
   const linhaTitulo = el("div", { class: "caso-titulo-linha" }, [
-    el("span", { texto: caso.titulo || "(sem título)" }),
+    el("span", { texto: `Nº ${caso.numero} — ${caso.titulo || "(sem título)"}` }),
   ]);
   if (caso.monitorado) {
     linhaTitulo.appendChild(el("span", { class: "cds--tag cds--tag--green cds--tag--sm", texto: "Monitorado" }));
@@ -2346,7 +2397,7 @@ function cartoesCasos(casos, aoExcluir) {
     const card = el("article", { class: "cds--tile" });
 
     const tituloLinha = el("div", { class: "caso-titulo-linha" }, [
-      el("span", { texto: caso.titulo || "(sem título)" }),
+      el("span", { texto: `Nº ${caso.numero} — ${caso.titulo || "(sem título)"}` }),
     ]);
     if (caso.monitorado) {
       tituloLinha.appendChild(el("span", { class: "cds--tag cds--tag--green cds--tag--sm", texto: "Monitorado" }));
@@ -2428,25 +2479,57 @@ function _renderizarLancamentos(lancamentos) {
       el("th", { texto: "Cliente" }),
       el("th", { texto: "Caso" }),
       el("th", { texto: "Responsável" }),
+      el("th", { texto: "Direção" }),
       el("th", { texto: "Ações" }),
     ]),
   ]);
   const tbody = el("tbody", {});
   for (const lanc of lancamentos) {
     const tr = el("tr", {}, [
-      el("td", { "data-label": "Vencimento", texto: lanc.vencimento }),
+      el("td", { "data-label": "Vencimento", texto: formatarDataSimples(lanc.vencimento) }),
       el("td", { "data-label": "Valor", texto: formatarMoeda(lanc.valor) }),
       el("td", { "data-label": "Descrição", texto: lanc.descricao + (lanc.recorrente ? " (mensal)" : "") }),
       el("td", { "data-label": "Cliente", texto: nomeCliente(lanc.cliente_id) }),
       el("td", { "data-label": "Caso", texto: tituloCaso(lanc.caso_id) }),
       el("td", { "data-label": "Responsável", texto: lanc.responsavel }),
     ]);
+
+    const rotuloDirecao = lanc.direcao === "DESPESA" ? "A pagar" : "A receber";
+    const rotuloPago = lanc.direcao === "DESPESA" ? "Pago" : "Recebido";
+    const tagDirecao = el("span", {
+      class: `cds--tag cds--tag--${lanc.direcao === "DESPESA" ? "red" : "green"} cds--tag--sm`, texto: rotuloDirecao,
+    });
+    const checkboxPago = el("input", { type: "checkbox" });
+    checkboxPago.checked = lanc.pago;
+    checkboxPago.addEventListener("change", () => _alternarLancamentoPago(lanc.id, checkboxPago));
+    const celulaDirecao = el("td", { "data-label": "Direção" }, [
+      tagDirecao,
+      el("label", { class: "checkbox-lembrar", style: "margin-top:0.25rem" }, [checkboxPago, ` ${rotuloPago}`]),
+    ]);
+    tr.appendChild(celulaDirecao);
+
+    const botaoCobranca = el("button", { class: "cds--btn cds--btn--tertiary cds--btn--sm", type: "button", texto: "Gerar cobrança" });
+    botaoCobranca.addEventListener("click", () => _abrirModalNovaCobranca({
+      cliente_id: lanc.cliente_id, valor: lanc.valor, vencimento: lanc.vencimento, descricao: lanc.descricao,
+    }));
     const botaoExcluir = el("button", { class: "cds--btn cds--btn--danger--tertiary cds--btn--sm", type: "button", texto: "Excluir" });
     botaoExcluir.addEventListener("click", () => _excluirLancamento(lanc.id, lanc.descricao, botaoExcluir));
-    tr.appendChild(el("td", { "data-label": "Ações" }, [botaoExcluir]));
+    tr.appendChild(el("td", { "data-label": "Ações" }, [botaoCobranca, botaoExcluir]));
     tbody.appendChild(tr);
   }
   container.appendChild(el("div", { class: "tabela-responsiva-wrap" }, [el("table", { class: "tabela-responsiva tabela-lancamentos" }, [thead, tbody])]));
+}
+
+async function _alternarLancamentoPago(id, checkbox) {
+  checkbox.disabled = true;
+  try {
+    await _enviarJson(`/lancamentos/${id}`, { pago: checkbox.checked }, "PATCH");
+  } catch (erro) {
+    checkbox.checked = !checkbox.checked;
+    mostrarToast("error", "Erro", erro.message);
+  } finally {
+    checkbox.disabled = false;
+  }
 }
 
 async function _excluirLancamento(id, descricao, botao) {
@@ -2471,13 +2554,6 @@ const _ROTULOS_STATUS_PAGAMENTO = {
 };
 const _ROTULOS_TIPO_PAGAMENTO = { BOLETO: "Boleto", PIX: "Pix", UNDEFINED: "A definir" };
 
-function _popularSelectClientes(select, valorAtual, rotuloVazio = "— todos —") {
-  limpar(select);
-  select.appendChild(el("option", { value: "", texto: rotuloVazio }));
-  for (const c of _cache.clientes) select.appendChild(el("option", { value: c.id, texto: c.nome }));
-  select.value = valorAtual || "";
-}
-
 async function carregarPagamentos() {
   const container = document.getElementById("lista-pagamentos");
   const aviso = document.getElementById("pagamentos-aviso-integracao");
@@ -2489,12 +2565,9 @@ async function carregarPagamentos() {
       const { clientes } = await _buscarJson("/clientes");
       _cache.clientes = clientes || [];
     }
-    const selectFiltro = document.getElementById("pagamentos-filtro-cliente");
-    _popularSelectClientes(selectFiltro, selectFiltro.value);
-
     const params = new URLSearchParams();
     const status = document.getElementById("pagamentos-filtro-status").value;
-    const clienteId = selectFiltro.value;
+    const clienteId = document.getElementById("pagamentos-filtro-cliente").value;
     if (status) params.set("status", status);
     if (clienteId) params.set("cliente_id", clienteId);
     const url = "/pagamentos" + (params.toString() ? `?${params}` : "");
@@ -2510,6 +2583,31 @@ async function carregarPagamentos() {
     }
   }
 }
+
+// Campo de cliente por CPF/CNPJ: mascara, resolve contra _cache.clientes e mantém um input
+// hidden com o cliente_id (o que os formulários/filtros de fato enviam). `aoResolver` roda a
+// cada digitação, já com o cliente encontrado (ou null).
+function _ligarCampoClientePorCpf(idTexto, idHidden, idStatus, aoResolver) {
+  const campoTexto = document.getElementById(idTexto);
+  const campoHidden = document.getElementById(idHidden);
+  const campoStatus = document.getElementById(idStatus);
+  _aplicarMascaraCpfCnpj(campoTexto);
+  campoTexto.addEventListener("input", () => {
+    const digitos = campoTexto.value.replace(/\D/g, "");
+    const encontrado = digitos.length >= 11 ? _resolverClientePorCpf(digitos) : null;
+    campoHidden.value = encontrado ? encontrado.id : "";
+    if (!digitos) campoStatus.textContent = "";
+    else if (encontrado) campoStatus.textContent = `Cliente: ${encontrado.nome}`;
+    else if (digitos.length >= 11) campoStatus.textContent = "Nenhum cliente cadastrado com esse CPF/CNPJ.";
+    else campoStatus.textContent = "";
+    aoResolver(encontrado);
+  });
+}
+
+_ligarCampoClientePorCpf(
+  "pagamentos-filtro-cliente-cpf", "pagamentos-filtro-cliente", "pagamentos-filtro-cliente-status",
+  () => carregarPagamentos(),
+);
 
 function _renderizarPagamentos(cobrancas) {
   const container = document.getElementById("lista-pagamentos");
@@ -2623,24 +2721,40 @@ function _atualizarPreviewParcelas() {
   preview.appendChild(el("div", { class: "tabela-responsiva-wrap" }, [el("table", { class: "tabela-responsiva" }, [thead, tbody])]));
 }
 
-async function _abrirModalNovaCobranca() {
+// `prefill`, se dado, vem do botão "Gerar cobrança" de um lançamento: { cliente_id, valor,
+// vencimento (ISO), descricao }.
+async function _abrirModalNovaCobranca(prefill) {
   if (!_cache.clientes.length) {
     try { const { clientes } = await _buscarJson("/clientes"); _cache.clientes = clientes || []; } catch { /* segue */ }
   }
   document.getElementById("form-nova-cobranca").reset();
   limpar(document.getElementById("resultado-nova-cobranca"));
-  _popularSelectClientes(document.getElementById("cobranca-cliente"), "", "— selecione o cliente —");
+  document.getElementById("cobranca-cliente").value = "";
+  document.getElementById("cobranca-cliente-status").textContent = "Digite o CPF/CNPJ de um cliente já cadastrado.";
   document.getElementById("cobranca-parcelas-campo").hidden = true;
   document.getElementById("cobranca-valor-rotulo").textContent = "Valor";
   limpar(document.getElementById("cobranca-parcelas-preview"));
   document.getElementById("cobranca-parcelas-preview").hidden = true;
+
+  if (prefill) {
+    const clienteDoLancamento = _cache.clientes.find((c) => c.id === prefill.cliente_id);
+    const campoCpf = document.getElementById("cobranca-cliente-cpf");
+    campoCpf.value = (clienteDoLancamento && clienteDoLancamento.cpf_cnpj) || "";
+    campoCpf.dispatchEvent(new Event("input"));
+    if (prefill.valor != null) document.getElementById("cobranca-valor").value = prefill.valor;
+    if (prefill.vencimento) document.getElementById("cobranca-vencimento").value = prefill.vencimento;
+    if (prefill.descricao) document.getElementById("cobranca-descricao").value = prefill.descricao;
+  } else {
+    document.getElementById("cobranca-cliente-cpf").value = "";
+  }
   abrirModal("modal-nova-cobranca");
 }
 
-document.getElementById("btn-nova-cobranca").addEventListener("click", _abrirModalNovaCobranca);
+_ligarCampoClientePorCpf("cobranca-cliente-cpf", "cobranca-cliente", "cobranca-cliente-status", () => {});
+
+document.getElementById("btn-nova-cobranca").addEventListener("click", () => _abrirModalNovaCobranca());
 document.getElementById("modal-nova-cobranca-fechar").addEventListener("click", () => fecharModal("modal-nova-cobranca"));
 document.getElementById("pagamentos-filtro-status").addEventListener("change", carregarPagamentos);
-document.getElementById("pagamentos-filtro-cliente").addEventListener("change", carregarPagamentos);
 
 document.getElementById("cobranca-parcelar").addEventListener("change", (evento) => {
   const parcelando = evento.target.checked;
@@ -2657,6 +2771,10 @@ document.getElementById("form-nova-cobranca").addEventListener("submit", async (
   const botao = document.querySelector("button[form='form-nova-cobranca'][type='submit']");
   const resultado = document.getElementById("resultado-nova-cobranca");
   const parcelando = document.getElementById("cobranca-parcelar").checked;
+  if (!document.getElementById("cobranca-cliente").value) {
+    mostrarErro(resultado, "Digite o CPF/CNPJ de um cliente já cadastrado antes de criar a cobrança.");
+    return;
+  }
   const corpo = {
     cliente_id: document.getElementById("cobranca-cliente").value,
     billing_type: document.getElementById("cobranca-tipo").value,
@@ -3679,7 +3797,7 @@ async function abrirCaso(casoId) {
   try {
     const caso = await _buscarJson(`/casos/${casoId}`);
     _casoDetalheAtual = caso;
-    document.getElementById("caso-detalhe-titulo").textContent = caso.titulo || "(sem título)";
+    document.getElementById("caso-detalhe-titulo").textContent = `Nº ${caso.numero} — ${caso.titulo || "(sem título)"}`;
     document.getElementById("editar-caso-titulo").value = caso.titulo || "";
     document.getElementById("editar-caso-responsavel").value = caso.responsavel || "";
     document.getElementById("editar-caso-acao").value = caso.acao || "";
@@ -4118,7 +4236,7 @@ document.getElementById("form-caso-editar").addEventListener("submit", async (ev
     const atualizado = await _enviarJson(`/casos/${casoId}`, corpo, "PATCH");
     limpar(resultado);
     resultado.appendChild(notificacao("success", "Caso atualizado"));
-    document.getElementById("caso-detalhe-titulo").textContent = atualizado.titulo || "(sem título)";
+    document.getElementById("caso-detalhe-titulo").textContent = `Nº ${atualizado.numero} — ${atualizado.titulo || "(sem título)"}`;
     const indice = _cache.casos.findIndex((c) => c.id === casoId);
     if (indice !== -1) _cache.casos[indice] = { ..._cache.casos[indice], ...atualizado };
   } catch (erro) {
@@ -4314,7 +4432,7 @@ _inicializarDatePickerRange("pub-oab-manual-data-inicio", "pub-oab-manual-data-f
     altInput: false,
     allowInput: true,
     locale: window.flatpickr.l10ns && window.flatpickr.l10ns.pt,
-    dateFormat: "Y-m-d",
+    dateFormat: "d/m/Y",
   });
 })();
 
@@ -4332,13 +4450,14 @@ document.getElementById("form-honorario").addEventListener("submit", async (even
   const botao = document.querySelector("button[form='form-honorario'][type='submit']");
   const resultado = document.getElementById("resultado-honorario");
   const corpo = {
-    vencimento: document.getElementById("honorario-vencimento").value.trim(),
+    vencimento: _ddmmaaaaParaIso(document.getElementById("honorario-vencimento").value),
     valor: document.getElementById("honorario-valor").value,
     descricao: document.getElementById("honorario-descricao").value.trim(),
     recorrente: document.getElementById("honorario-recorrente").checked,
     caso_id: document.getElementById("honorario-caso").value,
     cliente_id: document.getElementById("honorario-cliente").value,
     responsavel: document.getElementById("honorario-responsavel").value.trim(),
+    direcao: document.getElementById("honorario-direcao").value,
   };
   const pararEspera = mostrarEspera(resultado, botao, "Salvando");
   try {
