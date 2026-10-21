@@ -451,7 +451,7 @@ nav.cds--side-nav {
 <form id="form-token" class="app-formulario" autocomplete="off">
 <div class="cds--form-item">
 <label class="cds--label" for="token">Seu token de acesso</label>
-<input class="cds--text-input" id="token" type="password" placeholder="cole aqui o token recebido por e-mail" required>
+<input class="cds--text-input" id="token" type="password" placeholder="cole aqui o token recebido por e-mail" autocomplete="off" required>
 </div>
 <label class="checkbox-lembrar"><input type="checkbox" id="lembrar-token"> Lembrar neste navegador</label>
 <div class="token-acoes campo-ajuda--largo">
@@ -465,12 +465,12 @@ nav.cds--side-nav {
 <form id="form-processo" class="app-formulario">
 <div class="cds--form-item">
 <label class="cds--label" for="tribunal">Tribunal</label>
-<input class="cds--text-input" id="tribunal" name="tribunal" placeholder="tjsp" required>
+<input class="cds--text-input" id="tribunal" name="tribunal" placeholder="tjsp" autocomplete="off" required>
 <span class="campo-ajuda">Sigla minúscula, como tjsp, trf1 ou stj.</span>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="numero-processo">Número do processo</label>
-<input class="cds--text-input" id="numero-processo" name="numero_processo" placeholder="1006314-27.2023.8.26.0005" required>
+<input class="cds--text-input" id="numero-processo" name="numero_processo" placeholder="1006314-27.2023.8.26.0005" autocomplete="off" required>
 <span class="campo-ajuda">20 dígitos, com ou sem máscara.</span>
 </div>
 <button class="cds--btn cds--btn--primary" type="submit">Consultar processo</button>
@@ -483,23 +483,23 @@ nav.cds--side-nav {
 <form id="form-publicacoes" class="app-formulario">
 <div class="cds--form-item">
 <label class="cds--label" for="pub-numero-processo">Número do processo</label>
-<input class="cds--text-input" id="pub-numero-processo" name="numero_processo" placeholder="1006314-27.2023.8.26.0005">
+<input class="cds--text-input" id="pub-numero-processo" name="numero_processo" placeholder="1006314-27.2023.8.26.0005" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="pub-sigla-tribunal">Tribunal</label>
-<input class="cds--text-input" id="pub-sigla-tribunal" name="sigla_tribunal" placeholder="TJSP">
+<input class="cds--text-input" id="pub-sigla-tribunal" name="sigla_tribunal" placeholder="TJSP" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="pub-numero-oab">Número da OAB</label>
-<input class="cds--text-input" id="pub-numero-oab" name="numero_oab" placeholder="330659">
+<input class="cds--text-input" id="pub-numero-oab" name="numero_oab" placeholder="330659" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="pub-uf-oab">UF da OAB</label>
-<input class="cds--text-input" id="pub-uf-oab" name="uf_oab" placeholder="SP" maxlength="2">
+<input class="cds--text-input" id="pub-uf-oab" name="uf_oab" placeholder="SP" maxlength="2" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="pub-nome-oab">Nome pesquisado (opcional)</label>
-<input class="cds--text-input" id="pub-nome-oab" placeholder="Ex.: advogado ou parte dono da OAB">
+<input class="cds--text-input" id="pub-nome-oab" placeholder="Ex.: advogado ou parte dono da OAB" autocomplete="off">
 <span class="campo-ajuda">Só identifica o monitoramento na aba "Publicações por OAB" - não entra na busca.</span>
 </div>
 <div class="cds--form-item">
@@ -527,7 +527,7 @@ nav.cds--side-nav {
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="pub-itens">Itens por página</label>
-<input class="cds--text-input" id="pub-itens" name="itens_por_pagina" type="number" min="1" max="100" value="20">
+<input class="cds--text-input" id="pub-itens" name="itens_por_pagina" type="number" min="1" max="100" value="20" autocomplete="off">
 </div>
 <p class="campo-ajuda campo-ajuda--largo">Informe o número do processo ou a OAB. Os demais campos são opcionais.</p>
 <button class="cds--btn cds--btn--primary" type="submit">Consultar publicações</button>
@@ -570,7 +570,7 @@ grau do TJSP). As demais ideias ao final ainda são só conceitos de próximos p
 <form id="form-jurimetria" class="app-formulario">
 <div class="cds--form-item campo-ajuda--largo">
 <label class="cds--label" for="jur-termo">Pesquisa livre</label>
-<input class="cds--text-input" id="jur-termo" placeholder="ex.: dano moral">
+<input class="cds--text-input" id="jur-termo" placeholder="ex.: dano moral" autocomplete="off">
 </div>
 
 <div class="cds--form-item">
@@ -606,19 +606,19 @@ grau do TJSP). As demais ideias ao final ainda são só conceitos de próximos p
 
 <div class="cds--form-item">
 <label class="cds--label" for="jur-paginas">Páginas a buscar (10 resultados cada)</label>
-<input class="cds--text-input" id="jur-paginas" type="number" min="1" max="15" value="1">
+<input class="cds--text-input" id="jur-paginas" type="number" min="1" max="15" value="1" autocomplete="off">
 </div>
 
 <div class="seletor-arvore-campo cds--form-item campo-ajuda--largo" data-campo="vara">
-<label class="cds--label">Vara</label>
+<label class="cds--label" for="jur-seletor-vara">Vara</label>
 <div class="seletor-arvore" data-campo="vara"></div>
 </div>
 <div class="seletor-arvore-campo cds--form-item campo-ajuda--largo" data-campo="classe">
-<label class="cds--label">Classe</label>
+<label class="cds--label" for="jur-seletor-classe">Classe</label>
 <div class="seletor-arvore" data-campo="classe"></div>
 </div>
 <div class="seletor-arvore-campo cds--form-item campo-ajuda--largo" data-campo="assunto">
-<label class="cds--label">Assunto</label>
+<label class="cds--label" for="jur-seletor-assunto">Assunto</label>
 <div class="seletor-arvore" data-campo="assunto"></div>
 <span class="campo-ajuda">No Benchmark de valor, preencher Assunto ativa o resumo estatístico (mediana/percentis).</span>
 </div>
@@ -699,7 +699,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="contatos-barra">
 <div class="contatos-az" id="contatos-az"></div>
 <div class="cds--form-item contatos-busca-campo">
-<input class="cds--text-input" type="search" id="contatos-busca" placeholder="Procure por nome, telefone ou e-mail">
+<input class="cds--text-input" type="search" id="contatos-busca" placeholder="Procure por nome, telefone ou e-mail" aria-label="Buscar clientes" autocomplete="off">
 </div>
 </div>
 <div id="lista-contatos" class="app-resultado"></div>
@@ -718,23 +718,23 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <form id="form-contato-cadastro" class="app-formulario">
 <div class="cds--form-item">
 <label class="cds--label" for="contato-nome">Nome</label>
-<input class="cds--text-input" id="contato-nome" required>
+<input class="cds--text-input" id="contato-nome" name="nome" autocomplete="name" required>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="contato-cpf-cnpj">CPF/CNPJ</label>
-<input class="cds--text-input" id="contato-cpf-cnpj">
+<input class="cds--text-input" id="contato-cpf-cnpj" name="cpf_cnpj" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="contato-telefone">Telefone</label>
-<input class="cds--text-input" id="contato-telefone">
+<input class="cds--text-input" id="contato-telefone" name="telefone" autocomplete="tel">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="contato-email">E-mail</label>
-<input class="cds--text-input" id="contato-email" type="email">
+<input class="cds--text-input" id="contato-email" name="email" type="email" autocomplete="email">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="contato-observacoes">Observações</label>
-<input class="cds--text-input" id="contato-observacoes">
+<input class="cds--text-input" id="contato-observacoes" name="observacoes" autocomplete="off">
 </div>
 <div class="token-acoes campo-ajuda--largo">
 <button class="cds--btn cds--btn--primary" type="submit">Salvar alterações</button>
@@ -765,7 +765,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <h2 class="lista-rapida-titulo" style="margin-top:1.5rem">Casos cadastrados</h2>
 <div class="contatos-barra" style="margin-top:0.5rem">
 <div class="cds--form-item contatos-busca-campo" style="margin:0;max-width:360px">
-<input class="cds--text-input" type="search" id="casos-busca" placeholder="Filtrar por título, cliente, ação, processo…" aria-label="Buscar casos">
+<input class="cds--text-input" type="search" id="casos-busca" placeholder="Filtrar por título, cliente, ação, processo…" aria-label="Buscar casos" autocomplete="off">
 </div>
 </div>
 <div id="lista-casos" class="app-resultado"></div>
@@ -790,23 +790,23 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <form id="form-caso-editar" class="form-detalhe">
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-titulo">Título do caso</label>
-<input class="cds--text-input" type="text" id="editar-caso-titulo" name="titulo">
+<input class="cds--text-input" type="text" id="editar-caso-titulo" name="titulo" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-responsavel">Responsável</label>
-<input class="cds--text-input" type="text" id="editar-caso-responsavel" name="responsavel">
+<input class="cds--text-input" type="text" id="editar-caso-responsavel" name="responsavel" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-acao">Ação / Tipo</label>
-<input class="cds--text-input" type="text" id="editar-caso-acao" name="acao">
+<input class="cds--text-input" type="text" id="editar-caso-acao" name="acao" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-foro">Foro / Vara</label>
-<input class="cds--text-input" type="text" id="editar-caso-foro" name="foro">
+<input class="cds--text-input" type="text" id="editar-caso-foro" name="foro" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-desfecho">Desfecho</label>
-<select class="cds--select-input" id="editar-caso-desfecho" name="desfecho">
+<select class="cds--select-input" id="editar-caso-desfecho" name="desfecho" autocomplete="off">
 <option value="">— Em andamento —</option>
 <option value="procedente">Procedente</option>
 <option value="procedente_parcial">Parcialmente procedente</option>
@@ -819,7 +819,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-processos">Números de processo (separados por vírgula)</label>
-<input class="cds--text-input" type="text" id="editar-caso-processos" name="numeros_processo" placeholder="0000000-00.0000.0.00.0000">
+<input class="cds--text-input" type="text" id="editar-caso-processos" name="numeros_processo" placeholder="0000000-00.0000.0.00.0000" autocomplete="off">
 <button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="btn-datajud-detalhe">Buscar ação/foro no DataJud</button>
 <div id="status-datajud-detalhe" class="campo-ajuda"></div>
 </div>
@@ -835,15 +835,15 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <form id="form-caso-partes" class="form-detalhe">
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-autor">Autor</label>
-<input class="cds--text-input" type="text" id="editar-caso-autor" name="autor">
+<input class="cds--text-input" type="text" id="editar-caso-autor" name="autor" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-reu">Réu</label>
-<input class="cds--text-input" type="text" id="editar-caso-reu" name="reu">
+<input class="cds--text-input" type="text" id="editar-caso-reu" name="reu" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-advogados">Advogados</label>
-<input class="cds--text-input" type="text" id="editar-caso-advogados" name="advogados" placeholder="Nomes separados por vírgula">
+<input class="cds--text-input" type="text" id="editar-caso-advogados" name="advogados" placeholder="Nomes separados por vírgula" autocomplete="off">
 </div>
 <div id="resultado-caso-partes" class="app-resultado"></div>
 <div class="form-acoes-detalhe">
@@ -889,13 +889,13 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <form id="form-vinculos-adicionar" class="vinculos-form">
 <div class="cds--form-item">
 <label class="cds--label" for="vinculos-caso-select">Caso</label>
-<select class="cds--select-input" id="vinculos-caso-select">
+<select class="cds--select-input" id="vinculos-caso-select" autocomplete="off">
 <option value="">— selecione —</option>
 </select>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="vinculos-tipo-select">Tipo de vínculo</label>
-<select class="cds--select-input" id="vinculos-tipo-select">
+<select class="cds--select-input" id="vinculos-tipo-select" autocomplete="off">
 <option value="relacionado">Relacionado</option>
 <option value="recurso">Recurso</option>
 <option value="apenso">Apenso</option>
@@ -922,15 +922,15 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <form id="form-pub-oab-manual" class="pub-oab-manual-form">
 <div class="cds--form-item">
 <label class="cds--label" for="pub-oab-manual-numero">Número OAB</label>
-<input class="cds--text-input" type="text" id="pub-oab-manual-numero" required>
+<input class="cds--text-input" type="text" id="pub-oab-manual-numero" name="numero_oab" autocomplete="off" required>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="pub-oab-manual-uf">UF OAB</label>
-<input class="cds--text-input" type="text" id="pub-oab-manual-uf" maxlength="2" placeholder="SP">
+<input class="cds--text-input" type="text" id="pub-oab-manual-uf" name="uf_oab" maxlength="2" placeholder="SP" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="pub-oab-manual-nome">Nome (opcional)</label>
-<input class="cds--text-input" type="text" id="pub-oab-manual-nome">
+<input class="cds--text-input" type="text" id="pub-oab-manual-nome" name="nome" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <div class="cds--date-picker cds--date-picker--range" data-date-picker data-date-picker-type="range">
@@ -965,7 +965,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="pub-oab-barra">
 <div class="pub-oab-filtros">
 <label class="cds--label" for="pub-oab-filtro-status">Status</label>
-<select class="cds--select-input" id="pub-oab-filtro-status">
+<select class="cds--select-input" id="pub-oab-filtro-status" autocomplete="off">
 <option value="">Todos</option>
 <option value="nao_tratada">Não tratada</option>
 <option value="tratada">Tratada</option>
@@ -1002,23 +1002,23 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <form id="form-cliente" class="app-formulario">
 <div class="cds--form-item">
 <label class="cds--label" for="cliente-nome">Nome</label>
-<input class="cds--text-input" id="cliente-nome" name="nome" required>
+<input class="cds--text-input" id="cliente-nome" name="nome" autocomplete="name" required>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="cliente-cpf-cnpj">CPF/CNPJ</label>
-<input class="cds--text-input" id="cliente-cpf-cnpj" name="cpf_cnpj">
+<input class="cds--text-input" id="cliente-cpf-cnpj" name="cpf_cnpj" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="cliente-telefone">Telefone</label>
-<input class="cds--text-input" id="cliente-telefone" name="telefone">
+<input class="cds--text-input" id="cliente-telefone" name="telefone" autocomplete="tel">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="cliente-email">E-mail</label>
-<input class="cds--text-input" id="cliente-email" name="email" type="email">
+<input class="cds--text-input" id="cliente-email" name="email" type="email" autocomplete="email">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="cliente-observacoes">Observações</label>
-<input class="cds--text-input" id="cliente-observacoes" name="observacoes">
+<input class="cds--text-input" id="cliente-observacoes" name="observacoes" autocomplete="off">
 </div>
 </form>
 <div id="resultado-cliente" class="app-resultado" aria-live="polite"></div>
@@ -1049,23 +1049,23 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="caso-titulo">Título</label>
-<input class="cds--text-input" id="caso-titulo" name="titulo" placeholder="Ex.: Cobrança de honorários">
+<input class="cds--text-input" id="caso-titulo" name="titulo" placeholder="Ex.: Cobrança de honorários" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="caso-responsavel">Responsável</label>
-<input class="cds--text-input" id="caso-responsavel" name="responsavel">
+<input class="cds--text-input" id="caso-responsavel" name="responsavel" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="caso-acao">Ação</label>
-<input class="cds--text-input" id="caso-acao" name="acao" placeholder="Ex.: Cumprimento de sentença">
+<input class="cds--text-input" id="caso-acao" name="acao" placeholder="Ex.: Cumprimento de sentença" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="caso-foro">Foro</label>
-<input class="cds--text-input" id="caso-foro" name="foro" placeholder="Ex.: 3ª Vara Cível">
+<input class="cds--text-input" id="caso-foro" name="foro" placeholder="Ex.: 3ª Vara Cível" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="caso-processos">Número(s) de processo</label>
-<input class="cds--text-input" id="caso-processos" name="numeros_processo" placeholder="1006314-27.2023.8.26.0005, ...">
+<input class="cds--text-input" id="caso-processos" name="numeros_processo" placeholder="1006314-27.2023.8.26.0005, ..." autocomplete="off">
 <button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="btn-datajud-modal">Buscar ação/foro no DataJud</button>
 <div id="status-datajud-modal" class="campo-ajuda"></div>
 <span class="campo-ajuda">Separe por vírgula se houver mais de um.</span>
@@ -1124,7 +1124,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <input type="hidden" id="atividade-id">
 <div class="cds--form-item">
 <label class="cds--label" for="atividade-tipo">Tipo</label>
-<select class="cds--select-input" id="atividade-tipo" name="tipo">
+<select class="cds--select-input" id="atividade-tipo" name="tipo" autocomplete="off">
 <option value="tarefa">Tarefa</option>
 <option value="prazo">Prazo</option>
 <option value="audiencia">Audiência</option>
@@ -1134,7 +1134,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="atividade-titulo">Título <span aria-hidden="true">*</span></label>
-<input class="cds--text-input" type="text" id="atividade-titulo" name="titulo" required>
+<input class="cds--text-input" type="text" id="atividade-titulo" name="titulo" autocomplete="off" required>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="atividade-data">Data</label>
@@ -1147,11 +1147,11 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="atividade-hora">Hora</label>
-<input class="cds--text-input" type="time" id="atividade-hora" name="hora">
+<input class="cds--text-input" type="time" id="atividade-hora" name="hora" autocomplete="off">
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="atividade-observacoes">Observações</label>
-<textarea class="cds--text-area" id="atividade-observacoes" name="observacoes" rows="3"></textarea>
+<textarea class="cds--text-area" id="atividade-observacoes" name="observacoes" rows="3" autocomplete="off"></textarea>
 </div>
 <div id="resultado-atividade" class="app-resultado"></div>
 </form>
