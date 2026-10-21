@@ -1537,7 +1537,7 @@ function criarSeletorArvore(container, campo) {
   const selecionados = new Map(); // id -> {nome, busca}
 
   const busca = el("div", { class: "seletor-arvore-busca" }, [
-    el("input", { class: "cds--text-input", type: "text", placeholder: `Buscar ${campo}… (mín. 2 letras)` }),
+    el("input", { class: "cds--text-input", type: "text", id: `jur-seletor-${campo}`, autocomplete: "off", placeholder: `Buscar ${campo}… (mín. 2 letras)` }),
   ]);
   const inputBusca = busca.querySelector("input");
   const resultados = el("div", { class: "seletor-arvore-resultados" }, [
