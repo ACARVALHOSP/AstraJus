@@ -2572,6 +2572,57 @@ async function _cancelarCobranca(id, botao) {
   }
 }
 
+// Soma meses a uma data ISO (AAAA-MM-DD), preso ao último dia do mês alvo quando o dia de
+// origem não existir nele (ex.: 31/jan + 1 mês = 28 ou 29/fev, nunca "estoura" pra março) -
+// mesma lógica que o Asaas usa pra gerar o vencimento das parcelas seguintes.
+function _somarMeses(dataIso, meses) {
+  const [ano, mes, dia] = dataIso.split("-").map(Number);
+  const mesesTotal = (mes - 1) + meses;
+  const anoAlvo = ano + Math.floor(mesesTotal / 12);
+  const mesAlvo = ((mesesTotal % 12) + 12) % 12;
+  const ultimoDiaMesAlvo = new Date(anoAlvo, mesAlvo + 1, 0).getDate();
+  const diaAlvo = Math.min(dia, ultimoDiaMesAlvo);
+  return `${anoAlvo}-${String(mesAlvo + 1).padStart(2, "0")}-${String(diaAlvo).padStart(2, "0")}`;
+}
+
+// Divide o valor total (em centavos, pra não acumular erro de ponto flutuante) em N parcelas
+// iguais, jogando a sobra do arredondamento na última - mesma regra que o Asaas aplica.
+function _calcularValoresParcelas(totalCentavos, quantidade) {
+  const porParcela = Math.floor(totalCentavos / quantidade);
+  const valores = Array(quantidade).fill(porParcela);
+  valores[quantidade - 1] += totalCentavos - porParcela * quantidade;
+  return valores;
+}
+
+function _atualizarPreviewParcelas() {
+  const preview = document.getElementById("cobranca-parcelas-preview");
+  const parcelando = document.getElementById("cobranca-parcelar").checked;
+  limpar(preview);
+  if (!parcelando) { preview.hidden = true; return; }
+  const total = parseFloat(document.getElementById("cobranca-valor").value);
+  const quantidade = parseInt(document.getElementById("cobranca-parcelas").value, 10);
+  const vencimento = document.getElementById("cobranca-vencimento").value.trim();
+  if (!(total > 0) || !(quantidade >= 2) || !/^\d{4}-\d{2}-\d{2}$/.test(vencimento)) {
+    preview.hidden = true;
+    return;
+  }
+  preview.hidden = false;
+  const valoresCentavos = _calcularValoresParcelas(Math.round(total * 100), quantidade);
+  const thead = el("thead", {}, [el("tr", {}, [
+    el("th", { texto: "Parcela" }), el("th", { texto: "Vencimento" }), el("th", { texto: "Valor" }),
+  ])]);
+  const tbody = el("tbody", {});
+  valoresCentavos.forEach((centavos, indice) => {
+    tbody.appendChild(el("tr", {}, [
+      el("td", { "data-label": "Parcela", texto: `${indice + 1}/${quantidade}` }),
+      el("td", { "data-label": "Vencimento", texto: formatarDataSimples(_somarMeses(vencimento, indice)) }),
+      el("td", { "data-label": "Valor", texto: formatarMoeda(centavos / 100) }),
+    ]));
+  });
+  preview.appendChild(el("p", { class: "campo-ajuda", texto: "Prévia das parcelas (quem gera de fato é o Asaas, ao confirmar):" }));
+  preview.appendChild(el("div", { class: "tabela-responsiva-wrap" }, [el("table", { class: "tabela-responsiva" }, [thead, tbody])]));
+}
+
 async function _abrirModalNovaCobranca() {
   if (!_cache.clientes.length) {
     try { const { clientes } = await _buscarJson("/clientes"); _cache.clientes = clientes || []; } catch { /* segue */ }
@@ -2579,6 +2630,10 @@ async function _abrirModalNovaCobranca() {
   document.getElementById("form-nova-cobranca").reset();
   limpar(document.getElementById("resultado-nova-cobranca"));
   _popularSelectClientes(document.getElementById("cobranca-cliente"), "", "— selecione o cliente —");
+  document.getElementById("cobranca-parcelas-campo").hidden = true;
+  document.getElementById("cobranca-valor-rotulo").textContent = "Valor";
+  limpar(document.getElementById("cobranca-parcelas-preview"));
+  document.getElementById("cobranca-parcelas-preview").hidden = true;
   abrirModal("modal-nova-cobranca");
 }
 
@@ -2587,10 +2642,21 @@ document.getElementById("modal-nova-cobranca-fechar").addEventListener("click", 
 document.getElementById("pagamentos-filtro-status").addEventListener("change", carregarPagamentos);
 document.getElementById("pagamentos-filtro-cliente").addEventListener("change", carregarPagamentos);
 
+document.getElementById("cobranca-parcelar").addEventListener("change", (evento) => {
+  const parcelando = evento.target.checked;
+  document.getElementById("cobranca-parcelas-campo").hidden = !parcelando;
+  document.getElementById("cobranca-valor-rotulo").textContent = parcelando ? "Valor total" : "Valor";
+  _atualizarPreviewParcelas();
+});
+for (const id of ["cobranca-valor", "cobranca-parcelas", "cobranca-vencimento"]) {
+  document.getElementById(id).addEventListener("input", _atualizarPreviewParcelas);
+}
+
 document.getElementById("form-nova-cobranca").addEventListener("submit", async (evento) => {
   evento.preventDefault();
   const botao = document.querySelector("button[form='form-nova-cobranca'][type='submit']");
   const resultado = document.getElementById("resultado-nova-cobranca");
+  const parcelando = document.getElementById("cobranca-parcelar").checked;
   const corpo = {
     cliente_id: document.getElementById("cobranca-cliente").value,
     billing_type: document.getElementById("cobranca-tipo").value,
@@ -2598,6 +2664,7 @@ document.getElementById("form-nova-cobranca").addEventListener("submit", async (
     vencimento: document.getElementById("cobranca-vencimento").value.trim(),
     descricao: document.getElementById("cobranca-descricao").value.trim(),
   };
+  if (parcelando) corpo.parcelas = document.getElementById("cobranca-parcelas").value;
   const pararEspera = mostrarEspera(resultado, botao, "Criando cobrança");
   try {
     await _enviarJson("/pagamentos", corpo);
@@ -2619,6 +2686,7 @@ document.getElementById("form-nova-cobranca").addEventListener("submit", async (
     allowInput: true,
     locale: window.flatpickr.l10ns && window.flatpickr.l10ns.pt,
     dateFormat: "Y-m-d",
+    onChange: () => _atualizarPreviewParcelas(),
   });
 })();
 

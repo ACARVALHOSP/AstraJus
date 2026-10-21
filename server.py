@@ -3440,6 +3440,16 @@ class _AutenticacaoBearer:
         if valor <= 0:
             await _json(send, 400, _erro("O valor da cobrança deve ser maior que zero."))
             return
+        parcelas_bruto = dados.get("parcelas")
+        parcelas = None
+        if parcelas_bruto not in (None, ""):
+            try:
+                parcelas = int(parcelas_bruto)
+            except (TypeError, ValueError):
+                await _json(send, 400, _erro("Quantidade de parcelas inválida."))
+                return
+            if parcelas < 2:
+                parcelas = None  # 1 parcela é cobrança avulsa, não parcelamento
         vencimento = (dados.get("vencimento") or "").strip()
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", vencimento):
             await _json(send, 400, _erro("Informe a data de vencimento (AAAA-MM-DD)."))
@@ -3451,10 +3461,16 @@ class _AutenticacaoBearer:
         try:
             async with _cliente(20) as http_cliente:
                 customer_id = await self._asaas_customer_id(http_cliente, url_base, api_key, cliente_registro)
-                cobranca = await asaas_integracao.criar_cobranca(
-                    http_cliente, url_base, api_key, customer_id, valor, vencimento,
-                    billing_type=billing_type, descricao=descricao,
-                )
+                if parcelas:
+                    cobranca = await asaas_integracao.criar_cobranca(
+                        http_cliente, url_base, api_key, customer_id, vencimento,
+                        billing_type=billing_type, descricao=descricao, parcelas=parcelas, valor_total=valor,
+                    )
+                else:
+                    cobranca = await asaas_integracao.criar_cobranca(
+                        http_cliente, url_base, api_key, customer_id, vencimento,
+                        billing_type=billing_type, descricao=descricao, valor=valor,
+                    )
         except asaas_integracao.ErroAsaas as erro:
             log.warning("Falha ao criar cobrança Asaas para cliente %s: %s", cliente_id, erro)
             await _json(send, 400, _erro(f"Falha ao criar cobrança: {erro}"))

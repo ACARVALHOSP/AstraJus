@@ -37,16 +37,21 @@ async def criar_cliente(
 
 async def criar_cobranca(
     cliente: httpx.AsyncClient, url_base: str, api_key: str, customer_id: str,
-    valor: float, vencimento_iso: str, billing_type: str = "BOLETO", descricao: str | None = None,
+    vencimento_iso: str, billing_type: str = "BOLETO", descricao: str | None = None, *,
+    valor: float | None = None, parcelas: int | None = None, valor_total: float | None = None,
 ) -> dict:
-    """Cria uma cobrança (boleto ou Pix) para um cliente já cadastrado. Devolve o objeto criado,
-    com `bankSlipUrl` (link do boleto) e `invoiceUrl` (fatura/página de pagamento)."""
-    corpo: dict[str, Any] = {
-        "customer": customer_id,
-        "billingType": billing_type,
-        "value": valor,
-        "dueDate": vencimento_iso,
-    }
+    """Cria uma cobrança (boleto ou Pix) para um cliente já cadastrado - avulsa (`valor`) ou
+    parcelada (`parcelas` + `valor_total`: o Asaas divide o total pelas parcelas, jogando a
+    sobra do arredondamento na última - nunca envie `valor` junto). Devolve só a 1ª cobrança
+    criada, com `bankSlipUrl`/`invoiceUrl`; quando parcelada, o campo `installment` nela
+    identifica o parcelamento todo (as demais cobranças aparecem em listar_cobrancas, para o
+    mesmo customer_id)."""
+    corpo: dict[str, Any] = {"customer": customer_id, "billingType": billing_type, "dueDate": vencimento_iso}
+    if parcelas and parcelas > 1:
+        corpo["installmentCount"] = parcelas
+        corpo["totalValue"] = valor_total
+    else:
+        corpo["value"] = valor
     if descricao:
         corpo["description"] = descricao
     resposta = await cliente.post(
