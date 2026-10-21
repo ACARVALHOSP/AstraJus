@@ -3044,10 +3044,6 @@ class _AutenticacaoBearer:
         if caminho == "/clientes" and self.gestao is not None:
             await self._clientes(scope, receive, send)
             return
-        if caminho.startswith("/clientes/") and caminho.endswith("/boleto") and self.gestao is not None:
-            cliente_id = caminho[len("/clientes/"):-len("/boleto")].rstrip("/")
-            await self._criar_boleto_cliente(scope, receive, send, cliente_id)
-            return
         if caminho.startswith("/clientes/") and self.gestao is not None:
             await self._cliente_detalhe(scope, receive, send, caminho[len("/clientes/"):])
             return
@@ -3086,6 +3082,12 @@ class _AutenticacaoBearer:
             return
         if caminho.startswith("/lancamentos/") and self.gestao is not None:
             await self._lancamento_detalhe(scope, receive, send, caminho[len("/lancamentos/"):])
+            return
+        if caminho == "/pagamentos" and self.gestao is not None:
+            await self._pagamentos(scope, receive, send)
+            return
+        if caminho.startswith("/pagamentos/") and self.gestao is not None:
+            await self._pagamento_detalhe(scope, receive, send, caminho[len("/pagamentos/"):])
             return
         if caminho == "/pendentes" and self.gestao is not None:
             await _json(send, 200, {"pendentes": self.gestao.listar_pendentes()})
@@ -3382,27 +3384,53 @@ class _AutenticacaoBearer:
             return
         await _json(send, 200, cliente_atualizado)
 
-    async def _criar_boleto_cliente(self, scope, receive, send, cliente_id: str) -> None:
-        """POST /clientes/<id>/boleto: cria uma cobrança via boleto na Asaas para este cliente.
-        Na primeira cobrança, cadastra o cliente lá e guarda o customer_id (db.definir_asaas_customer_id)
-        para não recriá-lo nas próximas."""
-        if scope.get("method") != "POST" or not cliente_id:
-            await _responder(send, 404, b"Nao encontrado")
-            return
+    async def _asaas_customer_id(
+        self, http_cliente: httpx.AsyncClient, url_base: str, api_key: str, cliente_registro: dict,
+    ) -> str:
+        """Devolve o customer_id Asaas do cliente, cadastrando-o lá na primeira cobrança
+        (e guardando o id com db.definir_asaas_customer_id para não recriá-lo depois)."""
+        customer_id = cliente_registro.get("asaas_customer_id")
+        if customer_id:
+            return customer_id
+        criado = await asaas_integracao.criar_cliente(
+            http_cliente, url_base, api_key, nome=cliente_registro["nome"],
+            cpf_cnpj=cliente_registro["cpf_cnpj"], email=cliente_registro.get("email"),
+            telefone=cliente_registro.get("telefone"),
+        )
+        customer_id = criado["id"]
+        self.gestao.definir_asaas_customer_id(cliente_registro["id"], customer_id)
+        return customer_id
+
+    async def _pagamentos(self, scope, receive, send) -> None:
+        """GET /pagamentos[?cliente_id=&status=&offset=]: lista cobranças Asaas, com o cliente
+        local já associado (para a página Financeiro > Pagamentos). POST /pagamentos: cria uma
+        cobrança (boleto ou Pix) para um cliente já cadastrado."""
         config = _asaas_config()
         if config is None:
             await _json(send, 404, _erro("Integração Asaas não configurada (falta a API key no servidor)."))
             return
         url_base, api_key = config
-        cliente_registro = self.gestao.obter_cliente(cliente_id)
-        if cliente_registro is None:
-            await _json(send, 404, _erro("Cliente não encontrado."))
+        metodo = scope.get("method")
+        if metodo == "GET":
+            await self._listar_pagamentos(scope, send, url_base, api_key)
+            return
+        if metodo != "POST":
+            await _responder(send, 405, b"Metodo nao permitido")
             return
         corpo = await _ler_corpo(receive)
         try:
             dados = json.loads((corpo or b"").decode("utf-8") or "{}")
         except (ValueError, UnicodeDecodeError):
             await _json(send, 400, _erro("JSON inválido."))
+            return
+        cliente_id = (dados.get("cliente_id") or "").strip()
+        cliente_registro = self.gestao.obter_cliente(cliente_id)
+        if cliente_registro is None:
+            await _json(send, 400, _erro("Selecione um cliente válido."))
+            return
+        billing_type = (dados.get("billing_type") or "BOLETO").strip().upper()
+        if billing_type not in ("BOLETO", "PIX"):
+            await _json(send, 400, _erro("Tipo de cobrança inválido (use BOLETO ou PIX)."))
             return
         try:
             valor = float(dados.get("valor"))
@@ -3413,32 +3441,86 @@ class _AutenticacaoBearer:
             await _json(send, 400, _erro("O valor da cobrança deve ser maior que zero."))
             return
         vencimento = (dados.get("vencimento") or "").strip()
-        if not vencimento:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", vencimento):
             await _json(send, 400, _erro("Informe a data de vencimento (AAAA-MM-DD)."))
             return
         if not cliente_registro.get("cpf_cnpj"):
-            await _json(send, 400, _erro("Cadastre o CPF/CNPJ do cliente antes de emitir boleto."))
+            await _json(send, 400, _erro("Cadastre o CPF/CNPJ do cliente antes de emitir cobrança."))
             return
         descricao = (dados.get("descricao") or "").strip() or None
         try:
             async with _cliente(20) as http_cliente:
-                customer_id = cliente_registro.get("asaas_customer_id")
-                if not customer_id:
-                    criado = await asaas_integracao.criar_cliente(
-                        http_cliente, url_base, api_key, nome=cliente_registro["nome"],
-                        cpf_cnpj=cliente_registro["cpf_cnpj"], email=cliente_registro.get("email"),
-                        telefone=cliente_registro.get("telefone"),
-                    )
-                    customer_id = criado["id"]
-                    self.gestao.definir_asaas_customer_id(cliente_id, customer_id)
-                cobranca = await asaas_integracao.criar_cobranca_boleto(
-                    http_cliente, url_base, api_key, customer_id, valor, vencimento, descricao,
+                customer_id = await self._asaas_customer_id(http_cliente, url_base, api_key, cliente_registro)
+                cobranca = await asaas_integracao.criar_cobranca(
+                    http_cliente, url_base, api_key, customer_id, valor, vencimento,
+                    billing_type=billing_type, descricao=descricao,
                 )
         except asaas_integracao.ErroAsaas as erro:
-            log.warning("Falha ao criar boleto Asaas para cliente %s: %s", cliente_id, erro)
-            await _json(send, 400, _erro(f"Falha ao criar boleto: {erro}"))
+            log.warning("Falha ao criar cobrança Asaas para cliente %s: %s", cliente_id, erro)
+            await _json(send, 400, _erro(f"Falha ao criar cobrança: {erro}"))
             return
+        cobranca["cliente_id"] = cliente_id
+        cobranca["cliente_nome"] = cliente_registro["nome"]
         await _json(send, 201, cobranca)
+
+    async def _listar_pagamentos(self, scope, send, url_base: str, api_key: str) -> None:
+        query = dict(_query(scope))
+        cliente_id = (query.get("cliente_id") or "").strip()
+        customer_id = None
+        if cliente_id:
+            cliente_registro = self.gestao.obter_cliente(cliente_id)
+            if cliente_registro is None:
+                await _json(send, 400, _erro("Cliente não encontrado."))
+                return
+            customer_id = cliente_registro.get("asaas_customer_id")
+            if not customer_id:
+                await _json(send, 200, {"cobrancas": [], "totalCount": 0, "hasMore": False})
+                return
+        status = (query.get("status") or "").strip().upper() or None
+        try:
+            offset = max(0, int(query.get("offset") or 0))
+        except ValueError:
+            offset = 0
+        try:
+            async with _cliente(20) as http_cliente:
+                resultado = await asaas_integracao.listar_cobrancas(
+                    http_cliente, url_base, api_key, customer_id=customer_id, status=status, offset=offset,
+                )
+        except asaas_integracao.ErroAsaas as erro:
+            log.warning("Falha ao listar cobranças Asaas: %s", erro)
+            await _json(send, 502, _erro(f"Falha ao consultar o Asaas: {erro}"))
+            return
+        cobrancas = resultado.get("data") or []
+        clientes_por_asaas_id = {
+            c["asaas_customer_id"]: c for c in self.gestao.listar_clientes() if c.get("asaas_customer_id")
+        }
+        for cobranca in cobrancas:
+            vinculado = clientes_por_asaas_id.get(cobranca.get("customer"))
+            cobranca["cliente_id"] = vinculado["id"] if vinculado else None
+            cobranca["cliente_nome"] = vinculado["nome"] if vinculado else None
+        await _json(send, 200, {
+            "cobrancas": cobrancas, "totalCount": resultado.get("totalCount", len(cobrancas)),
+            "hasMore": resultado.get("hasMore", False),
+        })
+
+    async def _pagamento_detalhe(self, scope, receive, send, payment_id: str) -> None:
+        """DELETE /pagamentos/<id>: cancela uma cobrança Asaas ainda não paga."""
+        if scope.get("method") != "DELETE" or not payment_id:
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        config = _asaas_config()
+        if config is None:
+            await _json(send, 404, _erro("Integração Asaas não configurada (falta a API key no servidor)."))
+            return
+        url_base, api_key = config
+        try:
+            async with _cliente(20) as http_cliente:
+                resultado = await asaas_integracao.excluir_cobranca(http_cliente, url_base, api_key, payment_id)
+        except asaas_integracao.ErroAsaas as erro:
+            log.warning("Falha ao cancelar cobrança Asaas %s: %s", payment_id, erro)
+            await _json(send, 400, _erro(f"Falha ao cancelar cobrança: {erro}"))
+            return
+        await _json(send, 200, resultado)
 
     async def _casos(self, scope, receive, send):
         metodo = scope.get("method")

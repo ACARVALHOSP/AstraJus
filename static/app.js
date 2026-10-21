@@ -493,6 +493,7 @@ const abas = [
   { botao: document.getElementById("aba-publicacoes-oab-botao"), painel: document.getElementById("aba-publicacoes-oab") },
   { botao: document.getElementById("aba-integracoes-botao"), painel: document.getElementById("aba-integracoes") },
   { botao: document.getElementById("aba-financeiro-botao"), painel: document.getElementById("aba-financeiro") },
+  { botao: document.getElementById("aba-pagamentos-botao"), painel: document.getElementById("aba-pagamentos") },
 ];
 
 // Token salvo já conecta sozinho (ver carregarTokenSalvo) - pula a aba Acesso e vai direto pro uso.
@@ -519,6 +520,7 @@ function selecionarAba(alvo) {
   if (alvo.painel.id === "aba-publicacoes-oab") carregarPublicacoesOab();
   if (alvo.painel.id === "aba-integracoes") carregarStatusIntegracoes();
   if (alvo.painel.id === "aba-financeiro") carregarLancamentos();
+  if (alvo.painel.id === "aba-pagamentos") carregarPagamentos();
 }
 
 for (const aba of abas) aba.botao.addEventListener("click", () => selecionarAba(aba));
@@ -1519,23 +1521,33 @@ async function carregarMonitoramentos() {
 }
 
 async function carregarStatusIntegracoes() {
-  const selo = document.getElementById("integracao-google-status");
-  if (!selo || !cliente) return;
-  selo.textContent = "Verificando…";
-  selo.className = "cds--tag cds--tag--sm";
+  const seloGoogle = document.getElementById("integracao-google-status");
+  const seloAsaas = document.getElementById("integracao-asaas-status");
+  if (!cliente) return;
+  for (const selo of [seloGoogle, seloAsaas]) {
+    if (!selo) continue;
+    selo.textContent = "Verificando…";
+    selo.className = "cds--tag cds--tag--sm";
+  }
   try {
     const resposta = await fetch("/integracoes/status", { headers: { Authorization: `Bearer ${cliente.token}` } });
     const dados = await resposta.json();
-    if (dados.google) {
-      selo.textContent = "Conectado";
-      selo.className = "cds--tag cds--tag--green cds--tag--sm";
-    } else {
-      selo.textContent = "Não configurado";
-      selo.className = "cds--tag cds--tag--gray cds--tag--sm";
+    for (const [selo, conectado] of [[seloGoogle, dados.google], [seloAsaas, dados.asaas]]) {
+      if (!selo) continue;
+      if (conectado) {
+        selo.textContent = "Conectado";
+        selo.className = "cds--tag cds--tag--green cds--tag--sm";
+      } else {
+        selo.textContent = "Não configurado";
+        selo.className = "cds--tag cds--tag--gray cds--tag--sm";
+      }
     }
   } catch {
-    selo.textContent = "Não foi possível verificar";
-    selo.className = "cds--tag cds--tag--gray cds--tag--sm";
+    for (const selo of [seloGoogle, seloAsaas]) {
+      if (!selo) continue;
+      selo.textContent = "Não foi possível verificar";
+      selo.className = "cds--tag cds--tag--gray cds--tag--sm";
+    }
   }
 }
 
@@ -2448,6 +2460,167 @@ async function _excluirLancamento(id, descricao, botao) {
     botao.disabled = false;
   }
 }
+
+// --- Financeiro: Pagamentos (cobranças Asaas) -------------------------------------------------
+
+const _ROTULOS_STATUS_PAGAMENTO = {
+  PENDING: ["Pendente", "gray"], OVERDUE: ["Vencido", "red"],
+  RECEIVED: ["Recebido", "green"], CONFIRMED: ["Confirmado", "green"],
+  RECEIVED_IN_CASH: ["Recebido em dinheiro", "green"], REFUNDED: ["Estornado", "gray"],
+  REFUND_REQUESTED: ["Estorno solicitado", "gray"], REFUND_IN_PROGRESS: ["Estorno em andamento", "gray"],
+};
+const _ROTULOS_TIPO_PAGAMENTO = { BOLETO: "Boleto", PIX: "Pix", UNDEFINED: "A definir" };
+
+function _popularSelectClientes(select, valorAtual, rotuloVazio = "— todos —") {
+  limpar(select);
+  select.appendChild(el("option", { value: "", texto: rotuloVazio }));
+  for (const c of _cache.clientes) select.appendChild(el("option", { value: c.id, texto: c.nome }));
+  select.value = valorAtual || "";
+}
+
+async function carregarPagamentos() {
+  const container = document.getElementById("lista-pagamentos");
+  const aviso = document.getElementById("pagamentos-aviso-integracao");
+  limpar(aviso);
+  limpar(container);
+  container.appendChild(el("p", { class: "app-espera", texto: "Carregando…" }));
+  try {
+    if (!_cache.clientes.length) {
+      const { clientes } = await _buscarJson("/clientes");
+      _cache.clientes = clientes || [];
+    }
+    const selectFiltro = document.getElementById("pagamentos-filtro-cliente");
+    _popularSelectClientes(selectFiltro, selectFiltro.value);
+
+    const params = new URLSearchParams();
+    const status = document.getElementById("pagamentos-filtro-status").value;
+    const clienteId = selectFiltro.value;
+    if (status) params.set("status", status);
+    if (clienteId) params.set("cliente_id", clienteId);
+    const url = "/pagamentos" + (params.toString() ? `?${params}` : "");
+    const { cobrancas } = await _buscarJson(url);
+    limpar(container);
+    _renderizarPagamentos(cobrancas || []);
+  } catch (erro) {
+    if (erro.status === 404) {
+      limpar(container);
+      aviso.appendChild(notificacao("info", "Integração Asaas não configurada", erro.message));
+    } else {
+      mostrarErro(container, erro.message);
+    }
+  }
+}
+
+function _renderizarPagamentos(cobrancas) {
+  const container = document.getElementById("lista-pagamentos");
+  limpar(container);
+  if (!cobrancas.length) {
+    container.appendChild(notificacao("info", "Nenhuma cobrança encontrada"));
+    return;
+  }
+  const thead = el("thead", {}, [
+    el("tr", {}, [
+      el("th", { texto: "Cliente" }),
+      el("th", { texto: "Valor" }),
+      el("th", { texto: "Vencimento" }),
+      el("th", { texto: "Tipo" }),
+      el("th", { texto: "Status" }),
+      el("th", { texto: "Ações" }),
+    ]),
+  ]);
+  const tbody = el("tbody", {});
+  for (const cobranca of cobrancas) {
+    const [rotuloStatus, corStatus] = _ROTULOS_STATUS_PAGAMENTO[cobranca.status] || [cobranca.status, "gray"];
+    const tag = el("span", { class: `cds--tag cds--tag--${corStatus} cds--tag--sm`, texto: rotuloStatus });
+    const link = cobranca.bankSlipUrl || cobranca.invoiceUrl;
+    const acoes = [];
+    if (link) {
+      acoes.push(el("a", {
+        class: "cds--btn cds--btn--ghost cds--btn--sm", href: link, target: "_blank", rel: "noopener",
+        texto: "Ver cobrança",
+      }));
+    }
+    if (!["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH", "REFUNDED"].includes(cobranca.status)) {
+      const botaoCancelar = el("button", {
+        class: "cds--btn cds--btn--danger--tertiary cds--btn--sm", type: "button", texto: "Cancelar",
+      });
+      botaoCancelar.addEventListener("click", () => _cancelarCobranca(cobranca.id, botaoCancelar));
+      acoes.push(botaoCancelar);
+    }
+    const tr = el("tr", {}, [
+      el("td", { "data-label": "Cliente", texto: cobranca.cliente_nome || "(cliente sem cadastro local)" }),
+      el("td", { "data-label": "Valor", texto: formatarMoeda(cobranca.value) }),
+      el("td", { "data-label": "Vencimento", texto: formatarDataSimples(cobranca.dueDate) }),
+      el("td", { "data-label": "Tipo", texto: _ROTULOS_TIPO_PAGAMENTO[cobranca.billingType] || cobranca.billingType }),
+      el("td", { "data-label": "Status" }, [tag]),
+      el("td", { "data-label": "Ações" }, acoes),
+    ]);
+    tbody.appendChild(tr);
+  }
+  container.appendChild(el("div", { class: "tabela-responsiva-wrap" }, [el("table", { class: "tabela-responsiva tabela-pagamentos" }, [thead, tbody])]));
+}
+
+async function _cancelarCobranca(id, botao) {
+  if (!(await confirmarAcao("Cancelar esta cobrança no Asaas? Essa ação não pode ser desfeita.", { textoConfirmar: "Cancelar cobrança" }))) return;
+  botao.disabled = true;
+  try {
+    await _enviarJson(`/pagamentos/${id}`, {}, "DELETE");
+    await carregarPagamentos();
+  } catch (erro) {
+    mostrarToast("error", "Erro", erro.message);
+    botao.disabled = false;
+  }
+}
+
+async function _abrirModalNovaCobranca() {
+  if (!_cache.clientes.length) {
+    try { const { clientes } = await _buscarJson("/clientes"); _cache.clientes = clientes || []; } catch { /* segue */ }
+  }
+  document.getElementById("form-nova-cobranca").reset();
+  limpar(document.getElementById("resultado-nova-cobranca"));
+  _popularSelectClientes(document.getElementById("cobranca-cliente"), "", "— selecione o cliente —");
+  abrirModal("modal-nova-cobranca");
+}
+
+document.getElementById("btn-nova-cobranca").addEventListener("click", _abrirModalNovaCobranca);
+document.getElementById("modal-nova-cobranca-fechar").addEventListener("click", () => fecharModal("modal-nova-cobranca"));
+document.getElementById("pagamentos-filtro-status").addEventListener("change", carregarPagamentos);
+document.getElementById("pagamentos-filtro-cliente").addEventListener("change", carregarPagamentos);
+
+document.getElementById("form-nova-cobranca").addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  const botao = document.querySelector("button[form='form-nova-cobranca'][type='submit']");
+  const resultado = document.getElementById("resultado-nova-cobranca");
+  const corpo = {
+    cliente_id: document.getElementById("cobranca-cliente").value,
+    billing_type: document.getElementById("cobranca-tipo").value,
+    valor: document.getElementById("cobranca-valor").value,
+    vencimento: document.getElementById("cobranca-vencimento").value.trim(),
+    descricao: document.getElementById("cobranca-descricao").value.trim(),
+  };
+  const pararEspera = mostrarEspera(resultado, botao, "Criando cobrança");
+  try {
+    await _enviarJson("/pagamentos", corpo);
+    fecharModal("modal-nova-cobranca");
+    await carregarPagamentos();
+  } catch (erro) {
+    mostrarErro(resultado, erro.message);
+  } finally {
+    pararEspera();
+  }
+});
+
+// Date picker simples para cobranca-vencimento (sem range plugin).
+(function () {
+  const campo = document.getElementById("cobranca-vencimento");
+  if (!campo || typeof window.flatpickr !== "function") return;
+  window.flatpickr(campo, {
+    altInput: false,
+    allowInput: true,
+    locale: window.flatpickr.l10ns && window.flatpickr.l10ns.pt,
+    dateFormat: "Y-m-d",
+  });
+})();
 
 async function _abrirModalHonorario() {
   if (!_cache.clientes.length) {
