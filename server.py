@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+import asaas_integracao
 import db as _db
 import google_integracao
 from _util import _hash_token
@@ -121,6 +122,17 @@ def _cliente(timeout: float, **kwargs) -> httpx.AsyncClient:
 
 def _datajud_api_key() -> str:
     return os.environ.get("DATAJUD_API_KEY", "").strip() or DATAJUD_API_KEY_PADRAO
+
+
+def _asaas_config() -> tuple[str, str] | None:
+    """URL base + API key do Asaas para o ambiente configurado em ASAAS_AMBIENTE
+    ('sandbox', padrão, ou 'producao'). None se a chave do ambiente atual não estiver definida
+    no servidor (ASAAS_API_KEY_SANDBOX ou ASAAS_API_KEY)."""
+    if (os.environ.get("ASAAS_AMBIENTE") or "sandbox").strip().lower() == "producao":
+        chave = os.environ.get("ASAAS_API_KEY", "").strip()
+        return (asaas_integracao.URL_BASE_PRODUCAO, chave) if chave else None
+    chave = os.environ.get("ASAAS_API_KEY_SANDBOX", "").strip()
+    return (asaas_integracao.URL_BASE_SANDBOX, chave) if chave else None
 
 
 def _so_digitos(valor: str | None) -> str:
@@ -3026,11 +3038,15 @@ class _AutenticacaoBearer:
             return
 
         if caminho == "/integracoes/status" and scope.get("method") == "GET":
-            await _json(send, 200, {"google": self._google_configurado()})
+            await _json(send, 200, {"google": self._google_configurado(), "asaas": _asaas_config() is not None})
             return
 
         if caminho == "/clientes" and self.gestao is not None:
             await self._clientes(scope, receive, send)
+            return
+        if caminho.startswith("/clientes/") and caminho.endswith("/boleto") and self.gestao is not None:
+            cliente_id = caminho[len("/clientes/"):-len("/boleto")].rstrip("/")
+            await self._criar_boleto_cliente(scope, receive, send, cliente_id)
             return
         if caminho.startswith("/clientes/") and self.gestao is not None:
             await self._cliente_detalhe(scope, receive, send, caminho[len("/clientes/"):])
@@ -3359,6 +3375,64 @@ class _AutenticacaoBearer:
             await _json(send, 404, _erro("Cliente não encontrado."))
             return
         await _json(send, 200, cliente_atualizado)
+
+    async def _criar_boleto_cliente(self, scope, receive, send, cliente_id: str) -> None:
+        """POST /clientes/<id>/boleto: cria uma cobrança via boleto na Asaas para este cliente.
+        Na primeira cobrança, cadastra o cliente lá e guarda o customer_id (db.definir_asaas_customer_id)
+        para não recriá-lo nas próximas."""
+        if scope.get("method") != "POST" or not cliente_id:
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        config = _asaas_config()
+        if config is None:
+            await _json(send, 404, _erro("Integração Asaas não configurada (falta a API key no servidor)."))
+            return
+        url_base, api_key = config
+        cliente_registro = self.gestao.obter_cliente(cliente_id)
+        if cliente_registro is None:
+            await _json(send, 404, _erro("Cliente não encontrado."))
+            return
+        corpo = await _ler_corpo(receive)
+        try:
+            dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            await _json(send, 400, _erro("JSON inválido."))
+            return
+        try:
+            valor = float(dados.get("valor"))
+        except (TypeError, ValueError):
+            await _json(send, 400, _erro("Informe o valor da cobrança (número)."))
+            return
+        if valor <= 0:
+            await _json(send, 400, _erro("O valor da cobrança deve ser maior que zero."))
+            return
+        vencimento = (dados.get("vencimento") or "").strip()
+        if not vencimento:
+            await _json(send, 400, _erro("Informe a data de vencimento (AAAA-MM-DD)."))
+            return
+        if not cliente_registro.get("cpf_cnpj"):
+            await _json(send, 400, _erro("Cadastre o CPF/CNPJ do cliente antes de emitir boleto."))
+            return
+        descricao = (dados.get("descricao") or "").strip() or None
+        try:
+            async with _cliente(20) as http_cliente:
+                customer_id = cliente_registro.get("asaas_customer_id")
+                if not customer_id:
+                    criado = await asaas_integracao.criar_cliente(
+                        http_cliente, url_base, api_key, nome=cliente_registro["nome"],
+                        cpf_cnpj=cliente_registro["cpf_cnpj"], email=cliente_registro.get("email"),
+                        telefone=cliente_registro.get("telefone"),
+                    )
+                    customer_id = criado["id"]
+                    self.gestao.definir_asaas_customer_id(cliente_id, customer_id)
+                cobranca = await asaas_integracao.criar_cobranca_boleto(
+                    http_cliente, url_base, api_key, customer_id, valor, vencimento, descricao,
+                )
+        except asaas_integracao.ErroAsaas as erro:
+            log.warning("Falha ao criar boleto Asaas para cliente %s: %s", cliente_id, erro)
+            await _json(send, 400, _erro(f"Falha ao criar boleto: {erro}"))
+            return
+        await _json(send, 201, cobranca)
 
     async def _casos(self, scope, receive, send):
         metodo = scope.get("method")
