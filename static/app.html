@@ -438,6 +438,9 @@ nav.cds--side-nav {
 <li role="presentation" class="cds--side-nav__menu-item">
 <button class="cds--side-nav__link" id="aba-financeiro-botao" role="tab" aria-selected="false" aria-controls="aba-financeiro" type="button"><span class="cds--side-nav__link-text">Lançamentos</span></button>
 </li>
+<li role="presentation" class="cds--side-nav__menu-item">
+<button class="cds--side-nav__link" id="aba-pagamentos-botao" role="tab" aria-selected="false" aria-controls="aba-pagamentos" type="button"><span class="cds--side-nav__link-text">Pagamentos</span></button>
+</li>
 </ul>
 </li>
 <li role="presentation" class="cds--side-nav__item">
@@ -884,8 +887,8 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="cds--tile">
 <div class="integracao-icone"><img src="/static/icons/asaas.png" alt="" width="40" height="40"></div>
 <h3>Asaas</h3>
-<p>Cobranças e boletos.</p>
-<span class="cds--tag cds--tag--gray cds--tag--sm">Em breve</span>
+<p>Cobranças e boletos. Veja em Financeiro &gt; Pagamentos.</p>
+<span class="cds--tag cds--tag--sm" id="integracao-asaas-status">Verificando…</span>
 </div>
 
 <div class="cds--tile">
@@ -904,6 +907,35 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <button class="cds--btn cds--btn--primary cds--btn--sm" type="button" id="btn-novo-lancamento">Novo lançamento</button>
 </div>
 <div id="lista-lancamentos" class="app-resultado"></div>
+</section>
+
+<section id="aba-pagamentos" role="tabpanel" aria-labelledby="aba-pagamentos-botao" hidden>
+<div class="secao-cabecalho">
+<h2 class="lista-rapida-titulo">Pagamentos</h2>
+<button class="cds--btn cds--btn--primary cds--btn--sm" type="button" id="btn-nova-cobranca">Nova cobrança</button>
+</div>
+<p class="campo-ajuda">Cobranças (boleto ou Pix) emitidas via Asaas para os clientes cadastrados.</p>
+<div id="pagamentos-aviso-integracao" class="app-resultado"></div>
+<div class="contatos-barra">
+<div class="cds--form-item">
+<label class="cds--label" for="pagamentos-filtro-status">Status</label>
+<select class="cds--select-input" id="pagamentos-filtro-status">
+<option value="">— todos —</option>
+<option value="PENDING">Pendente</option>
+<option value="OVERDUE">Vencido</option>
+<option value="RECEIVED">Recebido</option>
+<option value="CONFIRMED">Confirmado</option>
+<option value="REFUNDED">Estornado</option>
+</select>
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="pagamentos-filtro-cliente">Cliente</label>
+<select class="cds--select-input" id="pagamentos-filtro-cliente">
+<option value="">— todos —</option>
+</select>
+</div>
+</div>
+<div id="lista-pagamentos" class="app-resultado"></div>
 </section>
 
 <section id="aba-contatos" role="tabpanel" aria-labelledby="aba-contatos-botao" hidden>
@@ -1472,6 +1504,57 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="cds--modal-footer">
 <button class="cds--btn cds--btn--secondary" type="button" data-fechar-modal="modal-honorario">Cancelar</button>
 <button class="cds--btn cds--btn--primary" type="submit" form="form-honorario">Salvar</button>
+</div>
+</div>
+</div>
+
+<div class="cds--modal" id="modal-nova-cobranca" role="dialog" aria-modal="true" aria-labelledby="modal-nova-cobranca-titulo">
+<div class="cds--modal-container cds--modal-container--sm">
+<div class="cds--modal-header">
+<p class="cds--modal-header__heading" id="modal-nova-cobranca-titulo">Nova cobrança</p>
+<button class="cds--modal-close" type="button" id="modal-nova-cobranca-fechar" aria-label="Fechar">
+<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="20" height="20" fill="currentColor"><path d="M17.41 16 24 9.41 22.59 8 16 14.59 9.41 8 8 9.41 14.59 16 8 22.59 9.41 24 16 17.41 22.59 24 24 22.59 17.41 16z"/></svg>
+</button>
+</div>
+<div class="cds--modal-content">
+<form id="form-nova-cobranca">
+<div class="cds--form-item">
+<label class="cds--label" for="cobranca-cliente">Cliente <span aria-hidden="true">*</span></label>
+<select class="cds--select-input" id="cobranca-cliente" name="cliente_id" autocomplete="off" required>
+<option value="">— selecione o cliente —</option>
+</select>
+<span class="campo-ajuda">O cliente precisa ter CPF/CNPJ cadastrado.</span>
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cobranca-tipo">Tipo de cobrança <span aria-hidden="true">*</span></label>
+<select class="cds--select-input" id="cobranca-tipo" name="billing_type" autocomplete="off" required>
+<option value="BOLETO">Boleto</option>
+<option value="PIX">Pix</option>
+</select>
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cobranca-valor">Valor <span aria-hidden="true">*</span></label>
+<input class="cds--text-input" type="number" id="cobranca-valor" name="valor" min="0.01" step="0.01" autocomplete="off" required>
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cobranca-vencimento">Vencimento <span aria-hidden="true">*</span></label>
+<div class="cds--date-picker__input-wrapper">
+<svg class="cds--date-picker__icon" width="16" height="16" viewBox="0 0 32 32" aria-hidden="true">
+<path d="M26 4h-4V2h-2v2H12V2h-2v2H6a2 2 0 0 0-2 2v20a2 2 0 0 0 2 2h20a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2ZM6 6h20v4H6Zm0 20V12h20v14Z"></path>
+</svg>
+<input class="cds--text-input" type="text" id="cobranca-vencimento" name="vencimento" placeholder="aaaa-mm-dd" autocomplete="off" required>
+</div>
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cobranca-descricao">Descrição</label>
+<input class="cds--text-input" type="text" id="cobranca-descricao" name="descricao" placeholder="Ex.: Honorários - parcela 1/3" autocomplete="off">
+</div>
+<div id="resultado-nova-cobranca" class="app-resultado"></div>
+</form>
+</div>
+<div class="cds--modal-footer">
+<button class="cds--btn cds--btn--secondary" type="button" data-fechar-modal="modal-nova-cobranca">Cancelar</button>
+<button class="cds--btn cds--btn--primary" type="submit" form="form-nova-cobranca">Criar cobrança</button>
 </div>
 </div>
 </div>

@@ -21,6 +21,7 @@ import httpx
 
 # sem atraso artificial nos testes; o tempo mínimo do cadastro tem teste próprio
 os.environ.setdefault("CNJ_CADASTRO_TEMPO_MINIMO_S", "0")
+import asaas_integracao
 import server
 
 
@@ -1809,6 +1810,68 @@ class RegistroDeToolsTest(unittest.TestCase):
             "consultar_processo_datajud", "consultar_publicacoes_djen", "baixar_certidao_djen",
             "monitorar_publicacoes", "listar_monitoramentos", "remover_monitoramento",
         })
+
+
+class AsaasIntegracaoTest(unittest.TestCase):
+    """Testa asaas_integracao.py isolado do server.py - só precisa de um httpx.AsyncClient
+    com transporte simulado, sem tocar na rede."""
+
+    def _cliente(self, *respostas):
+        fila = list(respostas)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            self.ultima_requisicao = request
+            return fila.pop(0) if len(fila) > 1 else fila[0]
+
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    def test_listar_cobrancas_manda_filtros_na_query_e_devolve_a_lista(self):
+        async def ir():
+            async with self._cliente(_json(200, {
+                "data": [{"id": "pay_1", "customer": "cus_1", "status": "PENDING"}],
+                "totalCount": 1, "hasMore": False,
+            })) as cliente:
+                return await asaas_integracao.listar_cobrancas(
+                    cliente, "https://api-sandbox.asaas.com/v3", "chave",
+                    customer_id="cus_1", status="PENDING", offset=10,
+                )
+        resultado = _rodar(ir())
+        self.assertEqual(resultado["data"][0]["id"], "pay_1")
+        query = dict(self.ultima_requisicao.url.params)
+        self.assertEqual(query["customer"], "cus_1")
+        self.assertEqual(query["status"], "PENDING")
+        self.assertEqual(query["offset"], "10")
+
+    def test_criar_cobranca_pix_manda_billing_type_correto(self):
+        async def ir():
+            async with self._cliente(_json(200, {"id": "pay_2", "billingType": "PIX"})) as cliente:
+                return await asaas_integracao.criar_cobranca(
+                    cliente, "https://api-sandbox.asaas.com/v3", "chave", "cus_1",
+                    150.0, "2026-11-01", billing_type="PIX",
+                )
+        resultado = _rodar(ir())
+        self.assertEqual(resultado["billingType"], "PIX")
+        self.assertEqual(json.loads(self.ultima_requisicao.content)["billingType"], "PIX")
+
+    def test_excluir_cobranca_chama_delete_no_id(self):
+        async def ir():
+            async with self._cliente(_json(200, {"deleted": True, "id": "pay_3"})) as cliente:
+                return await asaas_integracao.excluir_cobranca(
+                    cliente, "https://api-sandbox.asaas.com/v3", "chave", "pay_3",
+                )
+        resultado = _rodar(ir())
+        self.assertTrue(resultado["deleted"])
+        self.assertEqual(self.ultima_requisicao.method, "DELETE")
+        self.assertTrue(self.ultima_requisicao.url.path.endswith("/payments/pay_3"))
+
+    def test_erro_http_vira_erro_asaas(self):
+        async def ir():
+            async with self._cliente(httpx.Response(400, json={"errors": [{"description": "Cliente inválido"}]})) as cliente:
+                return await asaas_integracao.criar_cobranca(
+                    cliente, "https://api-sandbox.asaas.com/v3", "chave", "cus_invalido", 10.0, "2026-11-01",
+                )
+        with self.assertRaises(asaas_integracao.ErroAsaas):
+            _rodar(ir())
 
 
 if __name__ == "__main__":

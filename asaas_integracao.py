@@ -35,15 +35,15 @@ async def criar_cliente(
     return _json_ou_erro(resposta, "criar cliente no Asaas")
 
 
-async def criar_cobranca_boleto(
+async def criar_cobranca(
     cliente: httpx.AsyncClient, url_base: str, api_key: str, customer_id: str,
-    valor: float, vencimento_iso: str, descricao: str | None = None,
+    valor: float, vencimento_iso: str, billing_type: str = "BOLETO", descricao: str | None = None,
 ) -> dict:
-    """Cria uma cobrança via boleto para um cliente já cadastrado. Devolve o objeto criado,
+    """Cria uma cobrança (boleto ou Pix) para um cliente já cadastrado. Devolve o objeto criado,
     com `bankSlipUrl` (link do boleto) e `invoiceUrl` (fatura/página de pagamento)."""
     corpo: dict[str, Any] = {
         "customer": customer_id,
-        "billingType": "BOLETO",
+        "billingType": billing_type,
         "value": valor,
         "dueDate": vencimento_iso,
     }
@@ -55,12 +55,38 @@ async def criar_cobranca_boleto(
     return _json_ou_erro(resposta, "criar cobrança no Asaas")
 
 
+async def listar_cobrancas(
+    cliente: httpx.AsyncClient, url_base: str, api_key: str, *,
+    customer_id: str | None = None, status: str | None = None,
+    limit: int = 50, offset: int = 0,
+) -> dict:
+    """Lista cobranças (paginado). Devolve a resposta crua do Asaas: `data` (lista de cobranças),
+    `totalCount` e `hasMore`, usados pela página de administração de pagamentos."""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if customer_id:
+        params["customer"] = customer_id
+    if status:
+        params["status"] = status
+    resposta = await cliente.get(
+        f"{url_base}/payments", headers={"access_token": api_key}, params=params,
+    )
+    return _json_ou_erro(resposta, "listar cobranças no Asaas")
+
+
 async def consultar_cobranca(cliente: httpx.AsyncClient, url_base: str, api_key: str, payment_id: str) -> dict:
     """Consulta o status atual de uma cobrança (status: PENDING, RECEIVED, OVERDUE, etc.)."""
     resposta = await cliente.get(
         f"{url_base}/payments/{payment_id}", headers={"access_token": api_key},
     )
     return _json_ou_erro(resposta, "consultar cobrança no Asaas")
+
+
+async def excluir_cobranca(cliente: httpx.AsyncClient, url_base: str, api_key: str, payment_id: str) -> dict:
+    """Exclui/cancela uma cobrança (só é permitido para cobranças ainda não pagas)."""
+    resposta = await cliente.delete(
+        f"{url_base}/payments/{payment_id}", headers={"access_token": api_key},
+    )
+    return _json_ou_erro(resposta, "cancelar cobrança no Asaas")
 
 
 def _json_ou_erro(resposta: httpx.Response, acao: str) -> dict:
