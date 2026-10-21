@@ -1847,11 +1847,25 @@ class AsaasIntegracaoTest(unittest.TestCase):
             async with self._cliente(_json(200, {"id": "pay_2", "billingType": "PIX"})) as cliente:
                 return await asaas_integracao.criar_cobranca(
                     cliente, "https://api-sandbox.asaas.com/v3", "chave", "cus_1",
-                    150.0, "2026-11-01", billing_type="PIX",
+                    "2026-11-01", billing_type="PIX", valor=150.0,
                 )
         resultado = _rodar(ir())
         self.assertEqual(resultado["billingType"], "PIX")
         self.assertEqual(json.loads(self.ultima_requisicao.content)["billingType"], "PIX")
+
+    def test_criar_cobranca_parcelada_manda_installment_count_e_total_value_sem_value(self):
+        async def ir():
+            async with self._cliente(_json(200, {"id": "pay_4", "installment": "inst_1", "installmentNumber": 1})) as cliente:
+                return await asaas_integracao.criar_cobranca(
+                    cliente, "https://api-sandbox.asaas.com/v3", "chave", "cus_1", "2026-11-01",
+                    parcelas=3, valor_total=300.0,
+                )
+        resultado = _rodar(ir())
+        self.assertEqual(resultado["installment"], "inst_1")
+        corpo = json.loads(self.ultima_requisicao.content)
+        self.assertEqual(corpo["installmentCount"], 3)
+        self.assertEqual(corpo["totalValue"], 300.0)
+        self.assertNotIn("value", corpo)
 
     def test_excluir_cobranca_chama_delete_no_id(self):
         async def ir():
@@ -1868,7 +1882,7 @@ class AsaasIntegracaoTest(unittest.TestCase):
         async def ir():
             async with self._cliente(httpx.Response(400, json={"errors": [{"description": "Cliente inválido"}]})) as cliente:
                 return await asaas_integracao.criar_cobranca(
-                    cliente, "https://api-sandbox.asaas.com/v3", "chave", "cus_invalido", 10.0, "2026-11-01",
+                    cliente, "https://api-sandbox.asaas.com/v3", "chave", "cus_invalido", "2026-11-01", valor=10.0,
                 )
         with self.assertRaises(asaas_integracao.ErroAsaas):
             _rodar(ir())
