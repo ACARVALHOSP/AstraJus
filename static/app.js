@@ -3153,18 +3153,24 @@ function _criarGrupoSites(prefixo) {
   };
 }
 
-// Busca um CEP no ViaCEP e devolve {logradouro, bairro, localidade, uf} ou null (CEP incompleto,
-// inexistente ou falha de rede - o usuário sempre pode preencher o endereço manualmente).
+// Busca um CEP no ViaCEP. Devolve {ok: true, dados} ou {ok: false, motivo}, distinguindo "CEP não
+// existe" (resposta da própria ViaCEP) de falha de rede/CORS/bloqueio (sempre registrada no
+// console, já que o motivo real não aparece pra quem está usando o formulário).
 async function _buscarCep(cep) {
   const digitos = (cep || "").replace(/\D/g, "");
-  if (digitos.length !== 8) return null;
+  if (digitos.length !== 8) return { ok: false, motivo: "formato" };
   try {
     const resposta = await fetch(`https://viacep.com.br/ws/${digitos}/json/`);
-    if (!resposta.ok) return null;
+    if (!resposta.ok) {
+      console.error(`ViaCEP respondeu HTTP ${resposta.status} para o CEP ${digitos}.`);
+      return { ok: false, motivo: "http" };
+    }
     const dados = await resposta.json();
-    return dados.erro ? null : dados;
-  } catch {
-    return null;
+    if (dados.erro) return { ok: false, motivo: "nao_encontrado" };
+    return { ok: true, dados };
+  } catch (erro) {
+    console.error("Falha ao consultar o ViaCEP (rede, CORS ou bloqueio pelo navegador):", erro);
+    return { ok: false, motivo: "rede" };
   }
 }
 
@@ -3213,12 +3219,15 @@ function _criarGrupoEnderecos(prefixo) {
       if (digitos.length !== 8 || digitos === _cepEmAndamento) return;
       _cepEmAndamento = digitos;
       statusCep.textContent = "Buscando CEP…";
-      const encontrado = await _buscarCep(inputCep.value);
+      const resultado = await _buscarCep(inputCep.value);
       if (inputCep.value.replace(/\D/g, "") !== digitos) return; // usuário já mudou o CEP
-      if (!encontrado) {
-        statusCep.textContent = "CEP não encontrado.";
+      if (!resultado.ok) {
+        statusCep.textContent = resultado.motivo === "nao_encontrado"
+          ? "CEP não encontrado."
+          : "Não foi possível buscar o CEP agora. Preencha o endereço manualmente.";
         return;
       }
+      const encontrado = resultado.dados;
       inputRua.value = encontrado.logradouro || inputRua.value;
       inputBairro.value = encontrado.bairro || inputBairro.value;
       inputCidade.value = encontrado.localidade || inputCidade.value;
