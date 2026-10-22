@@ -2015,7 +2015,13 @@ document.addEventListener("click", (ev) => {
   if (!ev.target.closest(".pub-oab-combo")) _fecharTodosComboMenusOab();
 });
 document.addEventListener("keydown", (ev) => {
-  if (ev.key === "Escape") _fecharTodosComboMenusOab();
+  if (ev.key === "Escape") {
+    _fecharTodosComboMenusOab();
+    // Painéis do header (notificações e busca). As funções são declaradas no fim do arquivo
+    // (function declarations são hoisted, então já existem quando este listener dispara).
+    _fecharPainelNotificacoes();
+    _fecharPainelBusca();
+  }
 });
 
 // --- Clientes e casos (Fase 1 da gestão de escritório) ------------------------------------
@@ -4867,3 +4873,149 @@ document.getElementById("form-honorario").addEventListener("submit", async (even
   botaoTabela.addEventListener("click", () => selecionar("tabela"));
   botaoCards.addEventListener("click", () => selecionar("cards"));
 })();
+
+// --- Header: hambúrguer / side-nav rail ----------------------------------------------------
+const _mqMobile = window.matchMedia("(max-width: 768px)");
+const _sideNav = document.getElementById("side-nav");
+const _sideNavOverlay = document.getElementById("side-nav-overlay");
+const _btnMenuToggle = document.getElementById("btn-menu-toggle");
+
+function _sideNavAbrir() {
+  _sideNav.classList.add("cds--side-nav--expanded");
+  if (_mqMobile.matches) _sideNavOverlay.classList.add("cds--side-nav__overlay-active");
+  _btnMenuToggle.setAttribute("aria-expanded", "true");
+  _btnMenuToggle.setAttribute("aria-label", "Fechar menu");
+}
+function _sideNavFechar() {
+  _sideNav.classList.remove("cds--side-nav--expanded");
+  _sideNavOverlay.classList.remove("cds--side-nav__overlay-active");
+  _btnMenuToggle.setAttribute("aria-expanded", "false");
+  _btnMenuToggle.setAttribute("aria-label", "Abrir menu");
+}
+function _sideNavInicializar() {
+  if (_mqMobile.matches) { _sideNavFechar(); return; }
+  const salvo = localStorage.getItem("cnj_side_nav_expanded");
+  if (salvo === "1") _sideNavAbrir(); else _sideNavFechar();
+}
+_btnMenuToggle.addEventListener("click", () => {
+  const vaiAbrir = !_sideNav.classList.contains("cds--side-nav--expanded");
+  if (vaiAbrir) _sideNavAbrir(); else _sideNavFechar();
+  if (!_mqMobile.matches) localStorage.setItem("cnj_side_nav_expanded", vaiAbrir ? "1" : "0");
+});
+_sideNavOverlay.addEventListener("click", _sideNavFechar);
+_mqMobile.addEventListener("change", _sideNavInicializar);
+_sideNavInicializar();
+
+document.getElementById("link-home").addEventListener("click", (ev) => {
+  ev.preventDefault();
+  const abaProcesso = abas.find((a) => a.painel.id === "aba-processo");
+  if (abaProcesso) selecionarAba(abaProcesso);
+  if (_mqMobile.matches) _sideNavFechar();
+});
+
+// --- Header: notificações e busca (abrir um fecha o outro) ---------------------------------
+const _btnNotificacoesToggle = document.getElementById("btn-notificacoes-toggle");
+const _painelNotificacoes = document.getElementById("header-notificacoes-painel");
+const _btnBuscaToggle = document.getElementById("btn-busca-toggle");
+const _painelBusca = document.getElementById("header-busca-painel");
+const _inputBusca = document.getElementById("header-busca-input");
+
+function _fecharPainelNotificacoes() {
+  _painelNotificacoes.hidden = true;
+  _btnNotificacoesToggle.setAttribute("aria-expanded", "false");
+}
+function _fecharPainelBusca() {
+  _painelBusca.hidden = true;
+  _btnBuscaToggle.setAttribute("aria-expanded", "false");
+}
+_btnNotificacoesToggle.addEventListener("click", () => {
+  const abrindo = _painelNotificacoes.hidden;
+  _fecharPainelBusca();
+  if (abrindo) {
+    _painelNotificacoes.hidden = false;
+    _btnNotificacoesToggle.setAttribute("aria-expanded", "true");
+  } else {
+    _fecharPainelNotificacoes();
+  }
+});
+document.addEventListener("click", (ev) => {
+  if (!_painelNotificacoes.hidden && !ev.target.closest("#header-notificacoes-painel") && !ev.target.closest("#btn-notificacoes-toggle")) {
+    _fecharPainelNotificacoes();
+  }
+  if (!_painelBusca.hidden && !ev.target.closest("#header-busca-painel") && !ev.target.closest("#btn-busca-toggle")) {
+    _fecharPainelBusca();
+  }
+});
+
+// --- Header: busca global (cliente, caso, número de processo) ------------------------------
+_btnBuscaToggle.addEventListener("click", async () => {
+  const abrindo = _painelBusca.hidden;
+  _fecharPainelNotificacoes();
+  if (!abrindo) { _fecharPainelBusca(); return; }
+  _painelBusca.hidden = false;
+  _btnBuscaToggle.setAttribute("aria-expanded", "true");
+  _inputBusca.focus();
+  if (!_cache.clientes.length || !_cache.casos.length) {
+    limpar(document.getElementById("header-busca-resultados"));
+    try {
+      const [{ clientes }, { casos }] = await Promise.all([_buscarJson("/clientes"), _buscarJson("/casos")]);
+      _cache.clientes = clientes || [];
+      _cache.casos = casos || [];
+    } catch (_) { /* busca fica limitada ao que já estava em cache */ }
+  }
+});
+
+function _buscaGlobalResultados(termo) {
+  const t = termo.toLowerCase().trim();
+  const tDigitos = t.replace(/\D/g, "");
+  if (!t) return [];
+  const resultados = [];
+  for (const c of _cache.clientes) {
+    if ((c.nome || "").toLowerCase().includes(t)) {
+      resultados.push({ tipo: "cliente", id: c.id, rotulo: c.nome, sub: "Cliente" });
+    }
+  }
+  for (const c of _cache.casos) {
+    const tituloBate = (c.titulo || "").toLowerCase().includes(t);
+    const processoBate = tDigitos.length >= 3 && (c.processos || []).some((p) => p.replace(/\D/g, "").includes(tDigitos));
+    if (tituloBate || processoBate) {
+      resultados.push({ tipo: "caso", id: c.id, rotulo: c.titulo || "(sem título)", sub: processoBate ? "Caso · " + (c.processos || []).find((p) => p.replace(/\D/g, "").includes(tDigitos)) : "Caso" });
+    }
+  }
+  return resultados.slice(0, 20);
+}
+
+function _renderizarResultadosBusca(resultados) {
+  const container = document.getElementById("header-busca-resultados");
+  limpar(container);
+  if (!resultados.length) {
+    container.appendChild(el("p", { class: "campo-ajuda", texto: "Nenhum resultado." }));
+    return;
+  }
+  for (const r of resultados) {
+    const botao = el("button", {
+      class: "header-busca-resultado-item", type: "button",
+      texto: `${r.rotulo} — ${r.sub}`,
+    });
+    botao.addEventListener("click", async () => {
+      _fecharPainelBusca();
+      _inputBusca.value = "";
+      limpar(container);
+      if (_mqMobile.matches) _sideNavFechar();
+      if (r.tipo === "cliente") {
+        const abaContatos = abas.find((a) => a.painel.id === "aba-contatos");
+        if (abaContatos) selecionarAba(abaContatos);
+        await abrirContato(r.id);
+      } else {
+        const abaCasos = abas.find((a) => a.painel.id === "aba-casos");
+        if (abaCasos) selecionarAba(abaCasos);
+        await abrirCaso(r.id);
+      }
+    });
+    container.appendChild(botao);
+  }
+}
+
+_inputBusca.addEventListener("input", () => {
+  _renderizarResultadosBusca(_buscaGlobalResultados(_inputBusca.value));
+});

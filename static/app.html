@@ -22,10 +22,6 @@ body { margin: 0; min-height: 100dvh; }
 }
 .skip-link:focus { left: 0.5rem; top: 0.5rem; }
 
-.app-cabecalho { border-bottom: 1px solid var(--cds-border-subtle, #e0e0e0); padding: 1.5rem 1rem; }
-.app-cabecalho-interno { max-width: clamp(960px, 90vw, 1600px); margin: 0 auto; }
-.app-cabecalho-topo { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-.app-cabecalho-topo h1 { font-size: var(--fonte-titulo); font-weight: 600; margin: 0.25rem 0 0; }
 .checkbox-lembrar { display: flex; align-items: center; gap: 0.4rem; font-size: var(--fonte-base); white-space: nowrap; }
 .checkbox-lembrar input { width: auto; }
 .token-acoes { display: flex; gap: 0.5rem; }
@@ -33,15 +29,6 @@ body { margin: 0; min-height: 100dvh; }
 .app-layout {
   display: flex; align-items: flex-start; gap: 2rem;
   max-width: clamp(960px, 90vw, 1600px); margin: 0 auto; padding: 1.5rem 1rem 3rem;
-}
-/* Carbon Side Nav overrides — strip fixed/absolute positioning so it fits the flex layout */
-nav.cds--side-nav {
-  position: sticky; top: 1.5rem; inset: unset;
-  flex: 0 0 16rem; max-inline-size: 16rem;
-  block-size: auto; max-block-size: calc(100dvh - 3rem);
-  overflow-y: auto; overflow-x: hidden;
-  border-inline-end: 1px solid var(--cds-border-subtle, #e0e0e0);
-  transition: none; will-change: auto;
 }
 /* Category header buttons — não permitem hover visual quando já-ativos no grupo */
 .cds--side-nav__item--active > .cds--side-nav__submenu:hover { background: none; }
@@ -59,22 +46,67 @@ nav.cds--side-nav {
   content: ""; inline-size: 3px; inset-block: 0; inset-inline-start: 0;
 }
 .app-corpo { flex: 1 1 auto; min-width: 0; }
-@media (max-width: 768px) {
-  .app-layout { flex-direction: column; gap: 1rem; }
-  nav.cds--side-nav {
-    position: static; flex: none; width: 100%; max-inline-size: 100%;
-    block-size: auto; max-block-size: none;
-    border-inline-end: none; border-block-end: 1px solid var(--cds-border-subtle, #e0e0e0);
-    overflow-x: auto; overflow-y: visible;
+nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
+
+@media (min-width: 769px) {
+  .cds--side-nav--rail:not(.cds--side-nav--expanded) .cds--side-nav__submenu-title,
+  .cds--side-nav--rail:not(.cds--side-nav--expanded) .cds--side-nav__submenu-chevron {
+    display: none;
   }
-  .cds--side-nav__navigation { display: flex; }
-  .cds--side-nav__items { display: flex !important; flex-direction: row; padding-block: 0; }
-  .cds--side-nav__item { flex: none; }
-  .cds--side-nav__submenu { display: none !important; }
-  .cds--side-nav__menu { max-block-size: none !important; visibility: visible !important; display: flex; }
-  .cds--side-nav__menu-item { flex: none; }
-  .cds--side-nav__menu button.cds--side-nav__link { padding-inline-start: 1rem; white-space: nowrap; block-size: 3rem; min-block-size: 3rem; }
-  .cds--side-nav__link[aria-selected="true"]::before { inset-inline: 0; inset-block: auto; block-size: 3px; inline-size: auto; inset-block-end: 0; }
+  .cds--side-nav--rail:not(.cds--side-nav--expanded) .cds--side-nav__submenu {
+    justify-content: center; padding-inline: 0;
+  }
+  .cds--side-nav--rail:not(.cds--side-nav--expanded) .cds--side-nav__icon:not(.cds--side-nav__submenu-chevron) {
+    margin-inline-end: 0;
+  }
+  .cds--side-nav--rail:not(.cds--side-nav--expanded) .cds--side-nav__item {
+    position: relative;
+  }
+  .cds--side-nav--rail:not(.cds--side-nav--expanded) .cds--side-nav__menu {
+    position: absolute; inset-inline-start: 3rem; top: 0;
+    inline-size: 14rem; max-block-size: none !important;
+    visibility: hidden; opacity: 0; pointer-events: none;
+    background: var(--cds-layer, #f4f4f4);
+    box-shadow: 2px 2px 6px rgba(0,0,0,.15);
+    border-radius: 0 4px 4px 0;
+    transition: opacity 0.11s;
+    z-index: 8100;
+  }
+  .cds--side-nav--rail:not(.cds--side-nav--expanded) .cds--side-nav__item:hover > .cds--side-nav__menu,
+  .cds--side-nav--rail:not(.cds--side-nav--expanded) .cds--side-nav__item:focus-within > .cds--side-nav__menu {
+    visibility: visible; opacity: 1; pointer-events: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  .cds--content { margin-inline-start: 0 !important; }
+  #aba-acesso-botao { padding-inline: 0.5rem; font-size: 0.75rem; }
+  #status-conexao { font-size: 0.625rem; padding-inline: 0.375rem; }
+  /* No mobile o rail fica totalmente fora da tela quando fechado (vira drawer) */
+  .cds--side-nav--rail:not(.cds--side-nav--expanded) { transform: translateX(-100%); }
+}
+
+.header-busca { position: relative; display: flex; align-items: center; }
+.header-busca-painel {
+  position: absolute; inset-inline-end: 0; top: 100%;
+  inline-size: 20rem; max-inline-size: 90vw;
+  background: var(--cds-layer, #f4f4f4);
+  box-shadow: 0 4px 8px rgba(0,0,0,.15);
+  padding: 0.75rem; z-index: 8100;
+}
+.header-busca-resultados { margin-top: 0.5rem; max-height: 16rem; overflow-y: auto; }
+.header-busca-resultado-item {
+  display: block; width: 100%; text-align: left; padding: 0.5rem;
+  background: none; border: none; cursor: pointer; font-size: var(--fonte-base);
+  border-bottom: 1px solid var(--cds-border-subtle, #e0e0e0);
+}
+.header-busca-resultado-item:hover { background: var(--cds-layer-hover-01, #e8e8e8); }
+.header-notificacoes-painel {
+  position: absolute; inset-inline-end: 0; top: 3rem;
+  inline-size: 18rem;
+  background: var(--cds-layer, #f4f4f4);
+  box-shadow: 0 4px 8px rgba(0,0,0,.15);
+  z-index: 8100;
 }
 .app-formulario {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -409,28 +441,46 @@ nav.cds--side-nav {
 <a class="skip-link" href="#aba-publicacoes-oab-botao">Ir para Publicações monitoradas</a>
 <a class="skip-link" href="#aba-monitoramentos-botao">Ir para Monitoramentos</a>
 
-<header class="app-cabecalho">
-<div class="app-cabecalho-interno">
-<div class="app-cabecalho-topo">
-<div>
-<p class="cds--label">AstraJus</p>
-<h1>Gestão processual</h1>
+<header class="cds--header" aria-label="AstraJus">
+<button class="cds--header__action cds--header__menu-trigger" type="button" id="btn-menu-toggle" aria-label="Abrir menu" aria-expanded="false" aria-controls="side-nav">
+<svg focusable="false" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><rect x="2" y="14.8" width="16" height="1.2"/><rect x="2" y="11.2" width="16" height="1.2"/><rect x="2" y="7.6" width="16" height="1.2"/><rect x="2" y="4" width="16" height="1.2"/></svg>
+</button>
+<a class="cds--header__name" href="#" id="link-home">
+<span class="cds--header__name--prefix">AstraJus&nbsp;</span>Gestão processual
+</a>
+<div class="cds--header__global">
+<div class="header-busca" id="header-busca">
+<button class="cds--header__action" type="button" id="btn-busca-toggle" aria-label="Buscar" aria-expanded="false" aria-controls="header-busca-painel">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M15,14.3L10.7,10c1.9-2.3,1.6-5.8-0.7-7.7S4.2,0.7,2.3,3S0.7,8.8,3,10.7c2,1.7,5,1.7,7,0l4.3,4.3L15,14.3z M2,6.5C2,4,4,2,6.5,2S11,4,11,6.5S9,11,6.5,11S2,9,2,6.5z"/></svg>
+</button>
+<div class="header-busca-painel" id="header-busca-painel" hidden>
+<input class="cds--text-input" type="search" id="header-busca-input" placeholder="Buscar cliente, caso ou número de processo" autocomplete="off">
+<div id="header-busca-resultados" class="header-busca-resultados"></div>
 </div>
-<div style="display:flex;align-items:center;gap:0.75rem">
+</div>
+<div style="position:relative">
+<button class="cds--header__action" type="button" id="btn-notificacoes-toggle" aria-label="Notificações" aria-expanded="false" aria-controls="header-notificacoes-painel">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M14.4,10.1L13,8.8V6.5c0-2.6-1.9-4.7-4.5-5v-1h-1v1C5,1.8,3,3.9,3,6.5v2.3l-1.4,1.3c-0.1,0.1-0.2,0.2-0.1,0.4V12c0,0.3,0.2,0.5,0.4,0.5c0,0,0,0,0.1,0h3.5C5.5,13.9,6.6,15,8,15s2.5-1.1,2.5-2.5H14c0.3,0,0.5-0.2,0.5-0.4c0,0,0,0,0-0.1v-1.5C14.5,10.4,14.4,10.2,14.4,10.1z M8,14c-0.8,0-1.5-0.7-1.5-1.5h3C9.5,13.3,8.8,14,8,14z M13.5,11.5h-11v-0.8l1.3-1.4C3.9,9.3,4,9.1,4,9V6.5c0-2.2,1.8-4,4-4s4,1.8,4,4V9c0,0.1,0.1,0.3,0.1,0.4l1.4,1.3V11.5z"/></svg>
+</button>
+<div class="header-notificacoes-painel" id="header-notificacoes-painel" hidden>
+<p class="campo-ajuda" style="padding:1rem">Nenhuma notificação</p>
+</div>
+</div>
+<div style="display:flex;align-items:center;gap:0.75rem;padding-inline:1rem">
 <button class="cds--btn cds--btn--ghost cds--btn--sm" id="aba-acesso-botao" role="tab" aria-selected="true" aria-controls="aba-acesso" type="button">Acesso</button>
 <span id="status-conexao" class="cds--tag cds--tag--gray">Sem token</span>
-</div>
 </div>
 </div>
 </header>
 
 <div class="app-layout">
 
-<nav class="cds--side-nav cds--side-nav--fixed" aria-label="Navegação principal">
+<nav class="cds--side-nav cds--side-nav--rail" id="side-nav" aria-label="Navegação principal">
 <div class="cds--side-nav__navigation">
 <ul class="cds--side-nav__items" role="tablist" aria-orientation="vertical">
 <li role="presentation" class="cds--side-nav__item">
 <button class="cds--side-nav__submenu" type="button" aria-expanded="true">
+<svg class="cds--side-nav__icon" width="20" height="20" viewBox="0 0 16 16" aria-hidden="true"><path d="M15,14.3L10.7,10c1.9-2.3,1.6-5.8-0.7-7.7S4.2,0.7,2.3,3S0.7,8.8,3,10.7c2,1.7,5,1.7,7,0l4.3,4.3L15,14.3z M2,6.5C2,4,4,2,6.5,2S11,4,11,6.5S9,11,6.5,11S2,9,2,6.5z"/></svg>
 <span class="cds--side-nav__submenu-title">Consulta</span>
 </button>
 <ul class="cds--side-nav__menu" role="presentation">
@@ -444,6 +494,7 @@ nav.cds--side-nav {
 </li>
 <li role="presentation" class="cds--side-nav__item">
 <button class="cds--side-nav__submenu" type="button" aria-expanded="true">
+<svg class="cds--side-nav__icon" width="20" height="20" viewBox="0 0 32 32" aria-hidden="true"><path d="M28,2H16a2.002,2.002,0,0,0-2,2V14H4a2.002,2.002,0,0,0-2,2V30H30V4A2.0023,2.0023,0,0,0,28,2ZM9,28V21h4v7Zm19,0H15V20a1,1,0,0,0-1-1H8a1,1,0,0,0-1,1v8H4V16H16V4H28Z"/><rect x="18" y="8" width="2" height="2"/><rect x="24" y="8" width="2" height="2"/><rect x="18" y="14" width="2" height="2"/><rect x="24" y="14" width="2" height="2"/><rect x="18" y="19.9996" width="2" height="2"/><rect x="24" y="19.9996" width="2" height="2"/></svg>
 <span class="cds--side-nav__submenu-title">Escritório</span>
 </button>
 <ul class="cds--side-nav__menu" role="presentation">
@@ -457,6 +508,7 @@ nav.cds--side-nav {
 </li>
 <li role="presentation" class="cds--side-nav__item">
 <button class="cds--side-nav__submenu" type="button" aria-expanded="true">
+<svg class="cds--side-nav__icon" width="20" height="20" viewBox="0 0 32 32" aria-hidden="true"><path d="M23,20.5151c0-4.6152-3.78-5.1411-6.8171-5.563-3.31-.4609-5.1829-.86-5.1829-3.71C11,8.8491,13.5071,8,15.6538,8a6.7538,6.7538,0,0,1,5.5681,2.6279l1.5562-1.2558A8.6508,8.6508,0,0,0,17,6.0962V3H15V6.022c-3.6152.2192-6,2.26-6,5.22,0,4.73,3.83,5.2627,6.9075,5.69C19.16,17.3848,21,17.7744,21,20.5151,21,23.5474,17.8674,24,16,24c-3.4294,0-4.8782-.9639-6.2219-2.6279L8.2219,22.6279A8.4382,8.4382,0,0,0,15,25.9648V29h2V25.9551C20.7256,25.6509,23,23.6279,23,20.5151Z"/></svg>
 <span class="cds--side-nav__submenu-title">Financeiro</span>
 </button>
 <ul class="cds--side-nav__menu" role="presentation">
@@ -470,6 +522,7 @@ nav.cds--side-nav {
 </li>
 <li role="presentation" class="cds--side-nav__item">
 <button class="cds--side-nav__submenu" type="button" aria-expanded="true">
+<svg class="cds--side-nav__icon" width="20" height="20" viewBox="0 0 32 32" aria-hidden="true"><path d="M12,29a1,1,0,0,1-.92-.62L6.33,17H2V15H7a1,1,0,0,1,.92.62L12,25.28,20.06,3.65A1,1,0,0,1,21,3a1,1,0,0,1,.93.68L25.72,15H30v2H25a1,1,0,0,1-.95-.68L21,7,12.94,28.35A1,1,0,0,1,12,29Z"/></svg>
 <span class="cds--side-nav__submenu-title">Monitoramento</span>
 </button>
 <ul class="cds--side-nav__menu" role="presentation">
@@ -483,6 +536,7 @@ nav.cds--side-nav {
 </li>
 <li role="presentation" class="cds--side-nav__item">
 <button class="cds--side-nav__submenu" type="button" aria-expanded="true">
+<svg class="cds--side-nav__icon" width="20" height="20" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5,8.4c0-0.1,0-0.3,0-0.4c0-0.1,0-0.3,0-0.4l1-0.8c0.4-0.3,0.4-0.9,0.2-1.3l-1.2-2C13.3,3.2,13,3,12.6,3c-0.1,0-0.2,0-0.3,0.1l-1.2,0.4c-0.2-0.1-0.4-0.3-0.7-0.4l-0.3-1.3C10.1,1.3,9.7,1,9.2,1H6.8c-0.5,0-0.9,0.3-1,0.8L5.6,3.1C5.3,3.2,5.1,3.3,4.9,3.4L3.7,3C3.6,3,3.5,3,3.4,3C3,3,2.7,3.2,2.5,3.5l-1.2,2C1.1,5.9,1.2,6.4,1.6,6.8l0.9,0.9c0,0.1,0,0.3,0,0.4c0,0.1,0,0.3,0,0.4L1.6,9.2c-0.4,0.3-0.5,0.9-0.2,1.3l1.2,2C2.7,12.8,3,13,3.4,13c0.1,0,0.2,0,0.3-0.1l1.2-0.4c0.2,0.1,0.4,0.3,0.7,0.4l0.3,1.3c0.1,0.5,0.5,0.8,1,0.8h2.4c0.5,0,0.9-0.3,1-0.8l0.3-1.3c0.2-0.1,0.4-0.2,0.7-0.4l1.2,0.4c0.1,0,0.2,0.1,0.3,0.1c0.4,0,0.7-0.2,0.9-0.5l1.1-2c0.2-0.4,0.2-0.9-0.2-1.3L13.5,8.4z M12.6,12l-1.7-0.6c-0.4,0.3-0.9,0.6-1.4,0.8L9.2,14H6.8l-0.4-1.8c-0.5-0.2-0.9-0.5-1.4-0.8L3.4,12l-1.2-2l1.4-1.2c-0.1-0.5-0.1-1.1,0-1.6L2.2,6l1.2-2l1.7,0.6C5.5,4.2,6,4,6.5,3.8L6.8,2h2.4l0.4,1.8c0.5,0.2,0.9,0.5,1.4,0.8L12.6,4l1.2,2l-1.4,1.2c0.1,0.5,0.1,1.1,0,1.6l1.4,1.2L12.6,12z"/><path d="M8,11c-1.7,0-3-1.3-3-3s1.3-3,3-3s3,1.3,3,3C11,9.6,9.7,11,8,11C8,11,8,11,8,11z M8,6C6.9,6,6,6.8,6,7.9C6,7.9,6,8,6,8c0,1.1,0.8,2,1.9,2c0,0,0.1,0,0.1,0c1.1,0,2-0.8,2-1.9c0,0,0-0.1,0-0.1C10,6.9,9.2,6,8,6C8.1,6,8,6,8,6Z"/></svg>
 <span class="cds--side-nav__submenu-title">Ferramentas</span>
 </button>
 <ul class="cds--side-nav__menu" role="presentation">
@@ -501,7 +555,9 @@ nav.cds--side-nav {
 </div>
 </nav>
 
-<main id="conteudo" class="app-corpo">
+<div class="cds--side-nav__overlay" id="side-nav-overlay"></div>
+
+<main id="conteudo" class="app-corpo cds--content">
 
 <section id="aba-acesso" role="tabpanel" aria-labelledby="aba-acesso-botao">
 <p class="campo-ajuda">Cole o token recebido por e-mail para liberar as consultas. Ele fica só neste navegador.</p>
