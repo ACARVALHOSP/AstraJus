@@ -75,8 +75,41 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 email TEXT,
                 observacoes TEXT,
                 criado_em TEXT NOT NULL,
-                asaas_customer_id TEXT
+                asaas_customer_id TEXT,
+                tipo_pessoa TEXT NOT NULL DEFAULT 'fisica',
+                perfil TEXT NOT NULL DEFAULT 'cliente',
+                site TEXT,
+                endereco_rua TEXT,
+                endereco_numero TEXT,
+                endereco_bairro TEXT,
+                endereco_complemento TEXT,
+                endereco_cidade TEXT,
+                endereco_estado TEXT,
+                endereco_pais TEXT,
+                rg_numero TEXT,
+                rg_emissao TEXT,
+                rg_emissor TEXT,
+                ctps_numero TEXT,
+                ctps_serie TEXT,
+                ctps_emissao TEXT,
+                ctps_uf TEXT,
+                pis TEXT,
+                estado_civil TEXT,
+                nacionalidade TEXT,
+                profissao TEXT
             );
+
+            -- Telefones de um cliente/contato (Fase 1 do cadastro completo): um cliente pode ter
+            -- vários. clientes.telefone continua existindo, sincronizado com o primeiro telefone
+            -- desta lista, para não quebrar a listagem e a integração Asaas (ver _salvar_telefones).
+            CREATE TABLE IF NOT EXISTS cliente_telefones (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cliente_id TEXT NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
+                telefone TEXT NOT NULL,
+                ordem INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_cliente_telefones_cliente ON cliente_telefones (cliente_id);
 
             CREATE TABLE IF NOT EXISTS casos (
                 id TEXT PRIMARY KEY,
@@ -220,11 +253,39 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
 
 
 def _migrar_colunas_clientes(conexao: sqlite3.Connection) -> None:
-    """Bancos criados antes da integração Asaas não têm asaas_customer_id em `clientes`."""
+    """Bancos criados antes da integração Asaas (ou antes do cadastro completo) não têm todas
+    as colunas atuais de `clientes`."""
     colunas = {linha[1] for linha in conexao.execute("PRAGMA table_info(clientes)")}
     if "asaas_customer_id" not in colunas:
         with conexao:
             conexao.execute("ALTER TABLE clientes ADD COLUMN asaas_customer_id TEXT")
+    novas_colunas = {
+        "tipo_pessoa": "TEXT NOT NULL DEFAULT 'fisica'",
+        "perfil": "TEXT NOT NULL DEFAULT 'cliente'",
+        "site": "TEXT",
+        "endereco_rua": "TEXT",
+        "endereco_numero": "TEXT",
+        "endereco_bairro": "TEXT",
+        "endereco_complemento": "TEXT",
+        "endereco_cidade": "TEXT",
+        "endereco_estado": "TEXT",
+        "endereco_pais": "TEXT",
+        "rg_numero": "TEXT",
+        "rg_emissao": "TEXT",
+        "rg_emissor": "TEXT",
+        "ctps_numero": "TEXT",
+        "ctps_serie": "TEXT",
+        "ctps_emissao": "TEXT",
+        "ctps_uf": "TEXT",
+        "pis": "TEXT",
+        "estado_civil": "TEXT",
+        "nacionalidade": "TEXT",
+        "profissao": "TEXT",
+    }
+    for coluna, definicao in novas_colunas.items():
+        if coluna not in colunas:
+            with conexao:
+                conexao.execute(f"ALTER TABLE clientes ADD COLUMN {coluna} {definicao}")
 
 
 def _migrar_colunas_lancamentos(conexao: sqlite3.Connection) -> None:
@@ -464,37 +525,103 @@ class RegistroClientesCasos:
 
     def criar_cliente(
         self, nome: str, cpf_cnpj: str | None, telefone: str | None, email: str | None,
-        observacoes: str | None, agora,
+        observacoes: str | None, agora, *, telefones: list[str] | None = None,
+        detalhes: dict | None = None,
     ) -> dict:
         novo_id = uuid.uuid4().hex
         criado_em = agora().isoformat()
+        detalhes = detalhes or {}
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             conexao.execute(
-                "INSERT INTO clientes (id, nome, cpf_cnpj, telefone, email, observacoes, criado_em) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (novo_id, nome, cpf_cnpj, telefone, email, observacoes, criado_em),
+                "INSERT INTO clientes ("
+                "id, nome, cpf_cnpj, telefone, email, observacoes, criado_em, tipo_pessoa, perfil, "
+                "site, endereco_rua, endereco_numero, endereco_bairro, endereco_complemento, "
+                "endereco_cidade, endereco_estado, endereco_pais, rg_numero, rg_emissao, rg_emissor, "
+                "ctps_numero, ctps_serie, ctps_emissao, ctps_uf, pis, estado_civil, nacionalidade, "
+                "profissao"
+                ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    novo_id, nome, cpf_cnpj, telefone, email, observacoes, criado_em,
+                    detalhes.get("tipo_pessoa") or "fisica", detalhes.get("perfil") or "cliente",
+                    detalhes.get("site"), detalhes.get("endereco_rua"), detalhes.get("endereco_numero"),
+                    detalhes.get("endereco_bairro"), detalhes.get("endereco_complemento"),
+                    detalhes.get("endereco_cidade"), detalhes.get("endereco_estado"),
+                    detalhes.get("endereco_pais"), detalhes.get("rg_numero"), detalhes.get("rg_emissao"),
+                    detalhes.get("rg_emissor"), detalhes.get("ctps_numero"), detalhes.get("ctps_serie"),
+                    detalhes.get("ctps_emissao"), detalhes.get("ctps_uf"), detalhes.get("pis"),
+                    detalhes.get("estado_civil"), detalhes.get("nacionalidade"), detalhes.get("profissao"),
+                ),
             )
+            self._salvar_telefones(conexao, novo_id, telefones if telefones is not None else [telefone])
         return self.obter_cliente(novo_id)
+
+    @staticmethod
+    def _salvar_telefones(conexao: sqlite3.Connection, cliente_id: str, telefones: list[str] | None) -> None:
+        """Substitui a lista de telefones do cliente e mantém clientes.telefone sincronizado com
+        o primeiro item (usado pela listagem legada e pela integração Asaas)."""
+        limpos = [t.strip() for t in (telefones or []) if t and t.strip()]
+        conexao.execute("DELETE FROM cliente_telefones WHERE cliente_id = ?", (cliente_id,))
+        for ordem, telefone in enumerate(limpos):
+            conexao.execute(
+                "INSERT INTO cliente_telefones (cliente_id, telefone, ordem) VALUES (?, ?, ?)",
+                (cliente_id, telefone, ordem),
+            )
+        conexao.execute(
+            "UPDATE clientes SET telefone = ? WHERE id = ?", (limpos[0] if limpos else None, cliente_id)
+        )
+
+    def _telefones_do_cliente(self, conexao: sqlite3.Connection, cliente_id: str) -> list[str]:
+        cursor = conexao.execute(
+            "SELECT telefone FROM cliente_telefones WHERE cliente_id = ? ORDER BY ordem", (cliente_id,)
+        )
+        return [linha[0] for linha in cursor.fetchall()]
 
     def obter_cliente(self, cliente_id: str) -> dict | None:
         with _abrir(self.caminho) as conexao:
             linha = conexao.execute(
-                "SELECT id, nome, cpf_cnpj, telefone, email, observacoes, criado_em, asaas_customer_id "
+                "SELECT id, nome, cpf_cnpj, telefone, email, observacoes, criado_em, asaas_customer_id, "
+                "tipo_pessoa, perfil, site, endereco_rua, endereco_numero, endereco_bairro, "
+                "endereco_complemento, endereco_cidade, endereco_estado, endereco_pais, rg_numero, "
+                "rg_emissao, rg_emissor, ctps_numero, ctps_serie, ctps_emissao, ctps_uf, pis, "
+                "estado_civil, nacionalidade, profissao "
                 "FROM clientes WHERE id = ?",
                 (cliente_id,),
             ).fetchone()
-        return _linha_cliente(linha) if linha else None
+            if not linha:
+                return None
+            cliente = _linha_cliente(linha)
+            cliente["telefones"] = self._telefones_do_cliente(conexao, cliente_id)
+        return cliente
 
     def atualizar_cliente(
         self, cliente_id: str, nome: str, cpf_cnpj: str | None, telefone: str | None,
-        email: str | None, observacoes: str | None,
+        email: str | None, observacoes: str | None, *, telefones: list[str] | None = None,
+        detalhes: dict | None = None,
     ) -> dict | None:
+        detalhes = detalhes or {}
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             conexao.execute(
-                "UPDATE clientes SET nome = ?, cpf_cnpj = ?, telefone = ?, email = ?, observacoes = ? "
+                "UPDATE clientes SET nome = ?, cpf_cnpj = ?, telefone = ?, email = ?, observacoes = ?, "
+                "tipo_pessoa = ?, perfil = ?, site = ?, endereco_rua = ?, endereco_numero = ?, "
+                "endereco_bairro = ?, endereco_complemento = ?, endereco_cidade = ?, endereco_estado = ?, "
+                "endereco_pais = ?, rg_numero = ?, rg_emissao = ?, rg_emissor = ?, ctps_numero = ?, "
+                "ctps_serie = ?, ctps_emissao = ?, ctps_uf = ?, pis = ?, estado_civil = ?, "
+                "nacionalidade = ?, profissao = ? "
                 "WHERE id = ?",
-                (nome, cpf_cnpj, telefone, email, observacoes, cliente_id),
+                (
+                    nome, cpf_cnpj, telefone, email, observacoes,
+                    detalhes.get("tipo_pessoa") or "fisica", detalhes.get("perfil") or "cliente",
+                    detalhes.get("site"), detalhes.get("endereco_rua"), detalhes.get("endereco_numero"),
+                    detalhes.get("endereco_bairro"), detalhes.get("endereco_complemento"),
+                    detalhes.get("endereco_cidade"), detalhes.get("endereco_estado"),
+                    detalhes.get("endereco_pais"), detalhes.get("rg_numero"), detalhes.get("rg_emissao"),
+                    detalhes.get("rg_emissor"), detalhes.get("ctps_numero"), detalhes.get("ctps_serie"),
+                    detalhes.get("ctps_emissao"), detalhes.get("ctps_uf"), detalhes.get("pis"),
+                    detalhes.get("estado_civil"), detalhes.get("nacionalidade"), detalhes.get("profissao"),
+                    cliente_id,
+                ),
             )
+            self._salvar_telefones(conexao, cliente_id, telefones if telefones is not None else [telefone])
         return self.obter_cliente(cliente_id)
 
     def buscar_cliente_por_nome(self, nome: str) -> dict | None:
@@ -502,7 +629,11 @@ class RegistroClientesCasos:
         a mesma parte aparece em casos/publicações diferentes."""
         with _abrir(self.caminho) as conexao:
             linha = conexao.execute(
-                "SELECT id, nome, cpf_cnpj, telefone, email, observacoes, criado_em, asaas_customer_id "
+                "SELECT id, nome, cpf_cnpj, telefone, email, observacoes, criado_em, asaas_customer_id, "
+                "tipo_pessoa, perfil, site, endereco_rua, endereco_numero, endereco_bairro, "
+                "endereco_complemento, endereco_cidade, endereco_estado, endereco_pais, rg_numero, "
+                "rg_emissao, rg_emissor, ctps_numero, ctps_serie, ctps_emissao, ctps_uf, pis, "
+                "estado_civil, nacionalidade, profissao "
                 "FROM clientes WHERE lower(nome) = lower(?) LIMIT 1",
                 (nome,),
             ).fetchone()
@@ -511,7 +642,11 @@ class RegistroClientesCasos:
     def listar_clientes(self) -> list[dict]:
         with _abrir(self.caminho) as conexao:
             cursor = conexao.execute(
-                "SELECT id, nome, cpf_cnpj, telefone, email, observacoes, criado_em, asaas_customer_id "
+                "SELECT id, nome, cpf_cnpj, telefone, email, observacoes, criado_em, asaas_customer_id, "
+                "tipo_pessoa, perfil, site, endereco_rua, endereco_numero, endereco_bairro, "
+                "endereco_complemento, endereco_cidade, endereco_estado, endereco_pais, rg_numero, "
+                "rg_emissao, rg_emissor, ctps_numero, ctps_serie, ctps_emissao, ctps_uf, pis, "
+                "estado_civil, nacionalidade, profissao "
                 "FROM clientes ORDER BY nome"
             )
             return [_linha_cliente(linha) for linha in cursor.fetchall()]
@@ -1056,11 +1191,25 @@ class RegistroIntegracaoGoogle:
 
 
 def _linha_cliente(linha) -> dict:
-    id_, nome, cpf_cnpj, telefone, email, observacoes, criado_em, asaas_customer_id = linha
+    (
+        id_, nome, cpf_cnpj, telefone, email, observacoes, criado_em, asaas_customer_id,
+        tipo_pessoa, perfil, site, endereco_rua, endereco_numero, endereco_bairro,
+        endereco_complemento, endereco_cidade, endereco_estado, endereco_pais, rg_numero,
+        rg_emissao, rg_emissor, ctps_numero, ctps_serie, ctps_emissao, ctps_uf, pis,
+        estado_civil, nacionalidade, profissao,
+    ) = linha
     return {
         "id": id_, "nome": nome, "cpf_cnpj": cpf_cnpj, "telefone": telefone,
         "email": email, "observacoes": observacoes, "criado_em": criado_em,
         "asaas_customer_id": asaas_customer_id,
+        "tipo_pessoa": tipo_pessoa, "perfil": perfil, "site": site,
+        "endereco_rua": endereco_rua, "endereco_numero": endereco_numero,
+        "endereco_bairro": endereco_bairro, "endereco_complemento": endereco_complemento,
+        "endereco_cidade": endereco_cidade, "endereco_estado": endereco_estado,
+        "endereco_pais": endereco_pais, "rg_numero": rg_numero, "rg_emissao": rg_emissao,
+        "rg_emissor": rg_emissor, "ctps_numero": ctps_numero, "ctps_serie": ctps_serie,
+        "ctps_emissao": ctps_emissao, "ctps_uf": ctps_uf, "pis": pis,
+        "estado_civil": estado_civil, "nacionalidade": nacionalidade, "profissao": profissao,
     }
 
 
