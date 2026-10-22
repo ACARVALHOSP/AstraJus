@@ -4204,9 +4204,9 @@ async function abrirCaso(casoId) {
     document.getElementById("editar-caso-foro").value = caso.foro || "";
     document.getElementById("editar-caso-desfecho").value = caso.desfecho || "";
     document.getElementById("editar-caso-processos").value = (caso.processos || []).join(", ");
-    document.getElementById("editar-caso-autor").value = caso.autor || "";
-    document.getElementById("editar-caso-reu").value = caso.reu || "";
-    document.getElementById("editar-caso-advogados").value = caso.advogados || "";
+    _preencherCamposPartes("autor", (caso.autor || "").split(","));
+    _preencherCamposPartes("reu", (caso.reu || "").split(","));
+    _preencherCamposPartes("advogados", (caso.advogados || "").split(","));
     document.getElementById("form-caso-editar").dataset.casoId = casoId;
     document.getElementById("form-caso-partes").dataset.casoId = casoId;
     await _carregarAtividades(casoId);
@@ -4646,6 +4646,29 @@ document.getElementById("form-caso-editar").addEventListener("submit", async (ev
   }
 });
 
+// O cadastro persiste listas de nomes separadas por vírgula; a interface edita um nome por campo.
+function _lerCamposPartes(tipo) {
+  return Array.from(document.getElementById(`campos-caso-${tipo}`).querySelectorAll("input"))
+    .map((campo) => campo.value.trim()).filter(Boolean);
+}
+
+function _preencherCamposPartes(tipo, nomes) {
+  const container = document.getElementById(`campos-caso-${tipo}`);
+  const primeiro = document.getElementById(`editar-caso-${tipo}`);
+  const rotulo = { autor: "Autor", reu: "Réu", advogados: "Advogado" }[tipo];
+  const unicos = [...new Set(nomes.map((nome) => nome.trim()).filter(Boolean))];
+  limpar(container);
+  primeiro.value = unicos.shift() || "";
+  container.appendChild(primeiro);
+  for (const [indice, nome] of unicos.entries()) {
+    const id = `editar-caso-${tipo}-${indice + 2}`;
+    container.appendChild(el("div", { class: "cds--form-item" }, [
+      el("label", { class: "cds--label", for: id, texto: `${rotulo} ${indice + 2}` }),
+      el("input", { class: "cds--text-input", type: "text", id, value: nome, autocomplete: "off" }),
+    ]));
+  }
+}
+
 document.getElementById("btn-buscar-partes").addEventListener("click", () => {
   const casoId = document.getElementById("form-caso-partes").dataset.casoId;
   if (casoId) _buscarPartesDJEN(casoId);
@@ -4701,13 +4724,10 @@ async function _buscarPartesDJEN(casoId) {
     }
     const advsNomes = _nomes(advogados);
 
-    const campoAutor = document.getElementById("editar-caso-autor");
-    const campoReu   = document.getElementById("editar-caso-reu");
-    const campoAdvs  = document.getElementById("editar-caso-advogados");
-
-    if (ativos.length  && !campoAutor.value) campoAutor.value = ativos.join(", ");
-    if (passivos.length && !campoReu.value)  campoReu.value   = passivos.join(", ");
-    if (advsNomes.length && !campoAdvs.value) campoAdvs.value = advsNomes.join(", ");
+    // Mantém as edições locais e acrescenta cada nome encontrado em seu próprio campo.
+    for (const [tipo, nomes] of [["autor", ativos], ["reu", passivos], ["advogados", advsNomes]]) {
+      _preencherCamposPartes(tipo, [..._lerCamposPartes(tipo), ...nomes]);
+    }
 
     mostrarSucesso(statusEl, "Preenchido. Revise e salve.");
   } catch (err) {
@@ -4724,9 +4744,9 @@ document.getElementById("form-caso-partes").addEventListener("submit", async (ev
   const botao = evento.target.querySelector("button[type=submit]");
   const resultado = document.getElementById("resultado-caso-partes");
   const corpo = {
-    autor: document.getElementById("editar-caso-autor").value.trim(),
-    reu: document.getElementById("editar-caso-reu").value.trim(),
-    advogados: document.getElementById("editar-caso-advogados").value.trim(),
+    autor: _lerCamposPartes("autor").join(", "),
+    reu: _lerCamposPartes("reu").join(", "),
+    advogados: _lerCamposPartes("advogados").join(", "),
   };
   const pararEspera = mostrarEspera(resultado, botao, "Salvando");
   try {
