@@ -1937,7 +1937,7 @@ class RegistroDeToolsTest(unittest.TestCase):
             "consultar_processo_datajud", "consultar_publicacoes_djen", "baixar_certidao_djen",
             "monitorar_publicacoes", "listar_monitoramentos", "remover_monitoramento",
             "buscar_feriados_forenses", "consultar_jurimetria_cjpg",
-            "perfil_decisorio_magistrado", "status_apis",
+            "perfil_decisorio_magistrado", "status_apis", "consultar_processo_unificado",
         })
 
 
