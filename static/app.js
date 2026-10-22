@@ -2157,11 +2157,10 @@ async function abrirContato(clienteId) {
     document.getElementById("contato-detalhe-nome").textContent = cliente_registro.nome || "(sem nome)";
     document.getElementById("contato-nome").value = cliente_registro.nome || "";
     document.getElementById("contato-cpf-cnpj").value = cliente_registro.cpf_cnpj || "";
-    document.getElementById("contato-email").value = cliente_registro.email || "";
     document.getElementById("contato-observacoes").value = cliente_registro.observacoes || "";
     _selecionarAbaCadastro("contato", "pessoal");
     _preencherCadastroCompleto(
-      "contato", telefonesContato, cliente_registro, selecionarTipoPessoaContato, selecionarPerfilContato,
+      "contato", gruposContato, cliente_registro, definirTipoPessoaContato, selecionarPerfilContato,
     );
     formContatoCadastro.dataset.clienteId = clienteId;
     await _renderizarProcessosVinculados(clienteId);
@@ -2999,58 +2998,258 @@ function _configurarRotuloCpfCnpj(prefixo) {
   };
 }
 
-// Lista dinâmica de telefones ("+ Adicionar telefone" / remover).
-function _criarGerenciadorTelefones(prefixo) {
+// Select "Pessoa física ou jurídica": troca o rótulo do CPF/CNPJ quando muda.
+function _configurarTipoPessoa(prefixo) {
+  const select = document.getElementById(`${prefixo}-tipo-pessoa`);
+  const atualizarRotulo = _configurarRotuloCpfCnpj(prefixo);
+  select.addEventListener("change", () => atualizarRotulo(select.value));
+  return (valor) => {
+    select.value = valor || "fisica";
+    atualizarRotulo(select.value);
+  };
+}
+
+function _criarSelect(opcoes, valorSelecionado) {
+  const select = el("select", { class: "cds--select-input" });
+  for (const [valor, rotulo] of opcoes) select.appendChild(el("option", { value: valor, texto: rotulo }));
+  select.value = valorSelecionado || "";
+  return select;
+}
+
+function _criarBotaoRemoverLinha(aoRemover) {
+  return el("button", {
+    class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", "aria-label": "Remover", texto: "✕",
+    onclick: aoRemover,
+  });
+}
+
+const _TIPOS_TELEFONE = [["", "Tipo"], ["celular", "Celular"], ["residencial", "Residencial"], ["comercial", "Comercial"], ["whatsapp", "WhatsApp"], ["outro", "Outro"]];
+const _TIPOS_EMAIL = [["", "Tipo"], ["pessoal", "Pessoal"], ["comercial", "Comercial"], ["outro", "Outro"]];
+const _TIPOS_ENDERECO = [["", "Tipo"], ["residencial", "Residencial"], ["comercial", "Comercial"], ["cobranca", "Cobrança"], ["outro", "Outro"]];
+
+// Grupo repetível de telefones: tipo + telefone + operadora + remover.
+function _criarGrupoTelefones(prefixo) {
   const lista = document.getElementById(`${prefixo}-telefones-lista`);
   const botaoAdicionar = document.getElementById(`${prefixo}-telefones-adicionar`);
 
   function adicionarLinha(valor) {
-    const linha = el("div", { class: "telefone-item" });
-    const input = el("input", {
-      class: "cds--text-input", type: "tel", placeholder: "Ex.: (11) 98211-3344", autocomplete: "tel",
-    });
-    input.value = valor || "";
-    const botaoRemover = el("button", {
-      class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", "aria-label": "Remover telefone", texto: "Remover",
-    });
-    botaoRemover.addEventListener("click", () => {
-      linha.remove();
-      if (!lista.children.length) adicionarLinha();
-    });
-    linha.appendChild(input);
-    linha.appendChild(botaoRemover);
+    valor = valor || {};
+    const linha = el("div", { class: "linha-repetivel" });
+    const selectTipo = _criarSelect(_TIPOS_TELEFONE, valor.tipo);
+    const inputTelefone = el("input", { class: "cds--text-input", type: "tel", placeholder: "Digite o telefone", autocomplete: "tel" });
+    inputTelefone.value = valor.telefone || "";
+    const inputOperadora = el("input", { class: "cds--text-input", type: "text", placeholder: "Operadora", autocomplete: "off" });
+    inputOperadora.value = valor.operadora || "";
+    linha.appendChild(selectTipo);
+    linha.appendChild(inputTelefone);
+    linha.appendChild(inputOperadora);
+    linha.appendChild(_criarBotaoRemoverLinha(() => { linha.remove(); if (!lista.children.length) adicionarLinha(); }));
     lista.appendChild(linha);
-    return input;
   }
 
-  botaoAdicionar.addEventListener("click", () => adicionarLinha("").focus());
+  botaoAdicionar.addEventListener("click", () => adicionarLinha());
 
   return {
     definirValores(valores) {
       limpar(lista);
-      (valores && valores.length ? valores : [""]).forEach(adicionarLinha);
+      (valores && valores.length ? valores : []).forEach(adicionarLinha);
     },
     obterValores() {
-      return Array.from(lista.querySelectorAll("input")).map((i) => i.value.trim()).filter(Boolean);
+      return Array.from(lista.children).map((linha) => {
+        const [selectTipo, inputTelefone, inputOperadora] = linha.querySelectorAll("select, input");
+        return { tipo: selectTipo.value, telefone: inputTelefone.value.trim(), operadora: inputOperadora.value.trim() };
+      }).filter((item) => item.telefone);
+    },
+  };
+}
+
+// Grupo repetível de e-mails: tipo + e-mail + remover.
+function _criarGrupoEmails(prefixo) {
+  const lista = document.getElementById(`${prefixo}-emails-lista`);
+  const botaoAdicionar = document.getElementById(`${prefixo}-emails-adicionar`);
+
+  function adicionarLinha(valor) {
+    valor = valor || {};
+    const linha = el("div", { class: "linha-repetivel" });
+    const selectTipo = _criarSelect(_TIPOS_EMAIL, valor.tipo);
+    const inputEmail = el("input", { class: "cds--text-input", type: "email", placeholder: "Digite o email", autocomplete: "email" });
+    inputEmail.value = valor.email || "";
+    linha.appendChild(selectTipo);
+    linha.appendChild(inputEmail);
+    linha.appendChild(_criarBotaoRemoverLinha(() => { linha.remove(); if (!lista.children.length) adicionarLinha(); }));
+    lista.appendChild(linha);
+  }
+
+  botaoAdicionar.addEventListener("click", () => adicionarLinha());
+
+  return {
+    definirValores(valores) {
+      limpar(lista);
+      (valores && valores.length ? valores : []).forEach(adicionarLinha);
+    },
+    obterValores() {
+      return Array.from(lista.children).map((linha) => {
+        const [selectTipo, inputEmail] = linha.querySelectorAll("select, input");
+        return { tipo: selectTipo.value, email: inputEmail.value.trim() };
+      }).filter((item) => item.email);
+    },
+  };
+}
+
+// Grupo repetível de sites: site + remover (sem tipo).
+function _criarGrupoSites(prefixo) {
+  const lista = document.getElementById(`${prefixo}-sites-lista`);
+  const botaoAdicionar = document.getElementById(`${prefixo}-sites-adicionar`);
+
+  function adicionarLinha(valor) {
+    valor = valor || {};
+    const linha = el("div", { class: "linha-repetivel" });
+    const inputSite = el("input", { class: "cds--text-input", type: "url", placeholder: "Digite o site", autocomplete: "url" });
+    inputSite.value = valor.site || "";
+    linha.appendChild(inputSite);
+    linha.appendChild(_criarBotaoRemoverLinha(() => { linha.remove(); if (!lista.children.length) adicionarLinha(); }));
+    lista.appendChild(linha);
+  }
+
+  botaoAdicionar.addEventListener("click", () => adicionarLinha());
+
+  return {
+    definirValores(valores) {
+      limpar(lista);
+      (valores && valores.length ? valores : []).forEach(adicionarLinha);
+    },
+    obterValores() {
+      return Array.from(lista.children).map((linha) => ({ site: linha.querySelector("input").value.trim() }))
+        .filter((item) => item.site);
+    },
+  };
+}
+
+// Busca um CEP no ViaCEP e devolve {logradouro, bairro, localidade, uf} ou null (CEP incompleto,
+// inexistente ou falha de rede - o usuário sempre pode preencher o endereço manualmente).
+async function _buscarCep(cep) {
+  const digitos = (cep || "").replace(/\D/g, "");
+  if (digitos.length !== 8) return null;
+  try {
+    const resposta = await fetch(`https://viacep.com.br/ws/${digitos}/json/`);
+    if (!resposta.ok) return null;
+    const dados = await resposta.json();
+    return dados.erro ? null : dados;
+  } catch {
+    return null;
+  }
+}
+
+// Grupo repetível de endereços: cada um é um "card" com tipo + CEP (autopreenche o resto via
+// ViaCEP) + rua/número/bairro/complemento/cidade/estado/país + remover.
+function _criarGrupoEnderecos(prefixo) {
+  const lista = document.getElementById(`${prefixo}-enderecos-lista`);
+  const botaoAdicionar = document.getElementById(`${prefixo}-enderecos-adicionar`);
+
+  function adicionarCard(valor) {
+    valor = valor || {};
+    const card = el("div", { class: "endereco-card" });
+
+    const selectTipo = _criarSelect(_TIPOS_ENDERECO, valor.tipo);
+    const inputCep = el("input", { class: "cds--text-input", type: "text", inputmode: "numeric", placeholder: "Digite o CEP", autocomplete: "postal-code" });
+    inputCep.value = valor.cep || "";
+    const topo = el("div", { class: "endereco-card-topo" }, [
+      selectTipo, inputCep,
+      _criarBotaoRemoverLinha(() => { card.remove(); if (!lista.children.length) adicionarCard(); }),
+    ]);
+
+    const inputRua = el("input", { class: "cds--text-input", placeholder: "Digite a rua", autocomplete: "address-line1" });
+    const inputNumero = el("input", { class: "cds--text-input", placeholder: "Digite o número", autocomplete: "off" });
+    const inputBairro = el("input", { class: "cds--text-input", placeholder: "Digite o bairro", autocomplete: "off" });
+    const inputComplemento = el("input", { class: "cds--text-input", placeholder: "Digite o complemento", autocomplete: "address-line2" });
+    const inputCidade = el("input", { class: "cds--text-input", placeholder: "Digite a cidade", autocomplete: "address-level2" });
+    const inputEstado = el("input", { class: "cds--text-input", placeholder: "Digite o estado", autocomplete: "address-level1" });
+    const inputPais = el("input", { class: "cds--text-input", placeholder: "Digite o país", autocomplete: "country-name" });
+    inputRua.value = valor.rua || "";
+    inputNumero.value = valor.numero || "";
+    inputBairro.value = valor.bairro || "";
+    inputComplemento.value = valor.complemento || "";
+    inputCidade.value = valor.cidade || "";
+    inputEstado.value = valor.estado || "";
+    inputPais.value = valor.pais || "Brasil";
+    const grade = el("div", { class: "endereco-grade" }, [
+      inputRua, inputNumero, inputBairro, inputComplemento, inputCidade, inputEstado, inputPais,
+    ]);
+
+    const statusCep = el("span", { class: "campo-ajuda" });
+
+    async function autopreencherPorCep() {
+      const encontrado = await _buscarCep(inputCep.value);
+      if (!encontrado) {
+        statusCep.textContent = inputCep.value.replace(/\D/g, "").length === 8 ? "CEP não encontrado." : "";
+        return;
+      }
+      inputRua.value = encontrado.logradouro || inputRua.value;
+      inputBairro.value = encontrado.bairro || inputBairro.value;
+      inputCidade.value = encontrado.localidade || inputCidade.value;
+      inputEstado.value = encontrado.uf || inputEstado.value;
+      if (!inputPais.value) inputPais.value = "Brasil";
+      statusCep.textContent = "";
+      if (!inputNumero.value) inputNumero.focus();
+    }
+    inputCep.addEventListener("blur", autopreencherPorCep);
+    inputCep.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") { ev.preventDefault(); autopreencherPorCep(); }
+    });
+
+    card.appendChild(topo);
+    card.appendChild(grade);
+    card.appendChild(statusCep);
+    lista.appendChild(card);
+  }
+
+  botaoAdicionar.addEventListener("click", () => adicionarCard());
+
+  return {
+    definirValores(valores) {
+      limpar(lista);
+      (valores && valores.length ? valores : []).forEach(adicionarCard);
+    },
+    obterValores() {
+      return Array.from(lista.children).map((card) => {
+        const selectTipo = card.querySelector("select");
+        const [inputCep, inputRua, inputNumero, inputBairro, inputComplemento, inputCidade, inputEstado, inputPais] =
+          card.querySelectorAll("input");
+        return {
+          tipo: selectTipo.value, cep: inputCep.value.trim(), rua: inputRua.value.trim(),
+          numero: inputNumero.value.trim(), bairro: inputBairro.value.trim(),
+          complemento: inputComplemento.value.trim(), cidade: inputCidade.value.trim(),
+          estado: inputEstado.value.trim(), pais: inputPais.value.trim(),
+        };
+      }).filter((item) => item.rua || item.cep || item.cidade);
     },
   };
 }
 
 function _configurarCadastroCompleto(prefixo) {
   _configurarAbasCadastro(prefixo);
-  return _criarGerenciadorTelefones(prefixo);
+  return {
+    telefones: _criarGrupoTelefones(prefixo),
+    emails: _criarGrupoEmails(prefixo),
+    sites: _criarGrupoSites(prefixo),
+    enderecos: _criarGrupoEnderecos(prefixo),
+  };
 }
 
-// Campos extras do cadastro completo, comuns ao modal e à tela de detalhe.
+// Campos extras do cadastro completo (abas Documentação e Informações complementares),
+// comuns ao modal e à tela de detalhe.
 const _CAMPOS_CADASTRO_COMPLETO = [
-  "site", "endereco_rua", "endereco_numero", "endereco_bairro", "endereco_complemento",
-  "endereco_cidade", "endereco_estado", "endereco_pais", "rg_numero", "rg_emissao", "rg_emissor",
-  "ctps_numero", "ctps_serie", "ctps_emissao", "ctps_uf", "pis", "estado_civil", "nacionalidade",
-  "profissao",
+  "rg_numero", "rg_emissao", "rg_emissor", "ctps_numero", "ctps_serie", "ctps_emissao", "ctps_uf",
+  "pis", "estado_civil", "nacionalidade", "profissao",
 ];
 
-function _lerCadastroCompleto(prefixo, telefones) {
-  const dados = { telefones: telefones.obterValores() };
+function _lerCadastroCompleto(prefixo, grupos) {
+  const dados = {
+    telefones: grupos.telefones.obterValores(),
+    emails: grupos.emails.obterValores(),
+    sites: grupos.sites.obterValores(),
+    enderecos: grupos.enderecos.obterValores(),
+  };
   for (const campo of _CAMPOS_CADASTRO_COMPLETO) {
     dados[campo] = document.getElementById(`${prefixo}-${campo.replace(/_/g, "-")}`).value.trim();
   }
@@ -3059,36 +3258,45 @@ function _lerCadastroCompleto(prefixo, telefones) {
   return dados;
 }
 
-function _preencherCadastroCompleto(prefixo, telefones, registro, selecionarTipoPessoa, selecionarPerfil) {
-  telefones.definirValores(registro.telefones && registro.telefones.length ? registro.telefones : [registro.telefone || ""]);
+function _preencherCadastroCompleto(prefixo, grupos, registro, definirTipoPessoa, selecionarPerfil) {
+  grupos.telefones.definirValores(
+    registro.telefones && registro.telefones.length ? registro.telefones
+      : registro.telefone ? [{ telefone: registro.telefone }] : [],
+  );
+  grupos.emails.definirValores(
+    registro.emails && registro.emails.length ? registro.emails
+      : registro.email ? [{ email: registro.email }] : [],
+  );
+  grupos.sites.definirValores(
+    registro.sites && registro.sites.length ? registro.sites
+      : registro.site ? [{ site: registro.site }] : [],
+  );
+  grupos.enderecos.definirValores(
+    registro.enderecos && registro.enderecos.length ? registro.enderecos
+      : registro.endereco_rua ? [{
+        rua: registro.endereco_rua, numero: registro.endereco_numero, bairro: registro.endereco_bairro,
+        complemento: registro.endereco_complemento, cidade: registro.endereco_cidade,
+        estado: registro.endereco_estado, pais: registro.endereco_pais,
+      }] : [],
+  );
   for (const campo of _CAMPOS_CADASTRO_COMPLETO) {
     document.getElementById(`${prefixo}-${campo.replace(/_/g, "-")}`).value = registro[campo] || "";
   }
-  selecionarTipoPessoa(registro.tipo_pessoa || "fisica");
+  definirTipoPessoa(registro.tipo_pessoa || "fisica");
   selecionarPerfil(registro.perfil || "cliente");
 }
 
-const telefonesCliente = _configurarCadastroCompleto("cliente");
-const selecionarTipoPessoaCliente = _configurarSwitcherBinario(
-  "cliente-tipo-pessoa-fisica-botao", "cliente-tipo-pessoa-juridica-botao", "cliente-tipo-pessoa",
-  _configurarRotuloCpfCnpj("cliente"),
-);
+const gruposCliente = _configurarCadastroCompleto("cliente");
+const definirTipoPessoaCliente = _configurarTipoPessoa("cliente");
 const selecionarPerfilCliente = _configurarSwitcherBinario(
   "cliente-perfil-contato-botao", "cliente-perfil-cliente-botao", "cliente-perfil",
 );
 
-const telefonesContato = _configurarCadastroCompleto("contato");
-const selecionarTipoPessoaContato = _configurarSwitcherBinario(
-  "contato-tipo-pessoa-fisica-botao", "contato-tipo-pessoa-juridica-botao", "contato-tipo-pessoa",
-  _configurarRotuloCpfCnpj("contato"),
-);
+const gruposContato = _configurarCadastroCompleto("contato");
+const definirTipoPessoaContato = _configurarTipoPessoa("contato");
 const selecionarPerfilContato = _configurarSwitcherBinario(
   "contato-perfil-contato-botao", "contato-perfil-cliente-botao", "contato-perfil",
 );
-
-// Garante ao menos uma linha de telefone visível antes de qualquer abertura/preenchimento.
-telefonesCliente.definirValores([""]);
-telefonesContato.definirValores([""]);
 
 const formCliente = document.getElementById("form-cliente");
 const resultadoCliente = document.getElementById("resultado-cliente");
@@ -3100,9 +3308,8 @@ formCliente.addEventListener("submit", async (evento) => {
   const dados = {
     nome: document.getElementById("cliente-nome").value.trim(),
     cpf_cnpj: document.getElementById("cliente-cpf-cnpj").value.trim(),
-    email: document.getElementById("cliente-email").value.trim(),
     observacoes: document.getElementById("cliente-observacoes").value.trim(),
-    ..._lerCadastroCompleto("cliente", telefonesCliente),
+    ..._lerCadastroCompleto("cliente", gruposCliente),
   };
   const pararEspera = mostrarEspera(resultadoCliente, botao, "Cadastrando cliente");
   try {
@@ -3110,9 +3317,12 @@ formCliente.addEventListener("submit", async (evento) => {
     fecharModal("modal-novo-contato");
     formCliente.reset();
     _selecionarAbaCadastro("cliente", "pessoal");
-    selecionarTipoPessoaCliente("fisica");
+    definirTipoPessoaCliente("fisica");
     selecionarPerfilCliente("cliente");
-    telefonesCliente.definirValores([""]);
+    gruposCliente.telefones.definirValores([]);
+    gruposCliente.emails.definirValores([]);
+    gruposCliente.sites.definirValores([]);
+    gruposCliente.enderecos.definirValores([]);
     limpar(resultadoCliente);
     carregarContatos();
   } catch (erro) {
@@ -3266,9 +3476,8 @@ formContatoCadastro.addEventListener("submit", async (evento) => {
   const corpo = {
     nome: document.getElementById("contato-nome").value.trim(),
     cpf_cnpj: document.getElementById("contato-cpf-cnpj").value.trim(),
-    email: document.getElementById("contato-email").value.trim(),
     observacoes: document.getElementById("contato-observacoes").value.trim(),
-    ..._lerCadastroCompleto("contato", telefonesContato),
+    ..._lerCadastroCompleto("contato", gruposContato),
   };
   const pararEspera = mostrarEspera(resultadoContatoCadastro, botao, "Salvando");
   try {

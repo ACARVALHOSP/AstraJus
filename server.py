@@ -2758,10 +2758,8 @@ def _pagina_autorizacao(params: dict, erro: str | None = None) -> str:
 
 
 _CAMPOS_DETALHES_CLIENTE = (
-    "tipo_pessoa", "perfil", "site", "endereco_rua", "endereco_numero", "endereco_bairro",
-    "endereco_complemento", "endereco_cidade", "endereco_estado", "endereco_pais", "rg_numero",
-    "rg_emissao", "rg_emissor", "ctps_numero", "ctps_serie", "ctps_emissao", "ctps_uf", "pis",
-    "estado_civil", "nacionalidade", "profissao",
+    "tipo_pessoa", "perfil", "rg_numero", "rg_emissao", "rg_emissor", "ctps_numero", "ctps_serie",
+    "ctps_emissao", "ctps_uf", "pis", "estado_civil", "nacionalidade", "profissao",
 )
 
 
@@ -2771,13 +2769,49 @@ def _detalhes_cliente_de(dados: dict) -> dict:
     return {campo: (dados.get(campo) or "").strip() or None for campo in _CAMPOS_DETALHES_CLIENTE}
 
 
-def _telefones_de(dados: dict) -> list[str]:
-    """Aceita `telefones` (lista) ou, por compatibilidade, um único `telefone`."""
-    brutos = dados.get("telefones")
+def _itens_de(dados: dict, chave_lista: str, chave_unica: str, campos: tuple) -> list[dict]:
+    """Aceita uma lista de dicts em `chave_lista` (formato novo, multi-entrada) ou, por
+    compatibilidade, um único valor escalar em `chave_unica` (formato antigo)."""
+    brutos = dados.get(chave_lista)
     if isinstance(brutos, list):
-        return [str(t).strip() for t in brutos if str(t or "").strip()]
-    unico = (dados.get("telefone") or "").strip()
-    return [unico] if unico else []
+        itens = []
+        for item in brutos:
+            if not isinstance(item, dict):
+                continue
+            itens.append({campo: str(item.get(campo) or "").strip() for campo in campos})
+        return itens
+    unico = (dados.get(chave_unica) or "").strip()
+    return [{campos[0]: unico}] if unico else []
+
+
+def _telefones_de(dados: dict) -> list[dict]:
+    return _itens_de(dados, "telefones", "telefone", ("telefone", "tipo", "operadora"))
+
+
+def _emails_de(dados: dict) -> list[dict]:
+    return _itens_de(dados, "emails", "email", ("email", "tipo"))
+
+
+def _sites_de(dados: dict) -> list[dict]:
+    return _itens_de(dados, "sites", "site", ("site",))
+
+
+_CAMPOS_ENDERECO = ("tipo", "cep", "rua", "numero", "bairro", "complemento", "cidade", "estado", "pais")
+
+
+def _enderecos_de(dados: dict) -> list[dict]:
+    brutos = dados.get("enderecos")
+    if isinstance(brutos, list):
+        return [
+            {campo: str(item.get(campo) or "").strip() for campo in _CAMPOS_ENDERECO}
+            for item in brutos if isinstance(item, dict)
+        ]
+    # Compatibilidade com o formato antigo (endereco_rua, endereco_numero, ... escalares).
+    unico = {
+        campo: (dados.get(f"endereco_{campo}") or "").strip()
+        for campo in _CAMPOS_ENDERECO if campo not in ("cep", "tipo")
+    }
+    return [unico] if any(unico.values()) else []
 
 
 def _criar_cliente_validado(gestao: RegistroClientesCasos, dados: dict) -> tuple[dict | None, dict | None]:
@@ -2785,15 +2819,15 @@ def _criar_cliente_validado(gestao: RegistroClientesCasos, dados: dict) -> tuple
     nome = (dados.get("nome") or "").strip()
     if not nome:
         return None, _erro("Informe o nome do cliente.")
-    telefones = _telefones_de(dados)
     cliente = gestao.criar_cliente(
         nome=nome,
         cpf_cnpj=(dados.get("cpf_cnpj") or "").strip() or None,
-        telefone=telefones[0] if telefones else None,
-        email=(dados.get("email") or "").strip() or None,
         observacoes=(dados.get("observacoes") or "").strip() or None,
         agora=lambda: datetime.now(timezone.utc),
-        telefones=telefones,
+        telefones=_telefones_de(dados),
+        emails=_emails_de(dados),
+        sites=_sites_de(dados),
+        enderecos=_enderecos_de(dados),
         detalhes=_detalhes_cliente_de(dados),
     )
     return cliente, None
@@ -3398,14 +3432,14 @@ class _AutenticacaoBearer:
         if not nome:
             await _json(send, 400, _erro("Informe o nome do cliente."))
             return
-        telefones = _telefones_de(dados)
         cliente_atualizado = self.gestao.atualizar_cliente(
             cliente_id, nome=nome,
             cpf_cnpj=(dados.get("cpf_cnpj") or "").strip() or None,
-            telefone=telefones[0] if telefones else None,
-            email=(dados.get("email") or "").strip() or None,
             observacoes=(dados.get("observacoes") or "").strip() or None,
-            telefones=telefones,
+            telefones=_telefones_de(dados),
+            emails=_emails_de(dados),
+            sites=_sites_de(dados),
+            enderecos=_enderecos_de(dados),
             detalhes=_detalhes_cliente_de(dados),
         )
         if cliente_atualizado is None:
