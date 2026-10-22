@@ -1,0 +1,51 @@
+name: Testes do PR
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testes-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Testes e sintaxe
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configura Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Instala dependências
+        run: python -m pip install -e . pytest
+
+      - name: Verifica dependências
+        run: python -m pip check
+
+      - name: Executa testes offline
+        run: python -m pytest test_unit.py -q
+
+      - name: Verifica sintaxe Python
+        run: python -m py_compile server.py db.py _util.py google_integracao.py asaas_integracao.py
+
+      - name: Configura Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Verifica sintaxe JavaScript
+        run: |
+          node --check static/app.js
+          node --check static/cadastro.js
