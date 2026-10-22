@@ -3153,23 +3153,27 @@ function _criarGrupoSites(prefixo) {
   };
 }
 
-// Busca um CEP no ViaCEP. Devolve {ok: true, dados} ou {ok: false, motivo}, distinguindo "CEP não
-// existe" (resposta da própria ViaCEP) de falha de rede/CORS/bloqueio (sempre registrada no
+// Busca um CEP via /cep/<cep> (proxy same-origin no próprio servidor, não fala direto com
+// viacep.com.br - ver o comentário de _cep_http em server.py: alguns ambientes têm um
+// Content-Security-Policy com connect-src 'self' que bloqueia fetch() para domínios de
+// terceiro, e indo pelo nosso servidor isso deixa de importar). Devolve {ok: true, dados} ou
+// {ok: false, motivo}, distinguindo "CEP não existe" de falha de rede (sempre registrada no
 // console, já que o motivo real não aparece pra quem está usando o formulário).
 async function _buscarCep(cep) {
   const digitos = (cep || "").replace(/\D/g, "");
   if (digitos.length !== 8) return { ok: false, motivo: "formato" };
   try {
-    const resposta = await fetch(`https://viacep.com.br/ws/${digitos}/json/`);
+    const resposta = await fetch(`/cep/${digitos}`);
+    if (resposta.status === 404) return { ok: false, motivo: "nao_encontrado" };
     if (!resposta.ok) {
-      console.error(`ViaCEP respondeu HTTP ${resposta.status} para o CEP ${digitos}.`);
+      console.error(`Busca de CEP respondeu HTTP ${resposta.status} para o CEP ${digitos}.`);
       return { ok: false, motivo: "http" };
     }
     const dados = await resposta.json();
     if (dados.erro) return { ok: false, motivo: "nao_encontrado" };
     return { ok: true, dados };
   } catch (erro) {
-    console.error("Falha ao consultar o ViaCEP (rede, CORS ou bloqueio pelo navegador):", erro);
+    console.error("Falha ao consultar o CEP:", erro);
     return { ok: false, motivo: "rede" };
   }
 }
