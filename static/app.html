@@ -47,6 +47,10 @@ body { margin: 0; min-height: 100dvh; }
 }
 .app-corpo { flex: 1 1 auto; min-width: 0; }
 nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
+/* O CSS do Carbon só posiciona a side-nav abaixo do header via `.cds--header ~ .cds--side-nav`,
+   que exige irmão direto de <header>; aqui a <nav> fica dentro de .app-layout, então força-se
+   explicitamente aqui (sem isso a side-nav cobre o header do y=0, escondendo o hambúrguer). */
+#side-nav { inset-block-start: 3rem; block-size: calc(100% - 3rem); }
 
 @media (min-width: 769px) {
   .cds--side-nav--rail:not(.cds--side-nav--expanded) .cds--side-nav__submenu-title,
