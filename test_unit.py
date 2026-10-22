@@ -1609,6 +1609,16 @@ class MonitoramentoVerificacaoTest(_Simulado, unittest.TestCase):
 
     def setUp(self):
         super().setUp()
+        self.tempo = 1000.0
+        self.circuito = server.CircuitBreaker("DJEN", agora=lambda: self.tempo)
+        for nome, valor in (
+            ("_CIRCUIT_DJEN", self.circuito),
+            ("_FALHAS_MONITORAMENTO", {}),
+            ("_PROXIMA_TENTATIVA_MONITORAMENTO", {}),
+        ):
+            patch = mock.patch.object(server, nome, valor)
+            patch.start()
+            self.addCleanup(patch.stop)
         self._dir = tempfile.TemporaryDirectory()
         self.registro = server.RegistroMonitoramentos(Path(self._dir.name) / "monitoramentos.json")
         self.relogio = _RelogioMonitoramento(datetime(2026, 10, 7, 12, 0))
@@ -1682,7 +1692,83 @@ class MonitoramentoVerificacaoTest(_Simulado, unittest.TestCase):
 
     def test_outro_monitoramento_continua_sendo_verificado_apos_falha(self):
         server._criar_monitoramento(self.registro, "bia@exemplo.com", None, None, "1", "SP", self.relogio)
-        self.responder(httpx.Response(403), _json(200, DJEN_OK))
+
+        def responder(request):
+            self.chamadas.append(request)
+            if request.url.params.get("numeroOab") == "330659":
+                return httpx.Response(403)
+            return _json(200, DJEN_OK)  # sonda e consulta do outro monitoramento
+
+        server._TRANSPORTE_HTTP = httpx.MockTransport(responder)
+        _rodar(self.verificar())
+        self.assertEqual(len(self.avisos), 1)
+        self.assertEqual(self.avisos[0][0], "bia@exemplo.com")
+        atual = self.registro.carregar()[self.criado["id"]]
+        self.assertEqual(atual.get("hashes_notificados", []), [])
+
+    def test_sonda_retorna_apos_indisponibilidade_e_cooldown(self):
+        antes = self.registro.carregar()
+        self.responder(httpx.Response(503))
+        for _ in range(self.circuito.falhas_para_abrir):
+            _rodar(self.verificar())
+        self.assertEqual(self.circuito.estado, server.CircuitBreaker.ABERTO)
+        self.assertEqual(self.registro.carregar(), antes)
+        self.assertEqual(self.avisos, [])
+        self.assertEqual(len(self.chamadas), server.DJEN_TENTATIVAS * self.circuito.falhas_para_abrir)
+
+        self.chamadas.clear()
+        self.responder(_json(200, DJEN_OK))
+        _rodar(self.verificar())
+        self.assertEqual(self.chamadas, [])  # ainda no cooldown
+        self.tempo += self.circuito.cooldown_s
+        _rodar(self.verificar())
+        self.assertEqual(self.circuito.estado, server.CircuitBreaker.FECHADO)
+        self.assertEqual(len(self.avisos), 1)
+        self.assertEqual(len(self.chamadas), 2)  # sonda e consulta
+        _rodar(self.verificar())
+        self.assertEqual(len(self.avisos), 1)  # recuperação não duplica aviso
+
+    def test_consulta_retorna_apos_backoff_e_limpa_contadores(self):
+        mon_id = self.criado["id"]
+
+        def responder(request):
+            self.chamadas.append(request)
+            if request.url.params.get("numeroOab"):
+                return httpx.Response(503)
+            return _json(200, DJEN_OK)
+
+        server._TRANSPORTE_HTTP = httpx.MockTransport(responder)
+        with mock.patch.object(server.time, "time", side_effect=lambda: self.tempo):
+            _rodar(self.verificar())
+            self.assertEqual(server._FALHAS_MONITORAMENTO[mon_id], 1)
+            proxima = server._PROXIMA_TENTATIVA_MONITORAMENTO[mon_id]
+            self.assertEqual(proxima, self.tempo + server.MONITORAMENTO_INTERVALO_HORAS * 3600)
+            self.assertEqual(self.avisos, [])
+            self.assertEqual(self.registro.carregar()[mon_id].get("hashes_notificados", []), [])
+
+            self.chamadas.clear()
+            self.responder(_json(200, DJEN_OK))
+            _rodar(self.verificar())
+            self.assertEqual(len(self.chamadas), 1)  # só a sonda durante o backoff
+            self.assertEqual(self.avisos, [])
+            self.tempo = proxima
+            _rodar(self.verificar())
+            self.assertEqual(len(self.avisos), 1)
+            self.assertNotIn(mon_id, server._FALHAS_MONITORAMENTO)
+            self.assertNotIn(mon_id, server._PROXIMA_TENTATIVA_MONITORAMENTO)
+            self.assertEqual(self.registro.carregar()[mon_id]["hashes_notificados"], ["abc123"])
+            _rodar(self.verificar())
+            self.assertEqual(len(self.avisos), 1)
+
+    def test_email_retorna_apos_falha_sem_perder_nem_duplicar_aviso(self):
+        self.responder(_json(200, DJEN_OK))
+        enviar = mock.Mock(side_effect=RuntimeError("smtp fora do ar"))
+        _rodar(self.verificar(enviar=enviar))
+        enviar.assert_called_once()
+        self.assertEqual(self.registro.carregar()[self.criado["id"]].get("hashes_notificados", []), [])
+        _rodar(self.verificar())
+        self.assertEqual(len(self.avisos), 1)
+        self.assertEqual(self.registro.carregar()[self.criado["id"]]["hashes_notificados"], ["abc123"])
         _rodar(self.verificar())
         self.assertEqual(len(self.avisos), 1)
 
@@ -1804,11 +1890,13 @@ class MonitoramentoToolIntegradoTest(_RegistroTemporario):
 
 
 class RegistroDeToolsTest(unittest.TestCase):
-    def test_seis_tools_registradas(self):
+    def test_tools_registradas(self):
         nomes = {t.name for t in _rodar(server.mcp.list_tools())}
         self.assertEqual(nomes, {
             "consultar_processo_datajud", "consultar_publicacoes_djen", "baixar_certidao_djen",
             "monitorar_publicacoes", "listar_monitoramentos", "remover_monitoramento",
+            "buscar_feriados_forenses", "consultar_jurimetria_cjpg",
+            "perfil_decisorio_magistrado", "status_apis",
         })
 
 
