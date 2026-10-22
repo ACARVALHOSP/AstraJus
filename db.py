@@ -96,7 +96,10 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 pis TEXT,
                 estado_civil TEXT,
                 nacionalidade TEXT,
-                profissao TEXT
+                profissao TEXT,
+                emails_json TEXT NOT NULL DEFAULT '[]',
+                sites_json TEXT NOT NULL DEFAULT '[]',
+                enderecos_json TEXT NOT NULL DEFAULT '[]'
             );
 
             -- Telefones de um cliente/contato (Fase 1 do cadastro completo): um cliente pode ter
@@ -106,6 +109,8 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 cliente_id TEXT NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
                 telefone TEXT NOT NULL,
+                tipo TEXT,
+                operadora TEXT,
                 ordem INTEGER NOT NULL DEFAULT 0
             );
 
@@ -281,11 +286,19 @@ def _migrar_colunas_clientes(conexao: sqlite3.Connection) -> None:
         "estado_civil": "TEXT",
         "nacionalidade": "TEXT",
         "profissao": "TEXT",
+        "emails_json": "TEXT NOT NULL DEFAULT '[]'",
+        "sites_json": "TEXT NOT NULL DEFAULT '[]'",
+        "enderecos_json": "TEXT NOT NULL DEFAULT '[]'",
     }
     for coluna, definicao in novas_colunas.items():
         if coluna not in colunas:
             with conexao:
                 conexao.execute(f"ALTER TABLE clientes ADD COLUMN {coluna} {definicao}")
+    colunas_telefones = {linha[1] for linha in conexao.execute("PRAGMA table_info(cliente_telefones)")}
+    for coluna in ("tipo", "operadora"):
+        if coluna not in colunas_telefones:
+            with conexao:
+                conexao.execute(f"ALTER TABLE cliente_telefones ADD COLUMN {coluna} TEXT")
 
 
 def _migrar_colunas_lancamentos(conexao: sqlite3.Connection) -> None:
@@ -524,13 +537,20 @@ class RegistroClientesCasos:
     # Clientes
 
     def criar_cliente(
-        self, nome: str, cpf_cnpj: str | None, telefone: str | None, email: str | None,
-        observacoes: str | None, agora, *, telefones: list[str] | None = None,
+        self, nome: str, cpf_cnpj: str | None, observacoes: str | None, agora, *,
+        telefones: list[dict] | None = None, emails: list[dict] | None = None,
+        sites: list[dict] | None = None, enderecos: list[dict] | None = None,
         detalhes: dict | None = None,
     ) -> dict:
         novo_id = uuid.uuid4().hex
         criado_em = agora().isoformat()
         detalhes = detalhes or {}
+        emails_limpos = _limpar_lista_dicts(emails, ("tipo", "email"), campo_obrigatorio="email")
+        sites_limpos = _limpar_lista_dicts(sites, ("site",), campo_obrigatorio="site")
+        enderecos_limpos = _limpar_lista_dicts(
+            enderecos, ("tipo", "cep", "rua", "numero", "bairro", "complemento", "cidade", "estado", "pais"),
+        )
+        primeiro_endereco = enderecos_limpos[0] if enderecos_limpos else {}
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             conexao.execute(
                 "INSERT INTO clientes ("
@@ -538,43 +558,52 @@ class RegistroClientesCasos:
                 "site, endereco_rua, endereco_numero, endereco_bairro, endereco_complemento, "
                 "endereco_cidade, endereco_estado, endereco_pais, rg_numero, rg_emissao, rg_emissor, "
                 "ctps_numero, ctps_serie, ctps_emissao, ctps_uf, pis, estado_civil, nacionalidade, "
-                "profissao"
-                ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "profissao, emails_json, sites_json, enderecos_json"
+                ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    novo_id, nome, cpf_cnpj, telefone, email, observacoes, criado_em,
+                    novo_id, nome, cpf_cnpj, None, emails_limpos[0]["email"] if emails_limpos else None,
+                    observacoes, criado_em,
                     detalhes.get("tipo_pessoa") or "fisica", detalhes.get("perfil") or "cliente",
-                    detalhes.get("site"), detalhes.get("endereco_rua"), detalhes.get("endereco_numero"),
-                    detalhes.get("endereco_bairro"), detalhes.get("endereco_complemento"),
-                    detalhes.get("endereco_cidade"), detalhes.get("endereco_estado"),
-                    detalhes.get("endereco_pais"), detalhes.get("rg_numero"), detalhes.get("rg_emissao"),
+                    sites_limpos[0]["site"] if sites_limpos else None,
+                    primeiro_endereco.get("rua"), primeiro_endereco.get("numero"),
+                    primeiro_endereco.get("bairro"), primeiro_endereco.get("complemento"),
+                    primeiro_endereco.get("cidade"), primeiro_endereco.get("estado"),
+                    primeiro_endereco.get("pais"), detalhes.get("rg_numero"), detalhes.get("rg_emissao"),
                     detalhes.get("rg_emissor"), detalhes.get("ctps_numero"), detalhes.get("ctps_serie"),
                     detalhes.get("ctps_emissao"), detalhes.get("ctps_uf"), detalhes.get("pis"),
                     detalhes.get("estado_civil"), detalhes.get("nacionalidade"), detalhes.get("profissao"),
+                    json.dumps(emails_limpos), json.dumps(sites_limpos), json.dumps(enderecos_limpos),
                 ),
             )
-            self._salvar_telefones(conexao, novo_id, telefones if telefones is not None else [telefone])
+            self._salvar_telefones(conexao, novo_id, telefones)
         return self.obter_cliente(novo_id)
 
     @staticmethod
-    def _salvar_telefones(conexao: sqlite3.Connection, cliente_id: str, telefones: list[str] | None) -> None:
+    def _salvar_telefones(conexao: sqlite3.Connection, cliente_id: str, telefones: list[dict] | None) -> None:
         """Substitui a lista de telefones do cliente e mantém clientes.telefone sincronizado com
         o primeiro item (usado pela listagem legada e pela integração Asaas)."""
-        limpos = [t.strip() for t in (telefones or []) if t and t.strip()]
+        limpos = _limpar_lista_dicts(telefones, ("tipo", "telefone", "operadora"), campo_obrigatorio="telefone")
         conexao.execute("DELETE FROM cliente_telefones WHERE cliente_id = ?", (cliente_id,))
-        for ordem, telefone in enumerate(limpos):
+        for ordem, item in enumerate(limpos):
             conexao.execute(
-                "INSERT INTO cliente_telefones (cliente_id, telefone, ordem) VALUES (?, ?, ?)",
-                (cliente_id, telefone, ordem),
+                "INSERT INTO cliente_telefones (cliente_id, telefone, tipo, operadora, ordem) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (cliente_id, item["telefone"], item.get("tipo") or None, item.get("operadora") or None, ordem),
             )
         conexao.execute(
-            "UPDATE clientes SET telefone = ? WHERE id = ?", (limpos[0] if limpos else None, cliente_id)
+            "UPDATE clientes SET telefone = ? WHERE id = ?",
+            (limpos[0]["telefone"] if limpos else None, cliente_id),
         )
 
-    def _telefones_do_cliente(self, conexao: sqlite3.Connection, cliente_id: str) -> list[str]:
+    def _telefones_do_cliente(self, conexao: sqlite3.Connection, cliente_id: str) -> list[dict]:
         cursor = conexao.execute(
-            "SELECT telefone FROM cliente_telefones WHERE cliente_id = ? ORDER BY ordem", (cliente_id,)
+            "SELECT telefone, tipo, operadora FROM cliente_telefones WHERE cliente_id = ? ORDER BY ordem",
+            (cliente_id,),
         )
-        return [linha[0] for linha in cursor.fetchall()]
+        return [
+            {"telefone": telefone, "tipo": tipo, "operadora": operadora}
+            for telefone, tipo, operadora in cursor.fetchall()
+        ]
 
     def obter_cliente(self, cliente_id: str) -> dict | None:
         with _abrir(self.caminho) as conexao:
@@ -583,7 +612,7 @@ class RegistroClientesCasos:
                 "tipo_pessoa, perfil, site, endereco_rua, endereco_numero, endereco_bairro, "
                 "endereco_complemento, endereco_cidade, endereco_estado, endereco_pais, rg_numero, "
                 "rg_emissao, rg_emissor, ctps_numero, ctps_serie, ctps_emissao, ctps_uf, pis, "
-                "estado_civil, nacionalidade, profissao "
+                "estado_civil, nacionalidade, profissao, emails_json, sites_json, enderecos_json "
                 "FROM clientes WHERE id = ?",
                 (cliente_id,),
             ).fetchone()
@@ -594,34 +623,43 @@ class RegistroClientesCasos:
         return cliente
 
     def atualizar_cliente(
-        self, cliente_id: str, nome: str, cpf_cnpj: str | None, telefone: str | None,
-        email: str | None, observacoes: str | None, *, telefones: list[str] | None = None,
+        self, cliente_id: str, nome: str, cpf_cnpj: str | None, observacoes: str | None, *,
+        telefones: list[dict] | None = None, emails: list[dict] | None = None,
+        sites: list[dict] | None = None, enderecos: list[dict] | None = None,
         detalhes: dict | None = None,
     ) -> dict | None:
         detalhes = detalhes or {}
+        emails_limpos = _limpar_lista_dicts(emails, ("tipo", "email"), campo_obrigatorio="email")
+        sites_limpos = _limpar_lista_dicts(sites, ("site",), campo_obrigatorio="site")
+        enderecos_limpos = _limpar_lista_dicts(
+            enderecos, ("tipo", "cep", "rua", "numero", "bairro", "complemento", "cidade", "estado", "pais"),
+        )
+        primeiro_endereco = enderecos_limpos[0] if enderecos_limpos else {}
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             conexao.execute(
-                "UPDATE clientes SET nome = ?, cpf_cnpj = ?, telefone = ?, email = ?, observacoes = ?, "
+                "UPDATE clientes SET nome = ?, cpf_cnpj = ?, email = ?, observacoes = ?, "
                 "tipo_pessoa = ?, perfil = ?, site = ?, endereco_rua = ?, endereco_numero = ?, "
                 "endereco_bairro = ?, endereco_complemento = ?, endereco_cidade = ?, endereco_estado = ?, "
                 "endereco_pais = ?, rg_numero = ?, rg_emissao = ?, rg_emissor = ?, ctps_numero = ?, "
                 "ctps_serie = ?, ctps_emissao = ?, ctps_uf = ?, pis = ?, estado_civil = ?, "
-                "nacionalidade = ?, profissao = ? "
+                "nacionalidade = ?, profissao = ?, emails_json = ?, sites_json = ?, enderecos_json = ? "
                 "WHERE id = ?",
                 (
-                    nome, cpf_cnpj, telefone, email, observacoes,
+                    nome, cpf_cnpj, emails_limpos[0]["email"] if emails_limpos else None, observacoes,
                     detalhes.get("tipo_pessoa") or "fisica", detalhes.get("perfil") or "cliente",
-                    detalhes.get("site"), detalhes.get("endereco_rua"), detalhes.get("endereco_numero"),
-                    detalhes.get("endereco_bairro"), detalhes.get("endereco_complemento"),
-                    detalhes.get("endereco_cidade"), detalhes.get("endereco_estado"),
-                    detalhes.get("endereco_pais"), detalhes.get("rg_numero"), detalhes.get("rg_emissao"),
+                    sites_limpos[0]["site"] if sites_limpos else None,
+                    primeiro_endereco.get("rua"), primeiro_endereco.get("numero"),
+                    primeiro_endereco.get("bairro"), primeiro_endereco.get("complemento"),
+                    primeiro_endereco.get("cidade"), primeiro_endereco.get("estado"),
+                    primeiro_endereco.get("pais"), detalhes.get("rg_numero"), detalhes.get("rg_emissao"),
                     detalhes.get("rg_emissor"), detalhes.get("ctps_numero"), detalhes.get("ctps_serie"),
                     detalhes.get("ctps_emissao"), detalhes.get("ctps_uf"), detalhes.get("pis"),
                     detalhes.get("estado_civil"), detalhes.get("nacionalidade"), detalhes.get("profissao"),
+                    json.dumps(emails_limpos), json.dumps(sites_limpos), json.dumps(enderecos_limpos),
                     cliente_id,
                 ),
             )
-            self._salvar_telefones(conexao, cliente_id, telefones if telefones is not None else [telefone])
+            self._salvar_telefones(conexao, cliente_id, telefones)
         return self.obter_cliente(cliente_id)
 
     def buscar_cliente_por_nome(self, nome: str) -> dict | None:
@@ -633,7 +671,7 @@ class RegistroClientesCasos:
                 "tipo_pessoa, perfil, site, endereco_rua, endereco_numero, endereco_bairro, "
                 "endereco_complemento, endereco_cidade, endereco_estado, endereco_pais, rg_numero, "
                 "rg_emissao, rg_emissor, ctps_numero, ctps_serie, ctps_emissao, ctps_uf, pis, "
-                "estado_civil, nacionalidade, profissao "
+                "estado_civil, nacionalidade, profissao, emails_json, sites_json, enderecos_json "
                 "FROM clientes WHERE lower(nome) = lower(?) LIMIT 1",
                 (nome,),
             ).fetchone()
@@ -646,7 +684,7 @@ class RegistroClientesCasos:
                 "tipo_pessoa, perfil, site, endereco_rua, endereco_numero, endereco_bairro, "
                 "endereco_complemento, endereco_cidade, endereco_estado, endereco_pais, rg_numero, "
                 "rg_emissao, rg_emissor, ctps_numero, ctps_serie, ctps_emissao, ctps_uf, pis, "
-                "estado_civil, nacionalidade, profissao "
+                "estado_civil, nacionalidade, profissao, emails_json, sites_json, enderecos_json "
                 "FROM clientes ORDER BY nome"
             )
             return [_linha_cliente(linha) for linha in cursor.fetchall()]
@@ -1196,7 +1234,7 @@ def _linha_cliente(linha) -> dict:
         tipo_pessoa, perfil, site, endereco_rua, endereco_numero, endereco_bairro,
         endereco_complemento, endereco_cidade, endereco_estado, endereco_pais, rg_numero,
         rg_emissao, rg_emissor, ctps_numero, ctps_serie, ctps_emissao, ctps_uf, pis,
-        estado_civil, nacionalidade, profissao,
+        estado_civil, nacionalidade, profissao, emails_json, sites_json, enderecos_json,
     ) = linha
     return {
         "id": id_, "nome": nome, "cpf_cnpj": cpf_cnpj, "telefone": telefone,
@@ -1210,7 +1248,26 @@ def _linha_cliente(linha) -> dict:
         "rg_emissor": rg_emissor, "ctps_numero": ctps_numero, "ctps_serie": ctps_serie,
         "ctps_emissao": ctps_emissao, "ctps_uf": ctps_uf, "pis": pis,
         "estado_civil": estado_civil, "nacionalidade": nacionalidade, "profissao": profissao,
+        "emails": json.loads(emails_json) if emails_json else [],
+        "sites": json.loads(sites_json) if sites_json else [],
+        "enderecos": json.loads(enderecos_json) if enderecos_json else [],
     }
+
+
+def _limpar_lista_dicts(itens: list[dict] | None, campos: tuple, campo_obrigatorio: str | None = None) -> list[dict]:
+    """Normaliza uma lista de dicts vinda da API (telefones/emails/sites/enderecos): mantém só
+    os `campos` esperados, tira espaços e descarta itens vazios - sem o campo obrigatório
+    preenchido (`campo_obrigatorio`), ou, se não for passado, sem nenhum campo preenchido (caso
+    de endereços, onde nenhum campo isolado é sempre obrigatório)."""
+    limpos = []
+    for item in itens or []:
+        if not isinstance(item, dict):
+            continue
+        limpo = {campo: str(item.get(campo) or "").strip() or None for campo in campos}
+        valido = limpo.get(campo_obrigatorio) if campo_obrigatorio else any(limpo.values())
+        if valido:
+            limpos.append(limpo)
+    return limpos
 
 
 def _linha_lancamento(linha) -> dict:

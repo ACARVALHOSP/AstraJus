@@ -130,15 +130,31 @@ nav.cds--side-nav {
 .sub-tab-link { background: none; border: none; border-bottom: 3px solid transparent; padding: 0.625rem 0.125rem; cursor: pointer; font-size: var(--fonte-base); color: var(--cds-text-secondary, #525252); }
 .sub-tab-link[aria-selected="true"] { color: var(--cds-text-primary, #161616); border-bottom-color: var(--cds-interactive, #0f62fe); font-weight: 600; }
 .contato-detalhe-titulo { margin: 0.75rem 0 0; font-size: var(--fonte-subtitulo); }
-.cadastro-tabs { margin: 0 0 1rem; flex-wrap: wrap; }
+.cadastro-tabs {
+  margin: 0 0 1rem; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.cadastro-tabs::-webkit-scrollbar { display: none; }
+.cadastro-tabs .cds--content-switcher-btn { white-space: nowrap; flex: 0 0 auto; }
 .cadastro-painel { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
 .cadastro-painel[hidden] { display: none; }
 .cadastro-switcher-inline { margin-top: 0.375rem; }
-.endereco-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; margin-top: 0.375rem; }
-.lista-telefones { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.375rem; }
-.telefone-item { display: flex; gap: 0.5rem; align-items: center; }
-.telefone-item input { flex: 1 1 auto; }
-.telefone-item button { flex: 0 0 auto; }
+.lista-repetivel { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.375rem; }
+.linha-repetivel { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.linha-repetivel .cds--select-input { flex: 0 1 160px; min-width: 130px; }
+.linha-repetivel input { flex: 1 1 180px; min-width: 0; }
+.linha-repetivel button { flex: 0 0 auto; }
+.lista-enderecos { display: flex; flex-direction: column; gap: 1rem; margin-top: 0.375rem; }
+.endereco-card {
+  border: 1px solid var(--cds-border-subtle, #e0e0e0); border-radius: 4px; padding: 0.875rem;
+  display: flex; flex-direction: column; gap: 0.625rem;
+}
+.endereco-card-topo { display: flex; gap: 0.5rem; align-items: center; }
+.endereco-card-topo .cds--select-input { flex: 0 1 160px; }
+.endereco-card-topo .cds--text-input { flex: 1 1 160px; }
+.endereco-card-topo button { flex: 0 0 auto; }
+.endereco-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; }
+.botao-adicionar-linha { align-self: flex-start; }
 .pub-oab-manual { margin-top: 1rem; border: 1px solid var(--cds-border-subtle, #e0e0e0); padding: 0.75rem 1rem; }
 .pub-oab-manual summary { cursor: pointer; font-weight: 600; }
 .pub-oab-manual-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; margin-top: 0.75rem; }
@@ -981,13 +997,12 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <form id="form-contato-cadastro" class="app-formulario">
 
 <section id="contato-cadastro-painel-pessoal" class="cadastro-painel">
-<div class="cds--form-item campo-ajuda--largo">
-<span class="cds--label">Pessoa física ou jurídica</span>
-<div class="cds--content-switcher cds--content-switcher--light cds--content-switcher--sm cadastro-switcher-inline" id="contato-tipo-pessoa-switcher" role="tablist" aria-label="Tipo de pessoa">
-<button class="cds--content-switcher-btn cds--content-switcher--selected" type="button" id="contato-tipo-pessoa-fisica-botao" role="tab" aria-selected="true" data-valor="fisica">Pessoa física</button>
-<button class="cds--content-switcher-btn" type="button" id="contato-tipo-pessoa-juridica-botao" role="tab" aria-selected="false" data-valor="juridica">Pessoa jurídica</button>
-</div>
-<input type="hidden" id="contato-tipo-pessoa" name="tipo_pessoa" value="fisica">
+<div class="cds--form-item">
+<label class="cds--label" for="contato-tipo-pessoa">Pessoa física ou jurídica</label>
+<select class="cds--select-input" id="contato-tipo-pessoa" name="tipo_pessoa" autocomplete="off">
+<option value="fisica">Pessoa física</option>
+<option value="juridica">Pessoa jurídica</option>
+</select>
 </div>
 <div class="cds--form-item campo-ajuda--largo">
 <span class="cds--label">Perfil</span>
@@ -997,34 +1012,29 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 <input type="hidden" id="contato-perfil" name="perfil" value="cliente">
 </div>
-<div class="cds--form-item">
+<div class="cds--form-item campo-ajuda--largo">
 <label class="cds--label" for="contato-nome">Nome</label>
 <input class="cds--text-input" id="contato-nome" name="nome" placeholder="Ex.: Maria Aparecida Souza" autocomplete="name" required>
 </div>
 <div class="cds--form-item campo-ajuda--largo">
 <span class="cds--label">Telefone</span>
-<div class="lista-telefones" id="contato-telefones-lista"></div>
-<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="contato-telefones-adicionar">+ Adicionar telefone</button>
+<div class="lista-repetivel" id="contato-telefones-lista"></div>
+<button class="cds--btn cds--btn--ghost cds--btn--sm botao-adicionar-linha" type="button" id="contato-telefones-adicionar">+ Adicionar telefone</button>
 </div>
-<div class="cds--form-item">
-<label class="cds--label" for="contato-email">E-mail</label>
-<input class="cds--text-input" id="contato-email" name="email" type="email" placeholder="Ex.: maria.souza@example.com" autocomplete="email">
+<div class="cds--form-item campo-ajuda--largo">
+<span class="cds--label">E-mail</span>
+<div class="lista-repetivel" id="contato-emails-lista"></div>
+<button class="cds--btn cds--btn--ghost cds--btn--sm botao-adicionar-linha" type="button" id="contato-emails-adicionar">+ Adicionar e-mail</button>
 </div>
-<div class="cds--form-item">
-<label class="cds--label" for="contato-site">Site</label>
-<input class="cds--text-input" id="contato-site" name="site" type="url" placeholder="Ex.: https://www.exemplo.com.br" autocomplete="url">
+<div class="cds--form-item campo-ajuda--largo">
+<span class="cds--label">Site</span>
+<div class="lista-repetivel" id="contato-sites-lista"></div>
+<button class="cds--btn cds--btn--ghost cds--btn--sm botao-adicionar-linha" type="button" id="contato-sites-adicionar">+ Adicionar site</button>
 </div>
 <div class="cds--form-item campo-ajuda--largo">
 <span class="cds--label">Endereço</span>
-<div class="endereco-grade">
-<input class="cds--text-input" id="contato-endereco-rua" name="endereco_rua" placeholder="Digite a rua" autocomplete="address-line1">
-<input class="cds--text-input" id="contato-endereco-numero" name="endereco_numero" placeholder="Digite o número" autocomplete="off">
-<input class="cds--text-input" id="contato-endereco-bairro" name="endereco_bairro" placeholder="Digite o bairro" autocomplete="off">
-<input class="cds--text-input" id="contato-endereco-complemento" name="endereco_complemento" placeholder="Digite o complemento" autocomplete="address-line2">
-<input class="cds--text-input" id="contato-endereco-cidade" name="endereco_cidade" placeholder="Digite a cidade" autocomplete="address-level2">
-<input class="cds--text-input" id="contato-endereco-estado" name="endereco_estado" placeholder="Digite o estado" autocomplete="address-level1">
-<input class="cds--text-input" id="contato-endereco-pais" name="endereco_pais" placeholder="Digite o país" autocomplete="country-name">
-</div>
+<div class="lista-enderecos" id="contato-enderecos-lista"></div>
+<button class="cds--btn cds--btn--ghost cds--btn--sm botao-adicionar-linha" type="button" id="contato-enderecos-adicionar">+ Adicionar endereço</button>
 </div>
 </section>
 
@@ -1369,13 +1379,12 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <form id="form-cliente" class="app-formulario">
 
 <section id="cliente-cadastro-painel-pessoal" class="cadastro-painel">
-<div class="cds--form-item campo-ajuda--largo">
-<span class="cds--label">Pessoa física ou jurídica</span>
-<div class="cds--content-switcher cds--content-switcher--light cds--content-switcher--sm cadastro-switcher-inline" id="cliente-tipo-pessoa-switcher" role="tablist" aria-label="Tipo de pessoa">
-<button class="cds--content-switcher-btn cds--content-switcher--selected" type="button" id="cliente-tipo-pessoa-fisica-botao" role="tab" aria-selected="true" data-valor="fisica">Pessoa física</button>
-<button class="cds--content-switcher-btn" type="button" id="cliente-tipo-pessoa-juridica-botao" role="tab" aria-selected="false" data-valor="juridica">Pessoa jurídica</button>
-</div>
-<input type="hidden" id="cliente-tipo-pessoa" name="tipo_pessoa" value="fisica">
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-tipo-pessoa">Pessoa física ou jurídica</label>
+<select class="cds--select-input" id="cliente-tipo-pessoa" name="tipo_pessoa" autocomplete="off">
+<option value="fisica">Pessoa física</option>
+<option value="juridica">Pessoa jurídica</option>
+</select>
 </div>
 <div class="cds--form-item campo-ajuda--largo">
 <span class="cds--label">Perfil</span>
@@ -1385,34 +1394,29 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 <input type="hidden" id="cliente-perfil" name="perfil" value="cliente">
 </div>
-<div class="cds--form-item">
+<div class="cds--form-item campo-ajuda--largo">
 <label class="cds--label" for="cliente-nome">Nome</label>
 <input class="cds--text-input" id="cliente-nome" name="nome" placeholder="Ex.: Maria Aparecida Souza" autocomplete="name" required>
 </div>
 <div class="cds--form-item campo-ajuda--largo">
 <span class="cds--label">Telefone</span>
-<div class="lista-telefones" id="cliente-telefones-lista"></div>
-<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="cliente-telefones-adicionar">+ Adicionar telefone</button>
+<div class="lista-repetivel" id="cliente-telefones-lista"></div>
+<button class="cds--btn cds--btn--ghost cds--btn--sm botao-adicionar-linha" type="button" id="cliente-telefones-adicionar">+ Adicionar telefone</button>
 </div>
-<div class="cds--form-item">
-<label class="cds--label" for="cliente-email">E-mail</label>
-<input class="cds--text-input" id="cliente-email" name="email" type="email" placeholder="Ex.: maria.souza@example.com" autocomplete="email">
+<div class="cds--form-item campo-ajuda--largo">
+<span class="cds--label">E-mail</span>
+<div class="lista-repetivel" id="cliente-emails-lista"></div>
+<button class="cds--btn cds--btn--ghost cds--btn--sm botao-adicionar-linha" type="button" id="cliente-emails-adicionar">+ Adicionar e-mail</button>
 </div>
-<div class="cds--form-item">
-<label class="cds--label" for="cliente-site">Site</label>
-<input class="cds--text-input" id="cliente-site" name="site" type="url" placeholder="Ex.: https://www.exemplo.com.br" autocomplete="url">
+<div class="cds--form-item campo-ajuda--largo">
+<span class="cds--label">Site</span>
+<div class="lista-repetivel" id="cliente-sites-lista"></div>
+<button class="cds--btn cds--btn--ghost cds--btn--sm botao-adicionar-linha" type="button" id="cliente-sites-adicionar">+ Adicionar site</button>
 </div>
 <div class="cds--form-item campo-ajuda--largo">
 <span class="cds--label">Endereço</span>
-<div class="endereco-grade">
-<input class="cds--text-input" id="cliente-endereco-rua" name="endereco_rua" placeholder="Digite a rua" autocomplete="address-line1">
-<input class="cds--text-input" id="cliente-endereco-numero" name="endereco_numero" placeholder="Digite o número" autocomplete="off">
-<input class="cds--text-input" id="cliente-endereco-bairro" name="endereco_bairro" placeholder="Digite o bairro" autocomplete="off">
-<input class="cds--text-input" id="cliente-endereco-complemento" name="endereco_complemento" placeholder="Digite o complemento" autocomplete="address-line2">
-<input class="cds--text-input" id="cliente-endereco-cidade" name="endereco_cidade" placeholder="Digite a cidade" autocomplete="address-level2">
-<input class="cds--text-input" id="cliente-endereco-estado" name="endereco_estado" placeholder="Digite o estado" autocomplete="address-level1">
-<input class="cds--text-input" id="cliente-endereco-pais" name="endereco_pais" placeholder="Digite o país" autocomplete="country-name">
-</div>
+<div class="lista-enderecos" id="cliente-enderecos-lista"></div>
+<button class="cds--btn cds--btn--ghost cds--btn--sm botao-adicionar-linha" type="button" id="cliente-enderecos-adicionar">+ Adicionar endereço</button>
 </div>
 </section>
 
