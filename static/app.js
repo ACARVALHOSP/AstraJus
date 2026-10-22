@@ -10,6 +10,124 @@ const CHAVE_FAVORITOS = "cnj_favoritos";
 const CHAVE_FAVORITOS_CASOS = "cnj_favoritos_casos";
 const CHAVE_PRAZO_MUNICIPIO = "cnj_prazo_municipio";
 const HISTORICO_MAX = 10;
+const formulariosProtegidos = new Map();
+let decisaoEdicaoPendente = false;
+
+function valoresFormulario(form) {
+  return JSON.stringify([...form.querySelectorAll("input, select, textarea")].map((campo) =>
+    [campo.id, campo.type, campo.type === "checkbox" || campo.type === "radio" ? campo.checked : campo.value]));
+}
+
+function formularioAlterado(form) {
+  const estado = formulariosProtegidos.get(form);
+  return Boolean(estado && estado.base !== valoresFormulario(form));
+}
+
+function atualizarIndicadorEdicao(form) {
+  const estado = formulariosProtegidos.get(form);
+  if (estado) estado.indicador.hidden = !formularioAlterado(form);
+}
+
+function marcarFormularioSalvo(form, aposReset = false) {
+  const estado = formulariosProtegidos.get(form);
+  if (!estado) return;
+  estado.base = !aposReset && estado.enviado ? estado.enviado : valoresFormulario(form);
+  if (form.id === "form-contato-cadastro") {
+    estado.contato = !aposReset && estado.contatoEnviado ? estado.contatoEnviado : _lerCadastroCompleto("contato", gruposContato);
+  }
+  if (form.id === "form-caso-partes") {
+    estado.partes = !aposReset && estado.partesEnviadas ? estado.partesEnviadas
+      : Object.fromEntries(["autor", "reu", "advogados"].map((tipo) => [tipo, _lerCamposPartes(tipo)]));
+  }
+  atualizarIndicadorEdicao(form);
+}
+
+function registrarSalvamento(form, salvar) {
+  const indicador = el("p", { class: "campo-ajuda edicao-pendente", role: "status", texto: "Alterações não salvas" });
+  indicador.hidden = true;
+  form.prepend(indicador);
+  const estado = { base: valoresFormulario(form), indicador, salvando: null, enviado: null };
+  formulariosProtegidos.set(form, estado);
+  form.addEventListener("input", () => atualizarIndicadorEdicao(form));
+  form.addEventListener("change", () => atualizarIndicadorEdicao(form));
+  new MutationObserver(() => atualizarIndicadorEdicao(form)).observe(form, { childList: true, subtree: true });
+  form.addEventListener("submit", (evento) => {
+    evento.preventDefault();
+    if (estado.salvando) return;
+    estado.enviado = valoresFormulario(form);
+    if (form.id === "form-contato-cadastro") estado.contatoEnviado = _lerCadastroCompleto("contato", gruposContato);
+    if (form.id === "form-caso-partes") estado.partesEnviadas = Object.fromEntries(["autor", "reu", "advogados"].map((tipo) => [tipo, _lerCamposPartes(tipo)]));
+    estado.salvando = (async () => {
+      await Promise.resolve(); // Registra a operação antes de executar o handler.
+      try { await salvar(evento); }
+      finally { estado.enviado = null; estado.contatoEnviado = null; estado.partesEnviadas = null; estado.salvando = null; atualizarIndicadorEdicao(form); }
+    })();
+  });
+}
+
+function formulariosPendentes(raiz = document) {
+  return [...formulariosProtegidos.keys()].filter((form) => raiz.contains(form) &&
+    !form.closest(".cds--modal:not(.is-visible)") && formularioAlterado(form));
+}
+
+function revelarFormulario(form) {
+  if (form.id === "form-caso-editar") _selecionarSubabaCaso("cadastro");
+  if (form.id === "form-caso-partes") _selecionarSubabaCaso("partes");
+  if (form.id === "form-contato-cadastro") _selecionarSubabaContato("cadastro");
+  // Um campo inválido pode estar numa seção interna do cadastro.
+  const invalido = form.querySelector(":invalid");
+  const painel = invalido?.closest(".cadastro-painel");
+  if (painel) _selecionarAbaCadastro("contato", painel.id.split("-").pop());
+}
+
+async function permitirSaidaEdicao(raiz = document) {
+  const pendentes = formulariosPendentes(raiz);
+  if (!pendentes.length) return true;
+  if (decisaoEdicaoPendente) return false;
+  decisaoEdicaoPendente = true;
+  try {
+    const escolha = await escolherSaidaEdicao();
+    if (escolha === "continuar") return false;
+    if (escolha === "salvar") {
+      for (const form of pendentes) {
+        revelarFormulario(form);
+        if (!form.reportValidity()) return false;
+        const estado = formulariosProtegidos.get(form);
+        if (!estado.salvando) form.requestSubmit();
+        await estado.salvando;
+        if (formularioAlterado(form)) return false; // Falha: mantém o formulário e o erro visíveis.
+      }
+    } else {
+      for (const form of pendentes) {
+        const estado = formulariosProtegidos.get(form);
+        if (estado.salvando) { await estado.salvando; if (formularioAlterado(form)) return false; }
+        const valores = JSON.parse(estado.base);
+        if (estado.contato) {
+          _preencherCadastroCompleto("contato", gruposContato, estado.contato, definirTipoPessoaContato, definirPerfilContato);
+        }
+        if (estado.partes) {
+          for (const [tipo, nomes] of Object.entries(estado.partes)) _preencherCamposPartes(tipo, nomes);
+        }
+        const porId = new Map(valores.filter(([id]) => id).map((valor) => [valor[0], valor]));
+        [...form.querySelectorAll("input, select, textarea")].forEach((campo, i) => {
+          const valor = campo.id ? porId.get(campo.id) : estado.contato ? null : valores[i];
+          if (!valor) return;
+          if (campo.type === "checkbox" || campo.type === "radio") campo.checked = valor[2];
+          else campo.value = valor[2];
+        });
+        marcarFormularioSalvo(form, true);
+        atualizarIndicadorEdicao(form);
+      }
+    }
+    return true;
+  } finally { decisaoEdicaoPendente = false; }
+}
+
+window.addEventListener("beforeunload", (evento) => {
+  if (!formulariosPendentes().length) return;
+  evento.preventDefault();
+  evento.returnValue = "";
+});
 
 class ErroMCP extends Error {
   constructor(status, mensagem) {
@@ -321,6 +439,7 @@ let cliente = null;
 function definirStatus(texto, tom) {
   statusConexao.textContent = texto;
   statusConexao.className = `cds--tag cds--tag--${tom}`;
+  document.getElementById("aba-acesso-botao").setAttribute("aria-label", `Acesso: ${texto}`);
 }
 
 function conectarComToken(valor) {
@@ -328,31 +447,63 @@ function conectarComToken(valor) {
   definirStatus(valor ? "Token definido" : "Sem token", valor ? "blue" : "gray");
 }
 
-(function carregarTokenSalvo() {
-  const salvo = localStorage.getItem(CHAVE_TOKEN);
-  if (salvo) {
-    campoToken.value = salvo;
-    checkboxLembrar.checked = true;
-    conectarComToken(salvo);
+async function validarToken(valor, lembrar, navegar = true) {
+  const form = document.getElementById("form-token");
+  const botao = form.querySelector("button[type=submit]");
+  const resultado = document.getElementById("resultado-token");
+  const tentativa = ++geracaoConexao;
+  cliente = null;
+  botao.disabled = true;
+  form.setAttribute("aria-busy", "true");
+  definirStatus("Verificando…", "gray");
+  limpar(resultado);
+  try {
+    const candidato = new ClienteMCP(valor);
+    await candidato._iniciar(); // Autentica no servidor, sem consultar APIs judiciais.
+    if (tentativa !== geracaoConexao) return;
+    cliente = candidato;
+    try {
+      if (lembrar) localStorage.setItem(CHAVE_TOKEN, valor);
+      else localStorage.removeItem(CHAVE_TOKEN);
+    } catch {
+      mostrarAviso(resultado, "Conectado nesta sessão. Não foi possível lembrar o token neste navegador.");
+    }
+    definirStatus("Conectado", "green");
+    if (!resultado.childNodes.length) mostrarSucesso(resultado, "Acesso verificado. Você já pode consultar.");
+    if (navegar) await selecionarAba(abas.find((a) => a.painel.id === "aba-processo"));
+  } catch (erro) {
+    if (tentativa !== geracaoConexao) return;
+    cliente = null;
+    definirStatus("Não conectado", "red");
+    try { localStorage.removeItem(CHAVE_TOKEN); } catch { /* armazenamento indisponível */ }
+    mostrarErro(resultado, erro.message);
+    await selecionarAba(abas.find((a) => a.painel.id === "aba-acesso"));
+    campoToken.focus();
+  } finally {
+    if (tentativa === geracaoConexao) {
+      botao.disabled = false;
+      form.removeAttribute("aria-busy");
+    }
   }
-})();
+}
+let geracaoConexao = 0;
 
 document.getElementById("form-token").addEventListener("submit", (evento) => {
   evento.preventDefault();
   const valor = campoToken.value.trim();
-  if (!valor) return;
-  if (checkboxLembrar.checked) localStorage.setItem(CHAVE_TOKEN, valor);
-  else localStorage.removeItem(CHAVE_TOKEN);
-  conectarComToken(valor);
-  const abaProcesso = abas.find((a) => a.painel.id === "aba-processo");
-  if (abaProcesso) selecionarAba(abaProcesso);
+  if (valor) validarToken(valor, checkboxLembrar.checked);
 });
 
-document.getElementById("esquecer-token").addEventListener("click", () => {
-  localStorage.removeItem(CHAVE_TOKEN);
+document.getElementById("esquecer-token").addEventListener("click", async () => {
+  if (!(await permitirSaidaEdicao())) return;
+  ++geracaoConexao;
+  try { localStorage.removeItem(CHAVE_TOKEN); } catch { /* armazenamento indisponível */ }
   campoToken.value = "";
   checkboxLembrar.checked = false;
   conectarComToken(null);
+  document.querySelector("#form-token button[type=submit]").disabled = false;
+  document.getElementById("form-token").removeAttribute("aria-busy");
+  limpar(document.getElementById("resultado-token"));
 });
 
 function exigirCliente(container) {
@@ -436,14 +587,14 @@ function alternarCasoFavorito(casoId) {
   return index === -1; // true = acabou de favoritar
 }
 
-function _usarItemRapido(item) {
+async function _usarItemRapido(item) {
   if (item.tipo === "processo") {
-    selecionarAba(abas.find((a) => a.painel.id === "aba-processo"));
+    if (!(await selecionarAba(abas.find((a) => a.painel.id === "aba-processo")))) return;
     document.getElementById("tribunal").value = item.args.tribunal || "";
     document.getElementById("numero-processo").value = item.args.numero_processo || "";
     formProcesso.requestSubmit();
   } else {
-    selecionarAba(abas.find((a) => a.painel.id === "aba-publicacoes"));
+    if (!(await selecionarAba(abas.find((a) => a.painel.id === "aba-publicacoes")))) return;
     document.getElementById("pub-numero-processo").value = item.args.numero_processo || "";
     document.getElementById("pub-sigla-tribunal").value = item.args.sigla_tribunal || "";
     document.getElementById("pub-numero-oab").value = item.args.numero_oab || "";
@@ -477,8 +628,8 @@ async function renderizarCasosFavoritos() {
         el("div", {}, [
           el("button", {
             class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Abrir",
-            onclick: () => {
-              selecionarAba(abas.find((a) => a.painel.id === "aba-casos"));
+            onclick: async () => {
+              if (!(await selecionarAba(abas.find((a) => a.painel.id === "aba-casos")))) return;
               abrirCaso(caso.id);
             },
           }),
@@ -555,7 +706,10 @@ const abas = [
   { botao: document.getElementById("aba-pagamentos-botao"), painel: document.getElementById("aba-pagamentos") },
 ];
 
-function selecionarAba(alvo, { registrarHistorico = true } = {}) {
+async function selecionarAba(alvo, { registrarHistorico = true } = {}) {
+  if (!alvo) return false;
+  const atual = abas.find((aba) => !aba.painel.hidden);
+  if (atual && !(await permitirSaidaEdicao(atual.painel))) return false;
   if (registrarHistorico && window.location.hash !== `#${alvo.painel.id}`) {
     window.history.pushState(null, "", `#${alvo.painel.id}`);
   }
@@ -577,6 +731,7 @@ function selecionarAba(alvo, { registrarHistorico = true } = {}) {
   if (alvo.painel.id === "aba-integracoes") carregarStatusIntegracoes();
   if (alvo.painel.id === "aba-financeiro") carregarLancamentos();
   if (alvo.painel.id === "aba-pagamentos") carregarPagamentos();
+  return true;
 }
 
 for (const aba of abas) aba.botao.addEventListener("click", () => selecionarAba(aba));
@@ -707,8 +862,7 @@ function linhaDoTempoMovimentos(movimentos) {
       type: "button",
       role: "tab",
       "aria-selected": valor === "todos" ? "true" : "false",
-      texto: rotulo,
-    });
+    }, [el("span", { class: "cds--content-switcher__label", texto: rotulo })]);
     botao.addEventListener("click", () => {
       for (const outro of filtros.querySelectorAll("button")) {
         outro.classList.remove("cds--content-switcher--selected");
@@ -1564,9 +1718,10 @@ async function carregarMonitoramentos() {
       resultadoMonitoramentos.appendChild(notificacao("error", "Não foi possível carregar", dados.mensagem));
       return;
     }
+    resultadoMonitoramentos.appendChild(el("p", { class: "campo-ajuda", texto: `Lista carregada em ${new Date().toLocaleString("pt-BR")}. Atualizar esta lista não dispara uma verificação no DJEN.` }));
     const lista = dados.monitoramentos || [];
     if (!lista.length) {
-      resultadoMonitoramentos.appendChild(notificacao("info", "Nenhum monitoramento ativo", "Use \"Acompanhar\" numa consulta de processo ou publicações para criar um."));
+      resultadoMonitoramentos.appendChild(notificacao("info", "Nenhum monitoramento ativo", "Use a ação de monitoramento em Consultar processo ou Consultar publicações para criar um."));
       return;
     }
     for (const m of lista) resultadoMonitoramentos.appendChild(cartaoMonitoramento(m));
@@ -1941,19 +2096,82 @@ document.getElementById("botao-atualizar-monitoramentos").addEventListener("clic
 
 // --- Modais Carbon -----------------------------------------------------------------------
 
-function abrirModal(id) {
-  const modal = document.getElementById(id);
-  if (!modal) return;
-  modal.classList.add("is-visible");
-  const primeiro = modal.querySelector("input, select, textarea, button:not(.cds--modal-close)");
-  if (primeiro) primeiro.focus();
+const pilhaModais = [];
+const inertOriginais = new Map();
+let overflowAnterior = "";
+
+function atualizarFundoModais() {
+  for (const [elemento, valor] of inertOriginais) elemento.inert = valor;
+  inertOriginais.clear();
+  const ativo = pilhaModais.at(-1)?.modal;
+  if (!ativo) { document.body.style.overflow = overflowAnterior; return; }
+  let ramo = ativo;
+  while (ramo && ramo !== document.body) {
+    for (const irmao of ramo.parentElement.children) {
+      if (irmao === ramo || ["SCRIPT", "STYLE"].includes(irmao.tagName)) continue;
+      inertOriginais.set(irmao, irmao.inert);
+      irmao.inert = true;
+    }
+    ramo = ramo.parentElement;
+  }
+  document.body.style.overflow = "hidden";
 }
 
-function fecharModal(id) {
-  const modal = document.getElementById(id);
-  if (!modal) return;
-  modal.classList.remove("is-visible");
+function controlesModal(modal) {
+  return [...modal.querySelectorAll('button, input, select, textarea, a[href], [tabindex]')]
+    .filter((campo) => !campo.disabled && campo.tabIndex >= 0 && !campo.closest("[inert]") && campo.getClientRects().length);
 }
+
+function abrirModal(id) {
+  const modal = document.getElementById(id);
+  if (!modal || pilhaModais.some((item) => item.modal === modal)) return;
+  if (!pilhaModais.length) overflowAnterior = document.body.style.overflow;
+  pilhaModais.push({ modal, origem: document.activeElement });
+  modal.style.zIndex = String(9000 + pilhaModais.length);
+  modal.classList.add("is-visible");
+  modal.tabIndex = -1;
+  for (const form of modal.querySelectorAll("form")) marcarFormularioSalvo(form, true);
+  atualizarFundoModais();
+  const controles = controlesModal(modal);
+  const primeiro = controles.find((campo) => campo.matches("input, select, textarea")) || controles[0];
+  (primeiro || modal).focus();
+}
+
+async function fecharModal(id) {
+  const modal = document.getElementById(id);
+  if (!modal?.classList.contains("is-visible")) return true;
+  if (formulariosPendentes(modal).length && !(await permitirSaidaEdicao(modal))) return false;
+  const indice = pilhaModais.findIndex((item) => item.modal === modal);
+  const entrada = indice >= 0 ? pilhaModais.splice(indice, 1)[0] : null;
+  modal.classList.remove("is-visible");
+  modal.style.zIndex = "";
+  atualizarFundoModais();
+  if (entrada?.origem?.isConnected && !entrada.origem.closest("[hidden], [inert]")) entrada.origem.focus();
+  else {
+    const topo = pilhaModais.at(-1)?.modal;
+    if (topo) (controlesModal(topo)[0] || topo).focus();
+  }
+  return true;
+}
+
+document.addEventListener("keydown", (ev) => {
+  const modal = pilhaModais.at(-1)?.modal;
+  if (!modal || ev.defaultPrevented) return;
+  if (ev.key === "Escape") { ev.preventDefault(); fecharModal(modal.id); }
+  if (ev.key !== "Tab") return;
+  const controles = controlesModal(modal);
+  const primeiro = controles[0] || modal;
+  const ultimo = controles.at(-1) || modal;
+  if (!modal.contains(document.activeElement) || (ev.shiftKey && document.activeElement === primeiro) || (!ev.shiftKey && document.activeElement === ultimo)) {
+    ev.preventDefault();
+    (ev.shiftKey ? ultimo : primeiro).focus();
+  }
+});
+
+document.addEventListener("focusin", (ev) => {
+  const modal = pilhaModais.at(-1)?.modal;
+  if (modal && !modal.contains(ev.target)) (controlesModal(modal)[0] || modal).focus();
+});
 
 document.addEventListener("click", (ev) => {
   const alvo = ev.target.closest("[data-fechar-modal]");
@@ -1962,8 +2180,30 @@ document.addEventListener("click", (ev) => {
 
 document.querySelectorAll(".cds--modal").forEach((modal) => {
   modal.addEventListener("click", (ev) => { if (ev.target === modal) fecharModal(modal.id); });
-  modal.addEventListener("keydown", (ev) => { if (ev.key === "Escape") fecharModal(modal.id); });
 });
+
+function escolherSaidaEdicao() {
+  return new Promise((resolve) => {
+    const modal = document.getElementById("modal-edicao-pendente");
+    function concluir(escolha) {
+      modal.removeEventListener("click", aoClicar);
+      modal.removeEventListener("keydown", aoTeclado);
+      fecharModal(modal.id);
+      resolve(escolha);
+    }
+    function aoClicar(ev) {
+      const escolha = ev.target.closest("[data-escolha-edicao]")?.dataset.escolhaEdicao;
+      if (escolha || ev.target === modal) concluir(escolha || "continuar");
+    }
+    function aoTeclado(ev) {
+      if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); concluir("continuar"); }
+    }
+    modal.addEventListener("click", aoClicar);
+    modal.addEventListener("keydown", aoTeclado);
+    abrirModal(modal.id);
+    document.getElementById("edicao-continuar").focus();
+  });
+}
 
 // Substitui window.confirm() por um modal Carbon: devolve uma Promise<boolean> (true = confirmou).
 function confirmarAcao(mensagem, opcoes = {}) {
@@ -1991,7 +2231,7 @@ function confirmarAcao(mensagem, opcoes = {}) {
     }
     const aoConfirmar = () => concluir(true);
     const aoCancelar = () => concluir(false);
-    const aoTeclado = (ev) => { if (ev.key === "Escape") concluir(false); };
+    const aoTeclado = (ev) => { if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); concluir(false); } };
     const aoClicarFundo = (ev) => { if (ev.target === modal) concluir(false); };
 
     document.getElementById("modal-confirmar-titulo").textContent = titulo;
@@ -2169,7 +2409,8 @@ function _definirModoCadastroContato(modo) {
 }
 
 // Cadastro de cliente não usa modal: abre a mesma tela de detalhe, em branco, pronta para criar.
-function abrirNovoContato() {
+async function abrirNovoContato() {
+  if (!(await permitirSaidaEdicao())) return;
   document.getElementById("contatos-vista-lista").hidden = true;
   document.getElementById("contatos-vista-detalhe").hidden = false;
   document.getElementById("contato-detalhe-nome").textContent = "Novo cliente";
@@ -2185,10 +2426,12 @@ function abrirNovoContato() {
   gruposContato.emails.definirValores([]);
   gruposContato.sites.definirValores([]);
   gruposContato.enderecos.definirValores([]);
+  marcarFormularioSalvo(formContatoCadastro, true);
   document.getElementById("contato-nome").focus();
 }
 
 async function abrirContato(clienteId) {
+  if (!(await permitirSaidaEdicao())) return;
   document.getElementById("contatos-vista-lista").hidden = true;
   document.getElementById("contatos-vista-detalhe").hidden = false;
   document.getElementById("contato-detalhe-nome").textContent = "Carregando…";
@@ -2207,6 +2450,7 @@ async function abrirContato(clienteId) {
       "contato", gruposContato, cliente_registro, definirTipoPessoaContato, definirPerfilContato,
     );
     formContatoCadastro.dataset.clienteId = clienteId;
+    marcarFormularioSalvo(formContatoCadastro, true);
     await _renderizarProcessosVinculados(clienteId);
   } catch (erro) {
     document.getElementById("contato-detalhe-nome").textContent = "Erro ao carregar cliente";
@@ -2214,7 +2458,8 @@ async function abrirContato(clienteId) {
   }
 }
 
-function voltarParaContatos() {
+async function voltarParaContatos() {
+  if (!(await permitirSaidaEdicao(document.getElementById("contatos-vista-detalhe")))) return;
   document.getElementById("contatos-vista-detalhe").hidden = true;
   document.getElementById("contatos-vista-lista").hidden = false;
   renderizarListaContatos();
@@ -2226,6 +2471,8 @@ function _selecionarSubabaContato(nome) {
   document.getElementById("contato-subaba-processos-botao").setAttribute("aria-selected", String(!ativarCadastro));
   document.getElementById("contato-subaba-cadastro").hidden = !ativarCadastro;
   document.getElementById("contato-subaba-processos").hidden = ativarCadastro;
+  document.getElementById("contato-subaba-cadastro-botao").tabIndex = ativarCadastro ? 0 : -1;
+  document.getElementById("contato-subaba-processos-botao").tabIndex = ativarCadastro ? -1 : 0;
 }
 
 function _renderizarCasosVinculadosNoContainer(container, clienteId) {
@@ -2812,7 +3059,7 @@ for (const id of ["cobranca-valor", "cobranca-parcelas", "cobranca-vencimento"])
   document.getElementById(id).addEventListener("input", _atualizarPreviewParcelas);
 }
 
-document.getElementById("form-nova-cobranca").addEventListener("submit", async (evento) => {
+registrarSalvamento(document.getElementById("form-nova-cobranca"), async (evento) => {
   evento.preventDefault();
   const botao = document.querySelector("button[form='form-nova-cobranca'][type='submit']");
   const resultado = document.getElementById("resultado-nova-cobranca");
@@ -2832,6 +3079,7 @@ document.getElementById("form-nova-cobranca").addEventListener("submit", async (
   const pararEspera = mostrarEspera(resultado, botao, "Criando cobrança");
   try {
     await _enviarJson("/pagamentos", corpo);
+    marcarFormularioSalvo(document.getElementById("form-nova-cobranca"));
     fecharModal("modal-nova-cobranca");
     await carregarPagamentos();
   } catch (erro) {
@@ -2983,7 +3231,7 @@ function _renderizarTabelaCasosPagina() {
   renderizarCasosFavoritos();
 }
 
-// --- Cadastro completo de cliente/contato: 3 seções (breadcrumb) --------------------------
+// --- Cadastro completo de cliente/contato: 3 seções (abas) --------------------------
 // Compartilhado entre o modal "Novo cliente" (prefixo "cliente") e a sub-aba "Cadastro" da
 // tela de detalhe (prefixo "contato") - mesmos ids de campo, só o prefixo muda.
 
@@ -2997,8 +3245,9 @@ function _selecionarAbaCadastro(prefixo, nome) {
     const ativa = aba.nome === nome;
     const botao = document.getElementById(`${prefixo}-cadastro-aba-${aba.sufixo}-botao`);
     const painel = document.getElementById(`${prefixo}-cadastro-painel-${aba.sufixo}`);
-    botao.closest(".cds--breadcrumb-item").classList.toggle("cds--breadcrumb-item--current", ativa);
-    if (ativa) botao.setAttribute("aria-current", "page"); else botao.removeAttribute("aria-current");
+    botao.classList.toggle("cds--content-switcher--selected", ativa);
+    botao.setAttribute("aria-selected", String(ativa));
+    botao.tabIndex = ativa ? 0 : -1;
     painel.hidden = !ativa;
   }
 }
@@ -3354,7 +3603,7 @@ const definirPerfilContato = _configurarSelect("contato-perfil", "cliente");
 const formCaso = document.getElementById("form-caso");
 const resultadoCaso = document.getElementById("resultado-caso");
 
-formCaso.addEventListener("submit", async (evento) => {
+registrarSalvamento(formCaso, async (evento) => {
   evento.preventDefault();
   if (!exigirCliente(resultadoCaso)) return;
   const clienteId = document.getElementById("caso-cliente").value;
@@ -3379,6 +3628,7 @@ formCaso.addEventListener("submit", async (evento) => {
     formCaso.reset();
     document.getElementById("caso-cliente-busca").value = "";
     document.getElementById("caso-cliente").value = "";
+    marcarFormularioSalvo(formCaso, true);
     _cache.casos = [..._cache.casos, novoCaso];
     _renderizarTabelaCasosPagina();
     limpar(resultadoCaso);
@@ -3390,9 +3640,9 @@ formCaso.addEventListener("submit", async (evento) => {
       style: "margin-top: 0.75rem; display: block;",
       texto: "Abrir caso criado",
     });
-    btnAbrirCaso.addEventListener("click", () => {
+    btnAbrirCaso.addEventListener("click", async () => {
       fecharModal("modal-novo-caso");
-      selecionarAba(abas.find((a) => a.painel.id === "aba-casos"));
+      if (!(await selecionarAba(abas.find((a) => a.painel.id === "aba-casos")))) return;
       abrirCaso(novoCaso.id);
     });
     divSucesso.appendChild(btnAbrirCaso);
@@ -3486,7 +3736,7 @@ document.getElementById("casos-busca").addEventListener("input", (evento) => {
 const formContatoCadastro = document.getElementById("form-contato-cadastro");
 const resultadoContatoCadastro = document.getElementById("resultado-contato-cadastro");
 
-formContatoCadastro.addEventListener("submit", async (evento) => {
+registrarSalvamento(formContatoCadastro, async (evento) => {
   evento.preventDefault();
   const clienteId = formContatoCadastro.dataset.clienteId;
   const criando = !clienteId;
@@ -3507,6 +3757,7 @@ formContatoCadastro.addEventListener("submit", async (evento) => {
     resultadoContatoCadastro.appendChild(notificacao("success", criando ? "Cliente cadastrado" : "Cliente atualizado"));
     document.getElementById("contato-detalhe-nome").textContent = salvo.nome;
     formContatoCadastro.dataset.clienteId = salvo.id;
+    marcarFormularioSalvo(formContatoCadastro);
     if (criando) {
       _definirModoCadastroContato("existente");
       _cache.clientes = [..._cache.clientes, salvo];
@@ -3532,7 +3783,9 @@ document.getElementById("contato-excluir").addEventListener("click", async () =>
   try {
     await _enviarJson(`/clientes/${clienteId}`, {}, "DELETE");
     _cache.clientes = _cache.clientes.filter((c) => c.id !== clienteId);
-    voltarParaContatos();
+    marcarFormularioSalvo(formContatoCadastro, true);
+    await voltarParaContatos();
+    mostrarToast("success", "Cliente excluído");
   } catch (erro) {
     mostrarErro(resultadoContatoCadastro, erro.message);
     botao.disabled = false;
@@ -3560,19 +3813,21 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
 
     const usaCheckboxesPartes = Boolean(partes && partes.length);
 
-    const selectCliente = el("select", { class: "cds--select-input" }, [
+    const selectCliente = el("select", { class: "cds--select-input", "aria-label": "Cliente" }, [
       el("option", { value: "" }, ["+ Novo cliente"]),
       ..._cache.clientes.map((c) => el("option", { value: c.id }, [c.nome])),
     ]);
     const campoNomeNovo = el("input", {
       class: "cds--text-input",
+      "aria-label": usaCheckboxesPartes ? "Outro cliente (opcional)" : "Nome do novo cliente",
       placeholder: usaCheckboxesPartes ? "+ outro cliente (opcional)" : "Nome do novo cliente",
       value: usaCheckboxesPartes ? "" : (nomeSugerido || ""),
     });
-    const campoTitulo = el("input", { class: "cds--text-input", placeholder: "Título do caso (opcional)", value: tituloSugerido || "" });
-    const campoAcao = el("input", { class: "cds--text-input", placeholder: "Ação (opcional)" });
-    const campoForo = el("input", { class: "cds--text-input", placeholder: "Foro (opcional)" });
-    const botaoSalvar = el("button", { class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Salvar caso" });
+    const campoTitulo = el("input", { class: "cds--text-input", "aria-label": "Título do caso (opcional)", placeholder: "Título do caso (opcional)", value: tituloSugerido || "" });
+    const campoAcao = el("input", { class: "cds--text-input", "aria-label": "Ação (opcional)", placeholder: "Ação (opcional)" });
+    const campoForo = el("input", { class: "cds--text-input", "aria-label": "Foro (opcional)", placeholder: "Foro (opcional)" });
+    const botaoSalvar = el("button", { class: "cds--btn cds--btn--primary cds--btn--sm", type: "submit", texto: "Salvar caso" });
+    const miniForm = el("form", { class: "mini-form-caso", id: "form-caso-publicacao" });
     const statusMini = el("span", { class: "app-espera app-espera--inline" });
 
     selectCliente.addEventListener("change", () => {
@@ -3639,7 +3894,8 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
       });
     }
 
-    botaoSalvar.addEventListener("click", async () => {
+    registrarSalvamento(miniForm, async (evento) => {
+      evento.preventDefault();
       botaoSalvar.disabled = true;
       limpar(statusMini);
       try {
@@ -3680,6 +3936,7 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
             mostrarToast("warning", "Caso criado", `Caso cadastrado, mas não foi possível vincular a publicação: ${erroVinculo.message}`);
           }
         }
+        marcarFormularioSalvo(miniForm);
         fecharModal("modal-cadastrar-caso-publicacao");
         mostrarToast("success", "Caso cadastrado", publicacaoVinculada ? "Caso criado e publicação vinculada." : "Caso criado.");
         if (aoSalvar) aoSalvar();
@@ -3689,7 +3946,7 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
       }
     });
 
-    const miniForm = el("div", { class: "mini-form-caso" }, [
+    miniForm.append(...[
       el("div", { class: "cds--form-item" }, [selectCliente]),
       blocoPartes,
       el("div", { class: "cds--form-item" }, [campoNomeNovo]),
@@ -3700,8 +3957,9 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
       statusDataJud,
       botaoSalvar,
       statusMini,
-    ]);
+    ].filter(Boolean));
     const corpoModal = document.getElementById("modal-cadastrar-caso-publicacao-corpo");
+    for (const form of corpoModal.querySelectorAll("form")) formulariosProtegidos.delete(form);
     limpar(corpoModal);
     document.getElementById("modal-cadastrar-caso-publicacao-titulo").textContent = tituloModal || rotulo || "Cadastrar como caso";
     corpoModal.appendChild(miniForm);
@@ -3790,9 +4048,9 @@ function _badgeStatusPubOab(status) {
   return el("span", { class: `cds--tag cds--tag--${cor} cds--tag--sm`, texto: _ROTULO_STATUS_PUB_OAB[status] || status });
 }
 
-function _irParaConsultaProcesso(numeroProcesso) {
+async function _irParaConsultaProcesso(numeroProcesso) {
   const abaProcesso = abas.find((a) => a.painel.id === "aba-processo");
-  if (abaProcesso) selecionarAba(abaProcesso);
+  if (abaProcesso && !(await selecionarAba(abaProcesso))) return;
   const campo = document.getElementById("numero-processo");
   if (campo) campo.value = numeroProcesso || "";
   const campTribunal = document.getElementById("tribunal");
@@ -4035,10 +4293,11 @@ async function carregarPublicacoesOab() {
     const { publicacoes, total } = await _buscarJson(url);
     limpar(container);
     container.appendChild(el("div", { id: "pub-oab-status-geral" }));
+    container.appendChild(el("p", { class: "campo-ajuda", texto: `Dados do painel carregados em ${new Date().toLocaleString("pt-BR")}. A última verificação automática no DJEN não é informada pelo servidor.` }));
     if (!(publicacoes || []).length) {
       container.appendChild(notificacao(
         "info", "Nenhuma publicação capturada ainda",
-        "Crie um monitoramento por OAB na aba Publicações (DJEN) - a captura roda a cada 24h."
+        'Em Consultar publicações, informe a OAB, consulte e clique em Criar monitoramento por e-mail. A captura automática para este painel ocorre a cada 24 horas; os avisos por e-mail são verificados a cada 6 horas, quando configurados.'
       ));
       return;
     }
@@ -4120,7 +4379,7 @@ document.getElementById("form-pub-oab-manual").addEventListener("submit", async 
 // ─── DataJud: busca ação/foro a partir de número de processo ─────────────────
 
 async function buscarAcaoForoDataJud(numerosCampo, campAcao, campForo, statusEl, botao) {
-  if (!cliente) { mostrarErro(statusEl, "Cliente MCP não disponível."); return; }
+  if (!cliente) { mostrarErro(statusEl, "Conecte-se em Acesso antes de consultar o DataJud."); return; }
   const numeros = numerosCampo.value.split(",").map((s) => s.trim()).filter(Boolean);
   if (!numeros.length) { mostrarAviso(statusEl, "Informe ao menos um número de processo."); return; }
   const numero = numeros[0];
@@ -4139,6 +4398,8 @@ async function buscarAcaoForoDataJud(numerosCampo, campAcao, campForo, statusEl,
       campAcao.value = partes.join(" - ");
     }
     if (proc.orgaoJulgador && !campForo.value) campForo.value = proc.orgaoJulgador;
+    const form = campAcao.closest("form");
+    if (form) atualizarIndicadorEdicao(form);
     proc.classe ? mostrarSucesso(statusEl, "Preenchido.") : mostrarAviso(statusEl, "Sem dados de classe/órgão.");
   } catch (err) {
     mostrarErro(statusEl, err.message || "Erro ao consultar DataJud.");
@@ -4171,7 +4432,8 @@ document.getElementById("btn-datajud-detalhe").addEventListener("click", () =>
 
 let _casoDetalheAtual = null;
 
-function voltarParaCasos() {
+async function voltarParaCasos() {
+  if (!(await permitirSaidaEdicao(document.getElementById("caso-vista-detalhe")))) return;
   document.getElementById("caso-vista-detalhe").hidden = true;
   document.getElementById("caso-vista-lista").hidden = false;
   _casoDetalheAtual = null;
@@ -4183,10 +4445,12 @@ function _selecionarSubabaCaso(nome) {
     const btn = document.getElementById(`caso-subaba-${n}-botao`);
     btn.classList.toggle("sub-aba-ativa", n === nome);
     btn.setAttribute("aria-selected", n === nome ? "true" : "false");
+    btn.tabIndex = n === nome ? 0 : -1;
   }
 }
 
 async function abrirCaso(casoId) {
+  if (!(await permitirSaidaEdicao())) return;
   document.getElementById("caso-vista-lista").hidden = true;
   document.getElementById("caso-vista-detalhe").hidden = false;
   _selecionarSubabaCaso("cadastro");
@@ -4209,6 +4473,8 @@ async function abrirCaso(casoId) {
     _preencherCamposPartes("advogados", (caso.advogados || "").split(","));
     document.getElementById("form-caso-editar").dataset.casoId = casoId;
     document.getElementById("form-caso-partes").dataset.casoId = casoId;
+    marcarFormularioSalvo(document.getElementById("form-caso-editar"), true);
+    marcarFormularioSalvo(document.getElementById("form-caso-partes"), true);
     await _carregarAtividades(casoId);
   } catch (erro) {
     document.getElementById("caso-detalhe-titulo").textContent = "Erro ao carregar";
@@ -4616,7 +4882,7 @@ document.getElementById("btn-nova-atividade").addEventListener("click", () => {
 });
 document.getElementById("modal-atividade-fechar").addEventListener("click", () => fecharModal("modal-atividade"));
 
-document.getElementById("form-caso-editar").addEventListener("submit", async (evento) => {
+registrarSalvamento(document.getElementById("form-caso-editar"), async (evento) => {
   evento.preventDefault();
   const casoId = evento.target.dataset.casoId;
   if (!casoId) return;
@@ -4636,6 +4902,7 @@ document.getElementById("form-caso-editar").addEventListener("submit", async (ev
     const atualizado = await _enviarJson(`/casos/${casoId}`, corpo, "PATCH");
     limpar(resultado);
     resultado.appendChild(notificacao("success", "Caso atualizado"));
+    marcarFormularioSalvo(evento.target);
     document.getElementById("caso-detalhe-titulo").textContent = `Nº ${atualizado.numero} — ${atualizado.titulo || "(sem título)"}`;
     const indice = _cache.casos.findIndex((c) => c.id === casoId);
     if (indice !== -1) _cache.casos[indice] = { ..._cache.casos[indice], ...atualizado };
@@ -4729,6 +4996,7 @@ async function _buscarPartesDJEN(casoId) {
       _preencherCamposPartes(tipo, [..._lerCamposPartes(tipo), ...nomes]);
     }
 
+    atualizarIndicadorEdicao(document.getElementById("form-caso-partes"));
     mostrarSucesso(statusEl, "Preenchido. Revise e salve.");
   } catch (err) {
     mostrarErro(statusEl, err.message || "Erro ao buscar partes.");
@@ -4737,7 +5005,7 @@ async function _buscarPartesDJEN(casoId) {
   }
 }
 
-document.getElementById("form-caso-partes").addEventListener("submit", async (evento) => {
+registrarSalvamento(document.getElementById("form-caso-partes"), async (evento) => {
   evento.preventDefault();
   const casoId = evento.target.dataset.casoId;
   if (!casoId) return;
@@ -4753,6 +5021,7 @@ document.getElementById("form-caso-partes").addEventListener("submit", async (ev
     await _enviarJson(`/casos/${casoId}`, corpo, "PATCH");
     limpar(resultado);
     resultado.appendChild(notificacao("success", "Partes atualizadas"));
+    marcarFormularioSalvo(evento.target);
   } catch (erro) {
     mostrarErro(resultado, erro.message);
   } finally {
@@ -4770,7 +5039,10 @@ document.getElementById("btn-excluir-caso").addEventListener("click", async () =
   try {
     await _enviarJson(`/casos/${casoId}`, {}, "DELETE");
     _cache.casos = _cache.casos.filter((c) => c.id !== casoId);
-    voltarParaCasos();
+    marcarFormularioSalvo(document.getElementById("form-caso-editar"), true);
+    marcarFormularioSalvo(document.getElementById("form-caso-partes"), true);
+    await voltarParaCasos();
+    mostrarToast("success", "Caso excluído");
     _renderizarTabelaCasosPagina();
   } catch (erro) {
     mostrarErro(document.getElementById("resultado-caso-editar"), erro.message);
@@ -4778,7 +5050,7 @@ document.getElementById("btn-excluir-caso").addEventListener("click", async () =
   }
 });
 
-document.getElementById("form-atividade").addEventListener("submit", async (evento) => {
+registrarSalvamento(document.getElementById("form-atividade"), async (evento) => {
   evento.preventDefault();
   const casoId = evento.target.dataset.casoId;
   if (!casoId) return;
@@ -4800,6 +5072,7 @@ document.getElementById("form-atividade").addEventListener("submit", async (even
     } else {
       await _enviarJson(`/casos/${casoId}/atividades`, corpo);
     }
+    marcarFormularioSalvo(document.getElementById("form-atividade"));
     fecharModal("modal-atividade");
     await _carregarAtividades(casoId);
   } catch (erro) {
@@ -4865,7 +5138,7 @@ document.getElementById("btn-lancamento-tipo-honorario").addEventListener("click
 
 document.getElementById("modal-honorario-fechar").addEventListener("click", () => fecharModal("modal-honorario"));
 
-document.getElementById("form-honorario").addEventListener("submit", async (evento) => {
+registrarSalvamento(document.getElementById("form-honorario"), async (evento) => {
   evento.preventDefault();
   const botao = document.querySelector("button[form='form-honorario'][type='submit']");
   const resultado = document.getElementById("resultado-honorario");
@@ -4882,6 +5155,7 @@ document.getElementById("form-honorario").addEventListener("submit", async (even
   const pararEspera = mostrarEspera(resultado, botao, "Salvando");
   try {
     await _enviarJson("/lancamentos", corpo);
+    marcarFormularioSalvo(document.getElementById("form-honorario"));
     fecharModal("modal-honorario");
     await carregarLancamentos();
   } catch (erro) {
@@ -4936,13 +5210,16 @@ function _sideNavFechar() {
 }
 function _sideNavInicializar() {
   if (_mqMobile.matches) { _sideNavFechar(); return; }
-  const salvo = localStorage.getItem("cnj_side_nav_expanded");
-  if (salvo === "1") _sideNavAbrir(); else _sideNavFechar();
+  let salvo;
+  try { salvo = localStorage.getItem("cnj_side_nav_expanded"); } catch { /* usa o padrão */ }
+  if (salvo !== "0") _sideNavAbrir(); else _sideNavFechar();
 }
 _btnMenuToggle.addEventListener("click", () => {
   const vaiAbrir = !_sideNav.classList.contains("cds--side-nav--expanded");
   if (vaiAbrir) _sideNavAbrir(); else _sideNavFechar();
-  if (!_mqMobile.matches) localStorage.setItem("cnj_side_nav_expanded", vaiAbrir ? "1" : "0");
+  if (!_mqMobile.matches) {
+    try { localStorage.setItem("cnj_side_nav_expanded", vaiAbrir ? "1" : "0"); } catch { /* preferência só nesta sessão */ }
+  }
 });
 _sideNavOverlay.addEventListener("click", _sideNavFechar);
 _mqMobile.addEventListener("change", _sideNavInicializar);
@@ -5046,11 +5323,11 @@ function _renderizarResultadosBusca(resultados) {
       if (_mqMobile.matches) _sideNavFechar();
       if (r.tipo === "cliente") {
         const abaContatos = abas.find((a) => a.painel.id === "aba-contatos");
-        if (abaContatos) selecionarAba(abaContatos);
+        if (abaContatos && !(await selecionarAba(abaContatos))) return;
         await abrirContato(r.id);
       } else {
         const abaCasos = abas.find((a) => a.painel.id === "aba-casos");
-        if (abaCasos) selecionarAba(abaCasos);
+        if (abaCasos && !(await selecionarAba(abaCasos))) return;
         await abrirCaso(r.id);
       }
     });
@@ -5062,14 +5339,43 @@ _inputBusca.addEventListener("input", () => {
   _renderizarResultadosBusca(_buscaGlobalResultados(_inputBusca.value));
 });
 
-// Restaura a seção somente após inicializar os componentes e caches usados pelos painéis.
-// O fragmento identifica apenas a seção, sem incluir token ou dados da consulta.
-function restaurarAbaDaUrl() {
+// Restaura a seção sem descartar edições nem colocar dados sensíveis na URL.
+async function restaurarAbaDaUrl() {
   const alvo = abas.find((aba) => `#${aba.painel.id}` === window.location.hash)
     || abas.find((aba) => aba.painel.id === (cliente ? "aba-processo" : "aba-acesso"));
-  window.history.replaceState(null, "", `#${alvo.painel.id}`);
-  selecionarAba(alvo, { registrarHistorico: false });
+  await selecionarAba(alvo, { registrarHistorico: false });
+  const atual = abas.find((aba) => !aba.painel.hidden);
+  if (atual) window.history.replaceState(null, "", `#${atual.painel.id}`);
 }
-
 window.addEventListener("hashchange", restaurarAbaDaUrl);
-restaurarAbaDaUrl();
+
+// Valida também tokens lembrados antes de entrar no painel.
+(async function carregarTokenSalvo() {
+  let salvo;
+  try { salvo = localStorage.getItem(CHAVE_TOKEN); } catch { /* continua sem persistência */ }
+  if (!salvo) { await restaurarAbaDaUrl(); return; }
+  campoToken.value = salvo;
+  checkboxLembrar.checked = true;
+  await validarToken(salvo, true, false);
+  if (cliente) await restaurarAbaDaUrl();
+})();
+
+for (const lista of document.querySelectorAll(".sub-abas[role=tablist], .sub-tabs[role=tablist], .cadastro-tabs[role=tablist]")) {
+  const botoes = [...lista.querySelectorAll('[role="tab"]')];
+  for (const botao of botoes) botao.tabIndex = botao.getAttribute("aria-selected") === "true" ? 0 : -1;
+  lista.addEventListener("click", (ev) => {
+    const alvo = ev.target.closest('[role="tab"]');
+    if (!alvo) return;
+    for (const botao of botoes) botao.tabIndex = botao === alvo ? 0 : -1;
+  });
+  lista.addEventListener("keydown", (ev) => {
+    const visiveis = botoes.filter((botao) => !botao.hidden);
+    const indice = visiveis.indexOf(document.activeElement);
+    let alvo;
+    if (ev.key === "ArrowRight") alvo = visiveis[(indice + 1) % visiveis.length];
+    if (ev.key === "ArrowLeft") alvo = visiveis[(indice - 1 + visiveis.length) % visiveis.length];
+    if (ev.key === "Home") alvo = visiveis[0];
+    if (ev.key === "End") alvo = visiveis.at(-1);
+    if (alvo) { ev.preventDefault(); alvo.click(); alvo.focus(); }
+  });
+}
