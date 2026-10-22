@@ -31,6 +31,7 @@ Plataforma auto-hospedada com controle total dos dados: roda no VPS do próprio 
 - Prazos processuais: feriados forenses do TJSP por comarca, monitoramento com expiração de 180 dias
 - Claude Desktop como cliente MCP para consultas assistidas por IA sem cópia-cola
 - Google Drive (pasta por caso) e Google Calendar (eventos) como integrações externas opcionais
+- Asaas (sandbox ou produção) como integração opcional de cobrança para o módulo Financeiro
 - Deploy via Docker + Caddy no VPS do escritório; deploy automático por GitHub Actions
 
 ## Capabilities and Constraints
@@ -40,8 +41,9 @@ Plataforma auto-hospedada com controle total dos dados: roda no VPS do próprio 
 - Consulta pontual com histórico local por dispositivo (localStorage, não sincronizado)
 - Favoritos de processo (tribunal + número)
 - CRUD de clientes (pessoa física ou jurídica) com paginação e typeahead
-- CRUD de casos vinculados a clientes; sub-abas: Cadastro, Partes, Atividades, Publicações, Movimentações
+- CRUD de casos vinculados a clientes; sub-abas: Cadastro, Partes, Atividades, Publicações, Movimentações, Vínculos
 - Publicações por OAB: painel dedicado, gestão de status em lote, captura manual, vinculação a caso
+- Financeiro: lançamentos (receitas/despesas, honorários) e cobranças via integração Asaas (sandbox/produção)
 - Máximo 5 monitoramentos por usuário; expiração automática após 180 dias sem publicação nova
 
 **Servidor MCP (tools):**

@@ -34,20 +34,31 @@ Plataforma integrada que conecta as APIs públicas do CNJ (DataJud e DJEN) a um 
 **Gestão de Clientes**
 
 - CRUD completo com busca e paginação
-- Abertura em modal com Carbon Design System
+- Abertura em modal com Carbon Design System, cadastro em 3 abas (pessoal, documentação, complementar)
+- Select de tipo de pessoa (física/jurídica), grupos de campos repetíveis e CEP via ViaCEP
 - Typeahead para seleção de clientes em formulários
 
 **Gestão de Casos**
 
-- CRUD completo com vínculo a cliente
+- CRUD completo com vínculo a cliente; alternância de visualização Tabela/Cards na listagem
 - Preenchimento automático de responsável (usuário logado) ao criar caso
 - Busca de ação/tipo e foro/vara via DataJud no modal de criação e na vista de detalhe
-- Vista de detalhe com sub-abas: Cadastro | Partes | Atividades | Publicações | Movimentações
+- Vista de detalhe com sub-abas: Cadastro | Partes | Atividades | Publicações | Movimentações | Vínculos
 - Edição inline de título, responsável, ação, foro e números de processo
 - Partes processuais: autor, réu e advogados; auto-preenchimento a partir de dados do DJEN
 - Gerenciamento de atividades (tarefas) por caso com tipo, status, data, hora e observações
 - Linha do tempo de movimentações via DataJud (sub-aba Movimentações)
 - Publicações do DJEN vinculadas ao caso (sub-aba Publicações)
+- Vínculos entre casos (sub-aba Vínculos), com listas suspensas de tribunal/UF, datas em dd/mm/aaaa e busca por número de processo
+- Criação de evento no Google Calendar institucional a partir de prazo calculado, registrado na linha do tempo do caso
+- Pendentes: fila de itens capturados automaticamente (ex: publicações) aguardando revisão, com opção de descartar
+
+**Financeiro**
+
+- Lançamentos financeiros (receitas/despesas), com tela dedicada para honorários
+- Pagamentos: cobranças via integração com o Asaas (sandbox ou produção), vinculadas ao cliente local
+- Parcelamento de cobrança e cancelamento de cobrança ainda não paga
+- Cliente é cadastrado no Asaas automaticamente na primeira cobrança (`asaas_customer_id` fica salvo no registro local)
 
 **Publicações por OAB**
 
@@ -60,6 +71,11 @@ Plataforma integrada que conecta as APIs públicas do CNJ (DataJud e DJEN) a um 
 
 - Google Drive: criação de pasta por caso
 - Google Calendar: criação de evento por caso
+
+**Interface**
+
+- Header e navegação no padrão Carbon "Side Nav Rail w/ Header" (rail colapsado + drawer expansível, responsivo para mobile)
+- Busca global e indicador de status das integrações (Google, Asaas) no header
 
 **Infraestrutura**
 
@@ -158,6 +174,8 @@ cnj-processual/
 ├── server.py              # Servidor MCP + ASGI web, roteamento, autenticação
 ├── db.py                  # Camada de dados: SQLite, migrações, CRUD
 ├── google_integracao.py   # Integração Google Drive e Calendar
+├── asaas_integracao.py    # Integração Asaas (cobranças do módulo Financeiro)
+├── guia-do-usuario.html   # Guia público do usuário final (/guia)
 ├── static/
 │   ├── app.html           # Painel web (Carbon Design System)
 │   ├── app.js             # Lógica frontend (MCP client, casos, clientes, pub. OAB)
@@ -225,6 +243,35 @@ PATCH  /casos/<id>/atividades/<aid>    Atualizar atividade
 DELETE /casos/<id>/atividades/<aid>    Excluir atividade
 ```
 
+### Vínculos e Agenda de Caso
+
+```
+GET    /casos/<id>/vinculos             Listar vínculos do caso
+POST   /casos/<id>/vinculos             Criar vínculo (com outro caso ou processo)
+DELETE /casos/<id>/vinculos/<vid>       Remover vínculo
+POST   /casos/<id>/evento-calendar      Criar evento no Google Calendar para um prazo
+```
+
+### Financeiro
+
+```
+GET    /lancamentos               Listar lançamentos financeiros
+POST   /lancamentos               Criar lançamento (ex: honorário)
+PATCH  /lancamentos/<id>          Marcar/desmarcar como pago
+DELETE /lancamentos/<id>          Excluir lançamento
+
+GET    /pagamentos                Listar cobranças Asaas (filtros: cliente_id, status, offset)
+POST   /pagamentos                Criar cobrança Asaas para um cliente
+DELETE /pagamentos/<id>           Cancelar cobrança Asaas ainda não paga
+```
+
+### Pendentes
+
+```
+GET    /pendentes                        Listar itens capturados aguardando revisão
+POST   /pendentes/<numero>/descartar     Descartar um item pendente
+```
+
 ### Publicações por OAB
 
 ```
@@ -259,6 +306,9 @@ DELETE /monitoramentos/<id>       Remover monitoramento
 | `CNJ_SMTP_USER` | — | Usuário SMTP |
 | `CNJ_SMTP_PASSWORD` | — | Senha SMTP |
 | `CNJ_SMTP_FROM` | — | E-mail remetente das notificações |
+| `ASAAS_AMBIENTE` | `sandbox` | Ambiente da integração Asaas (`sandbox` ou `producao`) |
+| `ASAAS_API_KEY_SANDBOX` | — | API key do Asaas (ambiente sandbox) |
+| `ASAAS_API_KEY` | — | API key do Asaas (ambiente produção) |
 
 ## Gestão de Usuários (CLI)
 
@@ -275,13 +325,21 @@ python server.py --listar-usuarios
 ## Schema do Banco de Dados
 
 ```
-usuarios          — autenticação e tokens
-clientes          — pessoas físicas ou jurídicas atendidas
-casos             — processos vinculados a clientes
-  └ caso_atividades — tarefas e eventos do caso
-monitoramentos    — acompanhamentos recorrentes no DJEN
-publicacoes_oab   — publicações encontradas por monitoramento
-integracao_google — tokens OAuth2 por usuário
+usuarios                 — autenticação e tokens
+clientes                 — pessoas físicas ou jurídicas atendidas
+  └ cliente_telefones    — telefones do cliente
+casos                    — processos vinculados a clientes
+  ├ caso_processos       — números de processo do caso
+  ├ caso_clientes        — vínculo caso ↔ cliente(s)
+  ├ caso_atividades      — tarefas e eventos do caso
+  ├ caso_eventos         — linha do tempo (movimentações, Calendar)
+  └ caso_vinculos        — vínculos entre casos/processos (sub-aba Vínculos)
+lancamentos_financeiros  — lançamentos e cobranças (Financeiro, Asaas)
+monitoramentos           — acompanhamentos recorrentes no DJEN
+publicacoes_capturadas   — publicações encontradas por monitoramento de OAB
+triagem_processos        — itens pendentes de revisão
+integracao_google        — tokens OAuth2 por usuário
+cache_datajud            — cache de respostas do DataJud
 ```
 
 ## Arquitetura
