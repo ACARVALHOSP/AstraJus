@@ -294,6 +294,47 @@ class DjenTest(_Simulado, unittest.TestCase):
         self.assertEqual(self.consultar(numero_oab="1")["total"], 1)
 
 
+class ProcessoUnificadoTest(unittest.TestCase):
+    def consultar(self):
+        return _rodar(server.consultar_processo_unificado(tribunal="tjsp", numero_processo="1006314-27.2023.8.26.0005"))
+
+    def test_combina_datajud_e_djen_sem_duplicar_partes(self):
+        datajud_ok = {
+            "encontrado": True,
+            "processos": [{"classe": "EMBARGOS DE TERCEIRO CÍVEL", "movimentos": []}],
+        }
+        djen_ok = {
+            "itens": [
+                {
+                    "destinatarios": [{"nome": "FULANO", "polo": "A"}],
+                    "destinatarioadvogados": [{"nome": "ADV", "numero_oab": "330659", "uf_oab": "SP"}],
+                    "hash": "abc123",
+                    "texto": "sigiloso, não deve aparecer",
+                },
+                {
+                    "destinatarios": [{"nome": "fulano", "polo": "A"}],  # mesma pessoa, caixa diferente
+                    "destinatarioadvogados": [{"nome": "ADV", "numero_oab": "330659", "uf_oab": "SP"}],
+                    "hash": "def456",
+                    "texto": "outra publicação",
+                },
+            ]
+        }
+        with mock.patch.object(server, "consultar_processo_datajud", return_value=datajud_ok), \
+             mock.patch.object(server, "consultar_publicacoes_djen", return_value=djen_ok):
+            r = self.consultar()
+
+        self.assertTrue(r["encontrado_datajud"])
+        self.assertEqual(len(r["partes"]), 1)  # deduplicado por nome
+        self.assertEqual(len(r["advogados"]), 1)  # deduplicado por OAB
+        self.assertEqual(len(r["publicacoes"]), 2)
+        self.assertNotIn("texto", r["publicacoes"][0])
+
+    def test_erro_em_qualquer_fonte_interrompe_a_combinacao(self):
+        with mock.patch.object(server, "consultar_processo_datajud", return_value=server._erro("falhou")), \
+             mock.patch.object(server, "consultar_publicacoes_djen", return_value={"itens": []}):
+            self.assertTrue(self.consultar()["erro"])
+
+
 class CertidaoTest(_Simulado, unittest.TestCase):
     def setUp(self):
         super().setUp()
@@ -1896,7 +1937,7 @@ class RegistroDeToolsTest(unittest.TestCase):
             "consultar_processo_datajud", "consultar_publicacoes_djen", "baixar_certidao_djen",
             "monitorar_publicacoes", "listar_monitoramentos", "remover_monitoramento",
             "buscar_feriados_forenses", "consultar_jurimetria_cjpg",
-            "perfil_decisorio_magistrado", "status_apis",
+            "perfil_decisorio_magistrado", "status_apis", "consultar_processo_unificado",
         })
 
 
