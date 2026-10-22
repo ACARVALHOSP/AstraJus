@@ -555,13 +555,10 @@ const abas = [
   { botao: document.getElementById("aba-pagamentos-botao"), painel: document.getElementById("aba-pagamentos") },
 ];
 
-// Token salvo já conecta sozinho (ver carregarTokenSalvo) - pula a aba Acesso e vai direto pro uso.
-if (cliente) {
-  const abaProcessoInicial = abas.find((a) => a.painel.id === "aba-processo");
-  if (abaProcessoInicial) selecionarAba(abaProcessoInicial);
-}
-
-function selecionarAba(alvo) {
+function selecionarAba(alvo, { registrarHistorico = true } = {}) {
+  if (registrarHistorico && window.location.hash !== `#${alvo.painel.id}`) {
+    window.history.pushState(null, "", `#${alvo.painel.id}`);
+  }
   for (const aba of abas) {
     const ativa = aba === alvo;
     aba.botao.setAttribute("aria-selected", String(ativa));
@@ -5044,3 +5041,15 @@ function _renderizarResultadosBusca(resultados) {
 _inputBusca.addEventListener("input", () => {
   _renderizarResultadosBusca(_buscaGlobalResultados(_inputBusca.value));
 });
+
+// Restaura a seção somente após inicializar os componentes e caches usados pelos painéis.
+// O fragmento identifica apenas a seção, sem incluir token ou dados da consulta.
+function restaurarAbaDaUrl() {
+  const alvo = abas.find((aba) => `#${aba.painel.id}` === window.location.hash)
+    || abas.find((aba) => aba.painel.id === (cliente ? "aba-processo" : "aba-acesso"));
+  window.history.replaceState(null, "", `#${alvo.painel.id}`);
+  selecionarAba(alvo, { registrarHistorico: false });
+}
+
+window.addEventListener("hashchange", restaurarAbaDaUrl);
+restaurarAbaDaUrl();
