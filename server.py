@@ -2977,18 +2977,28 @@ class _AutenticacaoBearer:
                 await _responder(send, 404, b"Nao encontrado")
             return
         if caminho == "/static/cadastro.js" and scope.get("method") == "GET":
-            # script externo da página de cadastro (a CSP não permite script inline)
+            # script externo da página de cadastro (a CSP não permite script inline). Sem cache,
+            # pelo mesmo motivo do /static/app.js (ver comentário lá).
             js = Path(__file__).resolve().parent / "static" / "cadastro.js"
             if js.is_file():
-                await _responder(send, 200, js.read_bytes(), tipo="application/javascript; charset=utf-8")
+                await _responder(
+                    send, 200, js.read_bytes(), tipo="application/javascript; charset=utf-8",
+                    cabecalhos_extra=[(b"cache-control", b"no-store")],
+                )
             else:
                 await _responder(send, 404, b"Nao encontrado")
             return
         if caminho == "/static/app.js" and scope.get("method") == "GET":
-            # script externo do painel web (cliente MCP em JavaScript puro)
+            # script externo do painel web (cliente MCP em JavaScript puro). Sem cache: o arquivo
+            # muda a cada deploy e não tem ETag/Last-Modified - sem "no-store" o navegador pode
+            # seguir usando uma versão antiga em cache depois do deploy (sem dar erro nenhum, só
+            # rodando código velho silenciosamente).
             js = Path(__file__).resolve().parent / "static" / "app.js"
             if js.is_file():
-                await _responder(send, 200, js.read_bytes(), tipo="application/javascript; charset=utf-8")
+                await _responder(
+                    send, 200, js.read_bytes(), tipo="application/javascript; charset=utf-8",
+                    cabecalhos_extra=[(b"cache-control", b"no-store")],
+                )
             else:
                 await _responder(send, 404, b"Nao encontrado")
             return
@@ -3019,10 +3029,14 @@ class _AutenticacaoBearer:
                 await _responder(send, 404, b"Nao encontrado")
             return
         if caminho == "/app" and scope.get("method") == "GET":
-            # painel público: a pessoa cola o próprio token no navegador, o servidor não autentica a página
+            # painel público: a pessoa cola o próprio token no navegador, o servidor não autentica a
+            # página. Sem cache, pelo mesmo motivo do /static/app.js (muda a cada deploy).
             pagina = Path(__file__).resolve().parent / "static" / "app.html"
             if pagina.is_file():
-                await _responder(send, 200, pagina.read_bytes(), tipo="text/html; charset=utf-8")
+                await _responder(
+                    send, 200, pagina.read_bytes(), tipo="text/html; charset=utf-8",
+                    cabecalhos_extra=[(b"cache-control", b"no-store")],
+                )
             else:
                 await _responder(send, 404, b"Nao encontrado")
             return
