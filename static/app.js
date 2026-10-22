@@ -277,7 +277,7 @@ function _resolverClientePorCpf(digitos) {
 // Aplica as máscaras de CPF/CNPJ e número de processo (CNJ) nos campos que já existem na
 // página desde o carregamento - os campos criados dinamicamente (ex.: Pagamentos) recebem a
 // máscara direto no próprio trecho que os monta.
-for (const id of ["contato-cpf-cnpj", "cliente-cpf-cnpj"]) {
+for (const id of ["contato-cpf-cnpj"]) {
   const campo = document.getElementById(id);
   if (campo) _aplicarMascaraCpfCnpj(campo);
 }
@@ -2145,11 +2145,41 @@ function _construirBarraAZ() {
   }
 }
 
+// Alterna a sub-aba "Cadastro"/tela de detalhe entre criar um cliente novo (sem id ainda,
+// sem processos vinculados, sem botão de excluir) e editar um já existente.
+function _definirModoCadastroContato(modo) {
+  const ehNovo = modo === "novo";
+  document.getElementById("contato-subaba-processos-botao").hidden = ehNovo;
+  document.getElementById("contato-excluir").hidden = ehNovo;
+  document.getElementById("contato-salvar-botao").textContent = ehNovo ? "Cadastrar cliente" : "Salvar alterações";
+}
+
+// Cadastro de cliente não usa modal: abre a mesma tela de detalhe, em branco, pronta para criar.
+function abrirNovoContato() {
+  document.getElementById("contatos-vista-lista").hidden = true;
+  document.getElementById("contatos-vista-detalhe").hidden = false;
+  document.getElementById("contato-detalhe-nome").textContent = "Novo cliente";
+  _selecionarSubabaContato("cadastro");
+  _definirModoCadastroContato("novo");
+  limpar(document.getElementById("resultado-contato-cadastro"));
+  formContatoCadastro.reset();
+  formContatoCadastro.dataset.clienteId = "";
+  _selecionarAbaCadastro("contato", "pessoal");
+  definirTipoPessoaContato("fisica");
+  selecionarPerfilContato("cliente");
+  gruposContato.telefones.definirValores([]);
+  gruposContato.emails.definirValores([]);
+  gruposContato.sites.definirValores([]);
+  gruposContato.enderecos.definirValores([]);
+  document.getElementById("contato-nome").focus();
+}
+
 async function abrirContato(clienteId) {
   document.getElementById("contatos-vista-lista").hidden = true;
   document.getElementById("contatos-vista-detalhe").hidden = false;
   document.getElementById("contato-detalhe-nome").textContent = "Carregando…";
   _selecionarSubabaContato("cadastro");
+  _definirModoCadastroContato("existente");
   const resultadoContatoCadastro = document.getElementById("resultado-contato-cadastro");
   limpar(resultadoContatoCadastro);
   try {
@@ -3286,51 +3316,11 @@ function _preencherCadastroCompleto(prefixo, grupos, registro, definirTipoPessoa
   selecionarPerfil(registro.perfil || "cliente");
 }
 
-const gruposCliente = _configurarCadastroCompleto("cliente");
-const definirTipoPessoaCliente = _configurarTipoPessoa("cliente");
-const selecionarPerfilCliente = _configurarSwitcherBinario(
-  "cliente-perfil-contato-botao", "cliente-perfil-cliente-botao", "cliente-perfil",
-);
-
 const gruposContato = _configurarCadastroCompleto("contato");
 const definirTipoPessoaContato = _configurarTipoPessoa("contato");
 const selecionarPerfilContato = _configurarSwitcherBinario(
   "contato-perfil-contato-botao", "contato-perfil-cliente-botao", "contato-perfil",
 );
-
-const formCliente = document.getElementById("form-cliente");
-const resultadoCliente = document.getElementById("resultado-cliente");
-
-formCliente.addEventListener("submit", async (evento) => {
-  evento.preventDefault();
-  if (!exigirCliente(resultadoCliente)) return;
-  const botao = document.querySelector("button[form='form-cliente'][type='submit']");
-  const dados = {
-    nome: document.getElementById("cliente-nome").value.trim(),
-    cpf_cnpj: document.getElementById("cliente-cpf-cnpj").value.trim(),
-    observacoes: document.getElementById("cliente-observacoes").value.trim(),
-    ..._lerCadastroCompleto("cliente", gruposCliente),
-  };
-  const pararEspera = mostrarEspera(resultadoCliente, botao, "Cadastrando cliente");
-  try {
-    await _enviarJson("/clientes", dados);
-    fecharModal("modal-novo-contato");
-    formCliente.reset();
-    _selecionarAbaCadastro("cliente", "pessoal");
-    definirTipoPessoaCliente("fisica");
-    selecionarPerfilCliente("cliente");
-    gruposCliente.telefones.definirValores([]);
-    gruposCliente.emails.definirValores([]);
-    gruposCliente.sites.definirValores([]);
-    gruposCliente.enderecos.definirValores([]);
-    limpar(resultadoCliente);
-    carregarContatos();
-  } catch (erro) {
-    mostrarErro(resultadoCliente, erro.message);
-  } finally {
-    pararEspera();
-  }
-});
 
 const formCaso = document.getElementById("form-caso");
 const resultadoCaso = document.getElementById("resultado-caso");
@@ -3385,8 +3375,7 @@ formCaso.addEventListener("submit", async (evento) => {
   }
 });
 
-document.getElementById("btn-novo-contato").addEventListener("click", () => abrirModal("modal-novo-contato"));
-document.getElementById("modal-novo-contato-fechar").addEventListener("click", () => fecharModal("modal-novo-contato"));
+document.getElementById("btn-novo-contato").addEventListener("click", abrirNovoContato);
 document.getElementById("btn-novo-caso").addEventListener("click", async () => {
   if (!_cache.clientes.length) {
     try { const { clientes } = await _buscarJson("/clientes"); _cache.clientes = clientes || []; } catch { /* segue */ }
@@ -3471,7 +3460,8 @@ const resultadoContatoCadastro = document.getElementById("resultado-contato-cada
 formContatoCadastro.addEventListener("submit", async (evento) => {
   evento.preventDefault();
   const clienteId = formContatoCadastro.dataset.clienteId;
-  if (!clienteId) return;
+  const criando = !clienteId;
+  if (criando && !exigirCliente(resultadoContatoCadastro)) return;
   const botao = formContatoCadastro.querySelector("button[type=submit]");
   const corpo = {
     nome: document.getElementById("contato-nome").value.trim(),
@@ -3479,14 +3469,23 @@ formContatoCadastro.addEventListener("submit", async (evento) => {
     observacoes: document.getElementById("contato-observacoes").value.trim(),
     ..._lerCadastroCompleto("contato", gruposContato),
   };
-  const pararEspera = mostrarEspera(resultadoContatoCadastro, botao, "Salvando");
+  const pararEspera = mostrarEspera(resultadoContatoCadastro, botao, criando ? "Cadastrando cliente" : "Salvando");
   try {
-    const atualizado = await _enviarJson(`/clientes/${clienteId}`, corpo, "PATCH");
+    const salvo = criando
+      ? await _enviarJson("/clientes", corpo)
+      : await _enviarJson(`/clientes/${clienteId}`, corpo, "PATCH");
     limpar(resultadoContatoCadastro);
-    resultadoContatoCadastro.appendChild(notificacao("success", "Cliente atualizado"));
-    document.getElementById("contato-detalhe-nome").textContent = atualizado.nome;
-    const indice = _cache.clientes.findIndex((c) => c.id === clienteId);
-    if (indice !== -1) _cache.clientes[indice] = atualizado;
+    resultadoContatoCadastro.appendChild(notificacao("success", criando ? "Cliente cadastrado" : "Cliente atualizado"));
+    document.getElementById("contato-detalhe-nome").textContent = salvo.nome;
+    formContatoCadastro.dataset.clienteId = salvo.id;
+    if (criando) {
+      _definirModoCadastroContato("existente");
+      _cache.clientes = [..._cache.clientes, salvo];
+      await _renderizarProcessosVinculados(salvo.id);
+    } else {
+      const indice = _cache.clientes.findIndex((c) => c.id === clienteId);
+      if (indice !== -1) _cache.clientes[indice] = salvo;
+    }
   } catch (erro) {
     mostrarErro(resultadoContatoCadastro, erro.message);
   } finally {
