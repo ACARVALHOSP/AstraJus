@@ -2174,7 +2174,7 @@ function abrirNovoContato() {
   formContatoCadastro.dataset.clienteId = "";
   _selecionarAbaCadastro("contato", "pessoal");
   definirTipoPessoaContato("fisica");
-  selecionarPerfilContato("cliente");
+  definirPerfilContato("cliente");
   gruposContato.telefones.definirValores([]);
   gruposContato.emails.definirValores([]);
   gruposContato.sites.definirValores([]);
@@ -2198,7 +2198,7 @@ async function abrirContato(clienteId) {
     document.getElementById("contato-observacoes").value = cliente_registro.observacoes || "";
     _selecionarAbaCadastro("contato", "pessoal");
     _preencherCadastroCompleto(
-      "contato", gruposContato, cliente_registro, definirTipoPessoaContato, selecionarPerfilContato,
+      "contato", gruposContato, cliente_registro, definirTipoPessoaContato, definirPerfilContato,
     );
     formContatoCadastro.dataset.clienteId = clienteId;
     await _renderizarProcessosVinculados(clienteId);
@@ -2977,7 +2977,7 @@ function _renderizarTabelaCasosPagina() {
   renderizarCasosFavoritos();
 }
 
-// --- Cadastro completo de cliente/contato: 3 abas (content switcher) ----------------------
+// --- Cadastro completo de cliente/contato: 3 seções (breadcrumb) --------------------------
 // Compartilhado entre o modal "Novo cliente" (prefixo "cliente") e a sub-aba "Cadastro" da
 // tela de detalhe (prefixo "contato") - mesmos ids de campo, só o prefixo muda.
 
@@ -2991,8 +2991,8 @@ function _selecionarAbaCadastro(prefixo, nome) {
     const ativa = aba.nome === nome;
     const botao = document.getElementById(`${prefixo}-cadastro-aba-${aba.sufixo}-botao`);
     const painel = document.getElementById(`${prefixo}-cadastro-painel-${aba.sufixo}`);
-    botao.classList.toggle("cds--content-switcher--selected", ativa);
-    botao.setAttribute("aria-selected", String(ativa));
+    botao.closest(".cds--breadcrumb-item").classList.toggle("cds--breadcrumb-item--current", ativa);
+    if (ativa) botao.setAttribute("aria-current", "page"); else botao.removeAttribute("aria-current");
     painel.hidden = !ativa;
   }
 }
@@ -3004,21 +3004,11 @@ function _configurarAbasCadastro(prefixo) {
   }
 }
 
-// Switcher binário genérico (dois botões content-switcher + um input hidden que guarda o valor).
-function _configurarSwitcherBinario(idBotaoA, idBotaoB, idHidden, aoMudar) {
-  const hidden = document.getElementById(idHidden);
-  const botoes = [document.getElementById(idBotaoA), document.getElementById(idBotaoB)];
-  function selecionar(valor) {
-    hidden.value = valor;
-    for (const botao of botoes) {
-      const ativo = botao.dataset.valor === valor;
-      botao.classList.toggle("cds--content-switcher--selected", ativo);
-      botao.setAttribute("aria-selected", String(ativo));
-    }
-    if (aoMudar) aoMudar(valor);
-  }
-  for (const botao of botoes) botao.addEventListener("click", () => selecionar(botao.dataset.valor));
-  return selecionar;
+// Setter simples para um <select>: devolve uma função (valor) => void que define o valor
+// (usado para preencher o formulário a partir de um registro já salvo).
+function _configurarSelect(id, valorPadrao) {
+  const select = document.getElementById(id);
+  return (valor) => { select.value = valor || valorPadrao; };
 }
 
 // CPF/CNPJ é um único campo (aba Documentação) cujo rótulo muda com o tipo de pessoa.
@@ -3340,9 +3330,7 @@ function _preencherCadastroCompleto(prefixo, grupos, registro, definirTipoPessoa
 
 const gruposContato = _configurarCadastroCompleto("contato");
 const definirTipoPessoaContato = _configurarTipoPessoa("contato");
-const selecionarPerfilContato = _configurarSwitcherBinario(
-  "contato-perfil-contato-botao", "contato-perfil-cliente-botao", "contato-perfil",
-);
+const definirPerfilContato = _configurarSelect("contato-perfil", "cliente");
 
 const formCaso = document.getElementById("form-caso");
 const resultadoCaso = document.getElementById("resultado-caso");
