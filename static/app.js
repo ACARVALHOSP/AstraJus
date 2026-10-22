@@ -2157,9 +2157,12 @@ async function abrirContato(clienteId) {
     document.getElementById("contato-detalhe-nome").textContent = cliente_registro.nome || "(sem nome)";
     document.getElementById("contato-nome").value = cliente_registro.nome || "";
     document.getElementById("contato-cpf-cnpj").value = cliente_registro.cpf_cnpj || "";
-    document.getElementById("contato-telefone").value = cliente_registro.telefone || "";
     document.getElementById("contato-email").value = cliente_registro.email || "";
     document.getElementById("contato-observacoes").value = cliente_registro.observacoes || "";
+    _selecionarAbaCadastro("contato", "pessoal");
+    _preencherCadastroCompleto(
+      "contato", telefonesContato, cliente_registro, selecionarTipoPessoaContato, selecionarPerfilContato,
+    );
     formContatoCadastro.dataset.clienteId = clienteId;
     await _renderizarProcessosVinculados(clienteId);
   } catch (erro) {
@@ -2937,6 +2940,156 @@ function _renderizarTabelaCasosPagina() {
   renderizarCasosFavoritos();
 }
 
+// --- Cadastro completo de cliente/contato: 3 abas (content switcher) ----------------------
+// Compartilhado entre o modal "Novo cliente" (prefixo "cliente") e a sub-aba "Cadastro" da
+// tela de detalhe (prefixo "contato") - mesmos ids de campo, só o prefixo muda.
+
+function _selecionarAbaCadastro(prefixo, nome) {
+  const abas = [
+    { nome: "pessoal", sufixo: "pessoal" },
+    { nome: "documentacao", sufixo: "documentacao" },
+    { nome: "complementar", sufixo: "complementar" },
+  ];
+  for (const aba of abas) {
+    const ativa = aba.nome === nome;
+    const botao = document.getElementById(`${prefixo}-cadastro-aba-${aba.sufixo}-botao`);
+    const painel = document.getElementById(`${prefixo}-cadastro-painel-${aba.sufixo}`);
+    botao.classList.toggle("cds--content-switcher--selected", ativa);
+    botao.setAttribute("aria-selected", String(ativa));
+    painel.hidden = !ativa;
+  }
+}
+
+function _configurarAbasCadastro(prefixo) {
+  for (const sufixo of ["pessoal", "documentacao", "complementar"]) {
+    document.getElementById(`${prefixo}-cadastro-aba-${sufixo}-botao`)
+      .addEventListener("click", () => _selecionarAbaCadastro(prefixo, sufixo));
+  }
+}
+
+// Switcher binário genérico (dois botões content-switcher + um input hidden que guarda o valor).
+function _configurarSwitcherBinario(idBotaoA, idBotaoB, idHidden, aoMudar) {
+  const hidden = document.getElementById(idHidden);
+  const botoes = [document.getElementById(idBotaoA), document.getElementById(idBotaoB)];
+  function selecionar(valor) {
+    hidden.value = valor;
+    for (const botao of botoes) {
+      const ativo = botao.dataset.valor === valor;
+      botao.classList.toggle("cds--content-switcher--selected", ativo);
+      botao.setAttribute("aria-selected", String(ativo));
+    }
+    if (aoMudar) aoMudar(valor);
+  }
+  for (const botao of botoes) botao.addEventListener("click", () => selecionar(botao.dataset.valor));
+  return selecionar;
+}
+
+// CPF/CNPJ é um único campo (aba Documentação) cujo rótulo muda com o tipo de pessoa.
+function _configurarRotuloCpfCnpj(prefixo) {
+  const label = document.getElementById(`${prefixo}-cpf-cnpj-label`);
+  const input = document.getElementById(`${prefixo}-cpf-cnpj`);
+  return (tipoPessoa) => {
+    if (tipoPessoa === "juridica") {
+      label.textContent = "CNPJ";
+      input.placeholder = "Ex.: 12.345.678/0001-90";
+    } else {
+      label.textContent = "CPF";
+      input.placeholder = "Ex.: 123.456.789-00";
+    }
+  };
+}
+
+// Lista dinâmica de telefones ("+ Adicionar telefone" / remover).
+function _criarGerenciadorTelefones(prefixo) {
+  const lista = document.getElementById(`${prefixo}-telefones-lista`);
+  const botaoAdicionar = document.getElementById(`${prefixo}-telefones-adicionar`);
+
+  function adicionarLinha(valor) {
+    const linha = el("div", { class: "telefone-item" });
+    const input = el("input", {
+      class: "cds--text-input", type: "tel", placeholder: "Ex.: (11) 98211-3344", autocomplete: "tel",
+    });
+    input.value = valor || "";
+    const botaoRemover = el("button", {
+      class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", "aria-label": "Remover telefone", texto: "Remover",
+    });
+    botaoRemover.addEventListener("click", () => {
+      linha.remove();
+      if (!lista.children.length) adicionarLinha();
+    });
+    linha.appendChild(input);
+    linha.appendChild(botaoRemover);
+    lista.appendChild(linha);
+    return input;
+  }
+
+  botaoAdicionar.addEventListener("click", () => adicionarLinha("").focus());
+
+  return {
+    definirValores(valores) {
+      limpar(lista);
+      (valores && valores.length ? valores : [""]).forEach(adicionarLinha);
+    },
+    obterValores() {
+      return Array.from(lista.querySelectorAll("input")).map((i) => i.value.trim()).filter(Boolean);
+    },
+  };
+}
+
+function _configurarCadastroCompleto(prefixo) {
+  _configurarAbasCadastro(prefixo);
+  return _criarGerenciadorTelefones(prefixo);
+}
+
+// Campos extras do cadastro completo, comuns ao modal e à tela de detalhe.
+const _CAMPOS_CADASTRO_COMPLETO = [
+  "site", "endereco_rua", "endereco_numero", "endereco_bairro", "endereco_complemento",
+  "endereco_cidade", "endereco_estado", "endereco_pais", "rg_numero", "rg_emissao", "rg_emissor",
+  "ctps_numero", "ctps_serie", "ctps_emissao", "ctps_uf", "pis", "estado_civil", "nacionalidade",
+  "profissao",
+];
+
+function _lerCadastroCompleto(prefixo, telefones) {
+  const dados = { telefones: telefones.obterValores() };
+  for (const campo of _CAMPOS_CADASTRO_COMPLETO) {
+    dados[campo] = document.getElementById(`${prefixo}-${campo.replace(/_/g, "-")}`).value.trim();
+  }
+  dados.tipo_pessoa = document.getElementById(`${prefixo}-tipo-pessoa`).value;
+  dados.perfil = document.getElementById(`${prefixo}-perfil`).value;
+  return dados;
+}
+
+function _preencherCadastroCompleto(prefixo, telefones, registro, selecionarTipoPessoa, selecionarPerfil) {
+  telefones.definirValores(registro.telefones && registro.telefones.length ? registro.telefones : [registro.telefone || ""]);
+  for (const campo of _CAMPOS_CADASTRO_COMPLETO) {
+    document.getElementById(`${prefixo}-${campo.replace(/_/g, "-")}`).value = registro[campo] || "";
+  }
+  selecionarTipoPessoa(registro.tipo_pessoa || "fisica");
+  selecionarPerfil(registro.perfil || "cliente");
+}
+
+const telefonesCliente = _configurarCadastroCompleto("cliente");
+const selecionarTipoPessoaCliente = _configurarSwitcherBinario(
+  "cliente-tipo-pessoa-fisica-botao", "cliente-tipo-pessoa-juridica-botao", "cliente-tipo-pessoa",
+  _configurarRotuloCpfCnpj("cliente"),
+);
+const selecionarPerfilCliente = _configurarSwitcherBinario(
+  "cliente-perfil-contato-botao", "cliente-perfil-cliente-botao", "cliente-perfil",
+);
+
+const telefonesContato = _configurarCadastroCompleto("contato");
+const selecionarTipoPessoaContato = _configurarSwitcherBinario(
+  "contato-tipo-pessoa-fisica-botao", "contato-tipo-pessoa-juridica-botao", "contato-tipo-pessoa",
+  _configurarRotuloCpfCnpj("contato"),
+);
+const selecionarPerfilContato = _configurarSwitcherBinario(
+  "contato-perfil-contato-botao", "contato-perfil-cliente-botao", "contato-perfil",
+);
+
+// Garante ao menos uma linha de telefone visível antes de qualquer abertura/preenchimento.
+telefonesCliente.definirValores([""]);
+telefonesContato.definirValores([""]);
+
 const formCliente = document.getElementById("form-cliente");
 const resultadoCliente = document.getElementById("resultado-cliente");
 
@@ -2944,12 +3097,22 @@ formCliente.addEventListener("submit", async (evento) => {
   evento.preventDefault();
   if (!exigirCliente(resultadoCliente)) return;
   const botao = document.querySelector("button[form='form-cliente'][type='submit']");
-  const dados = Object.fromEntries(new FormData(formCliente).entries());
+  const dados = {
+    nome: document.getElementById("cliente-nome").value.trim(),
+    cpf_cnpj: document.getElementById("cliente-cpf-cnpj").value.trim(),
+    email: document.getElementById("cliente-email").value.trim(),
+    observacoes: document.getElementById("cliente-observacoes").value.trim(),
+    ..._lerCadastroCompleto("cliente", telefonesCliente),
+  };
   const pararEspera = mostrarEspera(resultadoCliente, botao, "Cadastrando cliente");
   try {
     await _enviarJson("/clientes", dados);
     fecharModal("modal-novo-contato");
     formCliente.reset();
+    _selecionarAbaCadastro("cliente", "pessoal");
+    selecionarTipoPessoaCliente("fisica");
+    selecionarPerfilCliente("cliente");
+    telefonesCliente.definirValores([""]);
     limpar(resultadoCliente);
     carregarContatos();
   } catch (erro) {
@@ -3103,9 +3266,9 @@ formContatoCadastro.addEventListener("submit", async (evento) => {
   const corpo = {
     nome: document.getElementById("contato-nome").value.trim(),
     cpf_cnpj: document.getElementById("contato-cpf-cnpj").value.trim(),
-    telefone: document.getElementById("contato-telefone").value.trim(),
     email: document.getElementById("contato-email").value.trim(),
     observacoes: document.getElementById("contato-observacoes").value.trim(),
+    ..._lerCadastroCompleto("contato", telefonesContato),
   };
   const pararEspera = mostrarEspera(resultadoContatoCadastro, botao, "Salvando");
   try {

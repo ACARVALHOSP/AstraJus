@@ -130,6 +130,15 @@ nav.cds--side-nav {
 .sub-tab-link { background: none; border: none; border-bottom: 3px solid transparent; padding: 0.625rem 0.125rem; cursor: pointer; font-size: var(--fonte-base); color: var(--cds-text-secondary, #525252); }
 .sub-tab-link[aria-selected="true"] { color: var(--cds-text-primary, #161616); border-bottom-color: var(--cds-interactive, #0f62fe); font-weight: 600; }
 .contato-detalhe-titulo { margin: 0.75rem 0 0; font-size: var(--fonte-subtitulo); }
+.cadastro-tabs { margin: 0 0 1rem; flex-wrap: wrap; }
+.cadastro-painel { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+.cadastro-painel[hidden] { display: none; }
+.cadastro-switcher-inline { margin-top: 0.375rem; }
+.endereco-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; margin-top: 0.375rem; }
+.lista-telefones { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.375rem; }
+.telefone-item { display: flex; gap: 0.5rem; align-items: center; }
+.telefone-item input { flex: 1 1 auto; }
+.telefone-item button { flex: 0 0 auto; }
 .pub-oab-manual { margin-top: 1rem; border: 1px solid var(--cds-border-subtle, #e0e0e0); padding: 0.75rem 1rem; }
 .pub-oab-manual summary { cursor: pointer; font-weight: 600; }
 .pub-oab-manual-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; margin-top: 0.75rem; }
@@ -964,27 +973,127 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 
 <section id="contato-subaba-cadastro" role="tabpanel" aria-labelledby="contato-subaba-cadastro-botao">
+<div class="cds--content-switcher cds--content-switcher--light cds--content-switcher--sm cadastro-tabs" id="contato-cadastro-switcher" role="tablist" aria-label="Seções do cadastro">
+<button class="cds--content-switcher-btn cds--content-switcher--selected" type="button" id="contato-cadastro-aba-pessoal-botao" role="tab" aria-selected="true">Informações pessoais</button>
+<button class="cds--content-switcher-btn" type="button" id="contato-cadastro-aba-documentacao-botao" role="tab" aria-selected="false">Documentação</button>
+<button class="cds--content-switcher-btn" type="button" id="contato-cadastro-aba-complementar-botao" role="tab" aria-selected="false">Informações complementares</button>
+</div>
 <form id="form-contato-cadastro" class="app-formulario">
+
+<section id="contato-cadastro-painel-pessoal" class="cadastro-painel">
+<div class="cds--form-item campo-ajuda--largo">
+<span class="cds--label">Pessoa física ou jurídica</span>
+<div class="cds--content-switcher cds--content-switcher--light cds--content-switcher--sm cadastro-switcher-inline" id="contato-tipo-pessoa-switcher" role="tablist" aria-label="Tipo de pessoa">
+<button class="cds--content-switcher-btn cds--content-switcher--selected" type="button" id="contato-tipo-pessoa-fisica-botao" role="tab" aria-selected="true" data-valor="fisica">Pessoa física</button>
+<button class="cds--content-switcher-btn" type="button" id="contato-tipo-pessoa-juridica-botao" role="tab" aria-selected="false" data-valor="juridica">Pessoa jurídica</button>
+</div>
+<input type="hidden" id="contato-tipo-pessoa" name="tipo_pessoa" value="fisica">
+</div>
+<div class="cds--form-item campo-ajuda--largo">
+<span class="cds--label">Perfil</span>
+<div class="cds--content-switcher cds--content-switcher--light cds--content-switcher--sm cadastro-switcher-inline" id="contato-perfil-switcher" role="tablist" aria-label="Perfil: contato ou cliente">
+<button class="cds--content-switcher-btn" type="button" id="contato-perfil-contato-botao" role="tab" aria-selected="false" data-valor="contato">Contato</button>
+<button class="cds--content-switcher-btn cds--content-switcher--selected" type="button" id="contato-perfil-cliente-botao" role="tab" aria-selected="true" data-valor="cliente">Cliente</button>
+</div>
+<input type="hidden" id="contato-perfil" name="perfil" value="cliente">
+</div>
 <div class="cds--form-item">
 <label class="cds--label" for="contato-nome">Nome</label>
 <input class="cds--text-input" id="contato-nome" name="nome" placeholder="Ex.: Maria Aparecida Souza" autocomplete="name" required>
 </div>
-<div class="cds--form-item">
-<label class="cds--label" for="contato-cpf-cnpj">CPF/CNPJ</label>
-<input class="cds--text-input" id="contato-cpf-cnpj" name="cpf_cnpj" inputmode="numeric" placeholder="Ex.: 123.456.789-00" autocomplete="off">
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="contato-telefone">Telefone</label>
-<input class="cds--text-input" id="contato-telefone" name="telefone" placeholder="Ex.: (11) 98211-3344" autocomplete="tel">
+<div class="cds--form-item campo-ajuda--largo">
+<span class="cds--label">Telefone</span>
+<div class="lista-telefones" id="contato-telefones-lista"></div>
+<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="contato-telefones-adicionar">+ Adicionar telefone</button>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="contato-email">E-mail</label>
 <input class="cds--text-input" id="contato-email" name="email" type="email" placeholder="Ex.: maria.souza@example.com" autocomplete="email">
 </div>
 <div class="cds--form-item">
+<label class="cds--label" for="contato-site">Site</label>
+<input class="cds--text-input" id="contato-site" name="site" type="url" placeholder="Ex.: https://www.exemplo.com.br" autocomplete="url">
+</div>
+<div class="cds--form-item campo-ajuda--largo">
+<span class="cds--label">Endereço</span>
+<div class="endereco-grade">
+<input class="cds--text-input" id="contato-endereco-rua" name="endereco_rua" placeholder="Digite a rua" autocomplete="address-line1">
+<input class="cds--text-input" id="contato-endereco-numero" name="endereco_numero" placeholder="Digite o número" autocomplete="off">
+<input class="cds--text-input" id="contato-endereco-bairro" name="endereco_bairro" placeholder="Digite o bairro" autocomplete="off">
+<input class="cds--text-input" id="contato-endereco-complemento" name="endereco_complemento" placeholder="Digite o complemento" autocomplete="address-line2">
+<input class="cds--text-input" id="contato-endereco-cidade" name="endereco_cidade" placeholder="Digite a cidade" autocomplete="address-level2">
+<input class="cds--text-input" id="contato-endereco-estado" name="endereco_estado" placeholder="Digite o estado" autocomplete="address-level1">
+<input class="cds--text-input" id="contato-endereco-pais" name="endereco_pais" placeholder="Digite o país" autocomplete="country-name">
+</div>
+</div>
+</section>
+
+<section id="contato-cadastro-painel-documentacao" class="cadastro-painel" hidden>
+<div class="cds--form-item">
+<label class="cds--label" for="contato-cpf-cnpj" id="contato-cpf-cnpj-label">CPF</label>
+<input class="cds--text-input" id="contato-cpf-cnpj" name="cpf_cnpj" inputmode="numeric" placeholder="Ex.: 123.456.789-00" autocomplete="off">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="contato-rg-numero">RG — Número</label>
+<input class="cds--text-input" id="contato-rg-numero" name="rg_numero" autocomplete="off">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="contato-rg-emissao">RG — Emissão</label>
+<input class="cds--text-input" type="date" id="contato-rg-emissao" name="rg_emissao" autocomplete="off">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="contato-rg-emissor">RG — Órgão emissor</label>
+<input class="cds--text-input" id="contato-rg-emissor" name="rg_emissor" placeholder="Ex.: SSP/SP" autocomplete="off">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="contato-ctps-numero">CTPS — Número</label>
+<input class="cds--text-input" id="contato-ctps-numero" name="ctps_numero" autocomplete="off">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="contato-ctps-serie">CTPS — Série</label>
+<input class="cds--text-input" id="contato-ctps-serie" name="ctps_serie" autocomplete="off">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="contato-ctps-emissao">CTPS — Emissão</label>
+<input class="cds--text-input" type="date" id="contato-ctps-emissao" name="ctps_emissao" autocomplete="off">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="contato-ctps-uf">CTPS — UF</label>
+<input class="cds--text-input" id="contato-ctps-uf" name="ctps_uf" maxlength="2" autocomplete="off">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="contato-pis">PIS</label>
+<input class="cds--text-input" id="contato-pis" name="pis" inputmode="numeric" autocomplete="off">
+</div>
+</section>
+
+<section id="contato-cadastro-painel-complementar" class="cadastro-painel" hidden>
+<div class="cds--form-item">
+<label class="cds--label" for="contato-estado-civil">Estado civil</label>
+<select class="cds--select-input" id="contato-estado-civil" name="estado_civil" autocomplete="off">
+<option value="">— Selecione —</option>
+<option value="solteiro">Solteiro(a)</option>
+<option value="casado">Casado(a)</option>
+<option value="uniao_estavel">União estável</option>
+<option value="divorciado">Divorciado(a)</option>
+<option value="separado">Separado(a) judicialmente</option>
+<option value="viuvo">Viúvo(a)</option>
+</select>
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="contato-nacionalidade">Nacionalidade</label>
+<input class="cds--text-input" id="contato-nacionalidade" name="nacionalidade" placeholder="Ex.: Brasileira" autocomplete="off">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="contato-profissao">Profissão</label>
+<input class="cds--text-input" id="contato-profissao" name="profissao" placeholder="Ex.: Engenheira civil" autocomplete="off">
+</div>
+<div class="cds--form-item campo-ajuda--largo">
 <label class="cds--label" for="contato-observacoes">Observações</label>
 <input class="cds--text-input" id="contato-observacoes" name="observacoes" placeholder="Ex.: indicação de cliente antigo" autocomplete="off">
 </div>
+</section>
+
 <div class="token-acoes campo-ajuda--largo">
 <button class="cds--btn cds--btn--primary" type="submit">Salvar alterações</button>
 <button class="cds--btn cds--btn--danger--tertiary" type="button" id="contato-excluir">Excluir cliente</button>
@@ -1252,27 +1361,127 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </button>
 </div>
 <div class="cds--modal-content">
+<div class="cds--content-switcher cds--content-switcher--light cds--content-switcher--sm cadastro-tabs" id="cliente-cadastro-switcher" role="tablist" aria-label="Seções do cadastro">
+<button class="cds--content-switcher-btn cds--content-switcher--selected" type="button" id="cliente-cadastro-aba-pessoal-botao" role="tab" aria-selected="true">Informações pessoais</button>
+<button class="cds--content-switcher-btn" type="button" id="cliente-cadastro-aba-documentacao-botao" role="tab" aria-selected="false">Documentação</button>
+<button class="cds--content-switcher-btn" type="button" id="cliente-cadastro-aba-complementar-botao" role="tab" aria-selected="false">Informações complementares</button>
+</div>
 <form id="form-cliente" class="app-formulario">
+
+<section id="cliente-cadastro-painel-pessoal" class="cadastro-painel">
+<div class="cds--form-item campo-ajuda--largo">
+<span class="cds--label">Pessoa física ou jurídica</span>
+<div class="cds--content-switcher cds--content-switcher--light cds--content-switcher--sm cadastro-switcher-inline" id="cliente-tipo-pessoa-switcher" role="tablist" aria-label="Tipo de pessoa">
+<button class="cds--content-switcher-btn cds--content-switcher--selected" type="button" id="cliente-tipo-pessoa-fisica-botao" role="tab" aria-selected="true" data-valor="fisica">Pessoa física</button>
+<button class="cds--content-switcher-btn" type="button" id="cliente-tipo-pessoa-juridica-botao" role="tab" aria-selected="false" data-valor="juridica">Pessoa jurídica</button>
+</div>
+<input type="hidden" id="cliente-tipo-pessoa" name="tipo_pessoa" value="fisica">
+</div>
+<div class="cds--form-item campo-ajuda--largo">
+<span class="cds--label">Perfil</span>
+<div class="cds--content-switcher cds--content-switcher--light cds--content-switcher--sm cadastro-switcher-inline" id="cliente-perfil-switcher" role="tablist" aria-label="Perfil: contato ou cliente">
+<button class="cds--content-switcher-btn" type="button" id="cliente-perfil-contato-botao" role="tab" aria-selected="false" data-valor="contato">Contato</button>
+<button class="cds--content-switcher-btn cds--content-switcher--selected" type="button" id="cliente-perfil-cliente-botao" role="tab" aria-selected="true" data-valor="cliente">Cliente</button>
+</div>
+<input type="hidden" id="cliente-perfil" name="perfil" value="cliente">
+</div>
 <div class="cds--form-item">
 <label class="cds--label" for="cliente-nome">Nome</label>
 <input class="cds--text-input" id="cliente-nome" name="nome" placeholder="Ex.: Maria Aparecida Souza" autocomplete="name" required>
 </div>
-<div class="cds--form-item">
-<label class="cds--label" for="cliente-cpf-cnpj">CPF/CNPJ</label>
-<input class="cds--text-input" id="cliente-cpf-cnpj" name="cpf_cnpj" inputmode="numeric" placeholder="Ex.: 123.456.789-00" autocomplete="off">
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="cliente-telefone">Telefone</label>
-<input class="cds--text-input" id="cliente-telefone" name="telefone" placeholder="Ex.: (11) 98211-3344" autocomplete="tel">
+<div class="cds--form-item campo-ajuda--largo">
+<span class="cds--label">Telefone</span>
+<div class="lista-telefones" id="cliente-telefones-lista"></div>
+<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="cliente-telefones-adicionar">+ Adicionar telefone</button>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="cliente-email">E-mail</label>
 <input class="cds--text-input" id="cliente-email" name="email" type="email" placeholder="Ex.: maria.souza@example.com" autocomplete="email">
 </div>
 <div class="cds--form-item">
+<label class="cds--label" for="cliente-site">Site</label>
+<input class="cds--text-input" id="cliente-site" name="site" type="url" placeholder="Ex.: https://www.exemplo.com.br" autocomplete="url">
+</div>
+<div class="cds--form-item campo-ajuda--largo">
+<span class="cds--label">Endereço</span>
+<div class="endereco-grade">
+<input class="cds--text-input" id="cliente-endereco-rua" name="endereco_rua" placeholder="Digite a rua" autocomplete="address-line1">
+<input class="cds--text-input" id="cliente-endereco-numero" name="endereco_numero" placeholder="Digite o número" autocomplete="off">
+<input class="cds--text-input" id="cliente-endereco-bairro" name="endereco_bairro" placeholder="Digite o bairro" autocomplete="off">
+<input class="cds--text-input" id="cliente-endereco-complemento" name="endereco_complemento" placeholder="Digite o complemento" autocomplete="address-line2">
+<input class="cds--text-input" id="cliente-endereco-cidade" name="endereco_cidade" placeholder="Digite a cidade" autocomplete="address-level2">
+<input class="cds--text-input" id="cliente-endereco-estado" name="endereco_estado" placeholder="Digite o estado" autocomplete="address-level1">
+<input class="cds--text-input" id="cliente-endereco-pais" name="endereco_pais" placeholder="Digite o país" autocomplete="country-name">
+</div>
+</div>
+</section>
+
+<section id="cliente-cadastro-painel-documentacao" class="cadastro-painel" hidden>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-cpf-cnpj" id="cliente-cpf-cnpj-label">CPF</label>
+<input class="cds--text-input" id="cliente-cpf-cnpj" name="cpf_cnpj" inputmode="numeric" placeholder="Ex.: 123.456.789-00" autocomplete="off">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-rg-numero">RG — Número</label>
+<input class="cds--text-input" id="cliente-rg-numero" name="rg_numero" autocomplete="off">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-rg-emissao">RG — Emissão</label>
+<input class="cds--text-input" type="date" id="cliente-rg-emissao" name="rg_emissao" autocomplete="off">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-rg-emissor">RG — Órgão emissor</label>
+<input class="cds--text-input" id="cliente-rg-emissor" name="rg_emissor" placeholder="Ex.: SSP/SP" autocomplete="off">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-ctps-numero">CTPS — Número</label>
+<input class="cds--text-input" id="cliente-ctps-numero" name="ctps_numero" autocomplete="off">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-ctps-serie">CTPS — Série</label>
+<input class="cds--text-input" id="cliente-ctps-serie" name="ctps_serie" autocomplete="off">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-ctps-emissao">CTPS — Emissão</label>
+<input class="cds--text-input" type="date" id="cliente-ctps-emissao" name="ctps_emissao" autocomplete="off">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-ctps-uf">CTPS — UF</label>
+<input class="cds--text-input" id="cliente-ctps-uf" name="ctps_uf" maxlength="2" autocomplete="off">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-pis">PIS</label>
+<input class="cds--text-input" id="cliente-pis" name="pis" inputmode="numeric" autocomplete="off">
+</div>
+</section>
+
+<section id="cliente-cadastro-painel-complementar" class="cadastro-painel" hidden>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-estado-civil">Estado civil</label>
+<select class="cds--select-input" id="cliente-estado-civil" name="estado_civil" autocomplete="off">
+<option value="">— Selecione —</option>
+<option value="solteiro">Solteiro(a)</option>
+<option value="casado">Casado(a)</option>
+<option value="uniao_estavel">União estável</option>
+<option value="divorciado">Divorciado(a)</option>
+<option value="separado">Separado(a) judicialmente</option>
+<option value="viuvo">Viúvo(a)</option>
+</select>
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-nacionalidade">Nacionalidade</label>
+<input class="cds--text-input" id="cliente-nacionalidade" name="nacionalidade" placeholder="Ex.: Brasileira" autocomplete="off">
+</div>
+<div class="cds--form-item">
+<label class="cds--label" for="cliente-profissao">Profissão</label>
+<input class="cds--text-input" id="cliente-profissao" name="profissao" placeholder="Ex.: Engenheira civil" autocomplete="off">
+</div>
+<div class="cds--form-item campo-ajuda--largo">
 <label class="cds--label" for="cliente-observacoes">Observações</label>
 <input class="cds--text-input" id="cliente-observacoes" name="observacoes" placeholder="Ex.: indicação de cliente antigo" autocomplete="off">
 </div>
+</section>
+
 </form>
 <div id="resultado-cliente" class="app-resultado" aria-live="polite"></div>
 </div>
