@@ -3159,18 +3159,28 @@ function _criarGrupoSites(prefixo) {
   };
 }
 
-// Busca um CEP no ViaCEP e devolve {logradouro, bairro, localidade, uf} ou null (CEP incompleto,
-// inexistente ou falha de rede - o usuário sempre pode preencher o endereço manualmente).
+// Busca um CEP via /cep/<cep> (proxy same-origin no próprio servidor, não fala direto com
+// viacep.com.br - ver o comentário de _cep_http em server.py: alguns ambientes têm um
+// Content-Security-Policy com connect-src 'self' que bloqueia fetch() para domínios de
+// terceiro, e indo pelo nosso servidor isso deixa de importar). Devolve {ok: true, dados} ou
+// {ok: false, motivo}, distinguindo "CEP não existe" de falha de rede (sempre registrada no
+// console, já que o motivo real não aparece pra quem está usando o formulário).
 async function _buscarCep(cep) {
   const digitos = (cep || "").replace(/\D/g, "");
-  if (digitos.length !== 8) return null;
+  if (digitos.length !== 8) return { ok: false, motivo: "formato" };
   try {
-    const resposta = await fetch(`https://viacep.com.br/ws/${digitos}/json/`);
-    if (!resposta.ok) return null;
+    const resposta = await fetch(`/cep/${digitos}`);
+    if (resposta.status === 404) return { ok: false, motivo: "nao_encontrado" };
+    if (!resposta.ok) {
+      console.error(`Busca de CEP respondeu HTTP ${resposta.status} para o CEP ${digitos}.`);
+      return { ok: false, motivo: "http" };
+    }
     const dados = await resposta.json();
-    return dados.erro ? null : dados;
-  } catch {
-    return null;
+    if (dados.erro) return { ok: false, motivo: "nao_encontrado" };
+    return { ok: true, dados };
+  } catch (erro) {
+    console.error("Falha ao consultar o CEP:", erro);
+    return { ok: false, motivo: "rede" };
   }
 }
 
@@ -3219,12 +3229,15 @@ function _criarGrupoEnderecos(prefixo) {
       if (digitos.length !== 8 || digitos === _cepEmAndamento) return;
       _cepEmAndamento = digitos;
       statusCep.textContent = "Buscando CEP…";
-      const encontrado = await _buscarCep(inputCep.value);
+      const resultado = await _buscarCep(inputCep.value);
       if (inputCep.value.replace(/\D/g, "") !== digitos) return; // usuário já mudou o CEP
-      if (!encontrado) {
-        statusCep.textContent = "CEP não encontrado.";
+      if (!resultado.ok) {
+        statusCep.textContent = resultado.motivo === "nao_encontrado"
+          ? "CEP não encontrado."
+          : "Não foi possível buscar o CEP agora. Preencha o endereço manualmente.";
         return;
       }
+      const encontrado = resultado.dados;
       inputRua.value = encontrado.logradouro || inputRua.value;
       inputBairro.value = encontrado.bairro || inputBairro.value;
       inputCidade.value = encontrado.localidade || inputCidade.value;

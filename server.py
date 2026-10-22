@@ -1132,6 +1132,33 @@ async def _arvore_magistrados_http(send) -> None:
     await _json(send, 200, {"magistrados": _carregar_arvore_cjpg("magistrado")})
 
 
+async def _cep_http(send, cep: str) -> None:
+    """GET /cep/<cep>: proxy para o ViaCEP usado pelo autopreenchimento de endereço. Existe
+    porque o navegador do usuário às vezes não consegue chamar viacep.com.br direto - algumas
+    hospedagens/proxies na frente do painel aplicam um Content-Security-Policy com
+    connect-src 'self', que bloqueia fetch() para qualquer domínio de terceiro. Buscando aqui
+    (same-origin) o problema desaparece, porque quem conversa com o ViaCEP é o servidor, não o
+    navegador."""
+    digitos = re.sub(r"\D", "", cep or "")
+    if len(digitos) != 8:
+        await _json(send, 400, _erro("CEP deve ter 8 dígitos."))
+        return
+    try:
+        async with _cliente(8.0) as cliente_http:
+            resp = await cliente_http.get(f"https://viacep.com.br/ws/{digitos}/json/")
+        if resp.status_code != 200:
+            await _json(send, 502, _erro("ViaCEP indisponível no momento."))
+            return
+        dados = resp.json()
+    except (httpx.HTTPError, ValueError):
+        await _json(send, 502, _erro("Não foi possível consultar o CEP agora."))
+        return
+    if dados.get("erro"):
+        await _json(send, 404, _erro("CEP não encontrado."))
+        return
+    await _json(send, 200, dados)
+
+
 # --- CJPG: busca e heurísticas de jurimetria ----------------------------------
 
 CJPG_MARCADORES_DISPOSITIVO = [
@@ -3047,6 +3074,11 @@ class _AutenticacaoBearer:
                 await _responder(send, 200, guia.read_bytes(), tipo="text/html; charset=utf-8")
             else:
                 await _responder(send, 404, b"Guia nao encontrado")
+            return
+        if caminho.startswith("/cep/") and scope.get("method") == "GET":
+            # proxy do ViaCEP (sem token: é só geocodificação pública, igual ao /guia) - ver
+            # _cep_http para o porquê de não deixar o navegador chamar o ViaCEP direto.
+            await _cep_http(send, caminho[len("/cep/"):])
             return
         if caminho.startswith("/certidoes/"):
             # acesso por link assinado e temporário (sem token de usuário)
