@@ -288,7 +288,6 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
   .espera-spinner { animation: none; border-top-color: var(--cds-border-subtle, #c6c6c6); }
 }
 
-.app-rodape { max-width: clamp(960px, 90vw, 1600px); margin: 0 auto; padding: 0 1rem 2rem; font-size: var(--fonte-base); }
 
 .grade-jurimetria {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -444,9 +443,6 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
   .app-cabecalho { padding: 1rem 0.75rem; }
   .app-layout { padding-inline: 0.75rem; }
 }
-@media (min-width: 769px) {
-  body:has(#side-nav.cds--side-nav--expanded) .app-rodape { padding-inline-start: 19rem; }
-}
 .header-acesso { display: flex; align-items: center; gap: 0.75rem; padding-inline: 1rem; }
 .edicao-pendente { color: var(--cds-text-primary, #161616); font-weight: 600; grid-column: 1 / -1; }
 body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link, .cliente-sugestoes button, .arvore-sugestoes button, .header-busca-resultado-item, summary):focus-visible {
@@ -476,7 +472,7 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
   .header-acesso { padding-inline: 0.25rem; gap: 0.25rem; }
   #aba-acesso-botao { min-block-size: 3rem; padding-inline: 0.5rem; }
   #status-conexao { display: none; }
-  .cds--side-nav__menu button.cds--side-nav__link { min-block-size: 2.75rem; }
+  .cds--side-nav__menu .cds--side-nav__link { min-block-size: 2.75rem; }
   .sub-abas { scrollbar-width: thin; }
   .header-busca-painel, .header-notificacoes-painel {
     position: fixed; top: 3rem; inset-inline: 1rem; inline-size: auto; max-inline-size: none;
@@ -606,6 +602,18 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 <li role="presentation" class="cds--side-nav__menu-item">
 <button class="cds--side-nav__link" id="aba-integracoes-botao" role="tab" aria-selected="false" aria-controls="aba-integracoes" type="button"><span class="cds--side-nav__link-text">Integrações</span></button>
 </li>
+</ul>
+</li>
+</ul>
+<ul class="cds--side-nav__items" aria-label="Ajuda e acesso">
+<li class="cds--side-nav__item">
+<button class="cds--side-nav__submenu" type="button" aria-expanded="true" aria-controls="menu-ajuda">
+<svg class="cds--side-nav__icon" width="20" height="20" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28Zm0 26a12 12 0 1 1 0-24 12 12 0 0 1 0 24Z"/><path d="M17 21h-2v-3a1 1 0 0 1 1-1 3 3 0 1 0-3-3h-2a5 5 0 1 1 6 4.9ZM15 23h2v2h-2Z"/></svg>
+<span class="cds--side-nav__submenu-title">Ajuda</span>
+</button>
+<ul class="cds--side-nav__menu" id="menu-ajuda">
+<li class="cds--side-nav__menu-item"><a class="cds--side-nav__link" href="/guia"><span class="cds--side-nav__link-text">Guia do usuário</span></a></li>
+<li class="cds--side-nav__menu-item"><a class="cds--side-nav__link" href="/cadastro"><span class="cds--side-nav__link-text">Pedir um token</span></a></li>
 </ul>
 </li>
 </ul>
@@ -1476,10 +1484,6 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </main>
 
 </div>
-
-<footer class="app-rodape">
-<a href="/guia">Guia do usuário</a> · <a href="/cadastro">Pedir um token</a>
-</footer>
 
 <!-- Modal: Novo caso -->
 <div class="cds--modal" id="modal-edicao-pendente" role="dialog" aria-modal="true" aria-labelledby="edicao-pendente-titulo" aria-describedby="edicao-pendente-descricao">
