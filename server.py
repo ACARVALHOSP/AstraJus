@@ -668,6 +668,62 @@ def _extrair_publicacao_djen(item: dict) -> dict:
     }
 
 
+@mcp.tool()
+async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> dict:
+    """Combina DataJud (capa + movimentos) e DJEN (partes, advogados e publicações) do mesmo
+    processo em um único esquema JSON, para não precisar chamar as duas tools separadamente.
+
+    Parâmetros: iguais a consultar_processo_datajud (tribunal, numero_processo).
+
+    Retorno: dicionário com "numero_processo", "encontrado_datajud" (bool), "instancias" (lista de
+    capa+movimentos por grau, igual a "processos" de consultar_processo_datajud), "partes"
+    (nome e polo, deduplicadas por nome), "advogados" (nome, numero_oab e uf_oab, deduplicados
+    por OAB) e "publicacoes" (itens do DJEN sem o campo "texto" completo).
+
+    Limitações:
+    - "partes", "advogados" e "publicacoes" vêm do DJEN e só existem se já houve ao menos uma
+      publicação desse processo; um processo sem publicações retorna essas listas vazias, mesmo
+      que existam partes reais (DataJud não expõe nomes de partes — ver consultar_processo_datajud).
+    - Erros de qualquer uma das duas fontes (DataJud ou DJEN) interrompem a combinação e são
+      retornados como "erro", mesmo que a outra fonte tenha respondido com sucesso.
+    """
+    try:
+        resultado_datajud, resultado_djen = await asyncio.gather(
+            consultar_processo_datajud(tribunal=tribunal, numero_processo=numero_processo),
+            consultar_publicacoes_djen(numero_processo=numero_processo),
+        )
+        if resultado_datajud.get("erro"):
+            return resultado_datajud
+        if resultado_djen.get("erro"):
+            return resultado_djen
+
+        partes: dict[str, dict] = {}
+        advogados: dict[str, dict] = {}
+        publicacoes = []
+        for item in resultado_djen.get("itens") or []:
+            for parte in item.get("destinatarios") or []:
+                chave = (parte.get("nome") or "").strip().upper()
+                if chave:
+                    partes[chave] = parte
+            for advogado in item.get("destinatarioadvogados") or []:
+                chave = advogado.get("numero_oab") or advogado.get("nome")
+                if chave:
+                    advogados[chave] = advogado
+            publicacoes.append({k: v for k, v in item.items() if k != "texto"})
+
+        return {
+            "numero_processo": _so_digitos(numero_processo),
+            "encontrado_datajud": bool(resultado_datajud.get("encontrado")),
+            "instancias": resultado_datajud.get("processos") or [],
+            "partes": list(partes.values()),
+            "advogados": list(advogados.values()),
+            "publicacoes": publicacoes,
+        }
+    except Exception as exc:
+        log.exception("Falha inesperada em consultar_processo_unificado")
+        return _erro(f"Erro inesperado ao combinar DataJud e DJEN: {exc}")
+
+
 # --- Feriados forenses (TJSP) -------------------------------------------------
 #
 # Usado para calcular prazos processuais em dias úteis: o TJSP publica, por município/comarca,
