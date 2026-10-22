@@ -255,6 +255,14 @@ function _aplicarMascaraCpfCnpj(input) {
   });
 }
 
+// Máscara live de CEP: NNNNN-NNN.
+function _aplicarMascaraCep(input) {
+  input.addEventListener("input", () => {
+    const digitos = input.value.replace(/\D/g, "").slice(0, 8);
+    input.value = digitos.replace(/(\d{5})(\d)/, "$1-$2");
+  });
+}
+
 // Máscara live de número de processo no padrão CNJ: NNNNNNN-DD.AAAA.J.TR.OOOO (20 dígitos).
 function _aplicarMascaraProcessoCNJ(input) {
   input.addEventListener("input", () => {
@@ -3207,11 +3215,18 @@ function _criarGrupoEnderecos(prefixo) {
     ]);
 
     const statusCep = el("span", { class: "campo-ajuda" });
+    _aplicarMascaraCep(inputCep);
 
+    let _cepEmAndamento = "";
     async function autopreencherPorCep() {
+      const digitos = inputCep.value.replace(/\D/g, "");
+      if (digitos.length !== 8 || digitos === _cepEmAndamento) return;
+      _cepEmAndamento = digitos;
+      statusCep.textContent = "Buscando CEP…";
       const encontrado = await _buscarCep(inputCep.value);
+      if (inputCep.value.replace(/\D/g, "") !== digitos) return; // usuário já mudou o CEP
       if (!encontrado) {
-        statusCep.textContent = inputCep.value.replace(/\D/g, "").length === 8 ? "CEP não encontrado." : "";
+        statusCep.textContent = "CEP não encontrado.";
         return;
       }
       inputRua.value = encontrado.logradouro || inputRua.value;
@@ -3222,6 +3237,13 @@ function _criarGrupoEnderecos(prefixo) {
       statusCep.textContent = "";
       if (!inputNumero.value) inputNumero.focus();
     }
+    // Busca assim que o 8º dígito é digitado (sem precisar sair do campo), e também ao sair do
+    // campo ou apertar Enter - cobre teclado numérico mobile, colar o CEP, etc.
+    inputCep.addEventListener("input", () => {
+      statusCep.textContent = "";
+      _cepEmAndamento = "";
+      if (inputCep.value.replace(/\D/g, "").length === 8) autopreencherPorCep();
+    });
     inputCep.addEventListener("blur", autopreencherPorCep);
     inputCep.addEventListener("keydown", (ev) => {
       if (ev.key === "Enter") { ev.preventDefault(); autopreencherPorCep(); }
