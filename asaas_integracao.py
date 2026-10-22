@@ -18,6 +18,18 @@ class ErroAsaas(Exception):
     """Erro ao falar com a API do Asaas (credenciais, rede, ou resposta inesperada)."""
 
 
+async def _pedido(chamada) -> httpx.Response:
+    """Espera a chamada HTTP, convertendo falha de rede/timeout em ErroAsaas. Sem isso, uma
+    instabilidade de rede (DNS, timeout, conexão recusada) vira exceção não tratada - cada
+    função só tratava erro HTTP >=400 via _json_ou_erro, não falha de conexão - e derruba a
+    requisição ASGI inteira (o que aparece pro usuário como "HTTP 502", não como um erro
+    tratado com mensagem útil)."""
+    try:
+        return await chamada
+    except httpx.HTTPError as erro:
+        raise ErroAsaas(f"Falha de rede ao falar com o Asaas: {erro}") from erro
+
+
 async def criar_cliente(
     cliente: httpx.AsyncClient, url_base: str, api_key: str, nome: str, cpf_cnpj: str,
     email: str | None = None, telefone: str | None = None,
@@ -29,9 +41,9 @@ async def criar_cliente(
         corpo["email"] = email
     if telefone:
         corpo["phone"] = telefone
-    resposta = await cliente.post(
+    resposta = await _pedido(cliente.post(
         f"{url_base}/customers", headers={"access_token": api_key}, json=corpo,
-    )
+    ))
     return _json_ou_erro(resposta, "criar cliente no Asaas")
 
 
@@ -54,9 +66,9 @@ async def criar_cobranca(
         corpo["value"] = valor
     if descricao:
         corpo["description"] = descricao
-    resposta = await cliente.post(
+    resposta = await _pedido(cliente.post(
         f"{url_base}/payments", headers={"access_token": api_key}, json=corpo,
-    )
+    ))
     return _json_ou_erro(resposta, "criar cobrança no Asaas")
 
 
@@ -72,25 +84,25 @@ async def listar_cobrancas(
         params["customer"] = customer_id
     if status:
         params["status"] = status
-    resposta = await cliente.get(
+    resposta = await _pedido(cliente.get(
         f"{url_base}/payments", headers={"access_token": api_key}, params=params,
-    )
+    ))
     return _json_ou_erro(resposta, "listar cobranças no Asaas")
 
 
 async def consultar_cobranca(cliente: httpx.AsyncClient, url_base: str, api_key: str, payment_id: str) -> dict:
     """Consulta o status atual de uma cobrança (status: PENDING, RECEIVED, OVERDUE, etc.)."""
-    resposta = await cliente.get(
+    resposta = await _pedido(cliente.get(
         f"{url_base}/payments/{payment_id}", headers={"access_token": api_key},
-    )
+    ))
     return _json_ou_erro(resposta, "consultar cobrança no Asaas")
 
 
 async def excluir_cobranca(cliente: httpx.AsyncClient, url_base: str, api_key: str, payment_id: str) -> dict:
     """Exclui/cancela uma cobrança (só é permitido para cobranças ainda não pagas)."""
-    resposta = await cliente.delete(
+    resposta = await _pedido(cliente.delete(
         f"{url_base}/payments/{payment_id}", headers={"access_token": api_key},
-    )
+    ))
     return _json_ou_erro(resposta, "cancelar cobrança no Asaas")
 
 

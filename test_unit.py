@@ -1887,6 +1887,19 @@ class AsaasIntegracaoTest(unittest.TestCase):
         with self.assertRaises(asaas_integracao.ErroAsaas):
             _rodar(ir())
 
+    def test_falha_de_rede_vira_erro_asaas_em_vez_de_derrubar_a_requisicao(self):
+        """Timeout/conexão recusada não podem propagar crus - antes só erro HTTP >=400 virava
+        ErroAsaas, uma falha de rede ia sem tratamento e derrubava a requisição ASGI (o que o
+        usuário via como "HTTP 502" sem explicação)."""
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectTimeout("tempo esgotado", request=request)
+
+        async def ir():
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as cliente:
+                return await asaas_integracao.listar_cobrancas(cliente, "https://api-sandbox.asaas.com/v3", "chave")
+        with self.assertRaises(asaas_integracao.ErroAsaas):
+            _rodar(ir())
+
 
 if __name__ == "__main__":
     unittest.main()

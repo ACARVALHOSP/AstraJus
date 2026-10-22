@@ -1618,7 +1618,10 @@ async function carregarStatusIntegracoes() {
 async function _buscarJson(url) {
   if (!cliente) throw new ErroMCP(401, "Conecte-se primeiro.");
   const resposta = await fetch(url, { headers: { Authorization: `Bearer ${cliente.token}` } });
-  if (!resposta.ok) throw new ErroMCP(resposta.status, `Falha ao consultar ${url} (HTTP ${resposta.status}).`);
+  if (!resposta.ok) {
+    const dados = await resposta.json().catch(() => ({}));
+    throw new ErroMCP(resposta.status, dados.mensagem || `Falha ao consultar ${url} (HTTP ${resposta.status}).`);
+  }
   return resposta.json();
 }
 
