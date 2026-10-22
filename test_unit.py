@@ -74,9 +74,14 @@ DATAJUD_OK = {
                     "numeroProcesso": "10063142720238260005",
                     "tribunal": "TJSP",
                     "grau": "G1",
-                    "classe": {"nome": "EMBARGOS DE TERCEIRO CÍVEL"},
+                    "classe": {"codigo": 1116, "nome": "EMBARGOS DE TERCEIRO CÍVEL"},
+                    "sistema": {"codigo": 1, "nome": "PJe"},
+                    "formato": {"codigo": 1, "nome": "Eletrônico"},
                     "dataAjuizamento": "20230101000000",
-                    "orgaoJulgador": {"nome": "1ª Vara Cível"},
+                    "dataHoraUltimaAtualizacao": "2026-01-01T00:00:00Z",
+                    "nivelSigilo": 0,
+                    "orgaoJulgador": {"codigo": 5, "nome": "1ª Vara Cível", "codigoMunicipioIBGE": 3550308},
+                    "assuntos": [{"codigo": 10570, "nome": "COBRANÇA"}],
                     "movimentos": [
                         {"codigo": 1, "nome": "Distribuição", "dataHora": "2023-01-01T00:00:00"},
                         {
@@ -163,6 +168,19 @@ class DataJudTest(_Simulado, unittest.TestCase):
         self.assertEqual(proc["grau_descricao"], "1º grau (primeira instância)")
         self.assertEqual(proc["movimentos"][1]["complementosTabelados"], [{"nome": "Despacho"}])
         self.assertNotIn("partes", proc)
+
+    def test_extrai_campos_novos_do_datajud_sem_quebrar_os_existentes(self):
+        self.responder(_json(200, DATAJUD_OK))
+        proc = self.consultar()["processos"][0]
+        self.assertEqual(proc["classe_codigo"], 1116)
+        self.assertEqual(proc["sistema"], "PJe")
+        self.assertEqual(proc["formato"], "Eletrônico")
+        self.assertEqual(proc["ultima_atualizacao"], "2026-01-01T00:00:00Z")
+        self.assertEqual(proc["nivel_sigilo"], 0)
+        self.assertEqual(proc["orgao_codigo"], 5)
+        self.assertEqual(proc["orgao_municipio_ibge"], 3550308)
+        self.assertEqual(proc["assuntos"], ["COBRANÇA"])
+        self.assertEqual(proc["assuntos_codigos"], [10570])
 
     def test_requisicao_usa_url_header_e_corpo_corretos(self):
         self.responder(_json(200, DATAJUD_OK))

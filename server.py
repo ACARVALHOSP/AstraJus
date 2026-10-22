@@ -337,8 +337,10 @@ async def consultar_processo_datajud(tribunal: str, numero_processo: str) -> dic
       (ex: "1006314-27.2023.8.26.0005" ou "10063142720238260005").
 
     Retorno: dicionário com "encontrado" (bool) e, quando encontrado, "processos", uma lista em
-    que cada item traz classe, dataAjuizamento, orgaoJulgador, tribunal, grau, grau_descricao
-    (ex.: "1º grau", "2º grau") e movimentos (codigo, nome, dataHora e, quando existir,
+    que cada item traz classe, classe_codigo, dataAjuizamento, orgaoJulgador, orgao_codigo,
+    orgao_municipio_ibge, tribunal, grau, grau_descricao (ex.: "1º grau", "2º grau"), sistema,
+    formato, ultima_atualizacao, nivel_sigilo (0 público, 1-5 restrito), assuntos, assuntos_codigos
+    (paralela a assuntos, mesma ordem) e movimentos (codigo, nome, dataHora e, quando existir,
     complementosTabelados). Se o processo não existir nesse tribunal, retorna encontrado=False com
     mensagem explicativa (isso não é erro).
 
@@ -466,7 +468,11 @@ def _extrair_processo_datajud(fonte: dict) -> dict:
             item["complementosTabelados"] = mov["complementosTabelados"]
         movimentos.append(item)
 
-    assuntos = [(a.get("nome") or "") for a in (fonte.get("assuntos") or []) if a.get("nome")]
+    assuntos_itens = [a for a in (fonte.get("assuntos") or []) if a.get("nome")]
+    assuntos = [a["nome"] for a in assuntos_itens]
+    assuntos_codigos = [a.get("codigo") for a in assuntos_itens]
+
+    orgao = fonte.get("orgaoJulgador") or {}
 
     return {
         "numeroProcesso": fonte.get("numeroProcesso"),
@@ -474,9 +480,17 @@ def _extrair_processo_datajud(fonte: dict) -> dict:
         "grau": fonte.get("grau"),
         "grau_descricao": _DESCRICAO_GRAU.get(fonte.get("grau") or "", fonte.get("grau")),
         "classe": (fonte.get("classe") or {}).get("nome"),
+        "classe_codigo": (fonte.get("classe") or {}).get("codigo"),
         "assuntos": assuntos,
+        "assuntos_codigos": assuntos_codigos,
         "dataAjuizamento": fonte.get("dataAjuizamento"),
-        "orgaoJulgador": (fonte.get("orgaoJulgador") or {}).get("nome"),
+        "orgaoJulgador": orgao.get("nome"),
+        "orgao_codigo": orgao.get("codigo"),
+        "orgao_municipio_ibge": orgao.get("codigoMunicipioIBGE"),
+        "sistema": (fonte.get("sistema") or {}).get("nome"),
+        "formato": (fonte.get("formato") or {}).get("nome"),
+        "ultima_atualizacao": fonte.get("dataHoraUltimaAtualizacao"),
+        "nivel_sigilo": fonte.get("nivelSigilo"),
         "totalMovimentos": len(movimentos),
         "movimentos": movimentos,
     }
