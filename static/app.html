@@ -1272,16 +1272,23 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <form id="form-caso-partes" class="form-detalhe">
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-autor">Autor</label>
+<div id="campos-caso-autor" style="display:flex;flex-direction:column;gap:0.5rem">
 <input class="cds--text-input" type="text" id="editar-caso-autor" name="autor" placeholder="Ex.: Maria Aparecida Souza" autocomplete="off">
+</div>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-reu">Réu</label>
+<div id="campos-caso-reu" style="display:flex;flex-direction:column;gap:0.5rem">
 <input class="cds--text-input" type="text" id="editar-caso-reu" name="reu" placeholder="Ex.: Construtora Horizonte Ltda" autocomplete="off">
+</div>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-advogados">Advogados</label>
-<input class="cds--text-input" type="text" id="editar-caso-advogados" name="advogados" placeholder="Nomes separados por vírgula" autocomplete="off">
+<div id="campos-caso-advogados" style="display:flex;flex-direction:column;gap:0.5rem">
+<input class="cds--text-input" type="text" id="editar-caso-advogados" name="advogados" placeholder="Nome do advogado" autocomplete="off">
 </div>
+</div>
+<p class="campo-ajuda">Cada nome aparece em um campo editável. Para remover uma parte, deixe seu campo em branco e salve.</p>
 <div id="resultado-caso-partes" class="app-resultado"></div>
 <div class="form-acoes-detalhe">
 <button class="cds--btn cds--btn--primary cds--btn--sm" type="submit" form="form-caso-partes">Salvar partes</button>
