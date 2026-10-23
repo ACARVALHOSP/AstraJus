@@ -34,14 +34,14 @@ Plataforma integrada que conecta as APIs públicas do CNJ (DataJud e DJEN) a um 
 **Gestão de Clientes**
 
 - CRUD completo com busca e paginação
-- Abertura em modal com Carbon Design System
+- Abertura em seção na própria página com Carbon Design System
 - Typeahead para seleção de clientes em formulários
 
 **Gestão de Casos**
 
 - CRUD completo com vínculo a cliente
 - Preenchimento automático de responsável (usuário logado) ao criar caso
-- Busca de ação/tipo e foro/vara via DataJud no modal de criação e na vista de detalhe
+- Busca de ação/tipo e foro/vara via DataJud na seção de criação e na vista de detalhe
 - Vista de detalhe com sub-abas: Cadastro | Partes | Atividades | Publicações | Movimentações
 - Edição inline de título, responsável, ação, foro e números de processo
 - Partes processuais: autor, réu e advogados; auto-preenchimento a partir de dados do DJEN

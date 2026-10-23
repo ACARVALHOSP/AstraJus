@@ -213,6 +213,12 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 .capa-card-auto { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 0.75rem; font-size: 0.875rem; }
 .capa-card-auto dt { font-weight: 600; color: var(--cds-text-secondary, #525252); }
 .capa-card-auto dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+#caso-subaba-cadastro > .secao-cabecalho { margin-top: 1.5rem; gap: 1rem; flex-wrap: wrap; }
+@media (max-width: 600px) {
+  .capa-card-auto { grid-template-columns: minmax(0, 1fr); row-gap: 0.25rem; }
+  .capa-card-auto dd { margin-bottom: 0.75rem; }
+  #btn-atualizar-capa { width: 100%; max-width: none; }
+}
 .capa-card-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; }
 .capa-card-campo label { display: block; margin-bottom: 0.25rem; }
 .texto-auxiliar { color: var(--cds-text-secondary, #525252); font-size: 0.875rem; margin: 0; }
@@ -466,11 +472,11 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 :is(.sub-abas, .sub-tabs, .cadastro-tabs, .resultado-texto, .tabela-responsiva-wrap) {
   scrollbar-color: var(--cds-border-strong, #8d8d8d) transparent;
 }
-#modal-edicao-pendente .cds--modal-footer {
+#modal-edicao-pendente .fluxo-pagina-footer {
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-row: 3;
   block-size: auto; background: var(--cds-layer, #f4f4f4);
 }
-#modal-edicao-pendente .cds--modal-footer .cds--btn {
+#modal-edicao-pendente .fluxo-pagina-footer .cds--btn {
   min-inline-size: 0; inline-size: 100%; max-inline-size: none;
   block-size: auto; min-block-size: 4rem; padding: 1rem;
   align-items: center; white-space: normal;
@@ -491,19 +497,33 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
   }
   .caso-detalhe-cabecalho { flex-direction: column; gap: 0.5rem; }
   .sub-aba-botao, .sub-tab-link { min-block-size: 2.75rem; }
-  #modal-edicao-pendente .cds--modal-footer { grid-template-columns: minmax(0, 1fr); }
+  #modal-edicao-pendente .fluxo-pagina-footer { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 480px) {
   #form-contato-cadastro .token-acoes > .cds--btn { inline-size: 100%; max-inline-size: none; }
 }
 .caso-advogados-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .caso-advogados-tags .cds--tag { height: auto; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+
+/* Fluxos no documento: sem sobreposição, fundo bloqueado ou foco preso. */
+.fluxo-pagina { display: none; margin-block: 0 2rem; scroll-margin-top: 4rem; }
+.fluxo-pagina.is-visible { display: block; }
+.fluxo-pagina-container { inline-size: 100%; max-inline-size: 64rem; background: var(--cds-layer, #f4f4f4); padding: 1.5rem; }
+.fluxo-pagina-header { display: flex; align-items: start; justify-content: space-between; gap: 1rem; margin-block-end: 1.5rem; }
+.fluxo-pagina-header__heading { font-size: 1.5rem; line-height: 1.3; }
+.fluxo-pagina-close { background: transparent; border: 0; cursor: pointer; padding: .75rem; color: inherit; }
+.fluxo-pagina-content { min-inline-size: 0; }
+.fluxo-pagina-footer { display: flex; flex-wrap: wrap; gap: .5rem; margin-block-start: 1.5rem; }
+@media (max-width: 480px) {
+  .fluxo-pagina-container { padding: 1rem; }
+  .fluxo-pagina-footer .cds--btn { max-inline-size: none; inline-size: 100%; }
+}
 </style>
 </head>
 <body class="cds--white">
 <div id="toast-global" aria-live="polite" style="position:fixed;top:1rem;right:1rem;z-index:9999;width:min(380px,calc(100vw - 2rem));display:flex;flex-direction:column;gap:0.5rem;pointer-events:none"></div>
 <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
-<a class="skip-link" href="#aba-casos-botao">Ir para Casos</a>
+<a class="skip-link" href="#aba-casos-botao">Ir para Processos</a>
 <a class="skip-link" href="#aba-contatos-botao">Ir para Clientes</a>
 <a class="skip-link" href="#aba-publicacoes-oab-botao">Ir para Publicações monitoradas</a>
 <a class="skip-link" href="#aba-monitoramentos-botao">Ir para Monitoramentos</a>
@@ -521,7 +541,7 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M15,14.3L10.7,10c1.9-2.3,1.6-5.8-0.7-7.7S4.2,0.7,2.3,3S0.7,8.8,3,10.7c2,1.7,5,1.7,7,0l4.3,4.3L15,14.3z M2,6.5C2,4,4,2,6.5,2S11,4,11,6.5S9,11,6.5,11S2,9,2,6.5z"/></svg>
 </button>
 <div class="header-busca-painel" id="header-busca-painel" hidden>
-<input class="cds--text-input" type="search" id="header-busca-input" aria-label="Buscar cliente, caso ou número de processo" placeholder="Buscar cliente, caso ou número de processo" autocomplete="off">
+<input class="cds--text-input" type="search" id="header-busca-input" aria-label="Buscar cliente, processo ou número de processo" placeholder="Buscar cliente, processo ou número de processo" autocomplete="off">
 <div id="header-busca-resultados" class="header-busca-resultados"></div>
 </div>
 </div>
@@ -569,7 +589,7 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 <button class="cds--side-nav__link" id="aba-contatos-botao" role="tab" aria-selected="false" aria-controls="aba-contatos" type="button"><span class="cds--side-nav__link-text">Clientes</span></button>
 </li>
 <li role="presentation" class="cds--side-nav__menu-item">
-<button class="cds--side-nav__link" id="aba-casos-botao" role="tab" aria-selected="false" aria-controls="aba-casos" type="button"><span class="cds--side-nav__link-text">Casos</span></button>
+<button class="cds--side-nav__link" id="aba-casos-botao" role="tab" aria-selected="false" aria-controls="aba-casos" type="button"><span class="cds--side-nav__link-text">Processos</span></button>
 </li>
 </ul>
 </li>
@@ -892,8 +912,8 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 <h2 class="lista-rapida-titulo">Favoritos</h2>
 <p class="campo-ajuda">Processos marcados manualmente na aba Processo (DataJud).</p>
 <ul id="lista-favoritos" class="lista-rapida"></ul>
-<h2 class="lista-rapida-titulo">Casos favoritos</h2>
-<p class="campo-ajuda">Casos marcados com a estrela na aba Casos.</p>
+<h2 class="lista-rapida-titulo">Processos favoritos</h2>
+<p class="campo-ajuda">Processos marcados com a estrela na aba Processos.</p>
 <ul id="lista-casos-favoritos" class="lista-rapida"></ul>
 <h2 class="lista-rapida-titulo">Histórico recente</h2>
 <p class="campo-ajuda">Últimas consultas feitas neste navegador. Clique para repetir.</p>
@@ -1258,19 +1278,19 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 
 <div id="caso-vista-lista">
 <h2 class="lista-rapida-titulo">Processos novos para triagem</h2>
-<p class="campo-ajuda">Publicações encontradas pelo monitoramento de OAB que ainda não têm caso cadastrado. Após carregados, vincule cada processo a um cliente ou descarte.</p>
+<p class="campo-ajuda">Publicações encontradas pelo monitoramento de OAB que ainda não têm processo cadastrado. Após carregados, vincule cada processo a um cliente ou descarte.</p>
 <div id="lista-pendentes" class="app-resultado"></div>
 
 <div class="secao-cabecalho">
-<h2 class="lista-rapida-titulo">Casos</h2>
-<button class="cds--btn cds--btn--primary cds--btn--sm" type="button" id="btn-novo-caso">Novo caso</button>
+<h2 class="lista-rapida-titulo">Processos</h2>
+<button class="cds--btn cds--btn--primary cds--btn--sm" type="button" id="btn-novo-caso">Novo processo</button>
 </div>
-<h2 class="lista-rapida-titulo" style="margin-top:1.5rem">Casos cadastrados</h2>
+<h2 class="lista-rapida-titulo" style="margin-top:1.5rem">Processos cadastrados</h2>
 <div class="contatos-barra" style="margin-top:0.5rem">
 <div class="cds--form-item contatos-busca-campo" style="margin:0;max-width:360px">
-<input class="cds--text-input" type="search" id="casos-busca" placeholder="Filtrar por título, cliente, ação, processo…" aria-label="Buscar casos" autocomplete="off">
+<input class="cds--text-input" type="search" id="casos-busca" placeholder="Filtrar por título, cliente, ação, processo…" aria-label="Buscar processos" autocomplete="off">
 </div>
-<div class="cds--content-switcher cds--content-switcher--light" id="casos-vista-switcher" role="tablist" aria-label="Visualização da lista de casos">
+<div class="cds--content-switcher cds--content-switcher--light" id="casos-vista-switcher" role="tablist" aria-label="Visualização da lista de processos">
 <button class="cds--content-switcher-btn cds--content-switcher--selected" type="button" id="casos-vista-tabela-botao" role="tab" aria-selected="true"><span class="cds--content-switcher__label">Tabela</span></button>
 <button class="cds--content-switcher-btn" type="button" id="casos-vista-cards-botao" role="tab" aria-selected="false"><span class="cds--content-switcher__label">Cards</span></button>
 </div>
@@ -1284,7 +1304,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <h2 class="lista-rapida-titulo" id="caso-detalhe-titulo"></h2>
 </div>
 
-<div class="sub-abas" role="tablist" aria-label="Detalhes do caso">
+<div class="sub-abas" role="tablist" aria-label="Detalhes do processo">
 <button class="sub-aba-botao sub-aba-ativa" id="caso-subaba-cadastro-botao" role="tab" aria-selected="true" aria-controls="caso-subaba-cadastro" type="button">Cadastro</button>
 <button class="sub-aba-botao" id="caso-subaba-atividades-botao" role="tab" aria-selected="false" aria-controls="caso-subaba-atividades" type="button">Atividades</button>
 <button class="sub-aba-botao" id="caso-subaba-publicacoes-botao" role="tab" aria-selected="false" aria-controls="caso-subaba-publicacoes" type="button">Publicações</button>
@@ -1303,7 +1323,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <form id="form-caso-editar" class="form-detalhe">
 <div class="cds--form-item"><label class="cds--label" for="editar-caso-responsavel">Responsável</label><select class="cds--select-input" id="editar-caso-responsavel"><option value="">Selecione um responsável</option></select></div>
 <div id="resultado-caso-editar"></div>
-<div class="form-acoes-detalhe"><button class="cds--btn cds--btn--primary cds--btn--sm" type="submit">Salvar responsável</button><button class="cds--btn cds--btn--danger--ghost cds--btn--sm" type="button" id="btn-excluir-caso">Excluir caso</button></div></form>
+<div class="form-acoes-detalhe"><button class="cds--btn cds--btn--primary cds--btn--sm" type="submit">Salvar responsável</button><button class="cds--btn cds--btn--danger--ghost cds--btn--sm" type="button" id="btn-excluir-caso">Excluir processo</button></div></form>
 <h3 class="lista-rapida-titulo">Partes e advogados</h3>
 <form id="form-caso-partes" class="form-detalhe">
 <div class="cds--form-item">
@@ -1362,11 +1382,11 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 
 <section id="caso-subaba-vinculos" role="tabpanel" aria-labelledby="caso-subaba-vinculos-botao" hidden>
 <div class="secao-cabecalho">
-<h3 class="lista-rapida-titulo">Casos vinculados</h3>
+<h3 class="lista-rapida-titulo">Processos vinculados</h3>
 </div>
 <div id="lista-vinculos" class="app-resultado"></div>
 <details class="vinculos-adicionar" id="vinculos-adicionar-painel">
-<summary>Vincular outro caso</summary>
+<summary>Vincular outro processo</summary>
 <form id="form-vinculos-adicionar" class="vinculos-form">
 <div class="cds--form-item">
 <label class="cds--label" for="vinculos-numero-processo">Número do processo</label>
@@ -1466,12 +1486,12 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 
 </div>
 
-<!-- Modal: Novo caso -->
-<div class="cds--modal" id="modal-edicao-pendente" role="dialog" aria-modal="true" aria-labelledby="edicao-pendente-titulo" aria-describedby="edicao-pendente-descricao">
-<div class="cds--modal-container cds--modal-container--sm">
-<div class="cds--modal-header"><h2 class="cds--modal-header__heading" id="edicao-pendente-titulo">Alterações não salvas</h2></div>
-<div class="cds--modal-content"><p id="edicao-pendente-descricao">Salve as alterações antes de sair ou descarte o que foi editado desde o último salvamento.</p></div>
-<div class="cds--modal-footer">
+<!-- Seção da página: Novo caso -->
+<div class="fluxo-pagina" id="modal-edicao-pendente" role="region" aria-labelledby="edicao-pendente-titulo" aria-describedby="edicao-pendente-descricao">
+<div class="fluxo-pagina-container fluxo-pagina-container--sm">
+<div class="fluxo-pagina-header"><h2 class="fluxo-pagina-header__heading" id="edicao-pendente-titulo">Alterações não salvas</h2></div>
+<div class="fluxo-pagina-content"><p id="edicao-pendente-descricao">Salve as alterações antes de sair ou descarte o que foi editado desde o último salvamento.</p></div>
+<div class="fluxo-pagina-footer">
 <button class="cds--btn cds--btn--secondary" type="button" id="edicao-continuar" data-escolha-edicao="continuar">Continuar editando</button>
 <button class="cds--btn cds--btn--danger--ghost" type="button" data-escolha-edicao="descartar">Descartar</button>
 <button class="cds--btn cds--btn--primary" type="button" data-escolha-edicao="salvar">Salvar e sair</button>
@@ -1479,15 +1499,15 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 </div>
 
-<div class="cds--modal" id="modal-novo-caso" role="dialog" aria-modal="true" aria-labelledby="modal-novo-caso-titulo">
-<div class="cds--modal-container cds--modal-container--sm">
-<div class="cds--modal-header">
-<p class="cds--modal-header__heading" id="modal-novo-caso-titulo">Novo caso</p>
-<button class="cds--modal-close" type="button" id="modal-novo-caso-fechar" aria-label="Fechar">
+<div class="fluxo-pagina" id="modal-novo-caso" role="region" aria-labelledby="modal-novo-caso-titulo">
+<div class="fluxo-pagina-container fluxo-pagina-container--sm">
+<div class="fluxo-pagina-header">
+<p class="fluxo-pagina-header__heading" id="modal-novo-caso-titulo">Novo processo</p>
+<button class="fluxo-pagina-close" type="button" id="modal-novo-caso-fechar" aria-label="Fechar">
 <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="20" height="20" fill="currentColor"><path d="M17.41 16 24 9.41 22.59 8 16 14.59 9.41 8 8 9.41 14.59 16 8 22.59 9.41 24 16 17.41 22.59 24 24 22.59 17.41 16z"/></svg>
 </button>
 </div>
-<div class="cds--modal-content">
+<div class="fluxo-pagina-content">
 <form id="form-caso" class="app-formulario">
 <div class="cds--form-item caso-cliente-campo">
 <label class="cds--label" for="caso-cliente-busca">Cliente</label>
@@ -1512,62 +1532,62 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <input class="cds--text-input" id="caso-foro" name="foro" placeholder="Ex.: 3ª Vara Cível" autocomplete="off">
 </div>
 <div class="cds--form-item">
-<label class="cds--label" for="caso-processos">Número(s) de processo</label>
-<input class="cds--text-input" id="caso-processos" name="numeros_processo" placeholder="1006314-27.2023.8.26.0005, ..." autocomplete="off">
-<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="btn-datajud-modal">Buscar ação/foro no DataJud</button>
+<label class="cds--label" for="caso-processos">Número CNJ (opcional)</label>
+<input class="cds--text-input" id="caso-processos" name="numeros_processo" placeholder="1006314-27.2023.8.26.0005" autocomplete="off">
+<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="btn-datajud-modal">Consultar ação/foro no DataJud</button>
 <div id="status-datajud-modal" class="campo-ajuda"></div>
-<span class="campo-ajuda">Separe por vírgula se houver mais de um.</span>
+<span class="campo-ajuda">Informe um único número ou deixe em branco se ainda não existir.</span>
 </div>
 </form>
 <div id="resultado-caso" class="app-resultado" aria-live="polite"></div>
 </div>
-<div class="cds--modal-footer">
+<div class="fluxo-pagina-footer">
 <button class="cds--btn cds--btn--secondary" type="button" data-fechar-modal="modal-novo-caso">Cancelar</button>
-<button class="cds--btn cds--btn--primary" type="submit" form="form-caso">Cadastrar caso</button>
+<button class="cds--btn cds--btn--primary" type="submit" form="form-caso">Cadastrar processo</button>
 </div>
 </div>
 </div>
 
-<!-- Modal: Cadastrar cliente e caso (a partir de uma publicação/processo) -->
-<div class="cds--modal" id="modal-cadastrar-caso-publicacao" role="dialog" aria-modal="true" aria-labelledby="modal-cadastrar-caso-publicacao-titulo">
-<div class="cds--modal-container cds--modal-container--sm">
-<div class="cds--modal-header">
-<p class="cds--modal-header__heading" id="modal-cadastrar-caso-publicacao-titulo">Cadastrar cliente e caso</p>
-<button class="cds--modal-close" type="button" id="modal-cadastrar-caso-publicacao-fechar" aria-label="Fechar">
+<!-- Seção da página: Cadastrar cliente e caso (a partir de uma publicação/processo) -->
+<div class="fluxo-pagina" id="modal-cadastrar-caso-publicacao" role="region" aria-labelledby="modal-cadastrar-caso-publicacao-titulo">
+<div class="fluxo-pagina-container fluxo-pagina-container--sm">
+<div class="fluxo-pagina-header">
+<p class="fluxo-pagina-header__heading" id="modal-cadastrar-caso-publicacao-titulo">Cadastrar cliente e processo</p>
+<button class="fluxo-pagina-close" type="button" id="modal-cadastrar-caso-publicacao-fechar" aria-label="Fechar">
 <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="20" height="20" fill="currentColor"><path d="M17.41 16 24 9.41 22.59 8 16 14.59 9.41 8 8 9.41 14.59 16 8 22.59 9.41 24 16 17.41 22.59 24 24 22.59 17.41 16z"/></svg>
 </button>
 </div>
-<div class="cds--modal-content" id="modal-cadastrar-caso-publicacao-corpo"></div>
+<div class="fluxo-pagina-content" id="modal-cadastrar-caso-publicacao-corpo"></div>
 </div>
 </div>
 
-<!-- Modal: Confirmação de ação destrutiva (genérico, usado no lugar de window.confirm()) -->
-<div class="cds--modal" id="modal-confirmar" role="alertdialog" aria-modal="true" aria-labelledby="modal-confirmar-titulo">
-<div class="cds--modal-container cds--modal-container--xs">
-<div class="cds--modal-header">
-<p class="cds--modal-header__heading" id="modal-confirmar-titulo">Confirmar ação</p>
-<button class="cds--modal-close" type="button" id="modal-confirmar-fechar" aria-label="Fechar">
+<!-- Seção da página: Confirmação de ação destrutiva (genérico, usado no lugar de window.confirm()) -->
+<div class="fluxo-pagina" id="modal-confirmar" role="region" aria-labelledby="modal-confirmar-titulo">
+<div class="fluxo-pagina-container fluxo-pagina-container--xs">
+<div class="fluxo-pagina-header">
+<p class="fluxo-pagina-header__heading" id="modal-confirmar-titulo">Confirmar ação</p>
+<button class="fluxo-pagina-close" type="button" id="modal-confirmar-fechar" aria-label="Fechar">
 <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="20" height="20" fill="currentColor"><path d="M17.41 16 24 9.41 22.59 8 16 14.59 9.41 8 8 9.41 14.59 16 8 22.59 9.41 24 16 17.41 22.59 24 24 22.59 17.41 16z"/></svg>
 </button>
 </div>
-<div class="cds--modal-content" id="modal-confirmar-corpo"></div>
-<div class="cds--modal-footer">
+<div class="fluxo-pagina-content" id="modal-confirmar-corpo"></div>
+<div class="fluxo-pagina-footer">
 <button class="cds--btn cds--btn--secondary" type="button" id="modal-confirmar-cancelar">Cancelar</button>
 <button class="cds--btn cds--btn--danger" type="button" id="modal-confirmar-ok">Confirmar</button>
 </div>
 </div>
 </div>
 
-<!-- Modal: Atividade (nova / editar) -->
-<div class="cds--modal" id="modal-atividade" role="dialog" aria-modal="true" aria-labelledby="modal-atividade-titulo">
-<div class="cds--modal-container cds--modal-container--sm">
-<div class="cds--modal-header">
-<p class="cds--modal-header__heading" id="modal-atividade-titulo">Nova atividade</p>
-<button class="cds--modal-close" type="button" id="modal-atividade-fechar" aria-label="Fechar">
+<!-- Seção da página: Atividade (nova / editar) -->
+<div class="fluxo-pagina" id="modal-atividade" role="region" aria-labelledby="modal-atividade-titulo">
+<div class="fluxo-pagina-container fluxo-pagina-container--sm">
+<div class="fluxo-pagina-header">
+<p class="fluxo-pagina-header__heading" id="modal-atividade-titulo">Nova atividade</p>
+<button class="fluxo-pagina-close" type="button" id="modal-atividade-fechar" aria-label="Fechar">
 <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="20" height="20" fill="currentColor"><path d="M17.41 16 24 9.41 22.59 8 16 14.59 9.41 8 8 9.41 14.59 16 8 22.59 9.41 24 16 17.41 22.59 24 24 22.59 17.41 16z"/></svg>
 </button>
 </div>
-<div class="cds--modal-content">
+<div class="fluxo-pagina-content">
 <form id="form-atividade">
 <input type="hidden" id="atividade-id">
 <div class="cds--form-item">
@@ -1604,27 +1624,27 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div id="resultado-atividade" class="app-resultado"></div>
 </form>
 </div>
-<div class="cds--modal-footer">
+<div class="fluxo-pagina-footer">
 <button class="cds--btn cds--btn--secondary" type="button" data-fechar-modal="modal-atividade">Cancelar</button>
 <button class="cds--btn cds--btn--primary" type="submit" form="form-atividade">Salvar</button>
 </div>
 </div>
 </div>
 
-<div class="cds--modal" id="modal-lancamento-tipo" role="dialog" aria-modal="true" aria-labelledby="modal-lancamento-tipo-titulo">
-<div class="cds--modal-container cds--modal-container--sm">
-<div class="cds--modal-header">
-<p class="cds--modal-header__heading" id="modal-lancamento-tipo-titulo">Novo lançamento</p>
-<button class="cds--modal-close" type="button" data-fechar-modal="modal-lancamento-tipo" aria-label="Fechar">
+<div class="fluxo-pagina" id="modal-lancamento-tipo" role="region" aria-labelledby="modal-lancamento-tipo-titulo">
+<div class="fluxo-pagina-container fluxo-pagina-container--sm">
+<div class="fluxo-pagina-header">
+<p class="fluxo-pagina-header__heading" id="modal-lancamento-tipo-titulo">Novo lançamento</p>
+<button class="fluxo-pagina-close" type="button" data-fechar-modal="modal-lancamento-tipo" aria-label="Fechar">
 <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="20" height="20" fill="currentColor"><path d="M17.41 16 24 9.41 22.59 8 16 14.59 9.41 8 8 9.41 14.59 16 8 22.59 9.41 24 16 17.41 22.59 24 24 22.59 17.41 16z"/></svg>
 </button>
 </div>
-<div class="cds--modal-content">
+<div class="fluxo-pagina-content">
 <p class="campo-ajuda">Selecione o tipo de lançamento.</p>
 <div class="grade-integracoes">
 <button class="cds--tile" type="button" id="btn-lancamento-tipo-honorario" style="cursor:pointer; text-align:left; width:100%;">
 <h3>Honorário</h3>
-<p>Cobrança de honorários vinculada a um caso/cliente.</p>
+<p>Cobrança de honorários vinculada a um processo e cliente.</p>
 </button>
 <div class="cds--tile">
 <h3>Outras Entradas</h3>
@@ -1643,21 +1663,21 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 </div>
 </div>
-<div class="cds--modal-footer">
+<div class="fluxo-pagina-footer">
 <button class="cds--btn cds--btn--secondary" type="button" data-fechar-modal="modal-lancamento-tipo">Cancelar</button>
 </div>
 </div>
 </div>
 
-<div class="cds--modal" id="modal-honorario" role="dialog" aria-modal="true" aria-labelledby="modal-honorario-titulo">
-<div class="cds--modal-container cds--modal-container--sm">
-<div class="cds--modal-header">
-<p class="cds--modal-header__heading" id="modal-honorario-titulo">Adicionar Honorário</p>
-<button class="cds--modal-close" type="button" id="modal-honorario-fechar" aria-label="Fechar">
+<div class="fluxo-pagina" id="modal-honorario" role="region" aria-labelledby="modal-honorario-titulo">
+<div class="fluxo-pagina-container fluxo-pagina-container--sm">
+<div class="fluxo-pagina-header">
+<p class="fluxo-pagina-header__heading" id="modal-honorario-titulo">Adicionar Honorário</p>
+<button class="fluxo-pagina-close" type="button" id="modal-honorario-fechar" aria-label="Fechar">
 <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="20" height="20" fill="currentColor"><path d="M17.41 16 24 9.41 22.59 8 16 14.59 9.41 8 8 9.41 14.59 16 8 22.59 9.41 24 16 17.41 22.59 24 24 22.59 17.41 16z"/></svg>
 </button>
 </div>
-<div class="cds--modal-content">
+<div class="fluxo-pagina-content">
 <form id="form-honorario">
 <div class="cds--form-item">
 <label class="cds--label" for="honorario-vencimento">Vencimento <span aria-hidden="true">*</span></label>
@@ -1685,9 +1705,9 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 <label class="checkbox-lembrar"><input type="checkbox" id="honorario-recorrente"> Repetir mensalmente</label>
 <div class="cds--form-item">
-<label class="cds--label" for="honorario-caso">Processo, Caso ou Atendimento <span aria-hidden="true">*</span></label>
+<label class="cds--label" for="honorario-caso">Processo, Processo ou Atendimento <span aria-hidden="true">*</span></label>
 <select class="cds--select-input" id="honorario-caso" name="caso_id" autocomplete="off" required>
-<option value="">— selecione o caso —</option>
+<option value="">— selecione o processo —</option>
 </select>
 </div>
 <div class="cds--form-item">
@@ -1703,22 +1723,22 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div id="resultado-honorario" class="app-resultado"></div>
 </form>
 </div>
-<div class="cds--modal-footer">
+<div class="fluxo-pagina-footer">
 <button class="cds--btn cds--btn--secondary" type="button" data-fechar-modal="modal-honorario">Cancelar</button>
 <button class="cds--btn cds--btn--primary" type="submit" form="form-honorario">Salvar</button>
 </div>
 </div>
 </div>
 
-<div class="cds--modal" id="modal-nova-cobranca" role="dialog" aria-modal="true" aria-labelledby="modal-nova-cobranca-titulo">
-<div class="cds--modal-container cds--modal-container--sm">
-<div class="cds--modal-header">
-<p class="cds--modal-header__heading" id="modal-nova-cobranca-titulo">Nova cobrança</p>
-<button class="cds--modal-close" type="button" id="modal-nova-cobranca-fechar" aria-label="Fechar">
+<div class="fluxo-pagina" id="modal-nova-cobranca" role="region" aria-labelledby="modal-nova-cobranca-titulo">
+<div class="fluxo-pagina-container fluxo-pagina-container--sm">
+<div class="fluxo-pagina-header">
+<p class="fluxo-pagina-header__heading" id="modal-nova-cobranca-titulo">Nova cobrança</p>
+<button class="fluxo-pagina-close" type="button" id="modal-nova-cobranca-fechar" aria-label="Fechar">
 <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="20" height="20" fill="currentColor"><path d="M17.41 16 24 9.41 22.59 8 16 14.59 9.41 8 8 9.41 14.59 16 8 22.59 9.41 24 16 17.41 22.59 24 24 22.59 17.41 16z"/></svg>
 </button>
 </div>
-<div class="cds--modal-content">
+<div class="fluxo-pagina-content">
 <form id="form-nova-cobranca">
 <div class="cds--form-item">
 <label class="cds--label" for="cobranca-cliente-cpf">Cliente (CPF/CNPJ) <span aria-hidden="true">*</span></label>
@@ -1759,7 +1779,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div id="resultado-nova-cobranca" class="app-resultado"></div>
 </form>
 </div>
-<div class="cds--modal-footer">
+<div class="fluxo-pagina-footer">
 <button class="cds--btn cds--btn--secondary" type="button" data-fechar-modal="modal-nova-cobranca">Cancelar</button>
 <button class="cds--btn cds--btn--primary" type="submit" form="form-nova-cobranca">Criar cobrança</button>
 </div>
