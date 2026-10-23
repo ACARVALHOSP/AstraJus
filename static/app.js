@@ -2192,12 +2192,16 @@ function confirmarAcao(mensagem, opcoes = {}) {
 }
 
 // ComboButton das linhas de Publicações por OAB: fecha o menu aberto ao clicar fora ou Esc.
-function _fecharTodosComboMenusOab() {
+function _fecharTodosComboMenusOab(restaurarFoco = false) {
   document.querySelectorAll(".pub-oab-combo-menu:not([hidden])").forEach((menu) => {
+    const tinhaFoco = menu.contains(document.activeElement);
     menu.hidden = true;
     menu.classList.remove("cds--menu--open", "cds--menu--shown");
     const trigger = menu.closest(".pub-oab-combo")?.querySelector(".cds--menu-button__trigger");
-    if (trigger) trigger.setAttribute("aria-expanded", "false");
+    if (trigger) {
+      trigger.setAttribute("aria-expanded", "false");
+      if (restaurarFoco && tinhaFoco) trigger.focus();
+    }
   });
 }
 document.addEventListener("click", (ev) => {
@@ -2205,7 +2209,7 @@ document.addEventListener("click", (ev) => {
 });
 document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape") {
-    _fecharTodosComboMenusOab();
+    _fecharTodosComboMenusOab(true);
     // Painéis do header (notificações e busca). As funções são declaradas no fim do arquivo
     // (function declarations são hoisted, então já existem quando este listener dispara).
     _fecharPainelNotificacoes();
@@ -4003,9 +4007,24 @@ async function _irParaConsultaProcesso(numeroProcesso) {
 }
 
 const _publicacoesOabSelecionadas = new Set();
+let _pubOabCarregando = false;
+let _pubOabAtualizando = false;
+
+function _sincronizarSelecaoPubOab() {
+  const container = document.getElementById("lista-publicacoes-oab");
+  const linhas = [...container.querySelectorAll("input[data-publicacao-hash]")];
+  for (const campo of linhas) campo.checked = _publicacoesOabSelecionadas.has(campo.dataset.publicacaoHash);
+  const todos = container.querySelector("input[data-publicacoes-todas]");
+  if (todos) {
+    const selecionadas = linhas.filter((campo) => campo.checked).length;
+    todos.checked = linhas.length > 0 && selecionadas === linhas.length;
+    todos.indeterminate = selecionadas > 0 && selecionadas < linhas.length;
+  }
+  _atualizarBotoesLotePubOab();
+}
 
 function _atualizarBotoesLotePubOab() {
-  const tem = _publicacoesOabSelecionadas.size > 0;
+  const tem = !_pubOabCarregando && !_pubOabAtualizando && _publicacoesOabSelecionadas.size > 0;
   document.getElementById("pub-oab-marcar-tratada").disabled = !tem;
   document.getElementById("pub-oab-arquivar").disabled = !tem;
 }
@@ -4018,13 +4037,20 @@ function _statusGeralPubOab(mensagem, erro) {
 }
 
 async function _aplicarStatusPubOab(hashes, status) {
+  if (!hashes.length || _pubOabAtualizando || _pubOabCarregando) return;
+  _pubOabAtualizando = true;
+  _atualizarBotoesLotePubOab();
   try {
     await _enviarJson("/publicacoes-oab/status", { hashes, status });
-    _statusGeralPubOab(`${hashes.length} publicação(ões) marcada(s) como "${_ROTULO_STATUS_PUB_OAB[status]}".`);
     _publicacoesOabSelecionadas.clear();
-    carregarPublicacoesOab();
+    mostrarToast("success", "Status atualizado",
+      `${hashes.length} ${hashes.length === 1 ? "publicação marcada" : "publicações marcadas"} como “${_ROTULO_STATUS_PUB_OAB[status]}”.`);
+    await carregarPublicacoesOab();
   } catch (erro) {
-    _statusGeralPubOab(erro.message, true);
+    mostrarToast("error", "Não foi possível atualizar o status", erro.message);
+  } finally {
+    _pubOabAtualizando = false;
+    _atualizarBotoesLotePubOab();
   }
 }
 
@@ -4037,12 +4063,12 @@ function linhaPublicacaoOab(p) {
   const idTexto = `pub-oab-texto-${++_pubOabContadorLinha}`;
   const identificacao = d.numeroprocessocommascara || p.numero_processo || p.nome_pesquisado || "publicação";
 
-  const checkbox = el("input", { type: "checkbox", "aria-label": `Selecionar publicação: ${identificacao}` });
+  const checkbox = el("input", { type: "checkbox", "data-publicacao-hash": p.hash, "aria-label": `Selecionar publicação: ${identificacao}` });
   checkbox.checked = _publicacoesOabSelecionadas.has(p.hash);
   checkbox.addEventListener("change", () => {
     if (checkbox.checked) _publicacoesOabSelecionadas.add(p.hash);
     else _publicacoesOabSelecionadas.delete(p.hash);
-    _atualizarBotoesLotePubOab();
+    _sincronizarSelecaoPubOab();
   });
   tr.appendChild(el("td", { "data-label": "Selecionar" }, [checkbox]));
 
@@ -4138,23 +4164,24 @@ function linhaPublicacaoOab(p) {
   ]);
   const botaoTrigger = el("button", {
     class: "cds--btn cds--btn--primary cds--btn--sm cds--combo-button__trigger cds--menu-button__trigger",
-    type: "button", "aria-haspopup": "true", "aria-expanded": "false", "aria-label": "Mais ações",
+    type: "button", "aria-haspopup": "true", "aria-expanded": "false", "aria-label": `Mais ações da publicação: ${identificacao}`, "aria-controls": `${idTexto}-menu`,
   }, [iconeChevron]);
   comboContainer.appendChild(botaoTrigger);
 
-  const menu = el("ul", { class: "cds--menu pub-oab-combo-menu", role: "menu" });
+  const menu = el("ul", { id: `${idTexto}-menu`, class: "cds--menu pub-oab-combo-menu", role: "menu", "aria-label": `Ações da publicação: ${identificacao}` });
   menu.hidden = true;
 
   // Vincular a caso existente: abre mini-form inline logo abaixo da linha.
-  const itemVincular = el("li", { class: "cds--menu-item", role: "menuitem" }, [
+  const itemVincular = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1" }, [
     el("div", { class: "cds--menu-item__label", texto: "Vincular a processo existente" }),
   ]);
   let _trVincularForm = null;
   itemVincular.addEventListener("click", () => {
-    _fecharTodosComboMenusOab();
+    _fecharTodosComboMenusOab(true);
     if (_trVincularForm) { _trVincularForm.remove(); _trVincularForm = null; return; }
-    const status = el("p", { class: "campo-ajuda", style: "margin:0.25rem 0 0" });
-    const selectCasoVincular = el("select", { class: "cds--select-input" });
+    const idSelect = `${idTexto}-vinculo`;
+    const status = el("p", { id: `${idSelect}-status`, class: "campo-ajuda", role: "status", "aria-live": "polite", style: "margin:0.25rem 0 0" });
+    const selectCasoVincular = el("select", { id: idSelect, class: "cds--select-input", "aria-describedby": status.id });
     selectCasoVincular.appendChild(el("option", { value: "", texto: "— selecione o processo —" }));
     (_cache.casos || []).forEach((c) => {
       selectCasoVincular.appendChild(el("option", { value: String(c.id), texto: c.titulo || "(sem título)" }));
@@ -4162,14 +4189,26 @@ function linhaPublicacaoOab(p) {
     const btnConfirmar = el("button", { class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Vincular" });
     const btnCancelar = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Cancelar" });
     const miniForm = el("div", { class: "mini-form-caso" }, [
-      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", texto: "Vincular ao processo" }), selectCasoVincular]),
+      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: idSelect, texto: "Vincular ao processo" }), selectCasoVincular]),
       el("div", { style: "display:flex;gap:0.5rem;flex-wrap:wrap" }, [btnConfirmar, btnCancelar]),
       status,
     ]);
-    btnCancelar.addEventListener("click", () => { if (_trVincularForm) { _trVincularForm.remove(); _trVincularForm = null; } });
+    btnCancelar.addEventListener("click", () => {
+      if (_trVincularForm) { _trVincularForm.remove(); _trVincularForm = null; }
+      botaoTrigger.focus();
+    });
+    selectCasoVincular.addEventListener("change", () => {
+      selectCasoVincular.removeAttribute("aria-invalid");
+      status.textContent = "";
+    });
     btnConfirmar.addEventListener("click", async () => {
       const casoId = selectCasoVincular.value;
-      if (!casoId) { status.textContent = "Selecione um processo."; return; }
+      if (!casoId) {
+        status.textContent = "Selecione um processo para vincular esta publicação.";
+        selectCasoVincular.setAttribute("aria-invalid", "true");
+        selectCasoVincular.focus();
+        return;
+      }
       btnConfirmar.disabled = true;
       try {
         await _enviarJson(`/casos/${casoId}/publicacoes`, {
@@ -4188,32 +4227,62 @@ function linhaPublicacaoOab(p) {
     _trVincularForm = el("tr", {});
     _trVincularForm.appendChild(el("td", { colspan: "8" }, [miniForm]));
     tr.after(_trVincularForm);
+    selectCasoVincular.focus();
   });
   menu.appendChild(itemVincular);
 
   if (p.status !== "tratada") {
-    const itemTratada = el("li", { class: "cds--menu-item", role: "menuitem" }, [
+    const itemTratada = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1" }, [
       el("div", { class: "cds--menu-item__label", texto: "Marcar como tratada" }),
     ]);
-    itemTratada.addEventListener("click", () => { _fecharTodosComboMenusOab(); _aplicarStatusPubOab([p.hash], "tratada"); });
+    itemTratada.addEventListener("click", () => { _fecharTodosComboMenusOab(true); _aplicarStatusPubOab([p.hash], "tratada"); });
     menu.appendChild(itemTratada);
   }
   if (p.status !== "arquivada") {
-    const itemArquivar = el("li", { class: "cds--menu-item", role: "menuitem" }, [
+    const itemArquivar = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1" }, [
       el("div", { class: "cds--menu-item__label", texto: "Arquivar" }),
     ]);
-    itemArquivar.addEventListener("click", () => { _fecharTodosComboMenusOab(); _aplicarStatusPubOab([p.hash], "arquivada"); });
+    itemArquivar.addEventListener("click", () => { _fecharTodosComboMenusOab(true); _aplicarStatusPubOab([p.hash], "arquivada"); });
     menu.appendChild(itemArquivar);
   }
   botaoTrigger.addEventListener("click", (ev) => {
     ev.stopPropagation();
     const abrindo = menu.hidden;
-    _fecharTodosComboMenusOab();
+    _fecharTodosComboMenusOab(true);
     if (abrindo) {
       menu.hidden = false;
       menu.classList.add("cds--menu--open", "cds--menu--shown");
       botaoTrigger.setAttribute("aria-expanded", "true");
+      menu.querySelector('[role="menuitem"]')?.focus();
     }
+  });
+  botaoTrigger.addEventListener("keydown", (ev) => {
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      if (menu.hidden) botaoTrigger.click();
+      const itens = menu.querySelectorAll('[role="menuitem"]');
+      itens[ev.key === "ArrowUp" ? itens.length - 1 : 0]?.focus();
+    }
+  });
+  menu.addEventListener("keydown", (ev) => {
+    const itens = [...menu.querySelectorAll('[role="menuitem"]')];
+    const indice = itens.indexOf(document.activeElement);
+    if (["ArrowDown", "ArrowUp", "Home", "End"].includes(ev.key)) {
+      ev.preventDefault();
+      const proximo = ev.key === "Home" ? 0 : ev.key === "End" ? itens.length - 1
+        : (indice + (ev.key === "ArrowDown" ? 1 : -1) + itens.length) % itens.length;
+      itens[proximo]?.focus();
+    } else if (ev.key === "Enter" || ev.key === " ") {
+      ev.preventDefault();
+      itens[indice]?.click();
+    } else if (ev.key === "Escape") {
+      ev.preventDefault();
+      ev.stopPropagation();
+      _fecharTodosComboMenusOab(true);
+    }
+  });
+  comboContainer.addEventListener("focusout", (ev) => {
+    if (!comboContainer.contains(ev.relatedTarget)) _fecharTodosComboMenusOab();
   });
   comboContainer.appendChild(menu);
   acoesLinha.appendChild(comboContainer);
@@ -4275,12 +4344,18 @@ function criarTabelaPublicacoesOab(tabela, quantidade) {
 async function carregarPublicacoesOab() {
   const container = document.getElementById("lista-publicacoes-oab");
   if (!exigirCliente(container)) return;
+  _pubOabCarregando = true;
+  _atualizarBotoesLotePubOab();
   limpar(container);
   container.appendChild(el("p", { class: "app-espera" }, ["Carregando publicações…"]));
   const filtroStatus = document.getElementById("pub-oab-filtro-status").value;
   try {
     const url = filtroStatus ? `/publicacoes-oab?status=${encodeURIComponent(filtroStatus)}` : "/publicacoes-oab";
     const { publicacoes, total } = await _buscarJson(url);
+    const hashesVisiveis = new Set((publicacoes || []).map((p) => p.hash));
+    for (const hash of _publicacoesOabSelecionadas) {
+      if (!hashesVisiveis.has(hash)) _publicacoesOabSelecionadas.delete(hash);
+    }
     limpar(container);
     container.appendChild(el("div", { id: "pub-oab-status-geral" }));
     container.appendChild(el("p", { class: "campo-ajuda", texto: `Lista carregada em ${new Date().toLocaleString("pt-BR")}. Esse horário não indica a última captura no DJEN.` }));
@@ -4295,14 +4370,14 @@ async function carregarPublicacoesOab() {
     }
     _atualizarBotoesLotePubOab();
 
-    const checkboxTodos = el("input", { type: "checkbox", "aria-label": "Selecionar todas as publicações exibidas" });
+    const checkboxTodos = el("input", { type: "checkbox", "data-publicacoes-todas": "", "aria-label": "Selecionar todas as publicações exibidas" });
     checkboxTodos.checked = publicacoes.length > 0 && publicacoes.every((p) => _publicacoesOabSelecionadas.has(p.hash));
     checkboxTodos.addEventListener("change", () => {
       for (const p of publicacoes) {
         if (checkboxTodos.checked) _publicacoesOabSelecionadas.add(p.hash);
         else _publicacoesOabSelecionadas.delete(p.hash);
       }
-      carregarPublicacoesOab();
+      _sincronizarSelecaoPubOab();
     });
 
     const thead = el("thead", {}, [
@@ -4327,14 +4402,20 @@ async function carregarPublicacoesOab() {
     container.appendChild(el("p", { class: "campo-ajuda", texto: resumo }));
     for (const cabecalho of thead.querySelectorAll("th")) cabecalho.scope = "col";
     container.appendChild(criarTabelaPublicacoesOab(el("table", { class: "tabela-responsiva pub-oab-tabela", "aria-label": "Publicações monitoradas" }, [thead, tbody]), publicacoes.length));
+    _sincronizarSelecaoPubOab();
   } catch (erro) {
     limpar(container);
+    _publicacoesOabSelecionadas.clear();
     mostrarErro(container, erro.message);
+  } finally {
+    _pubOabCarregando = false;
+    _atualizarBotoesLotePubOab();
   }
 }
 
 document.getElementById("pub-oab-filtro-status").addEventListener("change", () => {
   _publicacoesOabSelecionadas.clear();
+  _atualizarBotoesLotePubOab();
   carregarPublicacoesOab();
 });
 document.getElementById("pub-oab-atualizar").addEventListener("click", carregarPublicacoesOab);
