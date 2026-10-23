@@ -2994,6 +2994,66 @@ def _criar_caso_validado(
     return caso, None
 
 
+def _consultar_casos_para_vinculo(gestao, termo: str) -> list[dict]:
+    """Consulta por número CNJ, parte (inclusive da capa) ou cliente."""
+    def normalizar(valor):
+        texto = unicodedata.normalize("NFD", str(valor or ""))
+        return "".join(c.lower() for c in texto if c.isalnum())
+    consulta = normalizar(termo)
+    if not consulta:
+        return []
+    clientes = {c["id"]: c["nome"] for c in gestao.listar_clientes()}
+    encontrados = []
+    for caso in gestao.listar_casos():
+        nomes_clientes = [clientes.get(cid, "") for cid in [caso["cliente_id"], *(caso.get("clientes_adicionais") or [])]]
+        valores = [caso.get("titulo"), caso.get("autor"), caso.get("reu"), *(caso.get("processos") or []), *nomes_clientes]
+        for numero in caso.get("processos") or []:
+            capa = gestao.obter_capa_processo(caso["id"], numero) or {}
+            valores.extend([capa.get("nome_processo"), *[p.get("nome") for p in capa.get("partes") or []]])
+        if any(consulta in normalizar(v) for v in valores):
+            encontrados.append({**caso, "nome_cliente": clientes.get(caso["cliente_id"], "")})
+        if len(encontrados) >= 25:
+            break
+    return encontrados
+
+
+def _criar_caso_de_publicacao(gestao, publicacoes, publicacao, dados, usuario_padrao=None):
+    """Cria usando dados já capturados; não consulta APIs externas."""
+    numero = publicacao.get("numero_processo")
+    if not numero:
+        return None, _erro("Publicação sem número de processo identificado.")
+    d = publicacao.get("dados") or {}
+    partes = d.get("destinatarios") or []
+    autores = " / ".join(dict.fromkeys(p["nome"] for p in partes if p.get("nome") and str(p.get("polo") or "").upper() == "A"))
+    reus = " / ".join(dict.fromkeys(p["nome"] for p in partes if p.get("nome") and str(p.get("polo") or "").upper() == "P"))
+    nome = f"{autores or 'Parte Ativa Não Informada'} X {reus or 'Parte Passiva Não Informada'}"
+    cliente_id = dados.get("cliente_id")
+    nome_cliente = (dados.get("nome_cliente") or publicacao.get("nome_pesquisado") or "").strip()
+    if not cliente_id and not nome_cliente:
+        return None, _erro("Selecione um cliente ou informe nome_cliente.")
+    corpo = {
+        **({"cliente_id": cliente_id} if cliente_id else {"cliente_novo": {"nome": nome_cliente}}),
+        "titulo": nome,
+        "responsavel": dados.get("responsavel"),
+        "numeros_processo": [numero],
+        "acao": d.get("nomeClasse"), "foro": d.get("nomeOrgao"),
+    }
+    caso, erro = _criar_caso_validado(gestao, corpo, publicacoes, usuario_padrao=usuario_padrao)
+    if erro:
+        return None, erro
+    advogados = d.get("destinatarioadvogados") or []
+    gestao.atualizar_caso(caso["id"], nome, caso.get("responsavel"), corpo["acao"], corpo["foro"],
+                         autores or None, reus or None, "; ".join(a.get("nome") or "" for a in advogados) or None)
+    capa = {campo: d[campo] for campo in gestao._CAMPOS_CAPA if campo in d}
+    capa.update({"tribunal": (d.get("siglaTribunal") or d.get("tribunal") or "").upper() or None,
+                 "classe": d.get("nomeClasse") or d.get("classe"), "nome_processo": nome,
+                 "orgao_julgador": d.get("nomeOrgao") or d.get("orgao_julgador"),
+                 "partes": partes, "advogados": advogados})
+    gestao.salvar_capa_processo(caso["id"], numero, agora=lambda: datetime.now(timezone.utc), **capa)
+    publicacoes.atualizar_status([publicacao["hash"]], "tratada", caso_id=caso["id"])
+    return gestao.obter_caso(caso["id"]), None
+
+
 class _AutenticacaoBearer:
     """Middleware ASGI.
 
@@ -3714,7 +3774,9 @@ class _AutenticacaoBearer:
     async def _casos(self, scope, receive, send):
         metodo = scope.get("method")
         if metodo == "GET":
-            await _json(send, 200, {"casos": self.gestao.listar_casos()})
+            termo = dict(_query(scope)).get("q")
+            casos = _consultar_casos_para_vinculo(self.gestao, termo) if termo is not None else self.gestao.listar_casos()
+            await _json(send, 200, {"casos": casos})
             return
         if metodo == "POST":
             corpo = await _ler_corpo(receive)
@@ -4254,20 +4316,20 @@ class _AutenticacaoBearer:
         except (ValueError, UnicodeDecodeError):
             await _json(send, 400, _erro("JSON inválido."))
             return
-        nome_sugerido = (dados_corpo.get("nome_cliente") or publicacao.get("nome_pesquisado") or "").strip()
-        if not nome_sugerido:
-            await _json(send, 400, _erro("Informe nome_cliente: a publicação não tem um nome pesquisado associado."))
+        if not isinstance(dados_corpo, dict):
+            await _json(send, 400, _erro("Informe um objeto JSON."))
             return
-        corpo_caso = {
-            "cliente_novo": {"nome": nome_sugerido},
-            "titulo": (dados_corpo.get("titulo") or "").strip() or None,
-            "numeros_processo": [publicacao["numero_processo"]],
-        }
-        caso, erro = _criar_caso_validado(self.gestao, corpo_caso, self.publicacoes)
+        responsavel = dados_corpo.get("responsavel")
+        if dados_corpo.get("cliente_id") and not responsavel:
+            await _json(send, 400, _erro("Selecione o responsável."))
+            return
+        if responsavel and responsavel not in self.registro.ativos():
+            await _json(send, 400, _erro("Selecione um responsável ativo."))
+            return
+        caso, erro = _criar_caso_de_publicacao(self.gestao, self.publicacoes, publicacao, dados_corpo, scope.get("usuario"))
         if erro:
             await _json(send, 400, erro)
             return
-        self.publicacoes.atualizar_status([hash_publicacao], "tratada", caso_id=caso["id"])
         await _json(send, 201, caso)
 
 
