@@ -212,12 +212,44 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 .capa-card-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; }
 .capa-card-campo label { display: block; margin-bottom: 0.25rem; }
 .texto-auxiliar { color: var(--cds-text-secondary, #525252); font-size: 0.875rem; margin: 0; }
-.pub-oab-manual { margin-top: 1rem; border: 1px solid var(--cds-border-subtle, #e0e0e0); padding: 0.75rem 1rem; }
-.pub-oab-manual summary { cursor: pointer; font-weight: 600; }
-.pub-oab-manual-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; margin-top: 0.75rem; }
-.pub-oab-manual-form .cds--form-item { display: flex; flex-direction: column; min-width: 8rem; }
-.pub-oab-barra { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 1rem; margin-top: 1rem; }
-.pub-oab-filtros, .pub-oab-acoes-lote { display: flex; align-items: flex-end; gap: 0.5rem; flex-wrap: wrap; }
+#aba-publicacoes-oab > .campo-ajuda { max-inline-size: 75ch; line-height: 1.5; }
+/* Accordion Carbon com abertura nativa por teclado e toque. */
+.pub-oab-ajuda .cds--accordion__item { display: block; }
+.pub-oab-ajuda summary { list-style: none; }
+.pub-oab-ajuda summary::-webkit-details-marker { display: none; }
+.pub-oab-ajuda .cds--accordion__arrow { transform: rotate(-90deg); }
+.pub-oab-ajuda details[open] > summary .cds--accordion__arrow { transform: rotate(0); }
+.pub-oab-ajuda .cds--accordion__content { padding: 0.5rem 1rem 1.5rem; }
+.pub-oab-ajuda .cds--accordion__content p { max-inline-size: 75ch; margin: 0; }
+.pub-oab-ajuda .cds--accordion__content p + p { margin-top: 0.75rem; }
+.pub-oab-manual { margin-block: 1.5rem; border-block: 1px solid var(--cds-border-subtle, #e0e0e0); }
+.pub-oab-manual summary { cursor: pointer; font-size: var(--fonte-base); font-weight: 600; padding: 1rem; }
+.pub-oab-manual summary:hover { background: var(--cds-layer-hover, #e8e8e8); }
+.pub-oab-manual-form { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(5rem, 0.5fr) minmax(12rem, 2fr); align-items: end; gap: 1rem; padding: 0.5rem 1rem 1rem; }
+.pub-oab-manual-form .cds--form-item { display: flex; flex-direction: column; min-width: 0; }
+.pub-oab-manual-form .cds--form-item:nth-child(4) { grid-column: 1 / -1; }
+.pub-oab-manual-form .cds--date-picker { width: 100%; }
+.pub-oab-manual-form .cds--date-picker-container { flex: 1; min-width: 0; }
+.pub-oab-manual-form .cds--date-picker__input { width: 100%; max-width: none; }
+.pub-oab-manual-form > .cds--btn { grid-column: 1 / -1; justify-self: end; min-height: 2.5rem; }
+#pub-oab-manual-status:not(:empty) { padding: 0 1rem 1rem; }
+.pub-oab-barra { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 1rem; margin-top: 1.5rem; padding-block: 1rem; border-block: 1px solid var(--cds-border-subtle, #e0e0e0); }
+.pub-oab-filtros { display: flex; flex-direction: column; align-items: stretch; min-inline-size: 12rem; }
+.pub-oab-filtros .cds--label { margin-bottom: 0.5rem; }
+.pub-oab-filtros .cds--select-input { width: 100%; }
+.pub-oab-acoes-lote { display: flex; align-items: flex-end; gap: 0.5rem; flex-wrap: wrap; }
+.pub-oab-acoes-lote .cds--btn { min-height: 2.5rem; }
+#lista-publicacoes-oab > .campo-ajuda { margin-block: 0.75rem; line-height: 1.5; }
+/* 12px na lista inteira, inclusive componentes Carbon e linhas expandidas. */
+#lista-publicacoes-oab,
+#lista-publicacoes-oab :where(*) { font-size: 0.75rem; }
+@media (max-width: 640px) {
+  .pub-oab-manual-form { grid-template-columns: minmax(0, 1fr) 5rem; }
+  .pub-oab-manual-form .cds--form-item:nth-child(n+3) { grid-column: 1 / -1; }
+  .pub-oab-manual-form > .cds--btn { grid-column: 1 / -1; justify-self: stretch; max-width: none; }
+  .pub-oab-acoes-lote { gap: 0.5rem; }
+  .pub-oab-acoes-lote .cds--btn { flex: 1 1 auto; max-width: none; }
+}
 .tabela-responsiva-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-top: 0.75rem; border: 1px solid var(--cds-border-subtle, #e0e0e0); border-radius: 4px; }
 .tabela-responsiva { width: 100%; min-width: 46rem; border-collapse: collapse; font-size: var(--fonte-base); table-layout: fixed; font-variant-numeric: tabular-nums; }
 .tabela-responsiva th { text-align: left; font-size: var(--fonte-ajuda); text-transform: uppercase; color: var(--cds-text-secondary, #525252); padding: 0.5rem; border-bottom: 1px solid var(--cds-border-subtle, #e0e0e0); }
@@ -494,6 +526,33 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 @media (max-width: 480px) {
   #form-contato-cadastro .token-acoes > .cds--btn { inline-size: 100%; max-inline-size: none; }
 }
+
+/* Tabela completa escolhida no live: densidade 0.6. */
+.pub-oab-grade { min-inline-size: 0; color: var(--cds-text-primary); }
+.pub-oab-tabela-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; padding: 0.6rem; background: var(--cds-layer); font-size: var(--fonte-base); line-height: 1.5; }
+.pub-oab-tabela-toolbar strong { font-weight: 600; }
+.pub-oab-tabela-contagem { color: var(--cds-text-secondary); margin-inline-end: auto; }
+.pub-oab-colunas { position: relative; margin-inline-start: auto; }
+.pub-oab-colunas summary { padding: 0.75rem 1rem; color: var(--cds-link-primary); cursor: pointer; list-style: none; }
+.pub-oab-colunas summary:hover { background: var(--cds-layer-hover); }
+.pub-oab-colunas fieldset { position: absolute; inset-inline-end: 0; inset-block-start: 100%; z-index: 100; inline-size: min(18rem, 80vw); padding: 1rem; border: 0; background: var(--cds-layer); box-shadow: 0 4px 8px rgba(0,0,0,.15); }
+.pub-oab-colunas legend { font-weight: 600; }
+.pub-oab-coluna-opcao { display: flex; gap: 0.75rem; align-items: center; min-block-size: 2.75rem; cursor: pointer; }
+.pub-oab-grade input[type=checkbox] { accent-color: var(--cds-interactive); inline-size: 1rem; block-size: 1rem; }
+.pub-oab-grade :is(summary,input,button):focus-visible, .pub-oab-rolagem:focus-visible { outline: 2px solid var(--cds-focus); outline-offset: -2px; }
+.pub-oab-grade .pub-oab-rolagem { border: 0; border-radius: 0; margin: 0; overflow-x: auto; scrollbar-color: var(--cds-border-strong) var(--cds-layer); }
+.pub-oab-grade .pub-oab-tabela { display: table; min-width: 70rem; width: 100%; table-layout: auto; border-collapse: collapse; font-size: var(--fonte-base); line-height: 1.5; }
+.pub-oab-grade .pub-oab-tabela--reduzida { min-width: 46rem; }
+.pub-oab-grade .pub-oab-tabela thead { display: table-header-group; }
+.pub-oab-grade .pub-oab-tabela tbody { display: table-row-group; }
+.pub-oab-grade .pub-oab-tabela tr { display: table-row; border: 0; margin: 0; padding: 0; }
+.pub-oab-grade .pub-oab-tabela :is(th,td) { display: table-cell; position: static; width: auto; padding: 0.6rem; text-align: start; vertical-align: top; border-bottom: 1px solid var(--cds-border-subtle); overflow-wrap: normal; }
+.pub-oab-grade .pub-oab-tabela th { background: var(--cds-layer); color: var(--cds-text-primary); text-transform: none; font-size: var(--fonte-base); font-weight: 600; }
+.pub-oab-grade .pub-oab-tabela td::before { display: none; }
+.pub-oab-grade .pub-oab-tabela tbody tr:hover { background: var(--cds-layer-hover); }
+.pub-oab-grade .pub-oab-tabela :is(th,td):first-child { width: 3rem; }
+.pub-oab-grade .campo-ajuda { font-size: var(--fonte-ajuda); line-height: 1.5; }
+
 </style>
 </head>
 <body class="cds--white">
@@ -1433,26 +1492,36 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </section>
 
 <section id="aba-publicacoes-oab" role="tabpanel" aria-labelledby="aba-publicacoes-oab-botao" hidden>
-<p class="campo-ajuda">A captura automática de publicações por OAB para este painel ocorre a cada 24 horas. Para criar um monitoramento, abra "Consultar publicações", informe a OAB, consulte e clique em "Criar monitoramento por e-mail". Os avisos por e-mail são verificados separadamente, a cada 6 horas, quando configurados. Use a captura manual abaixo para consultar um período agora.</p>
+<div class="cds--accordion pub-oab-ajuda">
+<details class="cds--accordion__item">
+<summary class="cds--accordion__heading"><svg class="cds--accordion__arrow" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 11 3 6l.7-.7L8 9.6l4.3-4.3.7.7z"></path></svg><span class="cds--accordion__title">Como funciona a captura</span></summary>
+<div class="cds--accordion__content"><p>As publicações dos monitoramentos por OAB são capturadas a cada 24 horas. Os avisos por e-mail, quando configurados, são verificados a cada 6 horas.</p><p>Para criar um monitoramento, abra “Consultar publicações”, informe a OAB, consulte e clique em “Criar monitoramento por e-mail”.</p><p>Para consultar um período agora e adicionar os resultados à lista, use “Capturar publicações por OAB” abaixo.</p></div>
+</details>
+<details class="cds--accordion__item">
+<summary class="cds--accordion__heading"><svg class="cds--accordion__arrow" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 11 3 6l.7-.7L8 9.6l4.3-4.3.7.7z"></path></svg><span class="cds--accordion__title">O que significa cada status</span></summary>
+<div class="cds--accordion__content"><p><strong>Não tratada</strong>: ainda não revisada.</p><p><strong>Tratada</strong>: revisada, com as providências necessárias tomadas.</p><p><strong>Arquivada</strong>: dispensada sem ação.</p></div>
+</details>
+</div>
 <details class="pub-oab-manual">
-<summary>Captura manual (sob demanda)</summary>
+<summary>Capturar publicações por OAB</summary>
 <form id="form-pub-oab-manual" class="pub-oab-manual-form">
 <div class="cds--form-item">
-<label class="cds--label" for="pub-oab-manual-numero">Número OAB</label>
+<label class="cds--label" for="pub-oab-manual-numero">Número da OAB</label>
 <input class="cds--text-input" type="text" id="pub-oab-manual-numero" name="numero_oab" placeholder="Ex.: 330659" autocomplete="off" required>
 </div>
 <div class="cds--form-item">
-<label class="cds--label" for="pub-oab-manual-uf">UF OAB</label>
+<label class="cds--label" for="pub-oab-manual-uf">UF da OAB (opcional)</label>
 <input class="cds--text-input" type="text" id="pub-oab-manual-uf" name="uf_oab" maxlength="2" placeholder="Ex.: SP" autocomplete="off">
 </div>
 <div class="cds--form-item">
-<label class="cds--label" for="pub-oab-manual-nome">Nome (opcional)</label>
-<input class="cds--text-input" type="text" id="pub-oab-manual-nome" name="nome" placeholder="Ex.: advogado ou parte dono da OAB" autocomplete="off">
+<label class="cds--label" for="pub-oab-manual-nome">Nome para identificar os registros (opcional)</label>
+<input class="cds--text-input" type="text" id="pub-oab-manual-nome" name="nome" placeholder="Ex.: Maria Silva" aria-describedby="pub-oab-manual-nome-ajuda" autocomplete="off">
+<span id="pub-oab-manual-nome-ajuda" class="campo-ajuda">Identifica os registros na lista; não filtra a consulta no DJEN.</span>
 </div>
 <div class="cds--form-item">
 <div class="cds--date-picker cds--date-picker--range" data-date-picker data-date-picker-type="range">
 <div class="cds--date-picker-container">
-<label class="cds--label" for="pub-oab-manual-data-inicio">Data início</label>
+<label class="cds--label" for="pub-oab-manual-data-inicio">Data inicial</label>
 <div class="cds--date-picker__input-wrapper">
 <svg class="cds--date-picker__icon" width="16" height="16" viewBox="0 0 32 32" aria-hidden="true">
 <path d="M26 4h-4V2h-2v2H12V2h-2v2H6a2 2 0 0 0-2 2v20a2 2 0 0 0 2 2h20a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2ZM6 6h20v4H6Zm0 20V12h20v14Z"></path>
@@ -1462,7 +1531,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 <span class="cds--date-picker__separator">–</span>
 <div class="cds--date-picker-container">
-<label class="cds--label" for="pub-oab-manual-data-fim">Data fim</label>
+<label class="cds--label" for="pub-oab-manual-data-fim">Data final</label>
 <div class="cds--date-picker__input-wrapper">
 <svg class="cds--date-picker__icon" width="16" height="16" viewBox="0 0 32 32" aria-hidden="true">
 <path d="M26 4h-4V2h-2v2H12V2h-2v2H6a2 2 0 0 0-2 2v20a2 2 0 0 0 2 2h20a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2ZM6 6h20v4H6Zm0 20V12h20v14Z"></path>
@@ -1476,9 +1545,8 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </form>
 <div id="pub-oab-manual-status" class="campo-ajuda" role="status"></div>
 </details>
-<p class="campo-ajuda" style="margin-top: 0.75rem">
-<strong>Não tratada</strong> — nova, ainda não revisada. <strong>Tratada</strong> — revisada e tomada a providência necessária (prazo anotado, cliente avisado etc.). <strong>Arquivada</strong> — dispensada sem ação.
-</p>
+
+<p class="campo-ajuda">Selecione publicações na lista para alterar o status em lote.</p>
 <div class="pub-oab-barra">
 <div class="pub-oab-filtros">
 <label class="cds--label" for="pub-oab-filtro-status">Status</label>
@@ -1490,7 +1558,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </select>
 </div>
 <div class="pub-oab-acoes-lote">
-<button class="cds--btn cds--btn--tertiary cds--btn--sm" type="button" id="pub-oab-marcar-tratada" disabled>Marcar tratada</button>
+<button class="cds--btn cds--btn--tertiary cds--btn--sm" type="button" id="pub-oab-marcar-tratada" disabled>Marcar como tratada</button>
 <button class="cds--btn cds--btn--tertiary cds--btn--sm" type="button" id="pub-oab-arquivar" disabled>Arquivar</button>
 <button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="pub-oab-atualizar">Atualizar lista</button>
 </div>
@@ -1806,5 +1874,6 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <script src="/static/carbon/flatpickr-l10n-pt.js"></script>
 <script src="/static/carbon/flatpickr-rangePlugin.js"></script>
 <script src="/static/app.js" defer></script>
+
 </body>
 </html>

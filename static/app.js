@@ -4114,8 +4114,8 @@ function linhaPublicacaoOab(p) {
   if (p.numero_processo) {
     celProcesso.appendChild(el("div", { texto: d.numeroprocessocommascara || p.numero_processo }));
   } else {
-    celProcesso.appendChild(el("div", { texto: "Processo não encontrado" }));
-    const linkBusca = el("a", { href: "#", texto: "Iniciar busca de processo" });
+    celProcesso.appendChild(el("div", { texto: "Número do processo não informado" }));
+    const linkBusca = el("a", { href: "#", texto: "Consultar processo" });
     linkBusca.addEventListener("click", (ev) => {
       ev.preventDefault();
       _irParaConsultaProcesso(d.numeroprocessocommascara);
@@ -4150,7 +4150,7 @@ function linhaPublicacaoOab(p) {
   const celPartes = el("td", { "data-label": "Partes", texto: nomesPartes.length ? nomesPartes.join(", ") : "-" });
   if (nomesPartes.length) celPartes.title = nomesPartes.join(", ");
   tr.appendChild(celPartes);
-  tr.appendChild(el("td", { "data-label": "Nome pesquisado", texto: p.nome_pesquisado || "-" }));
+  tr.appendChild(el("td", { "data-label": "Nome de referência", texto: p.nome_pesquisado || "-" }));
   tr.appendChild(el("td", { "data-label": "Status" }, [_badgeStatusPubOab(p.status)]));
 
   const celAcoes = el("td", { "data-label": "Ações" });
@@ -4160,12 +4160,12 @@ function linhaPublicacaoOab(p) {
     acoesLinha.appendChild(
       el("a", {
         class: "cds--btn cds--btn--primary cds--btn--sm", href: d.link, target: "_blank", rel: "noopener",
-        texto: "Abrir", title: "Acessar publicação", "aria-label": "Acessar publicação",
+        texto: "Abrir", title: "Abrir publicação no DJEN", "aria-label": "Abrir publicação no DJEN",
       })
     );
   }
 
-  // ComboButton Carbon: ação primária "Adc. Caso" + menu com "Marcar como Tratada" e "Arquivar".
+  // ComboButton Carbon: ação primária "Cadastrar caso" + menu com "Marcar como tratada" e "Arquivar".
   const comboContainer = el("div", { class: "cds--combo-button__container cds--combo-button__container--sm pub-oab-combo" });
   const primaryWrap = el("div", { class: "cds--combo-button__primary-action" });
   const podeAdcCaso = p.status !== "tratada" && Boolean(p.numero_processo);
@@ -4174,7 +4174,7 @@ function linhaPublicacaoOab(p) {
       _statusGeralPubOab("Caso cadastrado a partir da publicação.");
       carregarPublicacoesOab();
     }, {
-      rotulo: "Adc. Caso",
+      rotulo: "Cadastrar caso",
       tituloModal: "Cadastrar cliente e caso",
       nomeSugerido: p.nome_pesquisado || "",
       tituloSugerido: d.nomeClasse || d.tipoComunicacao || "",
@@ -4185,7 +4185,7 @@ function linhaPublicacaoOab(p) {
     });
   } else {
     primaryWrap.appendChild(el("button", {
-      class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Adc. Caso", disabled: "disabled",
+      class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Cadastrar caso", disabled: "disabled",
       title: p.status === "tratada" ? "Já está tratada" : "Sem número de processo identificado",
     }));
   }
@@ -4251,7 +4251,7 @@ function linhaPublicacaoOab(p) {
 
   if (p.status !== "tratada") {
     const itemTratada = el("li", { class: "cds--menu-item", role: "menuitem" }, [
-      el("div", { class: "cds--menu-item__label", texto: "Marcar como Tratada" }),
+      el("div", { class: "cds--menu-item__label", texto: "Marcar como tratada" }),
     ]);
     itemTratada.addEventListener("click", () => { _fecharTodosComboMenusOab(); _aplicarStatusPubOab([p.hash], "tratada"); });
     menu.appendChild(itemTratada);
@@ -4282,28 +4282,78 @@ function linhaPublicacaoOab(p) {
   return linhas;
 }
 
+function criarTabelaPublicacoesOab(tabela, quantidade) {
+  const chave = "cnj_pub_oab_colunas_ocultas";
+  const opcionais = [[1, "Divulgado em"], [3, "Diário"], [4, "Partes"], [5, "Nome de referência"], [6, "Status"]];
+  let ocultas = [];
+  try {
+    const valor = JSON.parse(localStorage.getItem(chave) || "[]");
+    if (Array.isArray(valor)) ocultas = valor.filter((indice) => opcionais.some(([i]) => i === indice));
+  } catch { /* usa todas as colunas quando o armazenamento não está disponível */ }
+  const aplicar = () => {
+    for (const linha of tabela.rows) {
+      if (linha.cells.length === 8) {
+        for (const [indice] of opcionais) linha.cells[indice].hidden = ocultas.includes(indice);
+      } else if (linha.cells.length === 1) linha.cells[0].colSpan = 8 - ocultas.length;
+    }
+    tabela.classList.toggle("pub-oab-tabela--reduzida", ocultas.length >= 2);
+  };
+  const seletor = el("details", { class: "pub-oab-colunas" });
+  const resumo = el("summary", { texto: "Colunas" });
+  const campos = el("fieldset", {}, [el("legend", { texto: "Colunas visíveis" })]);
+  for (const [indice, rotulo] of opcionais) {
+    const input = el("input", { type: "checkbox" });
+    input.checked = !ocultas.includes(indice);
+    input.addEventListener("change", () => {
+      ocultas = input.checked ? ocultas.filter((i) => i !== indice) : [...ocultas, indice];
+      aplicar();
+      try { localStorage.setItem(chave, JSON.stringify(ocultas)); } catch { /* preferência da sessão */ }
+    });
+    campos.appendChild(el("label", { class: "pub-oab-coluna-opcao" }, [input, document.createTextNode(rotulo)]));
+  }
+  campos.appendChild(el("p", { class: "campo-ajuda", texto: "Seleção, processo e ações ficam sempre visíveis." }));
+  seletor.append(resumo, campos);
+  seletor.addEventListener("keydown", (evento) => {
+    if (evento.key === "Escape") { evento.preventDefault(); seletor.open = false; resumo.focus(); }
+  });
+  seletor.addEventListener("focusout", (evento) => {
+    if (!seletor.contains(evento.relatedTarget)) seletor.open = false;
+  });
+  const barra = el("div", { class: "pub-oab-tabela-toolbar" }, [
+    el("strong", { texto: "Publicações" }),
+    el("span", { class: "pub-oab-tabela-contagem", texto: `${quantidade} ${quantidade === 1 ? "publicação" : "publicações"}` }),
+    seletor,
+  ]);
+  aplicar();
+  return el("div", { class: "pub-oab-grade" }, [barra,
+    el("div", { class: "tabela-responsiva-wrap pub-oab-rolagem", tabindex: "0", role: "region", "aria-label": "Tabela de publicações; role horizontalmente para ver todas as colunas" }, [tabela]),
+  ]);
+}
+
 async function carregarPublicacoesOab() {
   const container = document.getElementById("lista-publicacoes-oab");
   if (!exigirCliente(container)) return;
   limpar(container);
-  container.appendChild(el("p", { class: "app-espera" }, ["Carregando…"]));
+  container.appendChild(el("p", { class: "app-espera" }, ["Carregando publicações…"]));
   const filtroStatus = document.getElementById("pub-oab-filtro-status").value;
   try {
     const url = filtroStatus ? `/publicacoes-oab?status=${encodeURIComponent(filtroStatus)}` : "/publicacoes-oab";
     const { publicacoes, total } = await _buscarJson(url);
     limpar(container);
     container.appendChild(el("div", { id: "pub-oab-status-geral" }));
-    container.appendChild(el("p", { class: "campo-ajuda", texto: `Dados do painel carregados em ${new Date().toLocaleString("pt-BR")}. A última verificação automática no DJEN não é informada pelo servidor.` }));
+    container.appendChild(el("p", { class: "campo-ajuda", texto: `Lista carregada em ${new Date().toLocaleString("pt-BR")}. Esse horário não indica a última captura no DJEN.` }));
     if (!(publicacoes || []).length) {
       container.appendChild(notificacao(
-        "info", "Nenhuma publicação capturada ainda",
-        'Em Consultar publicações, informe a OAB, consulte e clique em Criar monitoramento por e-mail. A captura automática para este painel ocorre a cada 24 horas; os avisos por e-mail são verificados a cada 6 horas, quando configurados.'
+        "info", filtroStatus ? "Nenhuma publicação com este status" : "Nenhuma publicação capturada",
+        filtroStatus
+          ? 'Selecione Todos no filtro de status para ver as demais publicações.'
+          : 'Use a captura manual acima para adicionar publicações à lista. Para criar um monitoramento por OAB, abra Consultar publicações, informe a OAB, consulte e clique em Criar monitoramento por e-mail.'
       ));
       return;
     }
     _atualizarBotoesLotePubOab();
 
-    const checkboxTodos = el("input", { type: "checkbox", "aria-label": "Selecionar todas as publicações" });
+    const checkboxTodos = el("input", { type: "checkbox", "aria-label": "Selecionar todas as publicações exibidas" });
     checkboxTodos.checked = publicacoes.length > 0 && publicacoes.every((p) => _publicacoesOabSelecionadas.has(p.hash));
     checkboxTodos.addEventListener("change", () => {
       for (const p of publicacoes) {
@@ -4320,7 +4370,7 @@ async function carregarPublicacoesOab() {
         el("th", { texto: "Processo" }),
         el("th", { texto: "Diário" }),
         el("th", { texto: "Partes" }),
-        el("th", { texto: "Nome pesquisado" }),
+        el("th", { texto: "Nome de referência" }),
         el("th", { texto: "Status" }),
         el("th", { texto: "Ações" }),
       ]),
@@ -4330,10 +4380,11 @@ async function carregarPublicacoesOab() {
       for (const linha of linhaPublicacaoOab(p)) tbody.appendChild(linha);
     }
     const resumo = total > publicacoes.length
-      ? `Mostrando as ${publicacoes.length} mais recentes de ${total} publicação(ões) — use o filtro de status para refinar.`
-      : `Mostrando ${publicacoes.length} publicação(ões)`;
+      ? `Exibindo as ${publicacoes.length} publicações mais recentes de ${total}. Use o filtro de status para refinar a lista.`
+      : `Exibindo ${publicacoes.length} ${publicacoes.length === 1 ? "publicação" : "publicações"}.`;
     container.appendChild(el("p", { class: "campo-ajuda", texto: resumo }));
-    container.appendChild(el("div", { class: "tabela-responsiva-wrap" }, [el("table", { class: "tabela-responsiva pub-oab-tabela" }, [thead, tbody])]));
+    for (const cabecalho of thead.querySelectorAll("th")) cabecalho.scope = "col";
+    container.appendChild(criarTabelaPublicacoesOab(el("table", { class: "tabela-responsiva pub-oab-tabela", "aria-label": "Publicações monitoradas" }, [thead, tbody]), publicacoes.length));
   } catch (erro) {
     limpar(container);
     mostrarErro(container, erro.message);
@@ -4367,7 +4418,7 @@ document.getElementById("form-pub-oab-manual").addEventListener("submit", async 
   status.textContent = "Consultando o DJEN…";
   try {
     const resultado = await _enviarJson("/publicacoes-oab/capturar-manual", corpo);
-    status.textContent = `Encontradas ${resultado.encontradas}, novas ${resultado.novas}.`;
+    status.textContent = `${resultado.encontradas} ${resultado.encontradas === 1 ? "publicação encontrada" : "publicações encontradas"} no DJEN. ${resultado.novas} ${resultado.novas === 1 ? "nova publicação adicionada" : "novas publicações adicionadas"} à lista.`;
     carregarPublicacoesOab();
   } catch (erro) {
     status.textContent = erro.message;
