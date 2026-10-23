@@ -146,7 +146,7 @@ class InterfaceTest(unittest.TestCase):
         self.assertTrue(self.page.get_by_role("columnheader", name="Divulgado", exact=True).is_visible())
         self.assertTrue(self.page.get_by_role("columnheader", name="Capturado", exact=True).is_visible())
         self.assertTrue(self.page.get_by_role("columnheader", name="Tipo", exact=True).is_visible())
-        self.assertEqual(tabela.locator('tbody tr').first.locator('[data-coluna="nome"]').inner_text(), "Maria Da Silva")
+        self.assertEqual(tabela.locator('tbody tr').first.locator('[data-coluna="nome"]').inner_text(), "Maria Da Silva X Parte Passiva Não Informada")
         self.page.locator(".pub-oab-colunas summary").click()
         for rotulo in ("Tipo De Documento", "Advogados", "Número Da Oab", "Texto", "Hash", "Link", "Meio"):
             self.page.locator(".pub-oab-colunas").get_by_label(rotulo, exact=True).check()
@@ -255,13 +255,13 @@ class InterfaceTest(unittest.TestCase):
         menu.get_by_role("menuitem").last.press("Home")
         menu.get_by_role("menuitem").first.press("ArrowDown")
         menu.get_by_role("menuitem").nth(1).press("Space")
-        select = self.page.get_by_label("Vincular ao processo", exact=True)
-        self.assertTrue(select.evaluate("el => el === document.activeElement"))
-        form = self.page.locator(".mini-form-caso")
-        form.get_by_role("button", name="Vincular", exact=True).click()
-        self.assertEqual(select.get_attribute("aria-invalid"), "true")
-        self.assertIn("Selecione um processo", form.get_by_role("status").inner_text())
-        self.assertTrue(select.evaluate("el => el === document.activeElement"))
+        busca = self.page.get_by_label("Consultar Processo", exact=True)
+        self.assertTrue(busca.evaluate("el => el === document.activeElement"))
+        busca.fill("Caso")
+        form = self.page.locator(".pub-oab-inline-form")
+        form.get_by_role("button", name="Caso de teste", exact=False).click()
+        self.assertTrue(form.locator(".pub-oab-confirmacao").is_visible())
+        self.assertTrue(form.get_by_role("button", name="Confirmar Vínculo", exact=True).is_enabled())
         form.get_by_role("button", name="Cancelar", exact=True).click()
         self.assertTrue(botao.evaluate("el => el === document.activeElement"))
         self.assertFalse(self.errors)
@@ -293,7 +293,72 @@ class InterfaceTest(unittest.TestCase):
             menu.get_by_role("menuitem").first.press("Escape")
         botao.click()
         self.page.get_by_role("menuitem", name="Cadastrar Processo", exact=True).click()
-        self.assertTrue(self.page.locator("#form-caso-publicacao").is_visible())
+        self.page.get_by_role("form", name="Cadastrar Processo", exact=True).wait_for()
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_nome_polos_texto_original_e_colunas_fixas(self):
+        self.open_publicacoes_oab()
+        texto = "INTIMAÇÃO: Fica a parte intimada. Art. 5º — NÃO MODIFICAR."
+        self.pub_oab_items[0]["dados"] = {"siglaTribunal": "tjsp", "texto": texto,
+            "destinatarios": [{"nome": "MARIA SILVA", "polo": "A"}, {"nome": "BANCO EXEMPLO", "polo": "P"}]}
+        self.page.evaluate("localStorage.setItem('cnj_pub_oab_colunas_visiveis_v2', '[]')")
+        self.page.evaluate("carregarPublicacoesOab()")
+        row = self.page.locator(".pub-oab-tabela tbody tr").first
+        self.assertEqual(row.locator('[data-coluna="nome"]').inner_text(), "Maria Silva X Banco Exemplo")
+        self.assertEqual(row.locator('[data-coluna="tribunal"]').inner_text(), "TJSP")
+        self.assertTrue(row.locator('[data-coluna="processo"]').is_visible())
+        self.assertEqual(row.locator('.pub-oab-nome-processo').get_attribute("title"), "Maria Silva X Banco Exemplo")
+        self.assertEqual(row.locator('.pub-oab-nome-processo').evaluate("el => getComputedStyle(el).webkitLineClamp"), "2")
+        self.page.locator(".pub-oab-colunas summary").click()
+        self.assertEqual(self.page.locator('#pub-oab-coluna-nome, #pub-oab-coluna-tribunal, #pub-oab-coluna-processo').count(), 0)
+        self.page.locator(".pub-oab-colunas summary").press("Escape")
+        row.get_by_role("button", name="Ler Mais", exact=True).click()
+        full = self.page.locator(".pub-oab-publicacao-completa").first
+        self.assertEqual(full.locator(".pub-oab-publicacao-texto").inner_text(), texto)
+        self.assertEqual(full.locator(".pub-oab-publicacao-texto").evaluate("el => getComputedStyle(el).fontSize"), "10px")
+        self.assertEqual(full.locator(".pub-oab-publicacao-texto").evaluate("el => getComputedStyle(el).textAlign"), "justify")
+        self.assertGreater(full.locator("header strong").count(), 2)
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_cadastro_inline_cliente_responsavel_e_confirmacao(self):
+        self.open_publicacoes_oab()
+        self.page.locator(".pub-oab-combo .cds--menu-button__trigger").first.click()
+        self.page.get_by_role("menuitem", name="Cadastrar Processo", exact=True).click()
+        form = self.page.get_by_role("form", name="Cadastrar Processo", exact=True)
+        form.get_by_label("Cliente", exact=True).fill("Cliente")
+        form.get_by_role("button", name="Cliente de teste", exact=True).click()
+        form.get_by_label("Responsável", exact=True).select_option("Ana")
+        self.page.set_viewport_size({"width": 390, "height": 900})
+        self.assertTrue(form.evaluate("el => el.getBoundingClientRect().width <= innerWidth && el.scrollWidth <= el.clientWidth"))
+        self.assertEqual(self.pub_oab_posts, [])
+        form.get_by_role("button", name="Confirmar Cadastro", exact=True).click()
+        self.page.wait_for_function("document.getElementById('toast-global').textContent.includes('Processo Cadastrado')")
+        self.assertEqual(self.pub_oab_posts, [{"cliente_id": "cliente-1", "responsavel": "Ana"}])
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_vinculo_exige_selecao_e_confirma_numero_parte_cliente(self):
+        self.open_publicacoes_oab()
+        self.page.locator(".pub-oab-combo .cds--menu-button__trigger").first.click()
+        self.page.get_by_role("menuitem", name="Vincular A Processo Existente", exact=True).click()
+        form = self.page.get_by_role("form", name="Vincular A Processo Existente", exact=True)
+        confirmar = form.get_by_role("button", name="Confirmar Vínculo", exact=True)
+        self.assertTrue(confirmar.is_disabled())
+        queries = []
+        def responder(route):
+            from urllib.parse import urlparse, parse_qs
+            queries.append(parse_qs(urlparse(route.request.url).query)["q"][0])
+            route.fulfill(json={"casos": [self.case]})
+        self.context.route("**/casos?q=*", responder)
+        for termo in ("1000607", "Maria", "Cliente"):
+            form.get_by_label("Consultar Processo", exact=True).fill(termo)
+            form.get_by_role("button", name="Caso de teste", exact=False).click()
+            self.assertTrue(form.locator(".pub-oab-confirmacao").is_visible())
+            self.assertTrue(confirmar.is_enabled())
+        self.assertEqual(queries, ["1000607", "Maria", "Cliente"])
+        self.assertFalse(any(m == "POST" and p.endswith("/publicacoes") for m, p in self.requests))
+        confirmar.click()
+        self.page.wait_for_function("document.getElementById('toast-global').textContent.includes('Publicação Vinculada')")
+        self.assertIn(("POST", "/casos/caso-1/publicacoes"), self.requests)
         self.assertFalse(self.errors)
 
     def test_publicacoes_status_mantem_toast_apos_recarregar(self):
