@@ -105,6 +105,116 @@ class InterfaceTest(unittest.TestCase):
     def choose(self, value):
         self.page.locator(f"#modal-edicao-pendente [data-escolha-edicao={value}]").click()
 
+    def open_publicacoes_oab(self):
+        self.pub_oab_gets = 0
+        self.pub_oab_posts = []
+        self.pub_oab_fail = False
+        self.pub_oab_items = [
+            {"hash": "pub-1", "numero_processo": "10006070420255020401", "status": "nao_tratada", "dados": {}},
+            {"hash": "pub-2", "numero_processo": "10006070420255020402", "status": "nao_tratada", "dados": {}},
+        ]
+        def responder(route):
+            from urllib.parse import urlparse, parse_qs
+            request = route.request
+            if request.method == "POST":
+                self.pub_oab_posts.append(request.post_data_json)
+                if self.pub_oab_fail:
+                    return route.fulfill(status=500, json={"mensagem": "Falha de teste"})
+                return route.fulfill(json={"ok": True})
+            self.pub_oab_gets += 1
+            status = parse_qs(urlparse(request.url).query).get("status", [""])[0]
+            itens = [p for p in self.pub_oab_items if not status or p["status"] == status]
+            return route.fulfill(json={"publicacoes": itens, "total": len(itens)})
+        self.context.route("**/publicacoes-oab**", responder)
+        self.connect()
+        self.page.evaluate("selecionarAba(abas.find(a => a.painel.id === 'aba-publicacoes-oab'))")
+        self.page.locator("#lista-publicacoes-oab table").wait_for()
+
+    def test_publicacoes_selecao_parcial_sem_reconsulta_e_sem_perder_foco(self):
+        self.open_publicacoes_oab()
+        todos = self.page.locator("input[data-publicacoes-todas]")
+        linhas = self.page.locator("input[data-publicacao-hash]")
+        consultas = self.pub_oab_gets
+        linhas.first.check()
+        self.assertTrue(todos.evaluate("el => el.indeterminate"))
+        self.assertFalse(todos.is_checked())
+        todos.focus()
+        todos.press("Space")
+        self.assertEqual(linhas.evaluate_all("els => els.filter(el => el.checked).length"), 2)
+        self.assertTrue(todos.evaluate("el => el === document.activeElement"))
+        self.assertFalse(todos.evaluate("el => el.indeterminate"))
+        linhas.first.uncheck()
+        self.assertTrue(todos.evaluate("el => el.indeterminate"))
+        linhas.last.uncheck()
+        self.assertFalse(todos.is_checked())
+        self.assertFalse(todos.evaluate("el => el.indeterminate"))
+        self.assertTrue(self.page.locator("#pub-oab-arquivar").is_disabled())
+        self.assertEqual(self.pub_oab_gets, consultas)
+
+    def test_publicacoes_filtro_vazio_desabilita_acoes_e_limpa_selecao(self):
+        self.open_publicacoes_oab()
+        self.page.locator("input[data-publicacao-hash]").first.check()
+        self.assertTrue(self.page.locator("#pub-oab-arquivar").is_enabled())
+        self.page.locator("#pub-oab-filtro-status").select_option("arquivada")
+        self.page.get_by_text("Nenhuma publicação com este status", exact=True).wait_for()
+        self.assertTrue(self.page.locator("#pub-oab-arquivar").is_disabled())
+        self.assertTrue(self.page.locator("#pub-oab-marcar-tratada").is_disabled())
+        self.page.locator("#pub-oab-filtro-status").select_option("")
+        self.page.locator("#lista-publicacoes-oab table").wait_for()
+        self.assertEqual(self.page.locator("input[data-publicacao-hash]:checked").count(), 0)
+
+    def test_publicacoes_menu_teclado_e_vinculo_com_rotulo_e_erro(self):
+        self.open_publicacoes_oab()
+        botao = self.page.locator(".pub-oab-combo .cds--menu-button__trigger").first
+        botao.focus()
+        botao.press("Enter")
+        menu = self.page.locator(".pub-oab-combo-menu:not([hidden])")
+        itens = menu.get_by_role("menuitem")
+        self.assertTrue(itens.first.evaluate("el => el === document.activeElement"))
+        itens.first.press("ArrowDown")
+        self.assertTrue(itens.nth(1).evaluate("el => el === document.activeElement"))
+        itens.nth(1).press("End")
+        self.assertTrue(itens.last.evaluate("el => el === document.activeElement"))
+        itens.last.press("Escape")
+        self.assertTrue(botao.evaluate("el => el === document.activeElement"))
+        self.assertEqual(botao.get_attribute("aria-expanded"), "false")
+        botao.press("ArrowUp")
+        menu.get_by_role("menuitem").last.press("Home")
+        menu.get_by_role("menuitem").first.press("Space")
+        select = self.page.get_by_label("Vincular ao processo", exact=True)
+        self.assertTrue(select.evaluate("el => el === document.activeElement"))
+        form = self.page.locator(".mini-form-caso")
+        form.get_by_role("button", name="Vincular", exact=True).click()
+        self.assertEqual(select.get_attribute("aria-invalid"), "true")
+        self.assertIn("Selecione um processo", form.get_by_role("status").inner_text())
+        self.assertTrue(select.evaluate("el => el === document.activeElement"))
+        form.get_by_role("button", name="Cancelar", exact=True).click()
+        self.assertTrue(botao.evaluate("el => el === document.activeElement"))
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_status_mantem_toast_apos_recarregar(self):
+        self.open_publicacoes_oab()
+        self.page.locator("input[data-publicacao-hash]").first.check()
+        self.page.locator("#pub-oab-marcar-tratada").click()
+        self.page.wait_for_function("!_pubOabAtualizando && !_pubOabCarregando")
+        self.assertIn("Status atualizado", self.page.locator("#toast-global").inner_text())
+        self.assertIn("1 publicação marcada", self.page.locator("#toast-global").inner_text())
+        self.assertEqual(len(self.pub_oab_posts), 1)
+        self.assertEqual(self.pub_oab_posts[0]["hashes"], ["pub-1"])
+        self.assertTrue(self.page.locator("#pub-oab-marcar-tratada").is_disabled())
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_falha_de_status_preserva_selecao_e_permite_repetir(self):
+        self.open_publicacoes_oab()
+        self.pub_oab_fail = True
+        self.page.locator("input[data-publicacao-hash]").first.check()
+        self.page.locator("#pub-oab-arquivar").click()
+        self.page.wait_for_function("!_pubOabAtualizando")
+        self.assertIn("Não foi possível atualizar o status", self.page.locator("#toast-global").inner_text())
+        self.assertTrue(self.page.locator("input[data-publicacao-hash]").first.is_checked())
+        self.assertTrue(self.page.locator("#pub-oab-arquivar").is_enabled())
+        self.assertFalse(self.errors)
+
     def test_capa_unifica_cadastro_e_atualiza_movimentacoes(self):
         numero = "10006070420255020401"
         self.case["processos"] = [numero]
