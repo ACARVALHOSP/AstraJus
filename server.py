@@ -670,20 +670,20 @@ def _extrair_publicacao_djen(item: dict) -> dict:
 
 @mcp.tool()
 async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> dict:
-    """Combina DataJud (capa + movimentos) e DJEN (partes, advogados e publicações) do mesmo
-    processo em um único esquema JSON, para não precisar chamar as duas tools separadamente.
+    """Combina DataJud (capa + movimentos) e DJEN (partes e advogados) do mesmo processo em um
+    único esquema JSON, para não precisar chamar as duas tools separadamente.
 
     Parâmetros: iguais a consultar_processo_datajud (tribunal, numero_processo).
 
     Retorno: dicionário com "numero_processo", "encontrado_datajud" (bool), "instancias" (lista de
     capa+movimentos por grau, igual a "processos" de consultar_processo_datajud), "partes"
-    (nome e polo, deduplicadas por nome), "advogados" (nome, numero_oab e uf_oab, deduplicados
-    por OAB) e "publicacoes" (itens do DJEN sem o campo "texto" completo).
+    (nome e polo, deduplicadas por nome) e "advogados" (nome, numero_oab e uf_oab, deduplicados
+    por OAB). Para o texto das publicações, use consultar_publicacoes_djen separadamente.
 
     Limitações:
-    - "partes", "advogados" e "publicacoes" vêm do DJEN e só existem se já houve ao menos uma
-      publicação desse processo; um processo sem publicações retorna essas listas vazias, mesmo
-      que existam partes reais (DataJud não expõe nomes de partes — ver consultar_processo_datajud).
+    - "partes" e "advogados" vêm do DJEN e só existem se já houve ao menos uma publicação desse
+      processo; um processo sem publicações retorna essas listas vazias, mesmo que existam partes
+      reais (DataJud não expõe nomes de partes — ver consultar_processo_datajud).
     - Erros de qualquer uma das duas fontes (DataJud ou DJEN) interrompem a combinação e são
       retornados como "erro", mesmo que a outra fonte tenha respondido com sucesso.
     """
@@ -699,7 +699,6 @@ async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> d
 
         partes: dict[str, dict] = {}
         advogados: dict[str, dict] = {}
-        publicacoes = []
         for item in resultado_djen.get("itens") or []:
             for parte in item.get("destinatarios") or []:
                 chave = (parte.get("nome") or "").strip().upper()
@@ -709,7 +708,6 @@ async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> d
                 chave = advogado.get("numero_oab") or advogado.get("nome")
                 if chave:
                     advogados[chave] = advogado
-            publicacoes.append({k: v for k, v in item.items() if k != "texto"})
 
         return {
             "numero_processo": _so_digitos(numero_processo),
@@ -717,7 +715,6 @@ async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> d
             "instancias": resultado_datajud.get("processos") or [],
             "partes": list(partes.values()),
             "advogados": list(advogados.values()),
-            "publicacoes": publicacoes,
         }
     except Exception as exc:
         log.exception("Falha inesperada em consultar_processo_unificado")

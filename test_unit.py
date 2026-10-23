@@ -326,8 +326,7 @@ class ProcessoUnificadoTest(unittest.TestCase):
         self.assertTrue(r["encontrado_datajud"])
         self.assertEqual(len(r["partes"]), 1)  # deduplicado por nome
         self.assertEqual(len(r["advogados"]), 1)  # deduplicado por OAB
-        self.assertEqual(len(r["publicacoes"]), 2)
-        self.assertNotIn("texto", r["publicacoes"][0])
+        self.assertNotIn("publicacoes", r)
 
     def test_erro_em_qualquer_fonte_interrompe_a_combinacao(self):
         with mock.patch.object(server, "consultar_processo_datajud", return_value=server._erro("falhou")), \
