@@ -176,6 +176,33 @@ class InterfaceTest(unittest.TestCase):
             self.page.locator(".pub-oab-colunas summary").press("Escape")
         self.assertFalse(self.errors)
 
+    def test_publicacoes_colunas_clique_no_nome_checkbox_e_teclado(self):
+        self.open_publicacoes_oab()
+        crashes = []
+        self.page.on("crash", lambda: crashes.append(True))
+        for largura in (1440, 390):
+            self.page.set_viewport_size({"width": largura, "height": 900})
+            self.page.locator(".pub-oab-colunas summary").click()
+            label = self.page.locator('.pub-oab-coluna-opcao label[for="pub-oab-coluna-orgao"]')
+            campo = self.page.locator("#pub-oab-coluna-orgao")
+            for _ in range(4):
+                antes = campo.is_checked()
+                label.click()
+                self.assertEqual(campo.is_checked(), not antes)
+                self.page.wait_for_function("() => document.querySelector('th[data-coluna=orgao]').hidden !== document.getElementById('pub-oab-coluna-orgao').checked")
+                campo.click()
+                self.assertEqual(campo.is_checked(), antes)
+                self.page.wait_for_function("() => document.querySelector('th[data-coluna=orgao]').hidden !== document.getElementById('pub-oab-coluna-orgao').checked")
+            antes = campo.is_checked()
+            campo.focus()
+            campo.press("Space")
+            self.assertEqual(campo.is_checked(), not antes)
+            self.page.wait_for_function("() => document.querySelector('th[data-coluna=orgao]').hidden !== document.getElementById('pub-oab-coluna-orgao').checked")
+            self.assertTrue(campo.evaluate("el => el === document.activeElement"))
+            self.page.locator(".pub-oab-colunas summary").press("Escape")
+        self.assertFalse(crashes)
+        self.assertFalse(self.errors)
+
     def test_publicacoes_selecao_parcial_sem_reconsulta_e_sem_perder_foco(self):
         self.open_publicacoes_oab()
         todos = self.page.locator("input[data-publicacoes-todas]")

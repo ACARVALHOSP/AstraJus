@@ -4398,15 +4398,27 @@ function criarTabelaPublicacoesOab(tabela, quantidade, colunas) {
   const seletor = el("details", { class: "pub-oab-colunas" });
   const resumo = el("summary", { texto: "Colunas" });
   const campos = el("fieldset", {}, [el("legend", { texto: "Colunas visíveis" })]);
+  let atualizacaoColunas = null;
   for (const coluna of opcionais) {
-    const input = el("input", { type: "checkbox" });
+    const id = `pub-oab-coluna-${encodeURIComponent(coluna.id)}`;
+    const input = el("input", { id, type: "checkbox" });
     input.checked = visiveis.includes(coluna.id);
     input.addEventListener("change", () => {
       visiveis = input.checked ? [...visiveis, coluna.id] : visiveis.filter((id) => id !== coluna.id);
-      aplicar();
+      // O clique no rótulo ainda está ativando o controle nativo neste ponto.
+      // Só altere o layout da tabela depois que essa ativação terminar.
+      if (atualizacaoColunas !== null) cancelAnimationFrame(atualizacaoColunas);
+      atualizacaoColunas = requestAnimationFrame(() => {
+        atualizacaoColunas = null;
+        if (tabela.isConnected) aplicar();
+      });
       try { localStorage.setItem(chave, JSON.stringify(visiveis)); } catch { /* preferência da sessão */ }
     });
-    campos.appendChild(el("label", { class: "pub-oab-coluna-opcao" }, [input, document.createTextNode(coluna.rotulo)]));
+    const rotulo = el("label", { for: id, texto: coluna.rotulo });
+    // Mantém o foco no controle: desfocar para o rótulo fecha o <details>
+    // durante o clique e pode derrubar o renderer do Chrome.
+    rotulo.addEventListener("pointerdown", (evento) => evento.preventDefault());
+    campos.appendChild(el("div", { class: "pub-oab-coluna-opcao" }, [input, rotulo]));
   }
   campos.appendChild(el("p", { class: "campo-ajuda", texto: "Seleção, processo e ações ficam sempre visíveis." }));
   seletor.append(resumo, campos);
