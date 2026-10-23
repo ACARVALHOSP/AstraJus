@@ -35,10 +35,6 @@ function marcarFormularioSalvo(form, aposReset = false) {
   if (form.id === "form-contato-cadastro") {
     estado.contato = !aposReset && estado.contatoEnviado ? estado.contatoEnviado : _lerCadastroCompleto("contato", gruposContato);
   }
-  if (form.id === "form-caso-partes") {
-    estado.partes = !aposReset && estado.partesEnviadas ? estado.partesEnviadas
-      : Object.fromEntries(["autor", "reu", "advogados"].map((tipo) => [tipo, _lerCamposPartes(tipo)]));
-  }
   atualizarIndicadorEdicao(form);
 }
 
@@ -56,11 +52,10 @@ function registrarSalvamento(form, salvar) {
     if (estado.salvando) return;
     estado.enviado = valoresFormulario(form);
     if (form.id === "form-contato-cadastro") estado.contatoEnviado = _lerCadastroCompleto("contato", gruposContato);
-    if (form.id === "form-caso-partes") estado.partesEnviadas = Object.fromEntries(["autor", "reu", "advogados"].map((tipo) => [tipo, _lerCamposPartes(tipo)]));
     estado.salvando = (async () => {
       await Promise.resolve(); // Registra a operação antes de executar o handler.
       try { await salvar(evento); }
-      finally { estado.enviado = null; estado.contatoEnviado = null; estado.partesEnviadas = null; estado.salvando = null; atualizarIndicadorEdicao(form); }
+      finally { estado.enviado = null; estado.contatoEnviado = null; estado.salvando = null; atualizarIndicadorEdicao(form); }
     })();
   });
 }
@@ -72,7 +67,6 @@ function formulariosPendentes(raiz = document) {
 
 function revelarFormulario(form) {
   if (form.id === "form-caso-editar") _selecionarSubabaCaso("cadastro");
-  if (form.id === "form-caso-partes") _selecionarSubabaCaso("partes");
   if (form.id === "form-contato-cadastro") _selecionarSubabaContato("cadastro");
   // Um campo inválido pode estar numa seção interna do cadastro.
   const invalido = form.querySelector(":invalid");
@@ -104,9 +98,6 @@ async function permitirSaidaEdicao(raiz = document) {
         const valores = JSON.parse(estado.base);
         if (estado.contato) {
           _preencherCadastroCompleto("contato", gruposContato, estado.contato, definirTipoPessoaContato, definirPerfilContato);
-        }
-        if (estado.partes) {
-          for (const [tipo, nomes] of Object.entries(estado.partes)) _preencherCamposPartes(tipo, nomes);
         }
         const porId = new Map(valores.filter(([id]) => id).map((valor) => [valor[0], valor]));
         [...form.querySelectorAll("input, select, textarea")].forEach((campo, i) => {
@@ -4398,7 +4389,6 @@ async function abrirCaso(casoId) {
   document.getElementById("caso-detalhe-titulo").textContent = "Carregando…";
   limpar(document.getElementById("lista-atividades"));
   limpar(document.getElementById("resultado-caso-editar"));
-  limpar(document.getElementById("resultado-caso-partes"));
   try {
     const caso = await _buscarJson(`/casos/${casoId}`);
     _casoDetalheAtual = caso;
@@ -4416,15 +4406,10 @@ async function abrirCaso(casoId) {
       mostrarAviso(document.getElementById("resultado-caso-editar"), "Não foi possível carregar os responsáveis. Reabra o processo para tentar novamente.");
     }
     responsavel.value = caso.responsavel || "";
-    _preencherCamposPartes("autor", (caso.autor || "").split(","));
-    _preencherCamposPartes("reu", (caso.reu || "").split(","));
-    _preencherCamposPartes("advogados", (caso.advogados || "").split(","));
     document.getElementById("form-caso-editar").dataset.casoId = casoId;
-    document.getElementById("form-caso-partes").dataset.casoId = casoId;
     marcarFormularioSalvo(document.getElementById("form-caso-editar"), true);
-    marcarFormularioSalvo(document.getElementById("form-caso-partes"), true);
     limpar(document.getElementById("lista-movimentacoes"));
-    await _carregarCapaProcessos(casoId, true);
+    await _carregarCapaProcessos(casoId);
     await _carregarAtividades(casoId);
   } catch (erro) {
     document.getElementById("caso-detalhe-titulo").textContent = "Erro ao carregar";
@@ -4612,7 +4597,7 @@ function formatarNumeroCNJ(valor) {
   return String(valor || "").replace(/^(\d{7})(\d{2})(\d{4})(\d)(\d{2})(\d{4})$/, "$1-$2.$3.$4.$5.$6");
 }
 
-async function _carregarCapaProcessos(casoId, atualizarPartes = false) {
+async function _carregarCapaProcessos(casoId) {
   const lista = document.getElementById("lista-capa-processos");
   limpar(lista);
   let numeros;
@@ -4627,15 +4612,11 @@ async function _carregarCapaProcessos(casoId, atualizarPartes = false) {
     return;
   }
   const movimentos = [];
-  const partes = [];
-  const advogados = [];
   for (const numero of numeros) {
     try {
       const capa = await _buscarJson(`/casos/${casoId}/processos/${numero}/capa`);
       lista.appendChild(_cardCapaProcesso(casoId, numero, capa));
       movimentos.push(...(capa.movimentos || []));
-      partes.push(...(capa.partes || []));
-      advogados.push(...(capa.advogados || []));
     } catch (erro) {
       lista.appendChild(notificacao("error", `${numero}: ${erro.message}`));
     }
@@ -4644,18 +4625,6 @@ async function _carregarCapaProcessos(casoId, atualizarPartes = false) {
   limpar(listaMovs);
   if (movimentos.length) listaMovs.appendChild(linhaDoTempoMovimentos(movimentos));
   else listaMovs.appendChild(notificacao("info", "Nenhuma movimentação disponível. Atualize a capa para consultar o DataJud."));
-  if (atualizarPartes) {
-    const registros = [
-      ["autor", partes.filter(p => /^(A|AT|ATIVO)$/i.test(p.polo || "")).map(p => p.nome)],
-      ["reu", partes.filter(p => /^(P|PA|PASSIVO)$/i.test(p.polo || "")).map(p => p.nome)],
-      ["advogados", advogados.map(a => `${a.nome}${a.numero_oab ? ` — OAB ${a.numero_oab}/${a.uf_oab || ""}` : ""}`)],
-    ];
-    for (const [tipo, nomes] of registros) {
-      _preencherCamposPartes(tipo, [..._lerCamposPartes(tipo), ...nomes]);
-    }
-    atualizarIndicadorEdicao(document.getElementById("form-caso-partes"));
-  }
-
 }
 
 async function _atualizarCapaProcessos(casoId) {
@@ -4686,7 +4655,7 @@ async function _atualizarCapaProcessos(casoId) {
   if (_casoDetalheAtual?.id !== casoId) return;
   _casoDetalheAtual = caso;
   document.getElementById("caso-detalhe-titulo").textContent = caso.titulo || "(sem título)";
-  await _carregarCapaProcessos(casoId, true);
+  await _carregarCapaProcessos(casoId);
 }
 
 function _numeroProcessoComMascara(numero) {
@@ -4701,6 +4670,27 @@ function _dataDistribuicaoLegivel(valor) {
   return data ? `${data[3]}/${data[2]}/${data[1]}` : String(valor);
 }
 
+function _participantesCapa(capa) {
+  const nomes = (registros) => [...new Set(registros.map(p => (p.nome || "").trim()).filter(Boolean))].join("; ");
+  const partes = capa.partes || [];
+  const poloAtivo = p => /^(A|AT|ATIVO)$/i.test(p.polo || "");
+  const poloPassivo = p => /^(P|PA|PASSIVO)$/i.test(p.polo || "");
+  const advogados = [...new Set((capa.advogados || []).map(registro => {
+    const advogado = registro.advogado || registro;
+    const nome = (advogado.nome || "").trim();
+    if (!nome) return "";
+    const oab = String(advogado.numero_oab || "").trim();
+    const uf = String(advogado.uf_oab || "").trim().toUpperCase();
+    return oab ? `${nome} — OAB ${oab}${uf ? `/${uf}` : ""}` : nome;
+  }).filter(Boolean))].join("; ");
+  return [
+    ["Polo ativo", nomes(partes.filter(poloAtivo)) || "Não informado pelo DJEN"],
+    ["Polo passivo", nomes(partes.filter(poloPassivo)) || "Não informado pelo DJEN"],
+    ["Partes sem polo informado", nomes(partes.filter(p => !poloAtivo(p) && !poloPassivo(p)))],
+    ["Advogados", advogados || "Não informado pelo DJEN"],
+  ];
+}
+
 function _cardCapaProcesso(casoId, numero, capa) {
   const autoCampos = [
     ["Tribunal", capa.tribunal], ["Ação", _casoDetalheAtual?.acao], ["Classe", capa.classe], ["Grau", capa.grau],
@@ -4708,6 +4698,7 @@ function _cardCapaProcesso(casoId, numero, capa) {
     ["Tipo de justiça", capa.tipo_justica], ["Município", capa.cidade], ["UF", capa.uf],
     ["Assuntos", (capa.assuntos || []).join(", ")], ["Distribuição", _dataDistribuicaoLegivel(capa.data_distribuicao)],
     ["Nível de sigilo", capa.nivel_sigilo], ["Nome do processo", capa.nome_processo],
+    ..._participantesCapa(capa),
   ].filter(([, valor]) => valor !== null && valor !== undefined && valor !== "");
 
   const blocoAuto = autoCampos.length
@@ -5025,139 +5016,6 @@ registrarSalvamento(document.getElementById("form-caso-editar"), async (evento) 
   }
 });
 
-// O cadastro persiste listas de nomes separadas por vírgula; a interface edita um nome por campo.
-function _lerCamposPartes(tipo) {
-  if (tipo === "advogados") return document.getElementById("editar-caso-advogados").value.split(",").map((nome) => nome.trim()).filter(Boolean);
-  return Array.from(document.getElementById(`campos-caso-${tipo}`).querySelectorAll("input"))
-    .map((campo) => campo.value.trim()).filter(Boolean);
-}
-
-function _preencherCamposPartes(tipo, nomes) {
-  const container = document.getElementById(`campos-caso-${tipo}`);
-  const primeiro = document.getElementById(`editar-caso-${tipo}`);
-  const rotulo = { autor: "Parte do polo ativo", reu: "Parte do polo passivo" }[tipo];
-  const unicos = [...new Set(nomes.map((nome) => nome.trim()).filter(Boolean))];
-  limpar(container);
-  if (tipo === "advogados") {
-    primeiro.value = unicos.join(", ");
-    container.appendChild(primeiro);
-    for (const nome of unicos) {
-      container.appendChild(el("span", { class: "cds--tag cds--tag--blue", role: "listitem", texto: nome }));
-    }
-    if (!unicos.length) container.appendChild(el("span", { class: "campo-ajuda", texto: "Nenhum advogado informado." }));
-    return;
-  }
-  primeiro.value = unicos.shift() || "";
-  container.appendChild(primeiro);
-  for (const [indice, nome] of unicos.entries()) {
-    const id = `editar-caso-${tipo}-${indice + 2}`;
-    container.appendChild(el("div", { class: "cds--form-item" }, [
-      el("label", { class: "cds--label", for: id, texto: `${rotulo} ${indice + 2}` }),
-      el("input", { class: "cds--text-input", type: "text", id, value: nome, autocomplete: "off" }),
-    ]));
-  }
-}
-
-document.getElementById("btn-buscar-partes").addEventListener("click", () => {
-  const casoId = document.getElementById("form-caso-partes").dataset.casoId;
-  if (casoId) _buscarPartesDJEN(casoId);
-});
-
-async function _buscarPartesDJEN(casoId) {
-  const statusEl = document.getElementById("status-partes-djen");
-  const botao = document.getElementById("btn-buscar-partes");
-  if (botao.disabled) return;
-  limpar(statusEl);
-  statusEl.appendChild(notificacao("info", "Consultando o DJen…"));
-  botao.disabled = true;
-
-  try {
-    // 1. Tenta extrair das publicações já vinculadas ao processo
-    let destinatarios = [];
-    let advogados = [];
-    const respPubs = await _buscarJson(`/casos/${casoId}/publicacoes`);
-    for (const pub of (respPubs.publicacoes || [])) {
-      const d = pub.dados || {};
-      destinatarios.push(...(d.destinatarios || []));
-      advogados.push(...(d.destinatarioadvogados || []));
-    }
-
-    // 2. Se não achou nada nas publicações vinculadas, consulta DJEN diretamente
-    if (!destinatarios.length && !advogados.length) {
-      const respCaso = await _buscarJson(`/casos/${casoId}`);
-      const numeros = respCaso.processos || [];
-      for (const num of numeros) {
-        try {
-          const r = await cliente.chamarTool("consultar_publicacoes_djen", { numero_processo: num });
-          if (r.erro) continue;
-          for (const item of (r.itens || [])) {
-            destinatarios.push(...(item.destinatarios || []));
-            advogados.push(...(item.destinatarioadvogados || []));
-          }
-        } catch (_) { /* ignora falha por processo */ }
-      }
-    }
-
-    if (document.getElementById("form-caso-partes").dataset.casoId !== casoId || !_casoDetalheAtual) return;
-
-    if (!destinatarios.length && !advogados.length) {
-      mostrarAviso(statusEl, "Nenhuma parte encontrada no DJEN para este processo.");
-      return;
-    }
-
-    // Deduplica por nome
-    const _nomes = (arr) => [...new Set(arr.map((x) => (x.nome || "").trim()).filter(Boolean))];
-
-    const ativos  = _nomes(destinatarios.filter((d) => /^(A|AT|ATIVO)$/i.test(d.polo || "")));
-    const passivos = _nomes(destinatarios.filter((d) => /^(P|PA|PASSIVO)$/i.test(d.polo || "")));
-    const advsNomes = [...new Set(advogados.map((registro) => {
-      const advogado = registro.advogado || registro;
-      const nome = (advogado.nome || "").trim();
-      if (!nome) return "";
-      const numero = String(advogado.numero_oab || "").trim();
-      const uf = String(advogado.uf_oab || "").trim().toUpperCase();
-      return numero ? `${nome} — OAB ${numero}${uf ? `/${uf}` : ""}` : nome;
-    }).filter(Boolean))];
-
-    // Mantém as edições locais e acrescenta cada nome encontrado em seu próprio campo.
-    for (const [tipo, nomes] of [["autor", ativos], ["reu", passivos], ["advogados", advsNomes]]) {
-      const atuais = _lerCamposPartes(tipo).filter((nome) => tipo !== "advogados" || !nomes.some((novo) => novo.startsWith(`${nome} — OAB `)));
-      _preencherCamposPartes(tipo, [...atuais, ...nomes]);
-    }
-
-    atualizarIndicadorEdicao(document.getElementById("form-caso-partes"));
-    mostrarSucesso(statusEl, "Preenchido. Revise e salve.");
-  } catch (err) {
-    mostrarErro(statusEl, err.message || "Erro ao buscar partes.");
-  } finally {
-    botao.disabled = false;
-  }
-}
-
-registrarSalvamento(document.getElementById("form-caso-partes"), async (evento) => {
-  evento.preventDefault();
-  const casoId = evento.target.dataset.casoId;
-  if (!casoId) return;
-  const botao = evento.target.querySelector("button[type=submit]");
-  const resultado = document.getElementById("resultado-caso-partes");
-  const corpo = {
-    autor: _lerCamposPartes("autor").join(", "),
-    reu: _lerCamposPartes("reu").join(", "),
-    advogados: _lerCamposPartes("advogados").join(", "),
-  };
-  const pararEspera = mostrarEspera(resultado, botao, "Salvando");
-  try {
-    _casoDetalheAtual = await _enviarJson(`/casos/${casoId}`, corpo, "PATCH");
-    limpar(resultado);
-    resultado.appendChild(notificacao("success", "Partes atualizadas"));
-    marcarFormularioSalvo(evento.target);
-  } catch (erro) {
-    mostrarErro(resultado, erro.message);
-  } finally {
-    pararEspera();
-  }
-});
-
 document.getElementById("btn-excluir-caso").addEventListener("click", async () => {
   const casoId = document.getElementById("form-caso-editar").dataset.casoId;
   if (!casoId) return;
@@ -5169,7 +5027,6 @@ document.getElementById("btn-excluir-caso").addEventListener("click", async () =
     await _enviarJson(`/casos/${casoId}`, {}, "DELETE");
     _cache.casos = _cache.casos.filter((c) => c.id !== casoId);
     marcarFormularioSalvo(document.getElementById("form-caso-editar"), true);
-    marcarFormularioSalvo(document.getElementById("form-caso-partes"), true);
     await voltarParaCasos();
     mostrarToast("success", "Processo excluído");
     _renderizarTabelaCasosPagina();
