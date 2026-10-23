@@ -484,6 +484,8 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 @media (max-width: 480px) {
   #form-contato-cadastro .token-acoes > .cds--btn { inline-size: 100%; max-inline-size: none; }
 }
+.caso-advogados-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.caso-advogados-tags .cds--tag { height: auto; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 </style>
 </head>
 <body class="cds--white">
@@ -1327,28 +1329,28 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <section id="caso-subaba-partes" role="tabpanel" aria-labelledby="caso-subaba-partes-botao" hidden>
 <form id="form-caso-partes" class="form-detalhe">
 <div class="cds--form-item">
-<label class="cds--label" for="editar-caso-autor">Autor</label>
+<label class="cds--label" for="editar-caso-autor">Polo Ativo</label>
 <div id="campos-caso-autor" style="display:flex;flex-direction:column;gap:0.5rem">
 <input class="cds--text-input" type="text" id="editar-caso-autor" name="autor" placeholder="Ex.: Maria Aparecida Souza" autocomplete="off">
 </div>
 </div>
 <div class="cds--form-item">
-<label class="cds--label" for="editar-caso-reu">Réu</label>
+<label class="cds--label" for="editar-caso-reu">Polo Passivo</label>
 <div id="campos-caso-reu" style="display:flex;flex-direction:column;gap:0.5rem">
 <input class="cds--text-input" type="text" id="editar-caso-reu" name="reu" placeholder="Ex.: Construtora Horizonte Ltda" autocomplete="off">
 </div>
 </div>
 <div class="cds--form-item">
-<label class="cds--label" for="editar-caso-advogados">Advogados</label>
-<div id="campos-caso-advogados" style="display:flex;flex-direction:column;gap:0.5rem">
-<input class="cds--text-input" type="text" id="editar-caso-advogados" name="advogados" placeholder="Nome do advogado" autocomplete="off">
+<span class="cds--label" id="rotulo-caso-advogados">Advogados</span>
+<div id="campos-caso-advogados" class="caso-advogados-tags" role="list" aria-labelledby="rotulo-caso-advogados">
+<input type="hidden" id="editar-caso-advogados" name="advogados">
 </div>
 </div>
-<p class="campo-ajuda">Cada nome aparece em um campo editável. Para remover uma parte, deixe seu campo em branco e salve.</p>
+<p class="campo-ajuda">Preenchimento automático pelo DJen ao abrir esta aba. Revise os polos e salve as partes. Advogados são identificados por nome e OAB/UF, quando informados pelo DJen.</p>
 <div id="resultado-caso-partes" class="app-resultado"></div>
 <div class="form-acoes-detalhe">
 <button class="cds--btn cds--btn--primary cds--btn--sm" type="submit" form="form-caso-partes">Salvar partes</button>
-<button class="cds--btn cds--btn--secondary cds--btn--sm" type="button" id="btn-buscar-partes">Buscar partes no DJEN</button>
+<button class="cds--btn cds--btn--secondary cds--btn--sm" type="button" id="btn-buscar-partes">Atualizar pelo DJen</button>
 <div id="status-partes-djen"></div>
 </div>
 </form>

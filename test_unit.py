@@ -2032,3 +2032,21 @@ class AsaasIntegracaoTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CasoPatchParcialTest(unittest.TestCase):
+    def test_salvar_partes_preserva_cadastro(self):
+        gestao = mock.Mock()
+        gestao.obter_caso.return_value = {
+            "titulo": "Caso existente", "responsavel": "Ana", "acao": "Cobrança",
+            "foro": "São Paulo", "autor": "Autor", "reu": "Réu",
+            "advogados": "Advogado", "desfecho": "acordo",
+        }
+        gestao.atualizar_caso.return_value = {"id": "caso-1"}
+        app = server._AutenticacaoBearer(mock.Mock(), mock.Mock(), gestao=gestao)
+        receive = mock.AsyncMock(return_value={"type": "http.request", "body": b'{"autor":"Novo autor"}', "more_body": False})
+        asyncio.run(app._caso_detalhe({"method": "PATCH"}, receive, mock.AsyncMock(), "caso-1"))
+        campos = gestao.atualizar_caso.call_args.kwargs
+        self.assertEqual(campos["autor"], "Novo autor")
+        for campo in ("titulo", "responsavel", "acao", "foro", "reu", "advogados", "desfecho"):
+            self.assertEqual(campos[campo], gestao.obter_caso.return_value[campo])
