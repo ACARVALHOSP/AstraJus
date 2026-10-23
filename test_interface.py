@@ -105,6 +105,24 @@ class InterfaceTest(unittest.TestCase):
     def choose(self, value):
         self.page.locator(f"#modal-edicao-pendente [data-escolha-edicao={value}]").click()
 
+    def test_partes_automaticas_djen_com_tags_oab_e_polos(self):
+        self.open_case()
+        self.context.route("**/casos/caso-1/publicacoes", lambda route: route.fulfill(json={"publicacoes": [{"dados": {
+            "destinatarios": [{"nome": "Autora DJen", "polo": "A"}, {"nome": "Réu DJen", "polo": "P"}, {"nome": "Sem polo"}],
+            "destinatarioadvogados": [{"nome": "Ana Silva", "numero_oab": "12345", "uf_oab": "sp"}, {"nome": "Ana Silva", "numero_oab": "12345", "uf_oab": "sp"}]
+        }}]}))
+        self.page.locator("#caso-subaba-partes-botao").click()
+        self.page.wait_for_function("document.getElementById('status-partes-djen').textContent.includes('Preenchido')")
+        self.assertIn("Autora DJen", self.page.evaluate("_lerCamposPartes('autor')"))
+        self.assertEqual(self.page.evaluate("_lerCamposPartes('reu')"), ["Réu DJen"])
+        self.assertNotIn("Sem polo", self.page.evaluate("_lerCamposPartes('autor')"))
+        tags = self.page.locator("#campos-caso-advogados .cds--tag")
+        self.assertEqual(tags.all_text_contents(), ["Ana Silva — OAB 12345/SP"])
+        self.page.locator("#form-caso-partes button[type=submit]").click()
+        self.page.wait_for_function("document.getElementById('resultado-caso-partes').textContent.includes('Partes atualizadas')")
+        self.assertEqual(self.case["advogados"], "Ana Silva — OAB 12345/SP")
+        self.assertFalse(self.errors)
+
     def test_token_invalido_permanece_no_acesso_e_nao_e_lembrado(self):
         self.page.locator("#token").fill("invalido")
         self.page.locator("#lembrar-token").check()

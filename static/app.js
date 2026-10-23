@@ -4978,7 +4978,11 @@ document.getElementById("form-vinculos-adicionar").addEventListener("submit", as
 
 document.getElementById("caso-voltar").addEventListener("click", voltarParaCasos);
 document.getElementById("caso-subaba-cadastro-botao").addEventListener("click", () => _selecionarSubabaCaso("cadastro"));
-document.getElementById("caso-subaba-partes-botao").addEventListener("click", () => _selecionarSubabaCaso("partes"));
+document.getElementById("caso-subaba-partes-botao").addEventListener("click", () => {
+  _selecionarSubabaCaso("partes");
+  const casoId = document.getElementById("form-caso-partes").dataset.casoId;
+  if (casoId) _buscarPartesDJEN(casoId);
+});
 document.getElementById("caso-subaba-atividades-botao").addEventListener("click", () => _selecionarSubabaCaso("atividades"));
 document.getElementById("caso-subaba-publicacoes-botao").addEventListener("click", () => {
   _selecionarSubabaCaso("publicacoes");
@@ -5043,6 +5047,7 @@ registrarSalvamento(document.getElementById("form-caso-editar"), async (evento) 
 
 // O cadastro persiste listas de nomes separadas por vírgula; a interface edita um nome por campo.
 function _lerCamposPartes(tipo) {
+  if (tipo === "advogados") return document.getElementById("editar-caso-advogados").value.split(",").map((nome) => nome.trim()).filter(Boolean);
   return Array.from(document.getElementById(`campos-caso-${tipo}`).querySelectorAll("input"))
     .map((campo) => campo.value.trim()).filter(Boolean);
 }
@@ -5050,9 +5055,18 @@ function _lerCamposPartes(tipo) {
 function _preencherCamposPartes(tipo, nomes) {
   const container = document.getElementById(`campos-caso-${tipo}`);
   const primeiro = document.getElementById(`editar-caso-${tipo}`);
-  const rotulo = { autor: "Autor", reu: "Réu", advogados: "Advogado" }[tipo];
+  const rotulo = { autor: "Parte do polo ativo", reu: "Parte do polo passivo" }[tipo];
   const unicos = [...new Set(nomes.map((nome) => nome.trim()).filter(Boolean))];
   limpar(container);
+  if (tipo === "advogados") {
+    primeiro.value = unicos.join(", ");
+    container.appendChild(primeiro);
+    for (const nome of unicos) {
+      container.appendChild(el("span", { class: "cds--tag cds--tag--blue", role: "listitem", texto: nome }));
+    }
+    if (!unicos.length) container.appendChild(el("span", { class: "campo-ajuda", texto: "Nenhum advogado informado." }));
+    return;
+  }
   primeiro.value = unicos.shift() || "";
   container.appendChild(primeiro);
   for (const [indice, nome] of unicos.entries()) {
@@ -5072,8 +5086,9 @@ document.getElementById("btn-buscar-partes").addEventListener("click", () => {
 async function _buscarPartesDJEN(casoId) {
   const statusEl = document.getElementById("status-partes-djen");
   const botao = document.getElementById("btn-buscar-partes");
+  if (botao.disabled) return;
   limpar(statusEl);
-  statusEl.appendChild(notificacao("info", "Buscando…"));
+  statusEl.appendChild(notificacao("info", "Consultando o DJen…"));
   botao.disabled = true;
 
   try {
@@ -5103,6 +5118,8 @@ async function _buscarPartesDJEN(casoId) {
       }
     }
 
+    if (document.getElementById("form-caso-partes").dataset.casoId !== casoId || !_casoDetalheAtual) return;
+
     if (!destinatarios.length && !advogados.length) {
       mostrarAviso(statusEl, "Nenhuma parte encontrada no DJEN para este caso.");
       return;
@@ -5111,17 +5128,21 @@ async function _buscarPartesDJEN(casoId) {
     // Deduplica por nome
     const _nomes = (arr) => [...new Set(arr.map((x) => (x.nome || "").trim()).filter(Boolean))];
 
-    const ativos  = _nomes(destinatarios.filter((d) => /AT(IVO)?$/i.test(d.polo || "")));
-    const passivos = _nomes(destinatarios.filter((d) => /PA(SSIVO)?$/i.test(d.polo || "")));
-    // Polo desconhecido: junta em ativos se não tiver nenhum dos lados ainda
-    if (!ativos.length && !passivos.length) {
-      ativos.push(..._nomes(destinatarios));
-    }
-    const advsNomes = _nomes(advogados);
+    const ativos  = _nomes(destinatarios.filter((d) => /^(A|AT|ATIVO)$/i.test(d.polo || "")));
+    const passivos = _nomes(destinatarios.filter((d) => /^(P|PA|PASSIVO)$/i.test(d.polo || "")));
+    const advsNomes = [...new Set(advogados.map((registro) => {
+      const advogado = registro.advogado || registro;
+      const nome = (advogado.nome || "").trim();
+      if (!nome) return "";
+      const numero = String(advogado.numero_oab || "").trim();
+      const uf = String(advogado.uf_oab || "").trim().toUpperCase();
+      return numero ? `${nome} — OAB ${numero}${uf ? `/${uf}` : ""}` : nome;
+    }).filter(Boolean))];
 
     // Mantém as edições locais e acrescenta cada nome encontrado em seu próprio campo.
     for (const [tipo, nomes] of [["autor", ativos], ["reu", passivos], ["advogados", advsNomes]]) {
-      _preencherCamposPartes(tipo, [..._lerCamposPartes(tipo), ...nomes]);
+      const atuais = _lerCamposPartes(tipo).filter((nome) => tipo !== "advogados" || !nomes.some((novo) => novo.startsWith(`${nome} — OAB `)));
+      _preencherCamposPartes(tipo, [...atuais, ...nomes]);
     }
 
     atualizarIndicadorEdicao(document.getElementById("form-caso-partes"));

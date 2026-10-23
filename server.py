@@ -3781,6 +3781,12 @@ class _AutenticacaoBearer:
             except (ValueError, UnicodeDecodeError):
                 await _json(send, 400, _erro("JSON inválido."))
                 return
+            atual = self.gestao.obter_caso(caso_id)
+            if atual is None:
+                await _json(send, 404, _erro("Caso não encontrado."))
+                return
+            # PATCH de Partes e Cadastro envia somente os campos da respectiva aba.
+            dados = {**atual, **dados}
             numeros = dados.get("numeros_processo")
             caso = self.gestao.atualizar_caso(
                 caso_id,
