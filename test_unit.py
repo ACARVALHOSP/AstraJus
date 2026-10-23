@@ -22,6 +22,7 @@ import httpx
 # sem atraso artificial nos testes; o tempo mínimo do cadastro tem teste próprio
 os.environ.setdefault("CNJ_CADASTRO_TEMPO_MINIMO_S", "0")
 import asaas_integracao
+import db
 import server
 
 
@@ -2027,6 +2028,105 @@ class AsaasIntegracaoTest(unittest.TestCase):
                 return await asaas_integracao.listar_cobrancas(cliente, "https://api-sandbox.asaas.com/v3", "chave")
         with self.assertRaises(asaas_integracao.ErroAsaas):
             _rodar(ir())
+
+
+class CapaProcessoTest(unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        self.tmp = Path(tempfile.mkdtemp()) / "teste.db"
+        self.gestao = db.RegistroClientesCasos(self.tmp)
+        self.agora = lambda: datetime(2026, 1, 1)
+        cliente = self.gestao.criar_cliente("Cliente Teste", None, None, self.agora)
+        self.caso = self.gestao.criar_caso(cliente["id"], "Caso Teste", None, ["10063142720238260005"], self.agora)
+        self.numero = "10063142720238260005"
+
+    def test_sem_capa_salva_retorna_none(self):
+        self.assertIsNone(self.gestao.obter_capa_processo(self.caso["id"], self.numero))
+
+    def test_salvar_e_obter_campos_automaticos_e_manuais(self):
+        self.gestao.salvar_capa_processo(
+            self.caso["id"], self.numero, self.agora,
+            tribunal="TJSP", classe="Cobrança", assuntos=["Dano Moral", "Dano Material"],
+            grau="G1", nivel_sigilo=0,
+        )
+        capa = self.gestao.salvar_capa_processo(
+            self.caso["id"], self.numero, self.agora, valor_causa=15000.50, fase="conhecimento",
+        )
+        self.assertEqual(capa["tribunal"], "TJSP")  # campo automático preservado no segundo upsert
+        self.assertEqual(capa["assuntos"], ["Dano Moral", "Dano Material"])
+        self.assertEqual(capa["valor_causa"], 15000.50)
+        self.assertEqual(capa["fase"], "conhecimento")
+        self.assertIsNone(capa["magistrado"])  # nunca setado, fica None
+
+        lido = self.gestao.obter_capa_processo(self.caso["id"], self.numero)
+        self.assertEqual(lido, capa)
+
+    def test_campo_invalido_recusado(self):
+        with self.assertRaises(ValueError):
+            self.gestao.salvar_capa_processo(self.caso["id"], self.numero, self.agora, comarca="SP")
+
+
+class CapaProcessoHttpTest(unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        self.tmp = Path(tempfile.mkdtemp()) / "teste.db"
+        self.gestao = db.RegistroClientesCasos(self.tmp)
+        self.agora = lambda: datetime(2026, 1, 1)
+        cliente = self.gestao.criar_cliente("Cliente Teste", None, None, self.agora)
+        self.caso = self.gestao.criar_caso(cliente["id"], "Caso Teste", None, ["10063142720238260005"], self.agora)
+        self.numero = "10063142720238260005"
+        self.mw = server._AutenticacaoBearer(app=None, registro=None, gestao=self.gestao)
+
+    def _chamar(self, metodo: str, acao: str | None, corpo: dict | None = None):
+        enviados = []
+
+        async def send(mensagem):
+            enviados.append(mensagem)
+
+        async def receive():
+            return {"type": "http.request", "body": json.dumps(corpo or {}).encode("utf-8"), "more_body": False}
+
+        scope = {"method": metodo}
+        _rodar(self.mw._capa_do_processo(scope, receive, send, self.caso["id"], self.numero, acao))
+        inicio = next(m for m in enviados if m["type"] == "http.response.start")
+        corpo_bytes = b"".join(m.get("body", b"") for m in enviados if m["type"] == "http.response.body")
+        return inicio["status"], json.loads(corpo_bytes or b"{}")
+
+    def test_get_sem_capa_devolve_campos_vazios(self):
+        status, resultado = self._chamar("GET", None)
+        self.assertEqual(status, 200)
+        self.assertIsNone(resultado["tribunal"])
+        self.assertIsNone(resultado["valor_causa"])
+
+    def test_patch_so_aceita_campos_manuais(self):
+        status, resultado = self._chamar(
+            "PATCH", None, {"valor_causa": 500.0, "tribunal": "TJSP"},  # tribunal não é manual, ignorado
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(resultado["valor_causa"], 500.0)
+        self.assertIsNone(resultado["tribunal"])
+
+    def test_atualizar_sem_tribunal_e_erro(self):
+        status, resultado = self._chamar("POST", "atualizar", {})
+        self.assertEqual(status, 400)
+        self.assertTrue(resultado["erro"])
+
+    def test_atualizar_preenche_capa_a_partir_da_consulta_unificada(self):
+        resultado_unificado = {
+            "instancias": [{
+                "tribunal": "TJSP", "classe": "Cobrança", "assuntos": ["Dano Moral"],
+                "grau": "G1", "dataAjuizamento": "20230101000000", "nivel_sigilo": 0,
+            }],
+            "partes": [{"nome": "FULANO", "polo": "A"}, {"nome": "SICRANO", "polo": "P"}],
+            "advogados": [{"nome": "ADV", "numero_oab": "1", "uf_oab": "SP"}],
+        }
+        with mock.patch.object(server, "consultar_processo_unificado", return_value=resultado_unificado):
+            status, resultado = self._chamar("POST", "atualizar", {"tribunal": "tjsp"})
+        self.assertEqual(status, 200)
+        self.assertEqual(resultado["tribunal"], "TJSP")
+        self.assertEqual(resultado["nome_processo"], "FULANO x SICRANO")
+        self.assertEqual(resultado["partes"], resultado_unificado["partes"])
+        self.assertEqual(resultado["advogados"], resultado_unificado["advogados"])
 
 
 if __name__ == "__main__":

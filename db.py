@@ -214,6 +214,35 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 CHECK (caso_id != caso_vinculado_id)
             );
 
+            -- Capa de cada processo vinculado a um caso: campos auto-preenchíveis a partir de
+            -- consultar_processo_unificado (tribunal, classe, assuntos, grau, data_distribuicao,
+            -- nivel_sigilo, nome_processo) e campos sem fonte pública, editáveis manualmente
+            -- (area_direito, magistrado, tipo_justica, cidade, uf, valor_causa, fase,
+            -- status_processo). Comarca não existe aqui de propósito - casos.foro já cobre isso.
+            CREATE TABLE IF NOT EXISTS caso_processo_capa (
+                caso_id TEXT NOT NULL,
+                numero_processo TEXT NOT NULL,
+                tribunal TEXT,
+                classe TEXT,
+                assuntos TEXT,
+                grau TEXT,
+                data_distribuicao TEXT,
+                nivel_sigilo INTEGER,
+                nome_processo TEXT,
+                area_direito TEXT,
+                magistrado TEXT,
+                tipo_justica TEXT,
+                cidade TEXT,
+                uf TEXT,
+                valor_causa REAL,
+                fase TEXT,
+                status_processo TEXT,
+                atualizado_em TEXT,
+                PRIMARY KEY (caso_id, numero_processo),
+                FOREIGN KEY (caso_id, numero_processo)
+                    REFERENCES caso_processos (caso_id, numero_processo) ON DELETE CASCADE
+            );
+
             CREATE INDEX IF NOT EXISTS idx_caso_processos_numero ON caso_processos (numero_processo);
             CREATE INDEX IF NOT EXISTS idx_casos_cliente ON casos (cliente_id);
             CREATE INDEX IF NOT EXISTS idx_caso_eventos_caso ON caso_eventos (caso_id);
@@ -742,6 +771,48 @@ class RegistroClientesCasos:
                 "INSERT OR IGNORE INTO caso_processos (caso_id, numero_processo) VALUES (?, ?)",
                 (caso_id, numero_processo),
             )
+
+    _CAMPOS_CAPA = (
+        "tribunal", "classe", "assuntos", "grau", "data_distribuicao", "nivel_sigilo", "nome_processo",
+        "area_direito", "magistrado", "tipo_justica", "cidade", "uf", "valor_causa", "fase", "status_processo",
+    )
+
+    def obter_capa_processo(self, caso_id: str, numero_processo: str) -> dict | None:
+        with _abrir(self.caminho) as conexao:
+            linha = conexao.execute(
+                f"SELECT {', '.join(self._CAMPOS_CAPA)}, atualizado_em FROM caso_processo_capa "
+                "WHERE caso_id = ? AND numero_processo = ?",
+                (caso_id, numero_processo),
+            ).fetchone()
+            if not linha:
+                return None
+            capa = dict(zip((*self._CAMPOS_CAPA, "atualizado_em"), linha))
+            capa["assuntos"] = json.loads(capa["assuntos"]) if capa["assuntos"] else []
+            return capa
+
+    def salvar_capa_processo(self, caso_id: str, numero_processo: str, agora, **campos) -> dict:
+        """Upsert parcial: só grava os campos passados em `campos` (os demais mantêm o valor
+        atual, ou ficam NULL na primeira gravação). Usado tanto pelo preenchimento automático
+        (DataJud/DJEN, via consultar_processo_unificado) quanto pela edição manual."""
+        invalidos = set(campos) - set(self._CAMPOS_CAPA)
+        if invalidos:
+            raise ValueError(f"Campos inválidos para capa de processo: {sorted(invalidos)}")
+        if campos.get("assuntos") is not None:
+            campos["assuntos"] = json.dumps(campos["assuntos"])
+        atualizado_em = agora().isoformat()
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute(
+                "INSERT INTO caso_processo_capa (caso_id, numero_processo, atualizado_em) VALUES (?, ?, ?) "
+                "ON CONFLICT (caso_id, numero_processo) DO UPDATE SET atualizado_em = excluded.atualizado_em",
+                (caso_id, numero_processo, atualizado_em),
+            )
+            if campos:
+                sets = ", ".join(f"{campo} = ?" for campo in campos)
+                conexao.execute(
+                    f"UPDATE caso_processo_capa SET {sets} WHERE caso_id = ? AND numero_processo = ?",
+                    (*campos.values(), caso_id, numero_processo),
+                )
+        return self.obter_capa_processo(caso_id, numero_processo)
 
     def obter_caso(self, caso_id: str) -> dict | None:
         with _abrir(self.caminho) as conexao:
