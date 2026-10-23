@@ -535,6 +535,32 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
   #form-contato-cadastro .token-acoes > .cds--btn { inline-size: 100%; max-inline-size: none; }
 }
 
+/* Tabela completa escolhida no live: densidade 0.6. */
+.pub-oab-grade { min-inline-size: 0; color: var(--cds-text-primary); }
+.pub-oab-tabela-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; padding: 0.6rem; background: var(--cds-layer); font-size: var(--fonte-base); line-height: 1.5; }
+.pub-oab-tabela-toolbar strong { font-weight: 600; }
+.pub-oab-tabela-contagem { color: var(--cds-text-secondary); margin-inline-end: auto; }
+.pub-oab-colunas { position: relative; margin-inline-start: auto; }
+.pub-oab-colunas summary { padding: 0.75rem 1rem; color: var(--cds-link-primary); cursor: pointer; list-style: none; }
+.pub-oab-colunas summary:hover { background: var(--cds-layer-hover); }
+.pub-oab-colunas fieldset { position: absolute; inset-inline-end: 0; inset-block-start: 100%; z-index: 100; inline-size: min(18rem, 80vw); padding: 1rem; border: 0; background: var(--cds-layer); box-shadow: 0 4px 8px rgba(0,0,0,.15); }
+.pub-oab-colunas legend { font-weight: 600; }
+.pub-oab-coluna-opcao { display: flex; gap: 0.75rem; align-items: center; min-block-size: 2.75rem; cursor: pointer; }
+.pub-oab-grade input[type=checkbox] { accent-color: var(--cds-interactive); inline-size: 1rem; block-size: 1rem; }
+.pub-oab-grade :is(summary,input,button):focus-visible, .pub-oab-rolagem:focus-visible { outline: 2px solid var(--cds-focus); outline-offset: -2px; }
+.pub-oab-grade .pub-oab-rolagem { border: 0; border-radius: 0; margin: 0; overflow-x: auto; scrollbar-color: var(--cds-border-strong) var(--cds-layer); }
+.pub-oab-grade .pub-oab-tabela { display: table; min-width: 70rem; width: 100%; table-layout: auto; border-collapse: collapse; font-size: var(--fonte-base); line-height: 1.5; }
+.pub-oab-grade .pub-oab-tabela--reduzida { min-width: 46rem; }
+.pub-oab-grade .pub-oab-tabela thead { display: table-header-group; }
+.pub-oab-grade .pub-oab-tabela tbody { display: table-row-group; }
+.pub-oab-grade .pub-oab-tabela tr { display: table-row; border: 0; margin: 0; padding: 0; }
+.pub-oab-grade .pub-oab-tabela :is(th,td) { display: table-cell; position: static; width: auto; padding: 0.6rem; text-align: start; vertical-align: top; border-bottom: 1px solid var(--cds-border-subtle); overflow-wrap: normal; }
+.pub-oab-grade .pub-oab-tabela th { background: var(--cds-layer); color: var(--cds-text-primary); text-transform: none; font-size: var(--fonte-base); font-weight: 600; }
+.pub-oab-grade .pub-oab-tabela td::before { display: none; }
+.pub-oab-grade .pub-oab-tabela tbody tr:hover { background: var(--cds-layer-hover); }
+.pub-oab-grade .pub-oab-tabela :is(th,td):first-child { width: 3rem; }
+.pub-oab-grade .campo-ajuda { font-size: var(--fonte-ajuda); line-height: 1.5; }
+
 /* Fluxos no documento: sem sobreposição, fundo bloqueado ou foco preso. */
 .fluxo-pagina { display: none; margin-block: 0 2rem; scroll-margin-top: 4rem; }
 .fluxo-pagina.is-visible { display: block; }
@@ -1802,5 +1828,6 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <script src="/static/carbon/flatpickr-l10n-pt.js"></script>
 <script src="/static/carbon/flatpickr-rangePlugin.js"></script>
 <script src="/static/app.js" defer></script>
+
 </body>
 </html>

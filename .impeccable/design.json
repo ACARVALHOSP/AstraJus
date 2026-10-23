@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-23T00:00:00-03:00",
+  "title": "Design System: AstraJus",
+  "extensions": {},
+  "components": [
+    {"name":"Ação primária","kind":"button","description":"Ação principal Carbon.","html":"<button class=\"ds-primary\">Consultar</button>","css":".ds-primary{font:inherit;background:var(--cds-button-primary,#0f62fe);color:var(--cds-text-on-color,#fff);border:0;padding:1rem 3rem 1rem 1rem;cursor:pointer}.ds-primary:hover{background:var(--cds-button-primary-hover,#0353e9)}.ds-primary:focus-visible{outline:2px solid var(--cds-focus,#0f62fe);outline-offset:2px}"},
+    {"name":"Ação ghost","kind":"button","description":"Ação secundária da barra de ferramentas.","html":"<button class=\"ds-ghost\">Colunas</button>","css":".ds-ghost{font:inherit;background:transparent;color:var(--cds-link-primary,#0f62fe);border:0;padding:0.75rem 1rem;cursor:pointer}.ds-ghost:hover{background:var(--cds-layer-hover,#e8e8e8)}.ds-ghost:focus-visible{outline:2px solid var(--cds-focus,#0f62fe);outline-offset:-2px}"},
+    {"name":"Campo","kind":"input","description":"Campo rotulado.","html":"<label class=\"ds-field\">Processo<input placeholder=\"Número CNJ\"></label>","css":".ds-field{display:grid;gap:0.5rem;color:var(--cds-text-secondary,#525252);font:inherit}.ds-field input{font:inherit;background:var(--cds-field,#f4f4f4);color:var(--cds-text-primary,#161616);border:0;border-bottom:1px solid var(--cds-border-strong,#8d8d8d);padding:0.75rem 1rem}.ds-field input:focus-visible{outline:2px solid var(--cds-focus,#0f62fe)}"},
+    {"name":"Navegação","kind":"nav","description":"Destino ativo da navegação lateral.","html":"<button class=\"ds-nav\" aria-current=\"page\">Publicações monitoradas</button>","css":".ds-nav{font:inherit;text-align:start;border:0;background:var(--cds-background-selected,#e0e0e0);color:var(--cds-text-primary,#161616);padding:0.75rem 1rem;cursor:pointer}.ds-nav:hover{background:var(--cds-background-hover,#e8e8e8)}.ds-nav:focus-visible{outline:2px solid var(--cds-focus,#0f62fe);outline-offset:-2px}"},
+    {"name":"Superfície","kind":"card","description":"Contêiner plano para conteúdo.","html":"<section class=\"ds-surface\"><h3>Publicações</h3><p>Dados organizados para leitura.</p></section>","css":".ds-surface{background:var(--cds-layer,#f4f4f4);color:var(--cds-text-primary,#161616);padding:1rem}.ds-surface h3{margin:0 0 0.5rem;font:inherit;font-weight:600}.ds-surface p{margin:0;font:inherit}"}
+  ],
+  "narrative": {
+    "overview": "Carbon white, com interface sóbria e densa para trabalho jurídico. Preservar a identidade existente, conforme escolha do usuário. Hierarquia, leitura de dados e ações previsíveis orientam a composição.",
+    "dos": ["Preservar Carbon white e português brasileiro.", "Manter foco visível, navegação por teclado e rótulos associados aos controles."],
+    "donts": ["Introduzir frameworks CSS externos ou identidade visual concorrente."]
+  }
+}
