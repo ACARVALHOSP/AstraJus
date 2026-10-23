@@ -2045,6 +2045,57 @@ class AsaasIntegracaoTest(unittest.TestCase):
             _rodar(ir())
 
 
+class PublicacaoCadastroInlineTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        caminho = Path(self.tmp.name) / "teste.db"
+        self.gestao = db.RegistroClientesCasos(caminho)
+        self.publicacoes = db.RegistroPublicacoesOAB(caminho)
+        self.agora = lambda: datetime(2026, 1, 1)
+        self.cliente = self.gestao.criar_cliente("Cliente Árvore", None, None, self.agora)
+        self.numero = "10063142720238260005"
+        self.dados = {"siglaTribunal": "tjsp", "nomeClasse": "Procedimento Comum", "nomeOrgao": "Vara Cível",
+            "destinatarios": [{"nome": "Maria Silva", "polo": "A"}, {"nome": "Banco Exemplo", "polo": "P"}],
+            "destinatarioadvogados": [{"nome": "Ana", "numero_oab": "123", "uf_oab": "SP"}], "texto": "Texto ORIGINAL"}
+        self.publicacoes.registrar("pub-inline", None, None, self.numero, self.dados, "nao_tratada", None, self.agora)
+
+    def test_cadastro_preenche_dados_capa_e_vincula_publicacao(self):
+        publicacao = self.publicacoes.obter("pub-inline")
+        caso, erro = server._criar_caso_de_publicacao(self.gestao, self.publicacoes, publicacao,
+            {"cliente_id": self.cliente["id"], "responsavel": "Ana"})
+        self.assertIsNone(erro)
+        self.assertEqual(caso["titulo"], "Maria Silva X Banco Exemplo")
+        self.assertEqual(caso["cliente_id"], self.cliente["id"])
+        self.assertEqual(caso["responsavel"], "Ana")
+        self.assertEqual(caso["autor"], "Maria Silva")
+        self.assertEqual(caso["reu"], "Banco Exemplo")
+        self.assertEqual(caso["acao"], "Procedimento Comum")
+        self.assertEqual(caso["foro"], "Vara Cível")
+        capa = self.gestao.obter_capa_processo(caso["id"], self.numero)
+        self.assertEqual(capa["tribunal"], "TJSP")
+        self.assertEqual(capa["partes"], self.dados["destinatarios"])
+        self.assertEqual(capa["advogados"], self.dados["destinatarioadvogados"])
+        self.assertIsNone(capa["data_distribuicao"])
+        pub = self.publicacoes.obter("pub-inline")
+        self.assertEqual(pub["caso_id"], caso["id"])
+        self.assertEqual(pub["status"], "tratada")
+        self.assertEqual(pub["dados"]["texto"], "Texto ORIGINAL")
+        for termo in ("1006314-27.2023.8.26.0005", "Maria", "Banco", "arvore"):
+            self.assertEqual(server._consultar_casos_para_vinculo(self.gestao, termo)[0]["id"], caso["id"])
+        self.assertEqual(server._consultar_casos_para_vinculo(self.gestao, "inexistente"), [])
+        self.gestao.salvar_capa_processo(caso["id"], self.numero, agora=self.agora,
+            partes=[{"nome": "Parte Só Na Capa", "polo": "P"}])
+        self.assertEqual(server._consultar_casos_para_vinculo(self.gestao, "so na capa")[0]["id"], caso["id"])
+
+    def test_cliente_inexistente_nao_cria_processo(self):
+        caso, erro = server._criar_caso_de_publicacao(self.gestao, self.publicacoes,
+            self.publicacoes.obter("pub-inline"), {"cliente_id": "inexistente", "responsavel": "Ana"})
+        self.assertIsNone(caso)
+        self.assertTrue(erro["erro"])
+        self.assertEqual(self.gestao.listar_casos(), [])
+
+
 class CapaProcessoTest(unittest.TestCase):
     def setUp(self):
         super().setUp()
