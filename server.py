@@ -670,20 +670,20 @@ def _extrair_publicacao_djen(item: dict) -> dict:
 
 @mcp.tool()
 async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> dict:
-    """Combina DataJud (capa + movimentos) e DJEN (partes, advogados e publicações) do mesmo
-    processo em um único esquema JSON, para não precisar chamar as duas tools separadamente.
+    """Combina DataJud (capa + movimentos) e DJEN (partes e advogados) do mesmo processo em um
+    único esquema JSON, para não precisar chamar as duas tools separadamente.
 
     Parâmetros: iguais a consultar_processo_datajud (tribunal, numero_processo).
 
     Retorno: dicionário com "numero_processo", "encontrado_datajud" (bool), "instancias" (lista de
     capa+movimentos por grau, igual a "processos" de consultar_processo_datajud), "partes"
-    (nome e polo, deduplicadas por nome), "advogados" (nome, numero_oab e uf_oab, deduplicados
-    por OAB) e "publicacoes" (itens do DJEN sem o campo "texto" completo).
+    (nome e polo, deduplicadas por nome) e "advogados" (nome, numero_oab e uf_oab, deduplicados
+    por OAB). Para o texto das publicações, use consultar_publicacoes_djen separadamente.
 
     Limitações:
-    - "partes", "advogados" e "publicacoes" vêm do DJEN e só existem se já houve ao menos uma
-      publicação desse processo; um processo sem publicações retorna essas listas vazias, mesmo
-      que existam partes reais (DataJud não expõe nomes de partes — ver consultar_processo_datajud).
+    - "partes" e "advogados" vêm do DJEN e só existem se já houve ao menos uma publicação desse
+      processo; um processo sem publicações retorna essas listas vazias, mesmo que existam partes
+      reais (DataJud não expõe nomes de partes — ver consultar_processo_datajud).
     - Erros de qualquer uma das duas fontes (DataJud ou DJEN) interrompem a combinação e são
       retornados como "erro", mesmo que a outra fonte tenha respondido com sucesso.
     """
@@ -699,7 +699,6 @@ async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> d
 
         partes: dict[str, dict] = {}
         advogados: dict[str, dict] = {}
-        publicacoes = []
         for item in resultado_djen.get("itens") or []:
             for parte in item.get("destinatarios") or []:
                 chave = (parte.get("nome") or "").strip().upper()
@@ -709,7 +708,6 @@ async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> d
                 chave = advogado.get("numero_oab") or advogado.get("nome")
                 if chave:
                     advogados[chave] = advogado
-            publicacoes.append({k: v for k, v in item.items() if k != "texto"})
 
         return {
             "numero_processo": _so_digitos(numero_processo),
@@ -717,7 +715,6 @@ async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> d
             "instancias": resultado_datajud.get("processos") or [],
             "partes": list(partes.values()),
             "advogados": list(advogados.values()),
-            "publicacoes": publicacoes,
         }
     except Exception as exc:
         log.exception("Falha inesperada em consultar_processo_unificado")
@@ -3236,6 +3233,15 @@ class _AutenticacaoBearer:
             vinculado_id = partes[1].strip("/") if len(partes) > 1 else ""
             await self._vinculos_do_caso(scope, receive, send, caso_id, vinculado_id or None)
             return
+        if caminho.startswith("/casos/") and "/processos/" in caminho and "/capa" in caminho \
+                and self.gestao is not None:
+            resto = caminho[len("/casos/"):]
+            caso_id, _, resto2 = resto.partition("/processos/")
+            numero_processo, _, acao = resto2.partition("/capa")
+            await self._capa_do_processo(
+                scope, receive, send, caso_id.rstrip("/"), numero_processo.rstrip("/"), acao.strip("/") or None,
+            )
+            return
         if caminho.startswith("/casos/") and self.gestao is not None:
             await self._caso_detalhe(scope, receive, send, caminho[len("/casos/"):])
             return
@@ -3937,6 +3943,83 @@ class _AutenticacaoBearer:
         if metodo == "DELETE":
             excluiu = self.gestao.excluir_atividade(caso_id, aid)
             await _json(send, 200 if excluiu else 404, {"excluido": excluiu})
+            return
+        await _responder(send, 405, b"Metodo nao permitido")
+
+    _CAMPOS_CAPA_MANUAIS = (
+        "area_direito", "magistrado", "tipo_justica", "cidade", "uf", "valor_causa", "fase", "status_processo",
+    )
+
+    async def _capa_do_processo(
+        self, scope, receive, send, caso_id: str, numero_processo: str, acao: str | None,
+    ):
+        """GET /casos/<id>/processos/<numero>/capa
+        PATCH /casos/<id>/processos/<numero>/capa (campos manuais)
+        POST /casos/<id>/processos/<numero>/capa/atualizar {tribunal} (auto-preenche via
+        consultar_processo_unificado: capa+movimentos do DataJud, partes/advogados do DJEN)"""
+        metodo = scope.get("method")
+        if not caso_id or not numero_processo:
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        numero = _so_digitos(numero_processo)
+
+        if acao == "atualizar":
+            if metodo != "POST":
+                await _responder(send, 405, b"Metodo nao permitido")
+                return
+            corpo = await _ler_corpo(receive)
+            try:
+                dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+            except (ValueError, UnicodeDecodeError):
+                await _json(send, 400, _erro("JSON inválido."))
+                return
+            tribunal = (dados.get("tribunal") or "").strip().lower()
+            if not tribunal:
+                await _json(send, 400, _erro("Informe o tribunal."))
+                return
+            resultado = await consultar_processo_unificado(tribunal=tribunal, numero_processo=numero)
+            if resultado.get("erro"):
+                await _json(send, 502, resultado)
+                return
+            instancia = (resultado.get("instancias") or [{}])[0]
+            nome_processo = None
+            if resultado.get("partes"):
+                autores = [p["nome"] for p in resultado["partes"] if p.get("polo") == "A"]
+                reus = [p["nome"] for p in resultado["partes"] if p.get("polo") == "P"]
+                if autores or reus:
+                    nome_processo = " x ".join(filter(None, [" / ".join(autores), " / ".join(reus)]))
+            capa = self.gestao.salvar_capa_processo(
+                caso_id, numero, agora=lambda: datetime.now(timezone.utc),
+                tribunal=instancia.get("tribunal"), classe=instancia.get("classe"),
+                assuntos=instancia.get("assuntos"), grau=instancia.get("grau"),
+                data_distribuicao=instancia.get("dataAjuizamento"), nivel_sigilo=instancia.get("nivel_sigilo"),
+                **({"nome_processo": nome_processo} if nome_processo else {}),
+            )
+            await _json(send, 200, {**capa, "partes": resultado.get("partes") or [], "advogados": resultado.get("advogados") or []})
+            return
+
+        if acao:
+            await _responder(send, 404, b"Nao encontrado")
+            return
+
+        if metodo == "GET":
+            capa = self.gestao.obter_capa_processo(caso_id, numero) or {campo: None for campo in (
+                *self.gestao._CAMPOS_CAPA, "atualizado_em"
+            )}
+            await _json(send, 200, capa)
+            return
+        if metodo == "PATCH":
+            corpo = await _ler_corpo(receive)
+            try:
+                dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+            except (ValueError, UnicodeDecodeError):
+                await _json(send, 400, _erro("JSON inválido."))
+                return
+            campos = {k: v for k, v in dados.items() if k in self._CAMPOS_CAPA_MANUAIS}
+            capa = self.gestao.salvar_capa_processo(
+                caso_id, numero, agora=lambda: datetime.now(timezone.utc), **campos,
+            )
+            await _json(send, 200, capa)
             return
         await _responder(send, 405, b"Metodo nao permitido")
 

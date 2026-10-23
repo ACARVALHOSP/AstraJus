@@ -4648,6 +4648,128 @@ async function _carregarPublicacoesCaso(casoId) {
   }
 }
 
+// ─── Capa do processo (DataJud + DJEN, via consultar_processo_unificado) ────
+
+const _CAMPOS_CAPA_MANUAIS = [
+  ["area_direito", "Área do direito"],
+  ["magistrado", "Magistrado"],
+  ["tipo_justica", "Tipo de justiça"],
+  ["cidade", "Cidade"],
+  ["uf", "UF"],
+  ["valor_causa", "Valor da causa"],
+  ["fase", "Fase"],
+  ["status_processo", "Status do processo"],
+];
+
+async function _carregarCapaProcessos(casoId) {
+  const lista = document.getElementById("lista-capa-processos");
+  limpar(lista);
+  let numeros;
+  try {
+    numeros = (await _buscarJson(`/casos/${casoId}`)).processos || [];
+  } catch (erro) {
+    mostrarErro(lista, erro.message);
+    return;
+  }
+  if (!numeros.length) {
+    lista.appendChild(notificacao("info", "Nenhum número de processo vinculado a este caso."));
+    return;
+  }
+  for (const numero of numeros) {
+    try {
+      const capa = await _buscarJson(`/casos/${casoId}/processos/${numero}/capa`);
+      lista.appendChild(_cardCapaProcesso(casoId, numero, capa));
+    } catch (erro) {
+      lista.appendChild(notificacao("error", `${numero}: ${erro.message}`));
+    }
+  }
+}
+
+async function _atualizarCapaProcessos(casoId) {
+  const statusEl = document.getElementById("capa-status");
+  limpar(statusEl);
+  const numeros = (await _buscarJson(`/casos/${casoId}`)).processos || [];
+  if (!numeros.length) {
+    mostrarAviso(statusEl, "Nenhum número de processo vinculado a este caso.");
+    return;
+  }
+  const botao = document.getElementById("btn-atualizar-capa");
+  botao.disabled = true;
+  statusEl.appendChild(notificacao("info", `Atualizando ${numeros.length} processo(s)…`));
+  const erros = [];
+  for (const numero of numeros) {
+    const tribunal = _siglaTribunal(numero);
+    if (!tribunal) { erros.push(`${numero}: não foi possível determinar o tribunal`); continue; }
+    try {
+      await _enviarJson(`/casos/${casoId}/processos/${numero}/capa/atualizar`, { tribunal }, "POST");
+    } catch (erro) {
+      erros.push(`${numero}: ${erro.message}`);
+    }
+  }
+  botao.disabled = false;
+  limpar(statusEl);
+  if (erros.length) mostrarAviso(statusEl, erros.join(" | "));
+  await _carregarCapaProcessos(casoId);
+}
+
+function _cardCapaProcesso(casoId, numero, capa) {
+  const autoCampos = [
+    ["Tribunal", capa.tribunal], ["Classe", capa.classe], ["Grau", capa.grau],
+    ["Assuntos", (capa.assuntos || []).join(", ")], ["Distribuição", capa.data_distribuicao],
+    ["Nível de sigilo", capa.nivel_sigilo], ["Nome do processo", capa.nome_processo],
+  ].filter(([, valor]) => valor !== null && valor !== undefined && valor !== "");
+
+  const blocoAuto = autoCampos.length
+    ? el("dl", { class: "capa-card-auto" }, autoCampos.flatMap(([rotulo, valor]) => [
+        el("dt", {}, [document.createTextNode(rotulo)]),
+        el("dd", {}, [document.createTextNode(String(valor))]),
+      ]))
+    : el("p", { class: "texto-auxiliar" }, [document.createTextNode(
+        "Sem dados automáticos ainda — clique em \"Atualizar capa\" para buscar no DataJud/DJEN.",
+      )]);
+
+  const campos = {};
+  const inputs = _CAMPOS_CAPA_MANUAIS.map(([chave, rotulo]) => {
+    const input = el("input", {
+      class: "cds--text-input", type: chave === "valor_causa" ? "number" : "text",
+      placeholder: rotulo, value: capa[chave] ?? "",
+    });
+    campos[chave] = input;
+    return el("div", { class: "cds--form-item capa-card-campo" }, [
+      el("label", { class: "cds--label" }, [document.createTextNode(rotulo)]),
+      input,
+    ]);
+  });
+
+  const btnSalvar = el(
+    "button", { class: "cds--btn cds--btn--tertiary cds--btn--sm", type: "button" },
+    [document.createTextNode("Salvar")],
+  );
+  btnSalvar.addEventListener("click", async () => {
+    btnSalvar.disabled = true;
+    const corpo = {};
+    for (const [chave] of _CAMPOS_CAPA_MANUAIS) {
+      const valor = campos[chave].value.trim();
+      corpo[chave] = chave === "valor_causa" ? (valor ? Number(valor) : null) : (valor || null);
+    }
+    try {
+      await _enviarJson(`/casos/${casoId}/processos/${numero}/capa`, corpo, "PATCH");
+      mostrarToast("success", "Capa salva", `Processo ${numero} atualizado.`);
+    } catch (erro) {
+      mostrarToast("error", "Erro", erro.message);
+    } finally {
+      btnSalvar.disabled = false;
+    }
+  });
+
+  return el("div", { class: "capa-card" }, [
+    el("h4", {}, [document.createTextNode(numero)]),
+    blocoAuto,
+    el("div", { class: "capa-card-campos" }, inputs),
+    btnSalvar,
+  ]);
+}
+
 async function _buscarMovimentacoes(casoId) {
   const statusEl = document.getElementById("movimentacoes-status");
   const lista = document.getElementById("lista-movimentacoes");
@@ -4869,6 +4991,8 @@ document.getElementById("caso-subaba-publicacoes-botao").addEventListener("click
 });
 document.getElementById("caso-subaba-movimentacoes-botao").addEventListener("click", () => {
   _selecionarSubabaCaso("movimentacoes");
+  const casoId = document.getElementById("form-caso-editar").dataset.casoId;
+  if (casoId) _carregarCapaProcessos(casoId);
 });
 document.getElementById("caso-subaba-vinculos-botao").addEventListener("click", () => {
   _selecionarSubabaCaso("vinculos");
@@ -4878,6 +5002,10 @@ document.getElementById("caso-subaba-vinculos-botao").addEventListener("click", 
 document.getElementById("btn-buscar-movimentacoes").addEventListener("click", () => {
   const casoId = document.getElementById("form-caso-editar").dataset.casoId;
   if (casoId) _buscarMovimentacoes(casoId);
+});
+document.getElementById("btn-atualizar-capa").addEventListener("click", () => {
+  const casoId = document.getElementById("form-caso-editar").dataset.casoId;
+  if (casoId) _atualizarCapaProcessos(casoId);
 });
 
 document.getElementById("btn-nova-atividade").addEventListener("click", () => {
