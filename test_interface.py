@@ -141,18 +141,40 @@ class InterfaceTest(unittest.TestCase):
         self.assertTrue(self.page.locator("#aba-acesso").is_visible())
         self.assertIsNone(self.page.evaluate("localStorage.getItem('cnj_token')"))
 
-    def test_modal_contem_foco_escape_e_restaura_origem(self):
+    def test_secao_sem_modal_permite_foco_fora_e_restaura_origem(self):
         self.connect()
         self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-casos')); }")
         self.page.locator("#btn-novo-caso").click()
-        for _ in range(18):
-            self.page.keyboard.press("Tab")
-            self.assertTrue(self.page.evaluate("document.getElementById('modal-novo-caso').contains(document.activeElement)"))
+        self.assertEqual(self.page.locator('[aria-modal="true"], [role="dialog"], [role="alertdialog"]').count(), 0)
+        self.assertEqual(self.page.locator("#modal-novo-caso").evaluate("el => getComputedStyle(el).position"), "static")
+        self.page.locator("#btn-novo-caso").focus()
+        self.assertEqual(self.page.evaluate("document.activeElement.id"), "btn-novo-caso")
+        self.page.locator("#modal-novo-caso").focus()
         self.page.keyboard.press("Escape")
         self.page.locator("#modal-novo-caso").wait_for(state="hidden")
         self.assertFalse(self.page.locator("#modal-novo-caso").is_visible())
         self.assertEqual(self.page.evaluate("document.activeElement.id"), "btn-novo-caso")
         self.assertFalse(self.page.locator("main").evaluate("el => el.closest('[inert]') !== null"))
+
+    def test_todos_fluxos_sao_secoes_no_documento(self):
+        self.connect()
+        ids = self.page.locator(".fluxo-pagina").evaluate_all("els => els.map(el => el.id)")
+        self.assertEqual(len(ids), 8)
+        for width in (1440, 390):
+            self.page.set_viewport_size({"width": width, "height": 960})
+            for ident in ids:
+                self.page.evaluate("id => abrirModal(id)", ident)
+                section = self.page.locator(f"#{ident}")
+                self.assertTrue(section.is_visible())
+                self.assertEqual(section.get_attribute("role"), "region")
+                self.assertTrue(section.evaluate("el => !!el.closest('main')"))
+                self.assertEqual(section.evaluate("el => getComputedStyle(el).position"), "static")
+                self.assertEqual(self.page.locator("[inert]").count(), 0)
+                self.assertNotEqual(self.page.locator("body").evaluate("el => getComputedStyle(el).overflow"), "hidden")
+                self.assertLessEqual(section.bounding_box()["width"], width)
+                self.page.evaluate("id => fecharModal(id)", ident)
+                self.assertFalse(section.is_visible())
+        self.assertFalse(self.errors)
 
     def test_saida_caso_continuar_descartar_e_salvar_ambas_secoes(self):
         self.open_case()
@@ -363,8 +385,8 @@ class InterfaceTest(unittest.TestCase):
         for width in (1440, 768, 390, 320):
             self.page.set_viewport_size({"width": width, "height": 960})
             self.page.wait_for_timeout(300)  # Aguarda a transição de entrada/reposicionamento do Carbon.
-            container = self.page.locator("#modal-edicao-pendente .cds--modal-container").bounding_box()
-            for item in self.page.locator("#modal-edicao-pendente .cds--modal-footer button").all():
+            container = self.page.locator("#modal-edicao-pendente .fluxo-pagina-container").bounding_box()
+            for item in self.page.locator("#modal-edicao-pendente .fluxo-pagina-footer button").all():
                 rect = item.bounding_box()
                 self.assertGreaterEqual(rect["x"], container["x"])
                 self.assertLessEqual(rect["x"] + rect["width"], container["x"] + container["width"] + 1)

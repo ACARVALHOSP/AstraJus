@@ -67,7 +67,7 @@ function registrarSalvamento(form, salvar) {
 
 function formulariosPendentes(raiz = document) {
   return [...formulariosProtegidos.keys()].filter((form) => raiz.contains(form) &&
-    !form.closest(".cds--modal:not(.is-visible)") && formularioAlterado(form));
+    !form.closest(".fluxo-pagina:not(.is-visible)") && formularioAlterado(form));
 }
 
 function revelarFormulario(form) {
@@ -123,11 +123,7 @@ async function permitirSaidaEdicao(raiz = document) {
   } finally { decisaoEdicaoPendente = false; }
 }
 
-window.addEventListener("beforeunload", (evento) => {
-  if (!formulariosPendentes().length) return;
-  evento.preventDefault();
-  evento.returnValue = "";
-});
+
 
 class ErroMCP extends Error {
   constructor(status, mensagem) {
@@ -303,7 +299,7 @@ function mostrarAviso(container, mensagem) {
 
 function mostrarToast(tipo, titulo, mensagem, duracao = 5000) {
   const container = document.getElementById("toast-global");
-  if (!container) { if (tipo === "error") window.alert(mensagem || titulo); return; }
+  if (!container) { console.error(mensagem || titulo); return; }
   const ntf = notificacao(tipo, titulo, mensagem || "");
   ntf.style.cssText += ";pointer-events:all;box-shadow:0 2px 6px rgba(0,0,0,.2)";
   const fechar = document.createElement("button");
@@ -2094,92 +2090,46 @@ formJurimetria.addEventListener("submit", async (evento) => {
 
 document.getElementById("botao-atualizar-monitoramentos").addEventListener("click", carregarMonitoramentos);
 
-// --- Modais Carbon -----------------------------------------------------------------------
-
-const pilhaModais = [];
-const inertOriginais = new Map();
-let overflowAnterior = "";
-
-function atualizarFundoModais() {
-  for (const [elemento, valor] of inertOriginais) elemento.inert = valor;
-  inertOriginais.clear();
-  const ativo = pilhaModais.at(-1)?.modal;
-  if (!ativo) { document.body.style.overflow = overflowAnterior; return; }
-  let ramo = ativo;
-  while (ramo && ramo !== document.body) {
-    for (const irmao of ramo.parentElement.children) {
-      if (irmao === ramo || ["SCRIPT", "STYLE"].includes(irmao.tagName)) continue;
-      inertOriginais.set(irmao, irmao.inert);
-      irmao.inert = true;
-    }
-    ramo = ramo.parentElement;
-  }
-  document.body.style.overflow = "hidden";
-}
-
-function controlesModal(modal) {
-  return [...modal.querySelectorAll('button, input, select, textarea, a[href], [tabindex]')]
-    .filter((campo) => !campo.disabled && campo.tabIndex >= 0 && !campo.closest("[inert]") && campo.getClientRects().length);
-}
+// --- Seções de formulário e confirmação na própria página ------------------
+// Os identificadores antigos são mantidos para os chamadores de cada fluxo.
+const secoesAbertas = [];
 
 function abrirModal(id) {
-  const modal = document.getElementById(id);
-  if (!modal || pilhaModais.some((item) => item.modal === modal)) return;
-  if (!pilhaModais.length) overflowAnterior = document.body.style.overflow;
-  pilhaModais.push({ modal, origem: document.activeElement });
-  modal.style.zIndex = String(9000 + pilhaModais.length);
-  modal.classList.add("is-visible");
-  modal.tabIndex = -1;
-  for (const form of modal.querySelectorAll("form")) marcarFormularioSalvo(form, true);
-  atualizarFundoModais();
-  const controles = controlesModal(modal);
-  const primeiro = controles.find((campo) => campo.matches("input, select, textarea")) || controles[0];
-  (primeiro || modal).focus();
+  const secao = document.getElementById(id);
+  if (!secao || secao.classList.contains("is-visible")) return;
+  const origem = document.activeElement;
+  const anterior = secoesAbertas.at(-1)?.secao;
+  if (anterior) anterior.after(secao);
+  else document.getElementById("conteudo").prepend(secao);
+  secoesAbertas.push({ secao, origem });
+  secao.classList.add("is-visible");
+  secao.tabIndex = -1;
+  for (const form of secao.querySelectorAll("form")) marcarFormularioSalvo(form, true);
+  secao.focus();
 }
 
 async function fecharModal(id) {
-  const modal = document.getElementById(id);
-  if (!modal?.classList.contains("is-visible")) return true;
-  if (formulariosPendentes(modal).length && !(await permitirSaidaEdicao(modal))) return false;
-  const indice = pilhaModais.findIndex((item) => item.modal === modal);
-  const entrada = indice >= 0 ? pilhaModais.splice(indice, 1)[0] : null;
-  modal.classList.remove("is-visible");
-  modal.style.zIndex = "";
-  atualizarFundoModais();
-  if (entrada?.origem?.isConnected && !entrada.origem.closest("[hidden], [inert]")) entrada.origem.focus();
-  else {
-    const topo = pilhaModais.at(-1)?.modal;
-    if (topo) (controlesModal(topo)[0] || topo).focus();
-  }
+  const secao = document.getElementById(id);
+  if (!secao?.classList.contains("is-visible")) return true;
+  if (formulariosPendentes(secao).length && !(await permitirSaidaEdicao(secao))) return false;
+  const indice = secoesAbertas.findIndex((item) => item.secao === secao);
+  const entrada = indice >= 0 ? secoesAbertas.splice(indice, 1)[0] : null;
+  secao.classList.remove("is-visible");
+  if (entrada?.origem?.isConnected && entrada.origem.getClientRects().length) entrada.origem.focus();
   return true;
 }
 
 document.addEventListener("keydown", (ev) => {
-  const modal = pilhaModais.at(-1)?.modal;
-  if (!modal || ev.defaultPrevented) return;
-  if (ev.key === "Escape") { ev.preventDefault(); fecharModal(modal.id); }
-  if (ev.key !== "Tab") return;
-  const controles = controlesModal(modal);
-  const primeiro = controles[0] || modal;
-  const ultimo = controles.at(-1) || modal;
-  if (!modal.contains(document.activeElement) || (ev.shiftKey && document.activeElement === primeiro) || (!ev.shiftKey && document.activeElement === ultimo)) {
+  const secao = ev.target.closest(".fluxo-pagina.is-visible");
+  if (secao && ev.key === "Escape" && !ev.defaultPrevented) {
     ev.preventDefault();
-    (ev.shiftKey ? ultimo : primeiro).focus();
+    fecharModal(secao.id);
   }
-});
-
-document.addEventListener("focusin", (ev) => {
-  const modal = pilhaModais.at(-1)?.modal;
-  if (modal && !modal.contains(ev.target)) (controlesModal(modal)[0] || modal).focus();
 });
 
 document.addEventListener("click", (ev) => {
   const alvo = ev.target.closest("[data-fechar-modal]");
   if (alvo) fecharModal(alvo.dataset.fecharModal);
-});
-
-document.querySelectorAll(".cds--modal").forEach((modal) => {
-  modal.addEventListener("click", (ev) => { if (ev.target === modal) fecharModal(modal.id); });
 });
 
 function escolherSaidaEdicao() {
@@ -2205,7 +2155,7 @@ function escolherSaidaEdicao() {
   });
 }
 
-// Substitui window.confirm() por um modal Carbon: devolve uma Promise<boolean> (true = confirmou).
+// Confirmação na própria página: devolve uma Promise<boolean> (true = confirmou).
 function confirmarAcao(mensagem, opcoes = {}) {
   const { titulo = "Confirmar ação", textoConfirmar = "Confirmar" } = opcoes;
   return new Promise((resolve) => {
