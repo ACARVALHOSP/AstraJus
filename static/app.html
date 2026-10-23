@@ -202,6 +202,16 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 .endereco-card-topo button { flex: 0 0 auto; }
 .endereco-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; }
 .botao-adicionar-linha { align-self: flex-start; }
+.capa-card {
+  border: 1px solid var(--cds-border-subtle, #e0e0e0); border-radius: 4px; padding: 0.875rem;
+  display: flex; flex-direction: column; gap: 0.625rem; margin-bottom: 1rem;
+}
+.capa-card-auto { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 0.75rem; font-size: 0.875rem; }
+.capa-card-auto dt { font-weight: 600; color: var(--cds-text-secondary, #525252); }
+.capa-card-auto dd { margin: 0; }
+.capa-card-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; }
+.capa-card-campo label { display: block; margin-bottom: 0.25rem; }
+.texto-auxiliar { color: var(--cds-text-secondary, #525252); font-size: 0.875rem; margin: 0; }
 .pub-oab-manual { margin-top: 1rem; border: 1px solid var(--cds-border-subtle, #e0e0e0); padding: 0.75rem 1rem; }
 .pub-oab-manual summary { cursor: pointer; font-weight: 600; }
 .pub-oab-manual-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; margin-top: 0.75rem; }
@@ -1370,6 +1380,13 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </section>
 
 <section id="caso-subaba-movimentacoes" role="tabpanel" aria-labelledby="caso-subaba-movimentacoes-botao" hidden>
+<div class="secao-cabecalho">
+<h3 class="lista-rapida-titulo">Capa do processo</h3>
+<button class="cds--btn cds--btn--secondary cds--btn--sm" type="button" id="btn-atualizar-capa">Atualizar capa (DataJud + DJEN)</button>
+</div>
+<div id="capa-status"></div>
+<div id="lista-capa-processos" class="app-resultado"></div>
+
 <div class="secao-cabecalho">
 <h3 class="lista-rapida-titulo">Movimentações</h3>
 <button class="cds--btn cds--btn--secondary cds--btn--sm" type="button" id="btn-buscar-movimentacoes">Buscar no DataJud</button>

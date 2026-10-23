@@ -3233,6 +3233,15 @@ class _AutenticacaoBearer:
             vinculado_id = partes[1].strip("/") if len(partes) > 1 else ""
             await self._vinculos_do_caso(scope, receive, send, caso_id, vinculado_id or None)
             return
+        if caminho.startswith("/casos/") and "/processos/" in caminho and "/capa" in caminho \
+                and self.gestao is not None:
+            resto = caminho[len("/casos/"):]
+            caso_id, _, resto2 = resto.partition("/processos/")
+            numero_processo, _, acao = resto2.partition("/capa")
+            await self._capa_do_processo(
+                scope, receive, send, caso_id.rstrip("/"), numero_processo.rstrip("/"), acao.strip("/") or None,
+            )
+            return
         if caminho.startswith("/casos/") and self.gestao is not None:
             await self._caso_detalhe(scope, receive, send, caminho[len("/casos/"):])
             return
@@ -3928,6 +3937,83 @@ class _AutenticacaoBearer:
         if metodo == "DELETE":
             excluiu = self.gestao.excluir_atividade(caso_id, aid)
             await _json(send, 200 if excluiu else 404, {"excluido": excluiu})
+            return
+        await _responder(send, 405, b"Metodo nao permitido")
+
+    _CAMPOS_CAPA_MANUAIS = (
+        "area_direito", "magistrado", "tipo_justica", "cidade", "uf", "valor_causa", "fase", "status_processo",
+    )
+
+    async def _capa_do_processo(
+        self, scope, receive, send, caso_id: str, numero_processo: str, acao: str | None,
+    ):
+        """GET /casos/<id>/processos/<numero>/capa
+        PATCH /casos/<id>/processos/<numero>/capa (campos manuais)
+        POST /casos/<id>/processos/<numero>/capa/atualizar {tribunal} (auto-preenche via
+        consultar_processo_unificado: capa+movimentos do DataJud, partes/advogados do DJEN)"""
+        metodo = scope.get("method")
+        if not caso_id or not numero_processo:
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        numero = _so_digitos(numero_processo)
+
+        if acao == "atualizar":
+            if metodo != "POST":
+                await _responder(send, 405, b"Metodo nao permitido")
+                return
+            corpo = await _ler_corpo(receive)
+            try:
+                dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+            except (ValueError, UnicodeDecodeError):
+                await _json(send, 400, _erro("JSON inválido."))
+                return
+            tribunal = (dados.get("tribunal") or "").strip().lower()
+            if not tribunal:
+                await _json(send, 400, _erro("Informe o tribunal."))
+                return
+            resultado = await consultar_processo_unificado(tribunal=tribunal, numero_processo=numero)
+            if resultado.get("erro"):
+                await _json(send, 502, resultado)
+                return
+            instancia = (resultado.get("instancias") or [{}])[0]
+            nome_processo = None
+            if resultado.get("partes"):
+                autores = [p["nome"] for p in resultado["partes"] if p.get("polo") == "A"]
+                reus = [p["nome"] for p in resultado["partes"] if p.get("polo") == "P"]
+                if autores or reus:
+                    nome_processo = " x ".join(filter(None, [" / ".join(autores), " / ".join(reus)]))
+            capa = self.gestao.salvar_capa_processo(
+                caso_id, numero, agora=lambda: datetime.now(timezone.utc),
+                tribunal=instancia.get("tribunal"), classe=instancia.get("classe"),
+                assuntos=instancia.get("assuntos"), grau=instancia.get("grau"),
+                data_distribuicao=instancia.get("dataAjuizamento"), nivel_sigilo=instancia.get("nivel_sigilo"),
+                **({"nome_processo": nome_processo} if nome_processo else {}),
+            )
+            await _json(send, 200, {**capa, "partes": resultado.get("partes") or [], "advogados": resultado.get("advogados") or []})
+            return
+
+        if acao:
+            await _responder(send, 404, b"Nao encontrado")
+            return
+
+        if metodo == "GET":
+            capa = self.gestao.obter_capa_processo(caso_id, numero) or {campo: None for campo in (
+                *self.gestao._CAMPOS_CAPA, "atualizado_em"
+            )}
+            await _json(send, 200, capa)
+            return
+        if metodo == "PATCH":
+            corpo = await _ler_corpo(receive)
+            try:
+                dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+            except (ValueError, UnicodeDecodeError):
+                await _json(send, 400, _erro("JSON inválido."))
+                return
+            campos = {k: v for k, v in dados.items() if k in self._CAMPOS_CAPA_MANUAIS}
+            capa = self.gestao.salvar_capa_processo(
+                caso_id, numero, agora=lambda: datetime.now(timezone.utc), **campos,
+            )
+            await _json(send, 200, capa)
             return
         await _responder(send, 405, b"Metodo nao permitido")
 
