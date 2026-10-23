@@ -279,6 +279,8 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
             );
             """
         )
+        if "orgao_julgador" not in {c[1] for c in conexao.execute("PRAGMA table_info(caso_processo_capa)")}:
+            conexao.execute("ALTER TABLE caso_processo_capa ADD COLUMN orgao_julgador TEXT")
         _migrar_colunas_casos(conexao)
         _migrar_colunas_clientes(conexao)
         _migrar_colunas_lancamentos(conexao)
@@ -841,7 +843,7 @@ class RegistroClientesCasos:
             )
 
     _CAMPOS_CAPA = (
-        "tribunal", "classe", "assuntos", "grau", "data_distribuicao", "nivel_sigilo", "nome_processo",
+        "tribunal", "classe", "assuntos", "grau", "data_distribuicao", "nivel_sigilo", "nome_processo", "orgao_julgador",
         "area_direito", "magistrado", "tipo_justica", "cidade", "uf", "valor_causa", "fase", "status_processo",
     )
 
@@ -916,10 +918,11 @@ class RegistroClientesCasos:
                 (titulo, responsavel, acao, foro, autor, reu, advogados, desfecho or None, caso_id),
             )
             if numeros_processo is not None:
-                # Preserva a capa quando o número não mudou.
-                for (existente,) in conexao.execute("SELECT numero_processo FROM caso_processos WHERE caso_id=?", (caso_id,)).fetchall():
-                    if existente not in numeros_processo:
-                        conexao.execute("DELETE FROM caso_processos WHERE caso_id=? AND numero_processo=?", (caso_id, existente))
+                existentes = {r[0] for r in conexao.execute("SELECT numero_processo FROM caso_processos WHERE caso_id = ?", (caso_id,))}
+                conexao.executemany(
+                    "DELETE FROM caso_processos WHERE caso_id = ? AND numero_processo = ?",
+                    [(caso_id, n) for n in existentes - set(numeros_processo)],
+                )
                 conexao.executemany(
                     "INSERT OR IGNORE INTO caso_processos (caso_id, numero_processo) VALUES (?, ?)",
                     [(caso_id, n) for n in numeros_processo],

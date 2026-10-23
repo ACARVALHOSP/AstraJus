@@ -212,7 +212,13 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 }
 .capa-card-auto { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 0.75rem; font-size: 0.875rem; }
 .capa-card-auto dt { font-weight: 600; color: var(--cds-text-secondary, #525252); }
-.capa-card-auto dd { margin: 0; }
+.capa-card-auto dd { margin: 0; overflow-wrap: anywhere; }
+#caso-subaba-cadastro > .secao-cabecalho { margin-top: 1.5rem; gap: 1rem; flex-wrap: wrap; }
+@media (max-width: 600px) {
+  .capa-card-auto { grid-template-columns: minmax(0, 1fr); row-gap: 0.25rem; }
+  .capa-card-auto dd { margin-bottom: 0.75rem; }
+  #btn-atualizar-capa { width: 100%; max-width: none; }
+}
 .capa-card-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; }
 .capa-card-campo label { display: block; margin-bottom: 0.25rem; }
 .texto-auxiliar { color: var(--cds-text-secondary, #525252); font-size: 0.875rem; margin: 0; }
@@ -1304,7 +1310,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <input class="cds--text-input" type="text" id="editar-caso-responsavel" name="responsavel" placeholder="Ex.: Dra. Fernanda Reis" autocomplete="off">
 </div>
 <div class="cds--form-item">
-<label class="cds--label" for="editar-caso-acao">Ação / Tipo</label>
+<label class="cds--label" for="editar-caso-acao">Ação</label>
 <input class="cds--text-input" type="text" id="editar-caso-acao" name="acao" placeholder="Ex.: Cumprimento de sentença" autocomplete="off">
 </div>
 <div class="cds--form-item">
@@ -1327,7 +1333,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-processos">Número CNJ (opcional)</label>
 <input class="cds--text-input" type="text" id="editar-caso-processos" name="numeros_processo" placeholder="0000000-00.0000.0.00.0000" autocomplete="off">
-<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="btn-datajud-detalhe">Buscar ação/foro no DataJud</button>
+<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="btn-datajud-detalhe">Consultar ação/foro no DataJud</button>
 <div id="status-datajud-detalhe" class="campo-ajuda"></div>
 </div>
 <div id="resultado-caso-editar" class="app-resultado"></div>
@@ -1336,6 +1342,13 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <button class="cds--btn cds--btn--danger--ghost cds--btn--sm" type="button" id="btn-excluir-caso">Excluir processo</button>
 </div>
 </form>
+<div class="secao-cabecalho">
+<h3 class="lista-rapida-titulo">Capa do processo</h3>
+<button class="cds--btn cds--btn--secondary cds--btn--sm" type="button" id="btn-atualizar-capa">Atualizar capa (DataJud + DJEN)</button>
+</div>
+<div id="capa-status"></div>
+<div id="lista-capa-processos" class="app-resultado"></div>
+
 </section>
 
 <section id="caso-subaba-partes" role="tabpanel" aria-labelledby="caso-subaba-partes-botao" hidden>
@@ -1384,12 +1397,6 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </section>
 
 <section id="caso-subaba-movimentacoes" role="tabpanel" aria-labelledby="caso-subaba-movimentacoes-botao" hidden>
-<div class="secao-cabecalho">
-<h3 class="lista-rapida-titulo">Capa do processo</h3>
-<button class="cds--btn cds--btn--secondary cds--btn--sm" type="button" id="btn-atualizar-capa">Atualizar capa (DataJud + DJEN)</button>
-</div>
-<div id="capa-status"></div>
-<div id="lista-capa-processos" class="app-resultado"></div>
 
 <div class="secao-cabecalho">
 <h3 class="lista-rapida-titulo">Movimentações</h3>
@@ -1554,7 +1561,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="cds--form-item">
 <label class="cds--label" for="caso-processos">Número CNJ (opcional)</label>
 <input class="cds--text-input" id="caso-processos" name="numeros_processo" placeholder="1006314-27.2023.8.26.0005" autocomplete="off">
-<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="btn-datajud-modal">Buscar ação/foro no DataJud</button>
+<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="btn-datajud-modal">Consultar ação/foro no DataJud</button>
 <div id="status-datajud-modal" class="campo-ajuda"></div>
 <span class="campo-ajuda">Informe um único número ou deixe em branco se ainda não existir.</span>
 </div>
