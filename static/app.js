@@ -4705,6 +4705,7 @@ function _cardCapaProcesso(casoId, numero, capa) {
   const autoCampos = [
     ["Tribunal", capa.tribunal], ["Ação", _casoDetalheAtual?.acao], ["Classe", capa.classe], ["Grau", capa.grau],
     ["Foro / Vara (órgão julgador)", capa.orgao_julgador],
+    ["Tipo de justiça", capa.tipo_justica], ["Município", capa.cidade], ["UF", capa.uf],
     ["Assuntos", (capa.assuntos || []).join(", ")], ["Distribuição", _dataDistribuicaoLegivel(capa.data_distribuicao)],
     ["Nível de sigilo", capa.nivel_sigilo], ["Nome do processo", capa.nome_processo],
   ].filter(([, valor]) => valor !== null && valor !== undefined && valor !== "");

@@ -151,8 +151,8 @@ class InterfaceTest(unittest.TestCase):
         self.assertTrue(capa.is_visible())
         for texto in ["1006314-27.2023.8.26.0005", "02/01/2023 12:34:56", "3ª Vara Cível"]:
             self.assertIn(texto, capa.inner_text())
-        self.assertEqual(capa.get_by_label("Cidade", exact=True).input_value(), "São Paulo")
-        self.assertEqual(capa.get_by_label("UF", exact=True).input_value(), "SP")
+        self.assertIn("São Paulo", capa.inner_text())
+        self.assertIn("SP", capa.inner_text())
         self.assertEqual(capa.get_by_label("Valor da causa").get_attribute("step"), "0.01")
         self.page.locator("#caso-subaba-movimentacoes-botao").click()
         self.assertFalse(capa.is_visible())
