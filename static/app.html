@@ -222,12 +222,32 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 .capa-card-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; }
 .capa-card-campo label { display: block; margin-bottom: 0.25rem; }
 .texto-auxiliar { color: var(--cds-text-secondary, #525252); font-size: 0.875rem; margin: 0; }
-.pub-oab-manual { margin-top: 1rem; border: 1px solid var(--cds-border-subtle, #e0e0e0); padding: 0.75rem 1rem; }
-.pub-oab-manual summary { cursor: pointer; font-weight: 600; }
-.pub-oab-manual-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; margin-top: 0.75rem; }
-.pub-oab-manual-form .cds--form-item { display: flex; flex-direction: column; min-width: 8rem; }
-.pub-oab-barra { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 1rem; margin-top: 1rem; }
-.pub-oab-filtros, .pub-oab-acoes-lote { display: flex; align-items: flex-end; gap: 0.5rem; flex-wrap: wrap; }
+#aba-publicacoes-oab > .campo-ajuda { max-inline-size: 75ch; line-height: 1.5; }
+.pub-oab-manual { margin-block: 1.5rem; border-block: 1px solid var(--cds-border-subtle, #e0e0e0); }
+.pub-oab-manual summary { cursor: pointer; font-size: var(--fonte-base); font-weight: 600; padding: 1rem; }
+.pub-oab-manual summary:hover { background: var(--cds-layer-hover, #e8e8e8); }
+.pub-oab-manual-form { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(5rem, 0.5fr) minmax(12rem, 2fr); align-items: end; gap: 1rem; padding: 0.5rem 1rem 1rem; }
+.pub-oab-manual-form .cds--form-item { display: flex; flex-direction: column; min-width: 0; }
+.pub-oab-manual-form .cds--form-item:nth-child(4) { grid-column: 1 / -1; }
+.pub-oab-manual-form .cds--date-picker { width: 100%; }
+.pub-oab-manual-form .cds--date-picker-container { flex: 1; min-width: 0; }
+.pub-oab-manual-form .cds--date-picker__input { width: 100%; max-width: none; }
+.pub-oab-manual-form > .cds--btn { grid-column: 1 / -1; justify-self: end; min-height: 2.5rem; }
+#pub-oab-manual-status:not(:empty) { padding: 0 1rem 1rem; }
+.pub-oab-barra { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 1rem; margin-top: 1.5rem; padding-block: 1rem; border-block: 1px solid var(--cds-border-subtle, #e0e0e0); }
+.pub-oab-filtros { display: flex; flex-direction: column; align-items: stretch; min-inline-size: 12rem; }
+.pub-oab-filtros .cds--label { margin-bottom: 0.5rem; }
+.pub-oab-filtros .cds--select-input { width: 100%; }
+.pub-oab-acoes-lote { display: flex; align-items: flex-end; gap: 0.5rem; flex-wrap: wrap; }
+.pub-oab-acoes-lote .cds--btn { min-height: 2.5rem; }
+#lista-publicacoes-oab > .campo-ajuda { margin-block: 0.75rem; line-height: 1.5; }
+@media (max-width: 640px) {
+  .pub-oab-manual-form { grid-template-columns: minmax(0, 1fr) 5rem; }
+  .pub-oab-manual-form .cds--form-item:nth-child(n+3) { grid-column: 1 / -1; }
+  .pub-oab-manual-form > .cds--btn { grid-column: 1 / -1; justify-self: stretch; max-width: none; }
+  .pub-oab-acoes-lote { gap: 0.5rem; }
+  .pub-oab-acoes-lote .cds--btn { flex: 1 1 auto; max-width: none; }
+}
 .tabela-responsiva-wrap { container-type: inline-size; overflow-x: auto; -webkit-overflow-scrolling: touch; margin-top: 0.75rem; border: 1px solid var(--cds-border-subtle, #e0e0e0); border-radius: 4px; }
 .tabela-responsiva { width: 100%; min-width: 0; border-collapse: collapse; font-size: var(--fonte-base); table-layout: fixed; font-variant-numeric: tabular-nums; }
 .tabela-responsiva th { text-align: left; font-size: var(--fonte-ajuda); text-transform: uppercase; color: var(--cds-text-secondary, #525252); padding: 0.5rem; border-bottom: 1px solid var(--cds-border-subtle, #e0e0e0); }
