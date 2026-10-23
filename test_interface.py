@@ -105,6 +105,24 @@ class InterfaceTest(unittest.TestCase):
     def choose(self, value):
         self.page.locator(f"#modal-edicao-pendente [data-escolha-edicao={value}]").click()
 
+    def test_capa_no_cadastro_com_mascara_distribuicao_e_ibge(self):
+        self.case["processos"] = ["10063142720238260005"]
+        self.context.route("**/casos/caso-1/processos/*/capa", lambda route: route.fulfill(json={
+            "nome_processo": "Autora x Réu", "classe": "Cobrança", "assuntos": ["Contratos"],
+            "orgao_julgador": "3ª Vara Cível", "data_distribuicao": "20230102123456",
+            "cidade": "3550308", "uf": "35", "tipo_justica": "Justiça Estadual",
+        }))
+        self.open_case()
+        capa = self.page.locator("#caso-subaba-cadastro #lista-capa-processos")
+        self.assertTrue(capa.is_visible())
+        for texto in ["1006314-27.2023.8.26.0005", "02/01/2023 12:34:56", "3550308", "35", "3ª Vara Cível"]:
+            self.assertIn(texto, capa.inner_text())
+        self.assertEqual(capa.get_by_label("Valor da causa").get_attribute("step"), "0.01")
+        self.page.locator("#caso-subaba-movimentacoes-botao").click()
+        self.assertFalse(capa.is_visible())
+        self.assertEqual(self.page.locator("#caso-subaba-movimentacoes #lista-capa-processos").count(), 0)
+        self.assertFalse(self.errors)
+
     def test_partes_automaticas_djen_com_tags_oab_e_polos(self):
         self.open_case()
         self.context.route("**/casos/caso-1/publicacoes", lambda route: route.fulfill(json={"publicacoes": [{"dados": {
@@ -258,7 +276,7 @@ class InterfaceTest(unittest.TestCase):
         self.page.evaluate("() => { const area = document.getElementById('resultado-processo'); anexarBotaoCadastrarCaso(area, '00000000000000000001', null); }")
         self.page.locator("#resultado-processo button").click()
         self.page.locator("#form-caso-publicacao input[aria-label='Nome do novo cliente']").fill("Cliente de teste")
-        self.page.locator("#form-caso-publicacao input[aria-label='Título do caso (opcional)']").fill("Novo caso de teste")
+        self.page.locator("#form-caso-publicacao input[aria-label='Título do processo (opcional)']").fill("Novo caso de teste")
         self.page.keyboard.press("Escape")
         self.choose("salvar")
         self.page.locator("#modal-cadastrar-caso-publicacao").wait_for(state="hidden")
@@ -298,7 +316,7 @@ class InterfaceTest(unittest.TestCase):
         self.open_case()
         self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-processo')); _cache.casos = [{id: 'caso-1', titulo: 'Caso de teste'}]; const area = document.getElementById('resultado-processo'); const table = document.createElement('table'); for (const row of linhaPublicacaoOab({hash:'publicacao-teste',status:'nao_tratada',numero_processo:'00000000000000000001',dados:{}})) table.appendChild(row); area.appendChild(table); }")
         self.page.locator("#resultado-processo button[aria-label='Mais ações']").click()
-        self.page.get_by_text("Vincular a caso existente", exact=True).click()
+        self.page.get_by_text("Vincular a processo existente", exact=True).click()
         self.page.locator("#resultado-processo .mini-form-caso select").select_option("caso-1")
         self.page.locator("#resultado-processo .mini-form-caso").get_by_role("button", name="Vincular", exact=True).click()
         self.page.wait_for_function("!document.querySelector('#resultado-processo .mini-form-caso')")

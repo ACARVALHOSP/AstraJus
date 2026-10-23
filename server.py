@@ -477,6 +477,7 @@ def _extrair_processo_datajud(fonte: dict) -> dict:
         "assuntos": assuntos,
         "dataAjuizamento": fonte.get("dataAjuizamento"),
         "orgaoJulgador": (fonte.get("orgaoJulgador") or {}).get("nome"),
+        "codigoMunicipioIBGE": (fonte.get("orgaoJulgador") or {}).get("codigoMunicipioIBGE"),
         "totalMovimentos": len(movimentos),
         "movimentos": movimentos,
     }
@@ -2950,6 +2951,11 @@ def _criar_caso_validado(
     tratado direto).
     Devolve (caso, None) ou (None, erro).
     """
+    try:
+        numeros = _db.normalizar_numero_processo(dados.get("numeros_processo", []))
+    except ValueError as erro:
+        return None, _erro(str(erro))
+
     cliente_id, erro = _resolver_cliente_id(gestao, dados)
     if erro:
         return None, erro
@@ -2966,15 +2972,6 @@ def _criar_caso_validado(
             return None, erro
         clientes_adicionais.append(cid)
 
-    numeros_brutos = dados.get("numeros_processo") or []
-    if not isinstance(numeros_brutos, list) or not numeros_brutos:
-        return None, _erro("Informe ao menos um número de processo em numeros_processo.")
-    numeros = []
-    for numero in numeros_brutos:
-        numero_normalizado = _so_digitos(numero)
-        if len(numero_normalizado) != 20:
-            return None, _erro(f"Número de processo inválido: '{numero}' (esperados 20 dígitos).")
-        numeros.append(numero_normalizado)
 
     caso = gestao.criar_caso(
         cliente_id=cliente_id,
@@ -3788,6 +3785,12 @@ class _AutenticacaoBearer:
             # PATCH de Partes e Cadastro envia somente os campos da respectiva aba.
             dados = {**atual, **dados}
             numeros = dados.get("numeros_processo")
+            if numeros is not None:
+                try:
+                    numeros = _db.normalizar_numero_processo(numeros)
+                except ValueError as erro:
+                    await _json(send, 400, _erro(str(erro)))
+                    return
             caso = self.gestao.atualizar_caso(
                 caso_id,
                 titulo=dados.get("titulo"),
@@ -3988,13 +3991,25 @@ class _AutenticacaoBearer:
                 reus = [p["nome"] for p in resultado["partes"] if p.get("polo") == "P"]
                 if autores or reus:
                     nome_processo = " x ".join(filter(None, [" / ".join(autores), " / ".join(reus)]))
+            codigo_ibge = str(instancia.get("codigoMunicipioIBGE") or "")
+            segmento = numero[13:14]
+            tipo_justica = {"1": "Supremo Tribunal Federal", "2": "Conselho Nacional de Justiça", "3": "Superior Tribunal de Justiça", "4": "Justiça Federal", "5": "Justiça do Trabalho", "6": "Justiça Eleitoral", "7": "Justiça Militar da União", "8": "Justiça Estadual", "9": "Justiça Militar Estadual"}.get(segmento)
+            automaticos = {"tipo_justica": tipo_justica, "orgao_julgador": instancia.get("orgaoJulgador")}
+            if len(codigo_ibge) == 7 and codigo_ibge.isdigit():
+                automaticos.update(cidade=codigo_ibge, uf=codigo_ibge[:2])
             capa = self.gestao.salvar_capa_processo(
                 caso_id, numero, agora=lambda: datetime.now(timezone.utc),
+                **{k: v for k, v in automaticos.items() if v},
                 tribunal=instancia.get("tribunal"), classe=instancia.get("classe"),
                 assuntos=instancia.get("assuntos"), grau=instancia.get("grau"),
                 data_distribuicao=instancia.get("dataAjuizamento"), nivel_sigilo=instancia.get("nivel_sigilo"),
                 **({"nome_processo": nome_processo} if nome_processo else {}),
             )
+            caso = self.gestao.obter_caso(caso_id)
+            if caso and (caso.get("processos") or [None])[0] == numero:
+                campos = {k: caso.get(k) for k in ("titulo", "responsavel", "acao", "foro", "autor", "reu", "advogados", "desfecho")}
+                campos.update({k: v for k, v in {"titulo": nome_processo, "acao": instancia.get("classe"), "foro": instancia.get("orgaoJulgador")}.items() if v})
+                self.gestao.atualizar_caso(caso_id, **campos)
             await _json(send, 200, {**capa, "partes": resultado.get("partes") or [], "advogados": resultado.get("advogados") or []})
             return
 
