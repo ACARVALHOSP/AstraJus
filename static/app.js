@@ -414,7 +414,7 @@ for (const id of ["numero-processo", "pub-numero-processo", "vinculos-numero-pro
 
 function formatarDataSimples(valor) {
   if (!valor) return "não informado";
-  const bruto = String(valor);
+  const bruto = String(valor).replace(/^(\d{4})(\d{2})(\d{2})(?:\d{6})?$/, "$1-$2-$3");
   // Data pura ("AAAA-MM-DD", sem hora): formata direto dos componentes. O construtor Date
   // trata esse formato como meia-noite UTC, e em fusos atrás de UTC (ex.: Brasília, UTC-3)
   // toLocaleDateString devolveria o dia anterior - crítico aqui porque esta função formata
@@ -656,7 +656,7 @@ function renderizarListaRapida() {
   for (const fav of favoritos) {
     listaFavoritos.appendChild(
       el("li", { class: "lista-rapida-item cds--tile" }, [
-        el("span", { texto: `${(fav.tribunal || "?").toUpperCase()} · ${fav.numero}` }),
+        el("span", { texto: `${(fav.tribunal || "?").toUpperCase()} · ${formatarNumeroCNJ(fav.numero)}` }),
         el("div", {}, [
           el("button", {
             class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Consultar",
@@ -889,7 +889,7 @@ function cartaoProcesso(proc) {
     ])
   );
   card.appendChild(el("h3", { texto: proc.classe || "Classe não informada" }));
-  card.appendChild(el("p", { texto: `Número: ${proc.numeroProcesso || "não informado"}` }));
+  card.appendChild(el("p", { texto: `Número: ${formatarNumeroCNJ(proc.numeroProcesso) || "não informado"}` }));
   card.appendChild(el("p", { texto: `Órgão julgador: ${proc.orgaoJulgador || "não informado"}` }));
   card.appendChild(el("p", { texto: `Distribuído em: ${formatarDataSimples(proc.dataAjuizamento)}` }));
   const movimentos = proc.movimentos || [];
@@ -1616,7 +1616,7 @@ async function executarBuscaPublicacoes(args, pagina) {
 
       if (pagina === 1) {
         const resumo = args.numero_processo
-          ? `Publicações do processo ${args.numero_processo}`
+          ? `Publicações do processo ${formatarNumeroCNJ(args.numero_processo)}`
           : `Publicações da OAB ${args.numero_oab}/${args.uf_oab || "?"}`;
         adicionarHistorico({ tipo: "publicacoes", args, resumo });
       }
@@ -1679,7 +1679,7 @@ botaoAcompanharBusca.addEventListener("click", () => {
 // --- Monitoramentos: "Meus monitoramentos" ----------------------------------------------------
 
 function _descreverCriterioMonitoramento(criterio) {
-  if (criterio.numero_processo) return `Processo ${criterio.numero_processo}`;
+  if (criterio.numero_processo) return `Processo ${formatarNumeroCNJ(criterio.numero_processo)}`;
   return `OAB ${criterio.numero_oab}/${criterio.uf_oab || "?"}`;
 }
 
@@ -1956,7 +1956,7 @@ function cartaoJurimetria(item) {
       item.valor_condenacao != null ? el("span", { class: "cds--tag cds--tag--purple", texto: formatarReais(item.valor_condenacao) }) : null,
     ])
   );
-  card.appendChild(el("h3", { texto: item.numero_processo || "Número não identificado" }));
+  card.appendChild(el("h3", { texto: formatarNumeroCNJ(item.numero_processo) || "Número não identificado" }));
   card.appendChild(el("p", { texto: `${item.classe || "?"} / ${item.assunto || "?"}` }));
   card.appendChild(el("p", { texto: `${item.magistrado || "?"} · ${item.vara || "?"} · ${item.comarca || "?"} · ${item.data_disponibilizacao || "?"}` }));
   if (item.trecho) {
@@ -2527,7 +2527,7 @@ function linhaDoTempoCaso(eventos) {
       el("li", {}, [
         el("strong", { texto: formatarData(evento.criado_em) }),
         ` — ${_resumoEventoCaso(evento)}`,
-        evento.numero_processo ? el("span", { class: "campo-ajuda", texto: ` (processo ${evento.numero_processo})` }) : null,
+        evento.numero_processo ? el("span", { class: "campo-ajuda", texto: ` (processo ${formatarNumeroCNJ(evento.numero_processo)})` }) : null,
       ])
     );
   }
@@ -2554,7 +2554,7 @@ function linhaCaso(caso, aoExcluir) {
 
   const celTitulo = el("td", { "data-label": "Título" });
   const linhaTitulo = el("div", { class: "caso-titulo-linha" }, [
-    el("span", { texto: `Nº ${caso.numero} — ${caso.titulo || "(sem título)"}` }),
+    el("span", { texto: caso.titulo || "(sem título)" }),
   ]);
   if (caso.monitorado) {
     linhaTitulo.appendChild(el("span", { class: "cds--tag cds--tag--green cds--tag--sm", texto: "Monitorado" }));
@@ -2570,7 +2570,7 @@ function linhaCaso(caso, aoExcluir) {
   ]);
   processos.forEach((numero, indice) => {
     if (indice > 0) subtitulo.appendChild(document.createTextNode(", "));
-    const linkProcesso = el("a", { href: "#", texto: numero });
+    const linkProcesso = el("a", { href: "#", texto: formatarNumeroCNJ(numero) });
     linkProcesso.addEventListener("click", (ev) => {
       ev.preventDefault();
       _irParaConsultaProcesso(numero);
@@ -2690,7 +2690,7 @@ function cartoesCasos(casos, aoExcluir) {
     const card = el("article", { class: "cds--tile" });
 
     const tituloLinha = el("div", { class: "caso-titulo-linha" }, [
-      el("span", { texto: `Nº ${caso.numero} — ${caso.titulo || "(sem título)"}` }),
+      el("span", { texto: caso.titulo || "(sem título)" }),
     ]);
     if (caso.monitorado) {
       tituloLinha.appendChild(el("span", { class: "cds--tag cds--tag--green cds--tag--sm", texto: "Monitorado" }));
@@ -3094,7 +3094,8 @@ registrarSalvamento(document.getElementById("form-nova-cobranca"), async (evento
   const campo = document.getElementById("cobranca-vencimento");
   if (!campo || typeof window.flatpickr !== "function") return;
   window.flatpickr(campo, {
-    altInput: false,
+    altInput: true,
+    altFormat: "d/m/Y",
     allowInput: true,
     locale: window.flatpickr.l10ns && window.flatpickr.l10ns.pt,
     dateFormat: "Y-m-d",
@@ -3129,7 +3130,7 @@ function cartaoPendente(p) {
   const d = p.dados || {};
   const card = el("article", { class: "cds--tile resultado-card" });
   card.appendChild(el("h3", { texto: d.tipoComunicacao || "Processo novo encontrado" }));
-  card.appendChild(el("p", { texto: `Processo: ${d.numeroprocessocommascara || p.numero_processo}` }));
+  card.appendChild(el("p", { texto: `Processo: ${formatarNumeroCNJ(d.numeroprocessocommascara || p.numero_processo)}` }));
   if (d.nomeOrgao) card.appendChild(el("p", { texto: `Órgão: ${d.nomeOrgao}` }));
   if (d.siglaTribunal) card.appendChild(el("p", { texto: `Tribunal: ${d.siglaTribunal}` }));
   card.appendChild(el("p", { class: "campo-ajuda", texto: `Encontrado monitorando a OAB de ${p.usuario} em ${formatarData(p.criado_em)}` }));
@@ -4112,7 +4113,7 @@ function linhaPublicacaoOab(p) {
 
   const celProcesso = el("td", { "data-label": "Processo" });
   if (p.numero_processo) {
-    celProcesso.appendChild(el("div", { texto: d.numeroprocessocommascara || p.numero_processo }));
+    celProcesso.appendChild(el("div", { texto: formatarNumeroCNJ(d.numeroprocessocommascara || p.numero_processo) }));
   } else {
     celProcesso.appendChild(el("div", { texto: "Processo não encontrado" }));
     const linkBusca = el("a", { href: "#", texto: "Iniciar busca de processo" });
@@ -4418,16 +4419,6 @@ document.getElementById("btn-datajud-modal").addEventListener("click", () =>
   )
 );
 
-document.getElementById("btn-datajud-detalhe").addEventListener("click", () =>
-  buscarAcaoForoDataJud(
-    document.getElementById("editar-caso-processos"),
-    document.getElementById("editar-caso-acao"),
-    document.getElementById("editar-caso-foro"),
-    document.getElementById("status-datajud-detalhe"),
-    document.getElementById("btn-datajud-detalhe"),
-  )
-);
-
 // ─── Vista de detalhe do caso ────────────────────────────────────────────────
 
 let _casoDetalheAtual = null;
@@ -4440,7 +4431,7 @@ async function voltarParaCasos() {
 }
 
 function _selecionarSubabaCaso(nome) {
-  for (const n of ["cadastro", "partes", "atividades", "publicacoes", "movimentacoes", "vinculos"]) {
+  for (const n of ["cadastro", "atividades", "publicacoes", "movimentacoes", "vinculos"]) {
     document.getElementById(`caso-subaba-${n}`).hidden = n !== nome;
     const btn = document.getElementById(`caso-subaba-${n}-botao`);
     btn.classList.toggle("sub-aba-ativa", n === nome);
@@ -4461,13 +4452,20 @@ async function abrirCaso(casoId) {
   try {
     const caso = await _buscarJson(`/casos/${casoId}`);
     _casoDetalheAtual = caso;
-    document.getElementById("caso-detalhe-titulo").textContent = `Nº ${caso.numero} — ${caso.titulo || "(sem título)"}`;
-    document.getElementById("editar-caso-titulo").value = caso.titulo || "";
-    document.getElementById("editar-caso-responsavel").value = caso.responsavel || "";
-    document.getElementById("editar-caso-acao").value = caso.acao || "";
-    document.getElementById("editar-caso-foro").value = caso.foro || "";
-    document.getElementById("editar-caso-desfecho").value = caso.desfecho || "";
-    document.getElementById("editar-caso-processos").value = (caso.processos || []).join(", ");
+    document.getElementById("caso-detalhe-titulo").textContent = caso.titulo || "(sem título)";
+    const responsavel = document.getElementById("editar-caso-responsavel");
+    limpar(responsavel);
+    responsavel.appendChild(el("option", {value: "", texto: "Selecione um responsável"}));
+    try {
+      const dados = await _buscarJson("/responsaveis");
+      for (const nome of [...new Set([...(dados.responsaveis || []), caso.responsavel].filter(Boolean))]) {
+        responsavel.appendChild(el("option", {value: nome, texto: nome}));
+      }
+    } catch (erro) {
+      if (caso.responsavel) responsavel.appendChild(el("option", {value: caso.responsavel, texto: caso.responsavel}));
+      mostrarAviso(document.getElementById("resultado-caso-editar"), "Não foi possível carregar os responsáveis. Reabra o processo para tentar novamente.");
+    }
+    responsavel.value = caso.responsavel || "";
     _preencherCamposPartes("autor", (caso.autor || "").split(","));
     _preencherCamposPartes("reu", (caso.reu || "").split(","));
     _preencherCamposPartes("advogados", (caso.advogados || "").split(","));
@@ -4475,6 +4473,8 @@ async function abrirCaso(casoId) {
     document.getElementById("form-caso-partes").dataset.casoId = casoId;
     marcarFormularioSalvo(document.getElementById("form-caso-editar"), true);
     marcarFormularioSalvo(document.getElementById("form-caso-partes"), true);
+    limpar(document.getElementById("lista-movimentacoes"));
+    await _carregarCapaProcessos(casoId, true);
     await _carregarAtividades(casoId);
   } catch (erro) {
     document.getElementById("caso-detalhe-titulo").textContent = "Erro ao carregar";
@@ -4523,7 +4523,7 @@ function _renderizarAtividades(casoId, atividades) {
     const titulo = el("p", { class: `atividade-titulo${atv.status === "concluida" ? " concluida" : ""}`, texto: atv.titulo });
     corpo.appendChild(titulo);
     const partesMeta = [_ROTULO_TIPO_ATIVIDADE[atv.tipo] || atv.tipo];
-    if (atv.data) partesMeta.push(atv.data);
+    if (atv.data) partesMeta.push(formatarDataSimples(atv.data));
     if (atv.hora) partesMeta.push(atv.hora);
     corpo.appendChild(el("p", { class: "atividade-meta", texto: partesMeta.join(" · ") }));
     if (atv.observacoes) corpo.appendChild(el("p", { class: "atividade-meta", texto: atv.observacoes }));
@@ -4661,7 +4661,11 @@ const _CAMPOS_CAPA_MANUAIS = [
   ["status_processo", "Status do processo"],
 ];
 
-async function _carregarCapaProcessos(casoId) {
+function formatarNumeroCNJ(valor) {
+  return String(valor || "").replace(/^(\d{7})(\d{2})(\d{4})(\d)(\d{2})(\d{4})$/, "$1-$2.$3.$4.$5.$6");
+}
+
+async function _carregarCapaProcessos(casoId, atualizarPartes = false) {
   const lista = document.getElementById("lista-capa-processos");
   limpar(lista);
   let numeros;
@@ -4675,14 +4679,36 @@ async function _carregarCapaProcessos(casoId) {
     lista.appendChild(notificacao("info", "Nenhum número de processo vinculado a este caso."));
     return;
   }
+  const movimentos = [];
+  const partes = [];
+  const advogados = [];
   for (const numero of numeros) {
     try {
       const capa = await _buscarJson(`/casos/${casoId}/processos/${numero}/capa`);
       lista.appendChild(_cardCapaProcesso(casoId, numero, capa));
+      movimentos.push(...(capa.movimentos || []));
+      partes.push(...(capa.partes || []));
+      advogados.push(...(capa.advogados || []));
     } catch (erro) {
       lista.appendChild(notificacao("error", `${numero}: ${erro.message}`));
     }
   }
+  const listaMovs = document.getElementById("lista-movimentacoes");
+  limpar(listaMovs);
+  if (movimentos.length) listaMovs.appendChild(linhaDoTempoMovimentos(movimentos));
+  else listaMovs.appendChild(notificacao("info", "Nenhuma movimentação disponível. Atualize a capa para consultar o DataJud."));
+  if (atualizarPartes) {
+    const registros = [
+      ["autor", partes.filter(p => /^(A|AT|ATIVO)$/i.test(p.polo || "")).map(p => p.nome)],
+      ["reu", partes.filter(p => /^(P|PA|PASSIVO)$/i.test(p.polo || "")).map(p => p.nome)],
+      ["advogados", advogados.map(a => `${a.nome}${a.numero_oab ? ` — OAB ${a.numero_oab}/${a.uf_oab || ""}` : ""}`)],
+    ];
+    for (const [tipo, nomes] of registros) {
+      _preencherCamposPartes(tipo, [..._lerCamposPartes(tipo), ...nomes]);
+    }
+    atualizarIndicadorEdicao(document.getElementById("form-caso-partes"));
+  }
+
 }
 
 async function _atualizarCapaProcessos(casoId) {
@@ -4709,13 +4735,13 @@ async function _atualizarCapaProcessos(casoId) {
   botao.disabled = false;
   limpar(statusEl);
   if (erros.length) mostrarAviso(statusEl, erros.join(" | "));
-  await _carregarCapaProcessos(casoId);
+  await _carregarCapaProcessos(casoId, true);
 }
 
 function _cardCapaProcesso(casoId, numero, capa) {
   const autoCampos = [
     ["Tribunal", capa.tribunal], ["Classe", capa.classe], ["Grau", capa.grau],
-    ["Assuntos", (capa.assuntos || []).join(", ")], ["Distribuição", capa.data_distribuicao],
+    ["Assuntos", (capa.assuntos || []).join(", ")], ["Distribuição", capa.data_distribuicao ? formatarDataSimples(capa.data_distribuicao) : null],
     ["Nível de sigilo", capa.nivel_sigilo], ["Nome do processo", capa.nome_processo],
   ].filter(([, valor]) => valor !== null && valor !== undefined && valor !== "");
 
@@ -4732,11 +4758,12 @@ function _cardCapaProcesso(casoId, numero, capa) {
   const inputs = _CAMPOS_CAPA_MANUAIS.map(([chave, rotulo]) => {
     const input = el("input", {
       class: "cds--text-input", type: chave === "valor_causa" ? "number" : "text",
+      id: `capa-${numero}-${chave}`,
       placeholder: rotulo, value: capa[chave] ?? "",
     });
     campos[chave] = input;
     return el("div", { class: "cds--form-item capa-card-campo" }, [
-      el("label", { class: "cds--label" }, [document.createTextNode(rotulo)]),
+      el("label", { class: "cds--label", for: `capa-${numero}-${chave}` }, [document.createTextNode(rotulo)]),
       input,
     ]);
   });
@@ -4763,7 +4790,7 @@ function _cardCapaProcesso(casoId, numero, capa) {
   });
 
   return el("div", { class: "capa-card" }, [
-    el("h4", {}, [document.createTextNode(numero)]),
+    el("h4", {}, [document.createTextNode(formatarNumeroCNJ(numero))]),
     blocoAuto,
     el("div", { class: "capa-card-campos" }, inputs),
     btnSalvar,
@@ -4978,11 +5005,6 @@ document.getElementById("form-vinculos-adicionar").addEventListener("submit", as
 
 document.getElementById("caso-voltar").addEventListener("click", voltarParaCasos);
 document.getElementById("caso-subaba-cadastro-botao").addEventListener("click", () => _selecionarSubabaCaso("cadastro"));
-document.getElementById("caso-subaba-partes-botao").addEventListener("click", () => {
-  _selecionarSubabaCaso("partes");
-  const casoId = document.getElementById("form-caso-partes").dataset.casoId;
-  if (casoId) _buscarPartesDJEN(casoId);
-});
 document.getElementById("caso-subaba-atividades-botao").addEventListener("click", () => _selecionarSubabaCaso("atividades"));
 document.getElementById("caso-subaba-publicacoes-botao").addEventListener("click", () => {
   _selecionarSubabaCaso("publicacoes");
@@ -5020,22 +5042,15 @@ registrarSalvamento(document.getElementById("form-caso-editar"), async (evento) 
   if (!casoId) return;
   const botao = evento.target.querySelector("button[type=submit]");
   const resultado = document.getElementById("resultado-caso-editar");
-  const numeros = document.getElementById("editar-caso-processos").value.split(",").map((s) => s.trim()).filter(Boolean);
-  const corpo = {
-    titulo: document.getElementById("editar-caso-titulo").value.trim(),
-    responsavel: document.getElementById("editar-caso-responsavel").value.trim(),
-    acao: document.getElementById("editar-caso-acao").value.trim(),
-    foro: document.getElementById("editar-caso-foro").value.trim(),
-    desfecho: document.getElementById("editar-caso-desfecho").value || null,
-    numeros_processo: numeros,
-  };
+  const corpo = {responsavel: document.getElementById("editar-caso-responsavel").value.trim()};
   const pararEspera = mostrarEspera(resultado, botao, "Salvando");
   try {
     const atualizado = await _enviarJson(`/casos/${casoId}`, corpo, "PATCH");
     limpar(resultado);
     resultado.appendChild(notificacao("success", "Caso atualizado"));
     marcarFormularioSalvo(evento.target);
-    document.getElementById("caso-detalhe-titulo").textContent = `Nº ${atualizado.numero} — ${atualizado.titulo || "(sem título)"}`;
+    _casoDetalheAtual = atualizado;
+    document.getElementById("caso-detalhe-titulo").textContent = atualizado.titulo || "(sem título)";
     const indice = _cache.casos.findIndex((c) => c.id === casoId);
     if (indice !== -1) _cache.casos[indice] = { ..._cache.casos[indice], ...atualizado };
   } catch (erro) {
@@ -5167,7 +5182,7 @@ registrarSalvamento(document.getElementById("form-caso-partes"), async (evento) 
   };
   const pararEspera = mostrarEspera(resultado, botao, "Salvando");
   try {
-    await _enviarJson(`/casos/${casoId}`, corpo, "PATCH");
+    _casoDetalheAtual = await _enviarJson(`/casos/${casoId}`, corpo, "PATCH");
     limpar(resultado);
     resultado.appendChild(notificacao("success", "Partes atualizadas"));
     marcarFormularioSalvo(evento.target);
@@ -5181,7 +5196,7 @@ registrarSalvamento(document.getElementById("form-caso-partes"), async (evento) 
 document.getElementById("btn-excluir-caso").addEventListener("click", async () => {
   const casoId = document.getElementById("form-caso-editar").dataset.casoId;
   if (!casoId) return;
-  const titulo = document.getElementById("editar-caso-titulo").value || "(sem título)";
+  const titulo = _casoDetalheAtual?.titulo || "(sem título)";
   if (!(await confirmarAcao(`Excluir o caso "${titulo}"? Essa ação não pode ser desfeita.`))) return;
   const botao = document.getElementById("btn-excluir-caso");
   botao.disabled = true;
@@ -5240,7 +5255,8 @@ function _inicializarDatePickerRange(idInicio, idFim, opcoes) {
   const elFim = document.getElementById(idFim);
   if (!elInicio || !elFim || typeof window.flatpickr !== "function") return;
   window.flatpickr(elInicio, Object.assign({
-    altInput: false,
+    altInput: opcoes.dateFormat === "Y-m-d",
+    altFormat: "d/m/Y",
     allowInput: true,
     locale: window.flatpickr.l10ns && window.flatpickr.l10ns.pt,
     plugins: [new window.rangePlugin({ input: elFim })],
@@ -5257,7 +5273,8 @@ _inicializarDatePickerRange("pub-oab-manual-data-inicio", "pub-oab-manual-data-f
   const el = document.getElementById("atividade-data");
   if (!el || typeof window.flatpickr !== "function") return;
   const fp = window.flatpickr(el, {
-    altInput: false,
+    altInput: true,
+    altFormat: "d/m/Y",
     allowInput: true,
     locale: window.flatpickr.l10ns && window.flatpickr.l10ns.pt,
     dateFormat: "Y-m-d",

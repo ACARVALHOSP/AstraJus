@@ -2116,6 +2116,8 @@ class CapaProcessoHttpTest(unittest.TestCase):
             "instancias": [{
                 "tribunal": "TJSP", "classe": "Cobrança", "assuntos": ["Dano Moral"],
                 "grau": "G1", "dataAjuizamento": "20230101000000", "nivel_sigilo": 0,
+                "codigoMunicipioIBGE": 3550308,
+                "movimentos": [{"nome": "Distribuição", "dataHora": "2023-01-01T12:00:00Z"}],
             }],
             "partes": [{"nome": "FULANO", "polo": "A"}, {"nome": "SICRANO", "polo": "P"}],
             "advogados": [{"nome": "ADV", "numero_oab": "1", "uf_oab": "SP"}],
@@ -2127,6 +2129,29 @@ class CapaProcessoHttpTest(unittest.TestCase):
         self.assertEqual(resultado["nome_processo"], "FULANO x SICRANO")
         self.assertEqual(resultado["partes"], resultado_unificado["partes"])
         self.assertEqual(resultado["advogados"], resultado_unificado["advogados"])
+        self.assertEqual(resultado["cidade"], "São Paulo")
+        self.assertEqual(resultado["uf"], "SP")
+        self.assertEqual(resultado["movimentos"][0]["nome"], "Distribuição")
+        status, reaberto = self._chamar("GET", None)
+        self.assertEqual(status, 200)
+        self.assertEqual(reaberto, resultado)
+
+    def test_codigo_municipio_desconhecido_preserva_localidade_manual(self):
+        self._chamar("PATCH", None, {"cidade": "Praia Grande", "uf": "SP"})
+        with mock.patch.object(server, "consultar_processo_unificado", return_value={
+            "instancias": [{"codigoMunicipioIBGE": "9999999"}],
+        }):
+            status, resultado = self._chamar("POST", "atualizar", {"tribunal": "tjsp"})
+        self.assertEqual(status, 200)
+        self.assertEqual(resultado["cidade"], "Praia Grande")
+        self.assertEqual(resultado["uf"], "SP")
+
+    def test_extracao_datajud_preserva_codigo_ibge(self):
+        resultado = server._extrair_processo_datajud({"orgaoJulgador": {
+            "nome": "Vara Cível", "codigoMunicipioIBGE": 3550308,
+        }})
+        self.assertEqual(resultado["codigoMunicipioIBGE"], 3550308)
+
 
 
 if __name__ == "__main__":
