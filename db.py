@@ -286,6 +286,69 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
         _migrar_colunas_lancamentos(conexao)
         _migrar_remover_calendar_evento_id(conexao)
         _migrar_fk_publicacoes_capturadas(conexao)
+        _migrar_processos_individuais(conexao)
+
+
+def _migrar_processos_individuais(conexao: sqlite3.Connection) -> None:
+    """Separa cadastros antigos e impõe um único número por entidade.
+
+    O índice também é o marcador idempotente da migração. Dados sem número
+    (atividades, financeiro e eventos genéricos) continuam no registro original.
+    Nomes físicos legados são mantidos para compatibilidade com a API.
+    """
+    if conexao.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_processo_unico_por_cadastro'").fetchone():
+        return
+    with conexao:
+        antigos = conexao.execute(
+            "SELECT caso_id FROM caso_processos GROUP BY caso_id HAVING COUNT(*) > 1"
+        ).fetchall()
+        colunas = [r[1] for r in conexao.execute("PRAGMA table_info(casos)")]
+        for (original,) in antigos:
+            dados = dict(zip(colunas, conexao.execute("SELECT * FROM casos WHERE id=?", (original,)).fetchone()))
+            numeros = [r[0] for r in conexao.execute(
+                "SELECT numero_processo FROM caso_processos WHERE caso_id=? ORDER BY numero_processo", (original,)
+            )]
+            for numero in numeros[1:]:
+                novo = uuid.uuid4().hex
+                copia = {**dados, "id": novo, "numero": conexao.execute("SELECT COALESCE(MAX(numero),0)+1 FROM casos").fetchone()[0]}
+                conexao.execute(
+                    f"INSERT INTO casos ({', '.join(colunas)}) VALUES ({', '.join('?' for _ in colunas)})",
+                    [copia[c] for c in colunas],
+                )
+                conexao.execute("INSERT INTO caso_processos VALUES (?, ?)", (novo, numero))
+                # A capa referencia a chave composta: copiar antes de excluir o vínculo antigo.
+                capa_colunas = [r[1] for r in conexao.execute("PRAGMA table_info(caso_processo_capa)") if r[1] != "caso_id"]
+                campos = ', '.join(capa_colunas)
+                conexao.execute(
+                    f"INSERT INTO caso_processo_capa (caso_id, {campos}) SELECT ?, {campos} FROM caso_processo_capa WHERE caso_id=? AND numero_processo=?",
+                    (novo, original, numero),
+                )
+                for tabela in ("caso_eventos", "publicacoes_capturadas"):
+                    conexao.execute(f"UPDATE {tabela} SET caso_id=? WHERE caso_id=? AND numero_processo=?", (novo, original, numero))
+                conexao.execute("INSERT INTO caso_clientes SELECT ?, cliente_id FROM caso_clientes WHERE caso_id=?", (novo, original))
+                conexao.execute("INSERT INTO caso_vinculos VALUES (?, ?, 'relacionado', ?)", (original, novo, dados["criado_em"]))
+                conexao.execute("DELETE FROM caso_processos WHERE caso_id=? AND numero_processo=?", (original, numero))
+        conexao.execute("CREATE UNIQUE INDEX idx_processo_unico_por_cadastro ON caso_processos(caso_id)")
+
+
+def normalizar_numero_processo(numeros: list[str]) -> list[str]:
+    """Contrato legado em lista: zero ou um número CNJ, armazenado sem máscara."""
+    if not isinstance(numeros, list) or len(numeros) > 1:
+        raise ValueError("Informe apenas um número CNJ por processo.")
+    resultado = []
+    for numero in numeros:
+        if not isinstance(numero, str):
+            raise ValueError("O número CNJ deve ser um texto com 20 dígitos.")
+        numero = numero.strip()
+        if not numero:
+            continue
+        if any(c not in "0123456789.- " for c in numero):
+            raise ValueError("Número CNJ inválido: informe 20 dígitos.")
+        digitos = ''.join(c for c in numero if c in "0123456789")
+        if len(digitos) != 20:
+            raise ValueError("Número CNJ inválido: informe 20 dígitos.")
+        resultado.append(digitos)
+    return resultado
 
 
 def _migrar_colunas_clientes(conexao: sqlite3.Connection) -> None:
@@ -747,6 +810,7 @@ class RegistroClientesCasos:
         numeros_processo: list[str], agora, clientes_adicionais: list[str] | None = None,
         acao: str | None = None, foro: str | None = None,
     ) -> dict:
+        numeros_processo = normalizar_numero_processo(numeros_processo)
         novo_id = uuid.uuid4().hex
         criado_em = agora().isoformat()
         with self._trava, _abrir(self.caminho) as conexao, conexao:
@@ -768,6 +832,10 @@ class RegistroClientesCasos:
         return self.obter_caso(novo_id)
 
     def adicionar_processo_ao_caso(self, caso_id: str, numero_processo: str) -> None:
+        numeros = normalizar_numero_processo([numero_processo])
+        if not numeros:
+            raise ValueError("Informe o número CNJ.")
+        numero_processo = numeros[0]
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             conexao.execute(
                 "INSERT OR IGNORE INTO caso_processos (caso_id, numero_processo) VALUES (?, ?)",
@@ -838,6 +906,8 @@ class RegistroClientesCasos:
         advogados: str | None, numeros_processo: list[str] | None = None,
         desfecho: str | None = None,
     ) -> dict | None:
+        if numeros_processo is not None:
+            numeros_processo = normalizar_numero_processo(numeros_processo)
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             cursor = conexao.execute("SELECT 1 FROM casos WHERE id = ?", (caso_id,))
             if cursor.fetchone() is None:
