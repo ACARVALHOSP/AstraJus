@@ -2950,6 +2950,11 @@ def _criar_caso_validado(
     tratado direto).
     Devolve (caso, None) ou (None, erro).
     """
+    try:
+        numeros = _db.normalizar_numero_processo(dados.get("numeros_processo", []))
+    except ValueError as erro:
+        return None, _erro(str(erro))
+
     cliente_id, erro = _resolver_cliente_id(gestao, dados)
     if erro:
         return None, erro
@@ -2966,15 +2971,6 @@ def _criar_caso_validado(
             return None, erro
         clientes_adicionais.append(cid)
 
-    numeros_brutos = dados.get("numeros_processo") or []
-    if not isinstance(numeros_brutos, list) or not numeros_brutos:
-        return None, _erro("Informe ao menos um número de processo em numeros_processo.")
-    numeros = []
-    for numero in numeros_brutos:
-        numero_normalizado = _so_digitos(numero)
-        if len(numero_normalizado) != 20:
-            return None, _erro(f"Número de processo inválido: '{numero}' (esperados 20 dígitos).")
-        numeros.append(numero_normalizado)
 
     caso = gestao.criar_caso(
         cliente_id=cliente_id,
@@ -3788,6 +3784,12 @@ class _AutenticacaoBearer:
             # PATCH de Partes e Cadastro envia somente os campos da respectiva aba.
             dados = {**atual, **dados}
             numeros = dados.get("numeros_processo")
+            if numeros is not None:
+                try:
+                    numeros = _db.normalizar_numero_processo(numeros)
+                except ValueError as erro:
+                    await _json(send, 400, _erro(str(erro)))
+                    return
             caso = self.gestao.atualizar_caso(
                 caso_id,
                 titulo=dados.get("titulo"),

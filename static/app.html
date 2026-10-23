@@ -503,7 +503,7 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 <body class="cds--white">
 <div id="toast-global" aria-live="polite" style="position:fixed;top:1rem;right:1rem;z-index:9999;width:min(380px,calc(100vw - 2rem));display:flex;flex-direction:column;gap:0.5rem;pointer-events:none"></div>
 <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
-<a class="skip-link" href="#aba-casos-botao">Ir para Casos</a>
+<a class="skip-link" href="#aba-casos-botao">Ir para Processos</a>
 <a class="skip-link" href="#aba-contatos-botao">Ir para Clientes</a>
 <a class="skip-link" href="#aba-publicacoes-oab-botao">Ir para Publicações monitoradas</a>
 <a class="skip-link" href="#aba-monitoramentos-botao">Ir para Monitoramentos</a>
@@ -521,7 +521,7 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M15,14.3L10.7,10c1.9-2.3,1.6-5.8-0.7-7.7S4.2,0.7,2.3,3S0.7,8.8,3,10.7c2,1.7,5,1.7,7,0l4.3,4.3L15,14.3z M2,6.5C2,4,4,2,6.5,2S11,4,11,6.5S9,11,6.5,11S2,9,2,6.5z"/></svg>
 </button>
 <div class="header-busca-painel" id="header-busca-painel" hidden>
-<input class="cds--text-input" type="search" id="header-busca-input" aria-label="Buscar cliente, caso ou número de processo" placeholder="Buscar cliente, caso ou número de processo" autocomplete="off">
+<input class="cds--text-input" type="search" id="header-busca-input" aria-label="Buscar cliente, processo ou número de processo" placeholder="Buscar cliente, processo ou número de processo" autocomplete="off">
 <div id="header-busca-resultados" class="header-busca-resultados"></div>
 </div>
 </div>
@@ -569,7 +569,7 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 <button class="cds--side-nav__link" id="aba-contatos-botao" role="tab" aria-selected="false" aria-controls="aba-contatos" type="button"><span class="cds--side-nav__link-text">Clientes</span></button>
 </li>
 <li role="presentation" class="cds--side-nav__menu-item">
-<button class="cds--side-nav__link" id="aba-casos-botao" role="tab" aria-selected="false" aria-controls="aba-casos" type="button"><span class="cds--side-nav__link-text">Casos</span></button>
+<button class="cds--side-nav__link" id="aba-casos-botao" role="tab" aria-selected="false" aria-controls="aba-casos" type="button"><span class="cds--side-nav__link-text">Processos</span></button>
 </li>
 </ul>
 </li>
@@ -892,8 +892,8 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 <h2 class="lista-rapida-titulo">Favoritos</h2>
 <p class="campo-ajuda">Processos marcados manualmente na aba Processo (DataJud).</p>
 <ul id="lista-favoritos" class="lista-rapida"></ul>
-<h2 class="lista-rapida-titulo">Casos favoritos</h2>
-<p class="campo-ajuda">Casos marcados com a estrela na aba Casos.</p>
+<h2 class="lista-rapida-titulo">Processos favoritos</h2>
+<p class="campo-ajuda">Processos marcados com a estrela na aba Processos.</p>
 <ul id="lista-casos-favoritos" class="lista-rapida"></ul>
 <h2 class="lista-rapida-titulo">Histórico recente</h2>
 <p class="campo-ajuda">Últimas consultas feitas neste navegador. Clique para repetir.</p>
@@ -1258,19 +1258,19 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 
 <div id="caso-vista-lista">
 <h2 class="lista-rapida-titulo">Processos novos para triagem</h2>
-<p class="campo-ajuda">Publicações encontradas pelo monitoramento de OAB que ainda não têm caso cadastrado. Após carregados, vincule cada processo a um cliente ou descarte.</p>
+<p class="campo-ajuda">Publicações encontradas pelo monitoramento de OAB que ainda não têm processo cadastrado. Após carregados, vincule cada processo a um cliente ou descarte.</p>
 <div id="lista-pendentes" class="app-resultado"></div>
 
 <div class="secao-cabecalho">
-<h2 class="lista-rapida-titulo">Casos</h2>
-<button class="cds--btn cds--btn--primary cds--btn--sm" type="button" id="btn-novo-caso">Novo caso</button>
+<h2 class="lista-rapida-titulo">Processos</h2>
+<button class="cds--btn cds--btn--primary cds--btn--sm" type="button" id="btn-novo-caso">Novo processo</button>
 </div>
-<h2 class="lista-rapida-titulo" style="margin-top:1.5rem">Casos cadastrados</h2>
+<h2 class="lista-rapida-titulo" style="margin-top:1.5rem">Processos cadastrados</h2>
 <div class="contatos-barra" style="margin-top:0.5rem">
 <div class="cds--form-item contatos-busca-campo" style="margin:0;max-width:360px">
-<input class="cds--text-input" type="search" id="casos-busca" placeholder="Filtrar por título, cliente, ação, processo…" aria-label="Buscar casos" autocomplete="off">
+<input class="cds--text-input" type="search" id="casos-busca" placeholder="Filtrar por título, cliente, ação, processo…" aria-label="Buscar processos" autocomplete="off">
 </div>
-<div class="cds--content-switcher cds--content-switcher--light" id="casos-vista-switcher" role="tablist" aria-label="Visualização da lista de casos">
+<div class="cds--content-switcher cds--content-switcher--light" id="casos-vista-switcher" role="tablist" aria-label="Visualização da lista de processos">
 <button class="cds--content-switcher-btn cds--content-switcher--selected" type="button" id="casos-vista-tabela-botao" role="tab" aria-selected="true"><span class="cds--content-switcher__label">Tabela</span></button>
 <button class="cds--content-switcher-btn" type="button" id="casos-vista-cards-botao" role="tab" aria-selected="false"><span class="cds--content-switcher__label">Cards</span></button>
 </div>
@@ -1284,7 +1284,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <h2 class="lista-rapida-titulo" id="caso-detalhe-titulo"></h2>
 </div>
 
-<div class="sub-abas" role="tablist" aria-label="Detalhes do caso">
+<div class="sub-abas" role="tablist" aria-label="Detalhes do processo">
 <button class="sub-aba-botao sub-aba-ativa" id="caso-subaba-cadastro-botao" role="tab" aria-selected="true" aria-controls="caso-subaba-cadastro" type="button">Cadastro</button>
 <button class="sub-aba-botao" id="caso-subaba-partes-botao" role="tab" aria-selected="false" aria-controls="caso-subaba-partes" type="button">Partes</button>
 <button class="sub-aba-botao" id="caso-subaba-atividades-botao" role="tab" aria-selected="false" aria-controls="caso-subaba-atividades" type="button">Atividades</button>
@@ -1296,7 +1296,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <section id="caso-subaba-cadastro" role="tabpanel" aria-labelledby="caso-subaba-cadastro-botao">
 <form id="form-caso-editar" class="form-detalhe">
 <div class="cds--form-item">
-<label class="cds--label" for="editar-caso-titulo">Título do caso</label>
+<label class="cds--label" for="editar-caso-titulo">Título do processo</label>
 <input class="cds--text-input" type="text" id="editar-caso-titulo" name="titulo" placeholder="Ex.: Cobrança de honorários" autocomplete="off">
 </div>
 <div class="cds--form-item">
@@ -1325,7 +1325,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </select>
 </div>
 <div class="cds--form-item">
-<label class="cds--label" for="editar-caso-processos">Números de processo (separados por vírgula)</label>
+<label class="cds--label" for="editar-caso-processos">Número CNJ (opcional)</label>
 <input class="cds--text-input" type="text" id="editar-caso-processos" name="numeros_processo" placeholder="0000000-00.0000.0.00.0000" autocomplete="off">
 <button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="btn-datajud-detalhe">Buscar ação/foro no DataJud</button>
 <div id="status-datajud-detalhe" class="campo-ajuda"></div>
@@ -1333,7 +1333,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div id="resultado-caso-editar" class="app-resultado"></div>
 <div class="form-acoes-detalhe">
 <button class="cds--btn cds--btn--primary cds--btn--sm" type="submit" form="form-caso-editar">Salvar</button>
-<button class="cds--btn cds--btn--danger--ghost cds--btn--sm" type="button" id="btn-excluir-caso">Excluir caso</button>
+<button class="cds--btn cds--btn--danger--ghost cds--btn--sm" type="button" id="btn-excluir-caso">Excluir processo</button>
 </div>
 </form>
 </section>
@@ -1402,11 +1402,11 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 
 <section id="caso-subaba-vinculos" role="tabpanel" aria-labelledby="caso-subaba-vinculos-botao" hidden>
 <div class="secao-cabecalho">
-<h3 class="lista-rapida-titulo">Casos vinculados</h3>
+<h3 class="lista-rapida-titulo">Processos vinculados</h3>
 </div>
 <div id="lista-vinculos" class="app-resultado"></div>
 <details class="vinculos-adicionar" id="vinculos-adicionar-painel">
-<summary>Vincular outro caso</summary>
+<summary>Vincular outro processo</summary>
 <form id="form-vinculos-adicionar" class="vinculos-form">
 <div class="cds--form-item">
 <label class="cds--label" for="vinculos-numero-processo">Número do processo</label>
@@ -1522,7 +1522,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="cds--modal" id="modal-novo-caso" role="dialog" aria-modal="true" aria-labelledby="modal-novo-caso-titulo">
 <div class="cds--modal-container cds--modal-container--sm">
 <div class="cds--modal-header">
-<p class="cds--modal-header__heading" id="modal-novo-caso-titulo">Novo caso</p>
+<p class="cds--modal-header__heading" id="modal-novo-caso-titulo">Novo processo</p>
 <button class="cds--modal-close" type="button" id="modal-novo-caso-fechar" aria-label="Fechar">
 <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="20" height="20" fill="currentColor"><path d="M17.41 16 24 9.41 22.59 8 16 14.59 9.41 8 8 9.41 14.59 16 8 22.59 9.41 24 16 17.41 22.59 24 24 22.59 17.41 16z"/></svg>
 </button>
@@ -1552,18 +1552,18 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <input class="cds--text-input" id="caso-foro" name="foro" placeholder="Ex.: 3ª Vara Cível" autocomplete="off">
 </div>
 <div class="cds--form-item">
-<label class="cds--label" for="caso-processos">Número(s) de processo</label>
-<input class="cds--text-input" id="caso-processos" name="numeros_processo" placeholder="1006314-27.2023.8.26.0005, ..." autocomplete="off">
+<label class="cds--label" for="caso-processos">Número CNJ (opcional)</label>
+<input class="cds--text-input" id="caso-processos" name="numeros_processo" placeholder="1006314-27.2023.8.26.0005" autocomplete="off">
 <button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="btn-datajud-modal">Buscar ação/foro no DataJud</button>
 <div id="status-datajud-modal" class="campo-ajuda"></div>
-<span class="campo-ajuda">Separe por vírgula se houver mais de um.</span>
+<span class="campo-ajuda">Informe um único número ou deixe em branco se ainda não existir.</span>
 </div>
 </form>
 <div id="resultado-caso" class="app-resultado" aria-live="polite"></div>
 </div>
 <div class="cds--modal-footer">
 <button class="cds--btn cds--btn--secondary" type="button" data-fechar-modal="modal-novo-caso">Cancelar</button>
-<button class="cds--btn cds--btn--primary" type="submit" form="form-caso">Cadastrar caso</button>
+<button class="cds--btn cds--btn--primary" type="submit" form="form-caso">Cadastrar processo</button>
 </div>
 </div>
 </div>
@@ -1572,7 +1572,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="cds--modal" id="modal-cadastrar-caso-publicacao" role="dialog" aria-modal="true" aria-labelledby="modal-cadastrar-caso-publicacao-titulo">
 <div class="cds--modal-container cds--modal-container--sm">
 <div class="cds--modal-header">
-<p class="cds--modal-header__heading" id="modal-cadastrar-caso-publicacao-titulo">Cadastrar cliente e caso</p>
+<p class="cds--modal-header__heading" id="modal-cadastrar-caso-publicacao-titulo">Cadastrar cliente e processo</p>
 <button class="cds--modal-close" type="button" id="modal-cadastrar-caso-publicacao-fechar" aria-label="Fechar">
 <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="20" height="20" fill="currentColor"><path d="M17.41 16 24 9.41 22.59 8 16 14.59 9.41 8 8 9.41 14.59 16 8 22.59 9.41 24 16 17.41 22.59 24 24 22.59 17.41 16z"/></svg>
 </button>
@@ -1664,7 +1664,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="grade-integracoes">
 <button class="cds--tile" type="button" id="btn-lancamento-tipo-honorario" style="cursor:pointer; text-align:left; width:100%;">
 <h3>Honorário</h3>
-<p>Cobrança de honorários vinculada a um caso/cliente.</p>
+<p>Cobrança de honorários vinculada a um processo e cliente.</p>
 </button>
 <div class="cds--tile">
 <h3>Outras Entradas</h3>
@@ -1725,9 +1725,9 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 <label class="checkbox-lembrar"><input type="checkbox" id="honorario-recorrente"> Repetir mensalmente</label>
 <div class="cds--form-item">
-<label class="cds--label" for="honorario-caso">Processo, Caso ou Atendimento <span aria-hidden="true">*</span></label>
+<label class="cds--label" for="honorario-caso">Processo, Processo ou Atendimento <span aria-hidden="true">*</span></label>
 <select class="cds--select-input" id="honorario-caso" name="caso_id" autocomplete="off" required>
-<option value="">— selecione o caso —</option>
+<option value="">— selecione o processo —</option>
 </select>
 </div>
 <div class="cds--form-item">
