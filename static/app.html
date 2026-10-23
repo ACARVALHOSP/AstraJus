@@ -567,6 +567,22 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 .pub-oab-grade .pub-oab-tabela tr { display: table-row; border: 0; margin: 0; padding: 0; }
 .pub-oab-grade .pub-oab-tabela :is(th,td) { display: table-cell; position: static; width: auto; padding: 0.6rem; text-align: start; vertical-align: top; border-bottom: 1px solid var(--cds-border-subtle); overflow-wrap: normal; }
 .pub-oab-grade .pub-oab-tabela th { background: var(--cds-layer); color: var(--cds-text-primary); text-transform: none; font-size: var(--fonte-base); font-weight: 600; }
+#lista-publicacoes-oab .pub-oab-publicacao-completa,
+#lista-publicacoes-oab .pub-oab-publicacao-completa * { font-size: 0.625rem; line-height: 1.6; }
+.pub-oab-publicacao-cabecalho { padding-bottom: 1rem; border-bottom: 1px solid var(--cds-border-subtle); margin-bottom: 1rem; }
+.pub-oab-publicacao-cabecalho strong { font-weight: 600; }
+.pub-oab-publicacao-cabecalho p { margin: 0 0 0.25rem; }
+.pub-oab-publicacao-texto { white-space: pre-line; text-align: justify; overflow-wrap: anywhere; }
+.pub-oab-grade .pub-oab-tabela td[data-coluna="nome"] { min-inline-size: 14rem; max-inline-size: 24rem; white-space: normal; }
+.pub-oab-nome-processo { inline-size: clamp(14rem, 22vw, 24rem); white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pub-oab-grade .pub-oab-tabela td[colspan] { white-space: normal; }
+.pub-oab-inline-form { padding: 1rem; inline-size: min(52rem, calc(100vw - 4rem)); max-inline-size: 100%; box-sizing: border-box; display: grid; gap: 1rem; white-space: normal; overflow-wrap: anywhere; }
+.pub-oab-inline-form h3 { font-size: var(--fonte-subtitulo); font-weight: 600; }
+.pub-oab-inline-form .cds--form-item { min-inline-size: 0; }
+.pub-oab-resultados-busca { display: flex; flex-direction: column; max-block-size: 16rem; overflow-y: auto; }
+.pub-oab-resultados-busca .cds--btn { max-inline-size: none; white-space: normal; text-align: start; flex-shrink: 0; }
+.pub-oab-confirmacao { padding: 1rem; background: var(--cds-layer); overflow-wrap: anywhere; }
+.pub-oab-inline-acoes { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .pub-oab-grade .pub-oab-tabela td[data-coluna="texto"] { min-inline-size: 24rem; max-inline-size: 40rem; white-space: pre-line; overflow-wrap: anywhere; }
 .pub-oab-grade .pub-oab-tabela td::before { display: none; }
 .pub-oab-grade .pub-oab-tabela tbody tr:hover { background: var(--cds-layer-hover); }

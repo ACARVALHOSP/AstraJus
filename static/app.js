@@ -4092,15 +4092,139 @@ function _valorPubOab(valor, literal = false) {
   return literal ? String(valor) : _tituloPubOab(valor);
 }
 
+const _COLUNAS_FIXAS_PUB_OAB = new Set(["processo", "tribunal", "nome"]);
+
+function _nomeProcessoPubOab(p) {
+  const partes = p.dados?.destinatarios || [];
+  const nomes = (polo) => [...new Set(partes.filter((d) => String(d.polo || "").toUpperCase() === polo).map((d) => d.nome).filter(Boolean))].map(_tituloPubOab).join(" / ");
+  return `${nomes("A") || "Parte Ativa Não Informada"} X ${nomes("P") || "Parte Passiva Não Informada"}`;
+}
+
+function _publicacaoCompletaPubOab(p, id) {
+  const d = p.dados || {};
+  const informacoes = [
+    ["Processo", formatarNumeroCNJ(d.numeroprocessocommascara || p.numero_processo || "")],
+    ["Nome Do Processo", _nomeProcessoPubOab(p)],
+    ["Partes", (d.destinatarios || []).map((parte) => `${parte.nome || "—"} (${parte.polo || "Polo Não Informado"})`).join("; ")],
+    ["Tribunal", (d.siglaTribunal || "").toUpperCase()], ["Órgão", d.nomeOrgao],
+    ["Divulgado", formatarDataSimples(d.data_disponibilizacao)],
+    ["Tipo", d.tipoComunicacao], ["Documento", d.tipoDocumento], ["Classe", d.nomeClasse],
+    ["Advogados", (d.destinatarioadvogados || []).map((a) => `${a.nome || "—"} · OAB ${a.numero_oab || "—"}/${a.uf_oab || "—"}`).join("; ")],
+  ];
+  return el("article", { id, class: "pub-oab-publicacao-completa", "aria-label": "Publicação Completa" }, [
+    el("header", { class: "pub-oab-publicacao-cabecalho" }, informacoes.filter(([, valor]) => valor).map(([rotulo, valor]) => el("p", {}, [el("strong", { texto: `${rotulo}: ${valor}` })]))),
+    el("div", { class: "pub-oab-publicacao-texto", texto: d.texto || "Texto Não Informado" }),
+  ]);
+}
+
+function _normalizarConsultaPubOab(valor) {
+  return String(valor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+async function _abrirFluxoInlinePubOab(tr, p, colunas, tipo, origem) {
+  const anterior = [...tr.parentElement.querySelectorAll(".pub-oab-inline-row")].find((linha) => linha.dataset.fluxoPublicacao === p.hash);
+  if (anterior) anterior.remove();
+  const id = `pub-oab-fluxo-${++_pubOabContadorLinha}`;
+  const busca = el("input", { id: `${id}-busca`, type: "search", class: "cds--text-input", autocomplete: "off",
+    placeholder: tipo === "cadastro" ? "Nome Do Cliente" : "Número, Parte Ou Cliente" });
+  const resultados = el("div", { class: "pub-oab-resultados-busca", "aria-label": "Resultados Da Consulta" });
+  const escolhido = el("div", { class: "pub-oab-confirmacao", hidden: "hidden" });
+  const status = el("p", { id: `${id}-status`, class: "campo-ajuda", role: "status", "aria-live": "polite", texto: "Carregando…" });
+  busca.setAttribute("aria-describedby", status.id);
+  const confirmar = el("button", { type: "submit", class: "cds--btn cds--btn--primary cds--btn--sm", texto: tipo === "cadastro" ? "Confirmar Cadastro" : "Confirmar Vínculo", disabled: "disabled" });
+  const cancelar = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Cancelar" });
+  const responsavel = el("select", { id: `${id}-responsavel`, class: "cds--select-input", required: "required" }, [el("option", { value: "", texto: "Selecione O Responsável" })]);
+  const form = el("form", { class: "pub-oab-inline-form", "aria-label": tipo === "cadastro" ? "Cadastrar Processo" : "Vincular A Processo Existente" }, [
+    el("h3", { texto: tipo === "cadastro" ? "Cadastrar Processo" : "Vincular A Processo Existente" }),
+    el("p", { class: "campo-ajuda", texto: `${formatarNumeroCNJ(p.numero_processo || "")} · ${_nomeProcessoPubOab(p)}` }),
+    el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: busca.id, texto: tipo === "cadastro" ? "Cliente" : "Consultar Processo" }), busca]),
+    resultados, escolhido,
+    ...(tipo === "cadastro" ? [el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: responsavel.id, texto: "Responsável" }), responsavel])] : []),
+    status, el("div", { class: "pub-oab-inline-acoes" }, [confirmar, cancelar]),
+  ]);
+  const linha = el("tr", { class: "pub-oab-inline-row", "data-fluxo-publicacao": p.hash }, [el("td", { colspan: String(colunas.length + 2) }, [form])]);
+  tr.after(linha);
+  tr.closest("table")?._pubOabAplicarColunas?.();
+  cancelar.addEventListener("click", () => { linha.remove(); origem.focus(); });
+  busca.focus();
+  let selecionado = null, clientes = [], pronto = false, requisicao = 0, temporizador;
+  const escolher = (item, descricao) => {
+    selecionado = item;
+    limpar(escolhido);
+    escolhido.append(el("strong", { texto: tipo === "cadastro" ? "Cliente Selecionado" : "Confirmar Processo Selecionado" }), el("p", { texto: descricao }));
+    escolhido.hidden = false;
+    confirmar.disabled = false;
+    limpar(resultados);
+    status.textContent = "Confira Os Dados E Confirme Abaixo.";
+  };
+  const exibir = (itens) => {
+    limpar(resultados);
+    if (!itens.length) { status.textContent = "Nenhum Resultado. Altere Os Termos Da Consulta."; return; }
+    for (const item of itens.slice(0, 20)) {
+      const cliente = clientes.find((c) => c.id === item.cliente_id);
+      const descricao = tipo === "cadastro" ? item.nome : [item.titulo, item.autor, item.reu, ...(item.processos || []).map(formatarNumeroCNJ), cliente?.nome || item.nome_cliente].filter(Boolean).join(" · ");
+      const botao = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: descricao });
+      botao.addEventListener("click", () => escolher(item, descricao));
+      resultados.appendChild(botao);
+    }
+    status.textContent = `${Math.min(itens.length, 20)} Resultado(s). Selecione Um Para Confirmar.`;
+  };
+  busca.addEventListener("input", () => {
+    selecionado = null; confirmar.disabled = true; escolhido.hidden = true; limpar(resultados);
+    clearTimeout(temporizador); const numeroRequisicao = ++requisicao;
+    if (!pronto) return;
+    const termo = busca.value.trim();
+    if (!termo) { status.textContent = "Informe Um Termo Para Consultar."; return; }
+    if (tipo === "cadastro") { exibir(clientes.filter((c) => _normalizarConsultaPubOab(c.nome).includes(_normalizarConsultaPubOab(termo)))); return; }
+    status.textContent = "Consultando Processos…";
+    temporizador = setTimeout(async () => {
+      try {
+        const dados = await _buscarJson(`/casos?q=${encodeURIComponent(termo)}`);
+        if (numeroRequisicao === requisicao && linha.isConnected) exibir(dados.casos || []);
+      } catch (erro) { if (numeroRequisicao === requisicao && linha.isConnected) status.textContent = erro.message; }
+    }, 200);
+  });
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    if (!selecionado || confirmar.disabled) return;
+    confirmar.disabled = true; cancelar.disabled = true; busca.disabled = true; responsavel.disabled = true;
+    status.textContent = tipo === "cadastro" ? "Cadastrando Processo…" : "Vinculando Publicação…";
+    try {
+      if (tipo === "cadastro") await _enviarJson(`/publicacoes-oab/${encodeURIComponent(p.hash)}/criar-caso`, { cliente_id: selecionado.id, responsavel: responsavel.value });
+      else await _enviarJson(`/casos/${encodeURIComponent(selecionado.id)}/publicacoes`, { hash: p.hash, numero_processo: p.numero_processo || null, dados: p.dados || null });
+      mostrarToast("success", tipo === "cadastro" ? "Processo Cadastrado" : "Publicação Vinculada", tipo === "cadastro" ? "Dados Capturados Preenchidos E Publicação Vinculada." : "Vínculo Confirmado.");
+      await carregarPublicacoesOab();
+    } catch (erro) {
+      status.textContent = erro.message;
+      confirmar.disabled = false; cancelar.disabled = false; busca.disabled = false; responsavel.disabled = false;
+    }
+  });
+  try {
+    const dadosClientes = await _buscarJson("/clientes"); clientes = dadosClientes.clientes || [];
+    if (tipo === "cadastro") {
+      const dados = await _buscarJson("/responsaveis");
+      for (const nome of dados.responsaveis || []) responsavel.appendChild(el("option", { value: nome, texto: nome }));
+    }
+    pronto = true;
+    status.textContent = "Informe Um Termo Para Consultar.";
+    if (busca.value) busca.dispatchEvent(new Event("input"));
+  } catch (erro) {
+    status.textContent = `Não Foi Possível Carregar As Opções: ${erro.message}`;
+    const repetir = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Tentar Novamente" });
+    repetir.addEventListener("click", () => _abrirFluxoInlinePubOab(tr, p, colunas, tipo, origem));
+    resultados.appendChild(repetir);
+  }
+}
+
 function _colunasPubOab(publicacoes = []) {
   const colunas = [
     ["divulgado", "Divulgado", (p) => formatarDataSimples(p.dados?.data_disponibilizacao), true],
     ["capturado", "Capturado", (p) => formatarData(p.criado_em), true],
     ["tipo", "Tipo", (p) => p.dados?.tipoComunicacao, true],
     ["processo", "Processo", () => "", true],
-    ["tribunal", "Tribunal", (p) => p.dados?.siglaTribunal, true],
+    ["tribunal", "Tribunal", (p) => (p.dados?.siglaTribunal || "").toUpperCase(), true, true],
     ["orgao", "Órgão", (p) => p.dados?.nomeOrgao, false],
-    ["nome", "Nome Do Processo", (p) => (p.dados?.destinatarios || []).map((d) => d.nome).filter(Boolean), true],
+    ["nome", "Nome Do Processo", _nomeProcessoPubOab, true],
     ["referencia", "Nome De Referência", (p) => p.nome_pesquisado, true],
     ["status", "Status", (p) => _ROTULO_STATUS_PUB_OAB[p.status] || p.status, true],
     ["documento", "Tipo De Documento", (p) => p.dados?.tipoDocumento, false],
@@ -4111,7 +4235,7 @@ function _colunasPubOab(publicacoes = []) {
     ["oab", "Número Da OAB", (p) => (p.dados?.destinatarioadvogados || []).map((d) => d.numero_oab), false, true],
     ["uf", "UF Da OAB", (p) => (p.dados?.destinatarioadvogados || []).map((d) => d.uf_oab), false],
     ["dados_advogados", "Dados Dos Advogados", (p) => p.dados?.destinatarioadvogados, false],
-    ["texto", "Texto", (p) => p.dados?.texto, false],
+    ["texto", "Texto", (p) => p.dados?.texto, false, true],
     ["hash", "Hash", (p) => p.dados?.hash || p.hash, false, true],
     ["link", "Link", (p) => p.dados?.link, false, true],
   ].map(([id, rotulo, valor, padrao, literal = false]) => ({ id, rotulo, valor, padrao, literal }));
@@ -4155,7 +4279,7 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
   if (d.texto) {
     const trTexto = el("tr", {});
     trTexto.hidden = true;
-    trTexto.appendChild(el("td", { colspan: String(colunas.length + 2) }, [el("div", { id: idTexto, class: "pub-oab-texto-expandido", texto: _tituloPubOab(d.texto) })]));
+    trTexto.appendChild(el("td", { colspan: String(colunas.length + 2) }, [_publicacaoCompletaPubOab(p, idTexto)]));
     const botaoExpandir = el("button", {
       class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Ler mais",
       "aria-expanded": "false", "aria-controls": idTexto,
@@ -4178,6 +4302,11 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
       badge.textContent = _tituloPubOab(badge.textContent);
       celula = el("td", {}, [badge]);
     } else celula = el("td", { texto: _valorPubOab(coluna.valor(p), coluna.literal) });
+    if (coluna.id === "nome") {
+      const nome = _nomeProcessoPubOab(p);
+      limpar(celula);
+      celula.appendChild(el("span", { class: "pub-oab-nome-processo", texto: nome, title: nome }));
+    }
     celula.setAttribute("data-coluna", coluna.id);
     celula.setAttribute("data-label", coluna.rotulo);
     tr.appendChild(celula);
@@ -4197,29 +4326,7 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
 
   // Ações compactas: link direto e Overflow Menu Carbon.
   const comboContainer = el("div", { class: "pub-oab-combo" });
-  const primaryWrap = el("div", { class: "cds--combo-button__primary-action" });
   const podeAdcCaso = p.status !== "tratada" && Boolean(p.numero_processo);
-  if (podeAdcCaso) {
-    anexarBotaoCadastrarCaso(primaryWrap, p.numero_processo, () => {
-      _statusGeralPubOab("Processo cadastrado a partir da publicação.");
-      carregarPublicacoesOab();
-    }, {
-      rotulo: "Cadastrar processo",
-      tituloModal: "Cadastrar cliente e processo",
-      nomeSugerido: p.nome_pesquisado || "",
-      tituloSugerido: d.nomeClasse || d.tipoComunicacao || "",
-      hashPublicacao: p.hash || null,
-      dadosPublicacao: d,
-      tribunal: (d.siglaTribunal || "").toLowerCase() || null,
-      classeBotao: "cds--btn cds--btn--primary cds--btn--sm",
-    });
-  } else {
-    primaryWrap.appendChild(el("button", {
-      class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Cadastrar processo", disabled: "disabled",
-      title: p.status === "tratada" ? "Já está tratada" : "Sem número de processo identificado",
-    }));
-  }
-  const botaoCadastro = primaryWrap.querySelector("button");
 
   const iconeChevron = _elSvg(document, "svg", { width: "16", height: "16", viewBox: "0 0 16 16", "aria-hidden": "true" }, [
     _elSvg(document, "path", { d: "M9 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm0 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm0 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z", fill: "currentColor" }),
@@ -4240,7 +4347,7 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
   itemCadastro.addEventListener("click", () => {
     if (!podeAdcCaso) return;
     _fecharTodosComboMenusOab(true);
-    botaoCadastro.click();
+    _abrirFluxoInlinePubOab(tr, p, colunas, "cadastro", botaoTrigger);
   });
   menu.appendChild(itemCadastro);
 
@@ -4248,60 +4355,9 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
   const itemVincular = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1" }, [
     el("div", { class: "cds--menu-item__label", texto: "Vincular a processo existente" }),
   ]);
-  let _trVincularForm = null;
   itemVincular.addEventListener("click", () => {
     _fecharTodosComboMenusOab(true);
-    if (_trVincularForm) { _trVincularForm.remove(); _trVincularForm = null; return; }
-    const idSelect = `${idTexto}-vinculo`;
-    const status = el("p", { id: `${idSelect}-status`, class: "campo-ajuda", role: "status", "aria-live": "polite", style: "margin:0.25rem 0 0" });
-    const selectCasoVincular = el("select", { id: idSelect, class: "cds--select-input", "aria-describedby": status.id });
-    selectCasoVincular.appendChild(el("option", { value: "", texto: "— selecione o processo —" }));
-    (_cache.casos || []).forEach((c) => {
-      selectCasoVincular.appendChild(el("option", { value: String(c.id), texto: c.titulo || "(sem título)" }));
-    });
-    const btnConfirmar = el("button", { class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Vincular" });
-    const btnCancelar = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Cancelar" });
-    const miniForm = el("div", { class: "mini-form-caso" }, [
-      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: idSelect, texto: "Vincular ao processo" }), selectCasoVincular]),
-      el("div", { style: "display:flex;gap:0.5rem;flex-wrap:wrap" }, [btnConfirmar, btnCancelar]),
-      status,
-    ]);
-    btnCancelar.addEventListener("click", () => {
-      if (_trVincularForm) { _trVincularForm.remove(); _trVincularForm = null; }
-      botaoTrigger.focus();
-    });
-    selectCasoVincular.addEventListener("change", () => {
-      selectCasoVincular.removeAttribute("aria-invalid");
-      status.textContent = "";
-    });
-    btnConfirmar.addEventListener("click", async () => {
-      const casoId = selectCasoVincular.value;
-      if (!casoId) {
-        status.textContent = "Selecione um processo para vincular esta publicação.";
-        selectCasoVincular.setAttribute("aria-invalid", "true");
-        selectCasoVincular.focus();
-        return;
-      }
-      btnConfirmar.disabled = true;
-      try {
-        await _enviarJson(`/casos/${casoId}/publicacoes`, {
-          hash: p.hash,
-          numero_processo: p.numero_processo || null,
-          dados: p.dados || null,
-        });
-        if (_trVincularForm) { _trVincularForm.remove(); _trVincularForm = null; }
-        mostrarToast("success", "Vinculada", "Publicação vinculada ao processo.");
-        carregarPublicacoesOab();
-      } catch (err) {
-        status.textContent = err.message;
-        btnConfirmar.disabled = false;
-      }
-    });
-    _trVincularForm = el("tr", {});
-    _trVincularForm.appendChild(el("td", { colspan: String(colunas.length + 2) }, [miniForm]));
-    tr.after(_trVincularForm);
-    tr.closest("table")?._pubOabAplicarColunas?.();
-    selectCasoVincular.focus();
+    _abrirFluxoInlinePubOab(tr, p, colunas, "vinculo", botaoTrigger);
   });
   menu.appendChild(itemVincular);
 
@@ -4374,22 +4430,22 @@ function _capitalizarTextosPubOab(raiz) {
   const walker = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT);
   while (walker.nextNode()) {
     const no = walker.currentNode;
-    if (!no.parentElement?.closest('[data-coluna="hash"], [data-coluna="link"], [data-coluna="oab"], [data-coluna^="djen:"]')) no.textContent = _tituloPubOab(no.textContent);
+    if (!no.parentElement?.closest('.pub-oab-publicacao-completa, [data-coluna="texto"], [data-coluna="tribunal"], [data-coluna="hash"], [data-coluna="link"], [data-coluna="oab"], [data-coluna^="djen:"]')) no.textContent = _tituloPubOab(no.textContent);
   }
 }
 
 function criarTabelaPublicacoesOab(tabela, quantidade, colunas) {
   const chave = "cnj_pub_oab_colunas_visiveis_v2";
-  const opcionais = colunas.filter((c) => c.id !== "processo");
+  const opcionais = colunas.filter((c) => !_COLUNAS_FIXAS_PUB_OAB.has(c.id));
   let visiveis = colunas.filter((c) => c.padrao).map((c) => c.id);
   try {
     const valor = JSON.parse(localStorage.getItem(chave) || "null");
     if (Array.isArray(valor)) visiveis = valor.filter((id) => colunas.some((c) => c.id === id));
   } catch { /* usa as colunas padrão */ }
   const aplicar = () => {
-    const quantidadeVisivel = 2 + colunas.filter((c) => c.id === "processo" || visiveis.includes(c.id)).length;
+    const quantidadeVisivel = 2 + colunas.filter((c) => _COLUNAS_FIXAS_PUB_OAB.has(c.id) || visiveis.includes(c.id)).length;
     for (const linha of tabela.rows) {
-      for (const celula of linha.querySelectorAll("[data-coluna]")) celula.hidden = celula.dataset.coluna !== "processo" && !visiveis.includes(celula.dataset.coluna);
+      for (const celula of linha.querySelectorAll("[data-coluna]")) celula.hidden = !_COLUNAS_FIXAS_PUB_OAB.has(celula.dataset.coluna) && !visiveis.includes(celula.dataset.coluna);
       if (linha.cells.length === 1) linha.cells[0].colSpan = quantidadeVisivel;
     }
     tabela.classList.toggle("pub-oab-tabela--reduzida", quantidadeVisivel <= 6);
@@ -4420,7 +4476,7 @@ function criarTabelaPublicacoesOab(tabela, quantidade, colunas) {
     rotulo.addEventListener("pointerdown", (evento) => evento.preventDefault());
     campos.appendChild(el("div", { class: "pub-oab-coluna-opcao" }, [input, rotulo]));
   }
-  campos.appendChild(el("p", { class: "campo-ajuda", texto: "Seleção, processo e ações ficam sempre visíveis." }));
+  campos.appendChild(el("p", { class: "campo-ajuda", texto: "Seleção, Processo, Tribunal, Nome Do Processo E Ações Ficam Sempre Visíveis." }));
   seletor.append(resumo, campos);
   seletor.addEventListener("keydown", (evento) => {
     if (evento.key === "Escape") { evento.preventDefault(); seletor.open = false; resumo.focus(); }
