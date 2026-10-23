@@ -303,6 +303,38 @@ class InterfaceTest(unittest.TestCase):
         self.assertEqual(self.page.evaluate("document.activeElement.id"), "contato-cadastro-aba-documentacao-botao")
         self.assertFalse(self.errors)
 
+    def test_layout_aproveita_largura_sem_rolagem_horizontal(self):
+        self.open_case()
+        for width in (1920, 1440, 1024, 820, 768, 390, 320):
+            with self.subTest(width=width):
+                self.page.set_viewport_size({"width": width, "height": 960})
+                self.page.wait_for_timeout(250)
+                self.assertEqual(self.page.evaluate("document.documentElement.scrollWidth"), width)
+                self.assertTrue(self.page.locator(".sub-abas").evaluate("el => el.scrollWidth <= el.clientWidth"))
+        self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-contatos')); await abrirContato('cliente-1'); }")
+        for width in (1440, 820, 390, 320):
+            self.page.set_viewport_size({"width": width, "height": 960})
+            self.assertTrue(self.page.locator(".cadastro-tabs").evaluate("el => el.scrollWidth <= el.clientWidth"))
+        self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-contatos')); document.getElementById('contato-voltar').click(); }")
+        # Conteúdo sem espaços deve quebrar dentro da coluna, sem ocultar dados.
+        self.page.evaluate("""() => {
+            const table = document.querySelector('.contatos-tabela');
+            table.querySelector('td[data-label="E-mail"]').textContent = 'contato'.repeat(30) + '@exemplo.com.br';
+        }""")
+        for width in (1920, 1440, 1024, 820, 768, 390, 320):
+            for expanded in (True, False):
+                with self.subTest(width=width, expanded=expanded):
+                    self.page.set_viewport_size({"width": width, "height": 960})
+                    self.page.evaluate("_sideNavAbrir()" if expanded and width > 768 else "_sideNavFechar()")
+                    self.page.wait_for_timeout(250)
+                    table = self.page.locator('.contatos-tabela')
+                    self.assertTrue(table.evaluate("el => el.closest('.tabela-responsiva-wrap').scrollWidth <= el.closest('.tabela-responsiva-wrap').clientWidth"))
+                    self.assertEqual(self.page.evaluate("document.documentElement.scrollWidth"), width)
+                    if width >= 1440:
+                        right = self.page.locator('main').bounding_box()
+                        self.assertAlmostEqual(right['x'] + right['width'], width, delta=1)
+        self.assertFalse(self.errors)
+
     def test_paineis_do_cabecalho_permanecem_dentro_da_tela(self):
         self.connect()
         for width in (1440, 768, 390, 320):
