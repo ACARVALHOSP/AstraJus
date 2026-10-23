@@ -130,6 +130,52 @@ class InterfaceTest(unittest.TestCase):
         self.page.evaluate("selecionarAba(abas.find(a => a.painel.id === 'aba-publicacoes-oab'))")
         self.page.locator("#lista-publicacoes-oab table").wait_for()
 
+    def test_publicacoes_colunas_djen_separadas_capitalizacao_e_persistencia(self):
+        self.open_publicacoes_oab()
+        self.pub_oab_items[0]["criado_em"] = "2026-10-23T12:00:00Z"
+        self.pub_oab_items[0]["dados"] = {
+            "data_disponibilizacao": "2026-10-22", "tipoComunicacao": "INTIMAÇÃO",
+            "tipoDocumento": "DESPACHO", "nomeOrgao": "VARA CÍVEL",
+            "destinatarios": [{"nome": "MARIA DA SILVA", "polo": "A"}],
+            "destinatarioadvogados": [{"nome": "JOÃO DOS SANTOS", "numero_oab": "0123", "uf_oab": "SP"}],
+            "texto": "TEXTO DA PUBLICAÇÃO", "meio": "DIÁRIO ELETRÔNICO",
+            "link": "https://example.test/AbC", "hash": "aBc123"}
+        self.page.evaluate("carregarPublicacoesOab()")
+        tabela = self.page.locator(".pub-oab-tabela")
+        self.page.get_by_role("columnheader", name="Nome Do Processo", exact=True).wait_for()
+        self.assertTrue(self.page.get_by_role("columnheader", name="Divulgado", exact=True).is_visible())
+        self.assertTrue(self.page.get_by_role("columnheader", name="Capturado", exact=True).is_visible())
+        self.assertTrue(self.page.get_by_role("columnheader", name="Tipo", exact=True).is_visible())
+        self.assertEqual(tabela.locator('tbody tr').first.locator('[data-coluna="nome"]').inner_text(), "Maria Da Silva")
+        self.page.locator(".pub-oab-colunas summary").click()
+        for rotulo in ("Tipo De Documento", "Advogados", "Número Da Oab", "Texto", "Hash", "Link", "Meio"):
+            self.page.locator(".pub-oab-colunas").get_by_label(rotulo, exact=True).check()
+        self.page.locator(".pub-oab-colunas summary").press("Escape")
+        linha = tabela.locator('tbody tr').first
+        self.assertEqual(linha.locator('[data-coluna="advogados"]').inner_text(), "João Dos Santos")
+        self.assertEqual(linha.locator('[data-coluna="hash"]').inner_text(), "aBc123")
+        self.assertEqual(linha.locator('[data-coluna="link"]').inner_text(), "https://example.test/AbC")
+        self.assertEqual(linha.locator('[data-coluna="djen:meio"]').inner_text(), "Diário Eletrônico")
+        linha.get_by_role("button", name="Ler Mais", exact=True).click()
+        self.page.locator(".pub-oab-colunas summary").click()
+        self.page.locator(".pub-oab-colunas").get_by_label("Capturado", exact=True).uncheck()
+        self.page.locator(".pub-oab-colunas summary").press("Escape")
+        self.assertTrue(tabela.locator("td[colspan]").first.evaluate("el => el.colSpan === el.closest('table').querySelectorAll('thead th:not([hidden])').length"))
+        self.page.evaluate("carregarPublicacoesOab()")
+        self.page.locator(".pub-oab-tabela").wait_for()
+        self.assertFalse(self.page.locator('th[data-coluna="capturado"]').is_visible())
+        self.assertTrue(self.page.locator('th[data-coluna="djen:meio"]').is_visible())
+        self.assertEqual(self.pub_oab_items[0]["dados"]["destinatarios"][0]["nome"], "MARIA DA SILVA")
+        for largura in (1440, 390):
+            self.page.set_viewport_size({"width": largura, "height": 900})
+            self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"))
+            self.assertEqual(tabela.locator('td[data-coluna="nome"]').first.evaluate("el => getComputedStyle(el).fontSize"), "12px")
+            self.page.locator(".pub-oab-colunas summary").click()
+            fieldset = self.page.locator(".pub-oab-colunas fieldset")
+            self.assertTrue(fieldset.evaluate("el => el.getBoundingClientRect().left >= 0 && el.getBoundingClientRect().right <= window.innerWidth"))
+            self.page.locator(".pub-oab-colunas summary").press("Escape")
+        self.assertFalse(self.errors)
+
     def test_publicacoes_selecao_parcial_sem_reconsulta_e_sem_perder_foco(self):
         self.open_publicacoes_oab()
         todos = self.page.locator("input[data-publicacoes-todas]")
