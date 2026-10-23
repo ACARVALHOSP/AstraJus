@@ -2195,6 +2195,7 @@ function confirmarAcao(mensagem, opcoes = {}) {
 function _fecharTodosComboMenusOab(restaurarFoco = false) {
   document.querySelectorAll(".pub-oab-combo-menu:not([hidden])").forEach((menu) => {
     const tinhaFoco = menu.contains(document.activeElement);
+    if (menu.matches(":popover-open")) menu.hidePopover();
     menu.hidden = true;
     menu.classList.remove("cds--menu--open", "cds--menu--shown");
     const trigger = menu.closest(".pub-oab-combo")?.querySelector(".cds--menu-button__trigger");
@@ -2204,6 +2205,21 @@ function _fecharTodosComboMenusOab(restaurarFoco = false) {
     }
   });
 }
+function _posicionarMenuPubOab(menu) {
+  const trigger = menu.closest(".pub-oab-combo")?.querySelector(".cds--menu-button__trigger");
+  if (!trigger) return;
+  const ancora = trigger.getBoundingClientRect();
+  const tamanho = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(ancora.right - tamanho.width, window.innerWidth - tamanho.width - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(window.innerHeight - tamanho.height - 8,
+    ancora.bottom + tamanho.height <= window.innerHeight - 8 ? ancora.bottom : ancora.top - tamanho.height))}px`;
+}
+window.addEventListener("resize", () => _fecharTodosComboMenusOab(true));
+document.addEventListener("scroll", (ev) => {
+  if (!ev.target.closest?.(".pub-oab-combo-menu")) {
+    document.querySelectorAll(".pub-oab-combo-menu:popover-open").forEach(_posicionarMenuPubOab);
+  }
+}, true);
 document.addEventListener("click", (ev) => {
   if (!ev.target.closest(".pub-oab-combo")) _fecharTodosComboMenusOab();
 });
@@ -4024,9 +4040,15 @@ function _sincronizarSelecaoPubOab() {
 }
 
 function _atualizarBotoesLotePubOab() {
-  const tem = !_pubOabCarregando && !_pubOabAtualizando && _publicacoesOabSelecionadas.size > 0;
-  document.getElementById("pub-oab-marcar-tratada").disabled = !tem;
-  document.getElementById("pub-oab-arquivar").disabled = !tem;
+  const quantidade = _publicacoesOabSelecionadas.size;
+  const tem = !_pubOabCarregando && !_pubOabAtualizando && quantidade > 0;
+  for (const botao of document.querySelectorAll("[data-status-lote]")) botao.disabled = !tem;
+  const barra = document.getElementById("pub-oab-batch");
+  if (barra) {
+    barra.hidden = quantidade === 0;
+    barra.classList.toggle("cds--batch-actions--active", quantidade > 0);
+    document.getElementById("pub-oab-selecionadas").textContent = `${quantidade} ${quantidade === 1 ? "Selecionada" : "Selecionadas"}`;
+  }
 }
 
 function _statusGeralPubOab(mensagem, erro) {
@@ -4167,14 +4189,14 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
   if (d.link) {
     acoesLinha.appendChild(
       el("a", {
-        class: "cds--btn cds--btn--primary cds--btn--sm", href: d.link, target: "_blank", rel: "noopener",
+        class: "cds--link pub-oab-abrir", href: d.link, target: "_blank", rel: "noopener",
         texto: "Abrir", title: "Abrir publicação no DJEN", "aria-label": "Abrir publicação no DJEN",
       })
     );
   }
 
-  // ComboButton Carbon: ação primária "Cadastrar processo" + menu com "Marcar como tratada" e "Arquivar".
-  const comboContainer = el("div", { class: "cds--combo-button__container cds--combo-button__container--sm pub-oab-combo" });
+  // Ações compactas: link direto e Overflow Menu Carbon.
+  const comboContainer = el("div", { class: "pub-oab-combo" });
   const primaryWrap = el("div", { class: "cds--combo-button__primary-action" });
   const podeAdcCaso = p.status !== "tratada" && Boolean(p.numero_processo);
   if (podeAdcCaso) {
@@ -4197,19 +4219,30 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
       title: p.status === "tratada" ? "Já está tratada" : "Sem número de processo identificado",
     }));
   }
-  comboContainer.appendChild(primaryWrap);
+  const botaoCadastro = primaryWrap.querySelector("button");
 
   const iconeChevron = _elSvg(document, "svg", { width: "16", height: "16", viewBox: "0 0 16 16", "aria-hidden": "true" }, [
-    _elSvg(document, "path", { d: "M8 11 3 6l.7-.7L8 9.6l4.3-4.3.7.7z", fill: "currentColor" }),
+    _elSvg(document, "path", { d: "M9 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm0 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm0 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z", fill: "currentColor" }),
   ]);
   const botaoTrigger = el("button", {
-    class: "cds--btn cds--btn--primary cds--btn--sm cds--combo-button__trigger cds--menu-button__trigger",
+    class: "cds--btn cds--btn--ghost cds--btn--sm cds--btn--icon-only cds--menu-button__trigger pub-oab-overflow",
     type: "button", "aria-haspopup": "true", "aria-expanded": "false", "aria-label": `Mais ações da publicação: ${identificacao}`, "aria-controls": `${idTexto}-menu`,
   }, [iconeChevron]);
   comboContainer.appendChild(botaoTrigger);
 
-  const menu = el("ul", { id: `${idTexto}-menu`, class: "cds--menu pub-oab-combo-menu", role: "menu", "aria-label": `Ações da publicação: ${identificacao}` });
+  const menu = el("ul", { id: `${idTexto}-menu`, class: "cds--menu pub-oab-combo-menu", popover: "manual", role: "menu", "aria-label": `Ações da publicação: ${identificacao}` });
   menu.hidden = true;
+  const itemCadastro = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1",
+    "aria-disabled": String(!podeAdcCaso) }, [el("div", { class: "cds--menu-item__label", texto: "Cadastrar Processo" })]);
+  if (!podeAdcCaso) {
+    itemCadastro.appendChild(el("div", { class: "pub-oab-menu-motivo", texto: p.status === "tratada" ? "Publicação Já Tratada" : "Número Do Processo Não Informado" }));
+  }
+  itemCadastro.addEventListener("click", () => {
+    if (!podeAdcCaso) return;
+    _fecharTodosComboMenusOab(true);
+    botaoCadastro.click();
+  });
+  menu.appendChild(itemCadastro);
 
   // Vincular a caso existente: abre mini-form inline logo abaixo da linha.
   const itemVincular = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1" }, [
@@ -4294,19 +4327,21 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
       menu.hidden = false;
       menu.classList.add("cds--menu--open", "cds--menu--shown");
       botaoTrigger.setAttribute("aria-expanded", "true");
-      menu.querySelector('[role="menuitem"]')?.focus();
+      menu.showPopover();
+      _posicionarMenuPubOab(menu);
+      menu.querySelector('[role="menuitem"]:not([aria-disabled="true"])')?.focus();
     }
   });
   botaoTrigger.addEventListener("keydown", (ev) => {
     if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
       ev.preventDefault();
       if (menu.hidden) botaoTrigger.click();
-      const itens = menu.querySelectorAll('[role="menuitem"]');
+      const itens = menu.querySelectorAll('[role="menuitem"]:not([aria-disabled="true"])');
       itens[ev.key === "ArrowUp" ? itens.length - 1 : 0]?.focus();
     }
   });
   menu.addEventListener("keydown", (ev) => {
-    const itens = [...menu.querySelectorAll('[role="menuitem"]')];
+    const itens = [...menu.querySelectorAll('[role="menuitem"]:not([aria-disabled="true"])')];
     const indice = itens.indexOf(document.activeElement);
     if (["ArrowDown", "ArrowUp", "Home", "End"].includes(ev.key)) {
       ev.preventDefault();
@@ -4381,14 +4416,31 @@ function criarTabelaPublicacoesOab(tabela, quantidade, colunas) {
   seletor.addEventListener("focusout", (evento) => {
     if (!seletor.contains(evento.relatedTarget)) seletor.open = false;
   });
+  const criarAcaoLote = (id, rotulo, status) => {
+    const botao = el("button", { id, type: "button", class: "cds--btn cds--btn--primary cds--btn--sm", "data-status-lote": status, texto: rotulo, disabled: "disabled" });
+    botao.addEventListener("click", () => _aplicarStatusPubOab([..._publicacoesOabSelecionadas], status));
+    return botao;
+  };
+  const cancelar = el("button", { type: "button", class: "cds--btn cds--btn--primary cds--btn--sm", texto: "Cancelar Seleção" });
+  cancelar.addEventListener("click", () => {
+    _publicacoesOabSelecionadas.clear();
+    _sincronizarSelecaoPubOab();
+    tabela.querySelector("input[data-publicacoes-todas]")?.focus();
+  });
+  const lote = el("div", { id: "pub-oab-batch", class: "cds--batch-actions pub-oab-batch", role: "region", "aria-label": "Ações Das Publicações Selecionadas" }, [
+    el("span", { id: "pub-oab-selecionadas", role: "status", "aria-live": "polite" }),
+    criarAcaoLote("pub-oab-marcar-tratada", "Marcar Como Tratada", "tratada"),
+    criarAcaoLote("pub-oab-arquivar", "Arquivar", "arquivada"), cancelar,
+  ]);
+  lote.hidden = _publicacoesOabSelecionadas.size === 0;
   const barra = el("div", { class: "pub-oab-tabela-toolbar" }, [
     el("strong", { texto: "Publicações" }),
-    el("span", { class: "pub-oab-tabela-contagem", texto: `${quantidade} ${quantidade === 1 ? "publicação" : "publicações"}` }),
+    el("span", { class: "pub-oab-tabela-contagem", texto: `${quantidade} ${quantidade === 1 ? "Publicação" : "Publicações"}` }),
     seletor,
   ]);
   aplicar();
   _capitalizarTextosPubOab(barra);
-  return el("div", { class: "pub-oab-grade" }, [barra,
+  return el("div", { class: "pub-oab-grade" }, [barra, lote,
     el("div", { class: "tabela-responsiva-wrap pub-oab-rolagem", tabindex: "0", role: "region", "aria-label": "Tabela de publicações; role horizontalmente para ver todas as colunas" }, [tabela]),
   ]);
 }
@@ -4465,13 +4517,6 @@ document.getElementById("pub-oab-filtro-status").addEventListener("change", () =
   carregarPublicacoesOab();
 });
 document.getElementById("pub-oab-atualizar").addEventListener("click", carregarPublicacoesOab);
-document.getElementById("pub-oab-marcar-tratada").addEventListener("click", () => {
-  _aplicarStatusPubOab(Array.from(_publicacoesOabSelecionadas), "tratada");
-});
-document.getElementById("pub-oab-arquivar").addEventListener("click", () => {
-  _aplicarStatusPubOab(Array.from(_publicacoesOabSelecionadas), "arquivada");
-});
-
 document.getElementById("form-pub-oab-manual").addEventListener("submit", async (evento) => {
   evento.preventDefault();
   const status = document.getElementById("pub-oab-manual-status");

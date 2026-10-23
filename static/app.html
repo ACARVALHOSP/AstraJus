@@ -311,7 +311,17 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 }
 .pub-oab-acoes-linha { display: flex; gap: 0.25rem; align-items: center; flex-wrap: wrap; }
 .pub-oab-combo { position: relative; }
-.pub-oab-combo-menu.cds--menu { position: absolute; top: 100%; right: 0; margin-top: 0.125rem; min-inline-size: 10rem; }
+.pub-oab-combo-menu.cds--menu { position: fixed; inset: auto; margin: 0; padding: 0.25rem 0; border: 0; min-inline-size: 15rem; max-inline-size: calc(100vw - 1rem); max-block-size: calc(100dvh - 1rem); overflow-y: auto; background: var(--cds-layer, #f4f4f4); color: var(--cds-text-primary, #161616); box-shadow: 0 4px 8px rgba(0,0,0,.2); }
+.pub-oab-combo-menu:popover-open { display: block; }
+.pub-oab-menu-motivo { padding: 0 1rem 0.5rem; color: var(--cds-text-secondary); }
+.pub-oab-combo-menu [aria-disabled="true"] { color: var(--cds-text-disabled); cursor: not-allowed; }
+.pub-oab-acoes-linha { justify-content: flex-end; flex-wrap: nowrap; }
+.pub-oab-abrir { font-size: inherit; white-space: nowrap; margin-inline-end: 0.5rem; }
+.pub-oab-overflow.cds--btn { min-inline-size: 2rem; min-block-size: 2rem; padding: 0.5rem; color: var(--cds-icon-primary); }
+.pub-oab-batch.cds--batch-actions { position: static; display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; padding: 0.5rem 1rem; background: var(--cds-background-brand, #0f62fe); color: var(--cds-text-on-color, #fff); visibility: visible; opacity: 1; transform: none; }
+.pub-oab-batch #pub-oab-selecionadas { margin-inline-end: auto; }
+.pub-oab-batch .cds--btn { min-height: 2rem; }
+.pub-oab-grade .pub-oab-tabela :is(th,td):last-child { width: 7rem; white-space: nowrap; }
 .pub-oab-combo-menu.cds--menu[hidden] { display: none; }
 .prazo-painel {
   margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--cds-border-subtle, #e0e0e0);
@@ -1513,8 +1523,6 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </select>
 </div>
 <div class="pub-oab-acoes-lote">
-<button class="cds--btn cds--btn--tertiary cds--btn--sm" type="button" id="pub-oab-marcar-tratada" disabled>Marcar como tratada</button>
-<button class="cds--btn cds--btn--tertiary cds--btn--sm" type="button" id="pub-oab-arquivar" disabled>Arquivar</button>
 <button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="pub-oab-atualizar">Atualizar lista</button>
 </div>
 </div>
