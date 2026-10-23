@@ -241,6 +241,9 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 .pub-oab-acoes-lote { display: flex; align-items: flex-end; gap: 0.5rem; flex-wrap: wrap; }
 .pub-oab-acoes-lote .cds--btn { min-height: 2.5rem; }
 #lista-publicacoes-oab > .campo-ajuda { margin-block: 0.75rem; line-height: 1.5; }
+/* 12px na lista inteira, inclusive componentes Carbon e linhas expandidas. */
+#lista-publicacoes-oab,
+#lista-publicacoes-oab :where(*) { font-size: 0.75rem; }
 @media (max-width: 640px) {
   .pub-oab-manual-form { grid-template-columns: minmax(0, 1fr) 5rem; }
   .pub-oab-manual-form .cds--form-item:nth-child(n+3) { grid-column: 1 / -1; }
