@@ -3022,6 +3022,12 @@ def _criar_caso_de_publicacao(gestao, publicacoes, publicacao, dados, usuario_pa
     numero = publicacao.get("numero_processo")
     if not numero:
         return None, _erro("Publicação sem número de processo identificado.")
+    try:
+        # Capturas antigas podem guardar o CNJ com máscara. A capa referencia
+        # caso_processos, cuja chave usa sempre o número normalizado.
+        numero = _db.normalizar_numero_processo([numero])[0]
+    except (ValueError, IndexError):
+        return None, _erro("Número de processo inválido na publicação; informe um CNJ com 20 dígitos.")
     d = publicacao.get("dados") or {}
     partes = d.get("destinatarios") or []
     autores = " / ".join(dict.fromkeys(p["nome"] for p in partes if p.get("nome") and str(p.get("polo") or "").upper() == "A"))

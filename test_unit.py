@@ -2088,6 +2088,39 @@ class PublicacaoCadastroInlineTest(unittest.TestCase):
             partes=[{"nome": "Parte Só Na Capa", "polo": "P"}])
         self.assertEqual(server._consultar_casos_para_vinculo(self.gestao, "so na capa")[0]["id"], caso["id"])
 
+    def test_endpoint_cadastro_normaliza_numero_com_mascara_antes_de_salvar_capa(self):
+        import io
+        from contextlib import redirect_stdout
+        registro = server.RegistroUsuarios(Path(self.tmp.name) / "usuarios.json")
+        saida = io.StringIO()
+        with redirect_stdout(saida):
+            self.assertEqual(server._criar_usuario(registro, "ana"), 0)
+        token = saida.getvalue().strip().splitlines()[-1]
+        numero_com_mascara = "1006314-27.2023.8.26.0005"
+        self.publicacoes.registrar("pub-mascarada", None, None, numero_com_mascara, self.dados,
+                                  "nao_tratada", None, self.agora)
+        mw = server._AutenticacaoBearer(None, registro, gestao=self.gestao, publicacoes=self.publicacoes)
+        status, corpo, _ = _chamar_asgi(mw, "POST", "/publicacoes-oab/pub-mascarada/criar-caso",
+            headers=[(b"authorization", ("Bearer " + token).encode())],
+            corpo=json.dumps({"cliente_id": self.cliente["id"], "responsavel": "ana"}).encode())
+        self.assertEqual(status, 201)
+        caso = json.loads(corpo)
+        self.assertEqual(caso["processos"], [self.numero])
+        self.assertEqual(len(self.gestao.listar_casos()), 1)
+        capa = self.gestao.obter_capa_processo(caso["id"], self.numero)
+        self.assertEqual(capa["nome_processo"], "Maria Silva X Banco Exemplo")
+        pub = self.publicacoes.obter("pub-mascarada")
+        self.assertEqual(pub["caso_id"], caso["id"])
+        self.assertEqual(pub["status"], "tratada")
+
+    def test_numero_invalido_nao_deixa_cadastro_parcial(self):
+        pub = {**self.publicacoes.obter("pub-inline"), "numero_processo": "123"}
+        caso, erro = server._criar_caso_de_publicacao(self.gestao, self.publicacoes, pub,
+            {"cliente_id": self.cliente["id"], "responsavel": "ana"})
+        self.assertIsNone(caso)
+        self.assertTrue(erro["erro"])
+        self.assertEqual(self.gestao.listar_casos(), [])
+
     def test_cliente_inexistente_nao_cria_processo(self):
         caso, erro = server._criar_caso_de_publicacao(self.gestao, self.publicacoes,
             self.publicacoes.obter("pub-inline"), {"cliente_id": "inexistente", "responsavel": "Ana"})
