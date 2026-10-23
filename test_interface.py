@@ -127,7 +127,10 @@ class InterfaceTest(unittest.TestCase):
         self.page.locator("#btn-atualizar-capa").click()
         self.page.wait_for_function("document.getElementById('lista-capa-processos').textContent.includes('02/01/2025')")
         self.assertIn("1000607-04.2025.5.02.0401", self.page.locator("#lista-capa-processos").inner_text())
-        self.assertIn("Maria", self.page.evaluate("_lerCamposPartes('autor')"))
+        self.assertIn("Maria", self.page.locator("#lista-capa-processos").inner_text())
+        self.assertEqual(self.page.locator("#form-caso-partes").count(), 0)
+        self.assertEqual(self.page.locator("#btn-buscar-partes").count(), 0)
+        self.assertFalse(self.page.evaluate("formulariosPendentes().length"))
         self.page.locator("#caso-subaba-movimentacoes-botao").click()
         self.page.wait_for_function("document.getElementById('lista-movimentacoes').textContent.includes('Distribuído')")
         self.assertFalse(any(path == "/mcp" and method == "POST" for method, path in self.requests[chamadas_antes:]))
@@ -159,22 +162,29 @@ class InterfaceTest(unittest.TestCase):
         self.assertEqual(self.page.locator("#caso-subaba-movimentacoes #lista-capa-processos").count(), 0)
         self.assertFalse(self.errors)
 
-    def test_partes_automaticas_djen_com_tags_oab_e_polos(self):
+    def test_partes_e_advogados_sao_dados_da_capa_sem_formulario(self):
+        self.case["processos"] = ["10063142720238260005"]
+        capa = {"partes": [
+            {"nome": "Autora DJen", "polo": "A"}, {"nome": "Segunda autora", "polo": "ATIVO"},
+            {"nome": "Autora DJen", "polo": "A"}, {"nome": "Réu DJen", "polo": "P"},
+            {"nome": "Sem polo"}],
+            "advogados": [{"nome": "Ana Silva", "numero_oab": "12345", "uf_oab": "sp"},
+                          {"nome": "Ana Silva", "numero_oab": "12345", "uf_oab": "sp"}]}
+        self.context.route("**/casos/caso-1/processos/*/capa", lambda route: route.fulfill(json=capa))
         self.open_case()
-        self.context.route("**/casos/caso-1/publicacoes", lambda route: route.fulfill(json={"publicacoes": [{"dados": {
-            "destinatarios": [{"nome": "Autora DJen", "polo": "A"}, {"nome": "Réu DJen", "polo": "P"}, {"nome": "Sem polo"}],
-            "destinatarioadvogados": [{"nome": "Ana Silva", "numero_oab": "12345", "uf_oab": "sp"}, {"nome": "Ana Silva", "numero_oab": "12345", "uf_oab": "sp"}]
-        }}]}))
-        self.page.locator("#btn-buscar-partes").click()
-        self.page.wait_for_function("document.getElementById('status-partes-djen').textContent.includes('Preenchido')")
-        self.assertIn("Autora DJen", self.page.evaluate("_lerCamposPartes('autor')"))
-        self.assertEqual(self.page.evaluate("_lerCamposPartes('reu')"), ["Réu DJen"])
-        self.assertNotIn("Sem polo", self.page.evaluate("_lerCamposPartes('autor')"))
-        tags = self.page.locator("#campos-caso-advogados .cds--tag")
-        self.assertEqual(tags.all_text_contents(), ["Ana Silva — OAB 12345/SP"])
-        self.page.locator("#form-caso-partes button[type=submit]").click()
-        self.page.wait_for_function("document.getElementById('resultado-caso-partes').textContent.includes('Partes atualizadas')")
-        self.assertEqual(self.case["advogados"], "Ana Silva — OAB 12345/SP")
+        dados = self.page.locator("#lista-capa-processos .capa-card-auto")
+        for texto in ["Autora DJen", "Segunda autora", "Réu DJen", "Sem polo", "Ana Silva — OAB 12345/SP"]:
+            self.assertIn(texto, dados.inner_text())
+        self.assertEqual(dados.inner_text().count("Autora DJen"), 1)
+        self.assertEqual(dados.inner_text().count("Ana Silva"), 1)
+        self.assertEqual(dados.locator("input, select, textarea, button").count(), 0)
+        self.assertEqual(self.page.locator("#form-caso-partes, #editar-caso-autor, #editar-caso-reu, #editar-caso-advogados").count(), 0)
+        self.assertEqual(self.page.get_by_role("button", name="Salvar partes").count(), 0)
+        self.page.locator("#caso-voltar").click()
+        self.page.wait_for_function("!document.getElementById('caso-vista-lista').hidden")
+        self.assertFalse(any(method == "PATCH" for method, _ in self.requests))
+        self.page.evaluate("abrirCaso('caso-1')")
+        self.page.wait_for_function("document.getElementById('lista-capa-processos').textContent.includes('Ana Silva')")
         self.assertFalse(self.errors)
 
     def test_token_invalido_permanece_no_acesso_e_nao_e_lembrado(self):
@@ -230,7 +240,7 @@ class InterfaceTest(unittest.TestCase):
                 self.assertFalse(section.is_visible())
         self.assertFalse(self.errors)
 
-    def test_saida_caso_continuar_descartar_e_salvar_ambas_secoes(self):
+    def test_saida_caso_continuar_descartar_e_salvar_responsavel(self):
         self.open_case()
         self.page.locator("#editar-caso-responsavel").select_option("Título pendente")
         self.page.locator("#caso-voltar").click()
@@ -243,12 +253,10 @@ class InterfaceTest(unittest.TestCase):
         self.assertEqual(self.page.locator("#editar-caso-responsavel").input_value(), "Ana")
         self.page.evaluate("abrirCaso('caso-1')")
         self.page.locator("#editar-caso-responsavel").select_option("Título salvo")
-        self.page.locator("#editar-caso-autor").fill("Autora alterada")
         self.page.locator("#caso-voltar").click()
         self.choose("salvar")
         self.page.wait_for_function("!document.getElementById('caso-vista-lista').hidden")
         self.assertEqual(self.case["responsavel"], "Título salvo")
-        self.assertEqual(self.case["autor"], "Autora alterada")
         self.assertFalse(self.errors)
 
     def test_falha_ao_salvar_preserva_edicao_e_bloqueia_saida(self):
@@ -336,14 +344,12 @@ class InterfaceTest(unittest.TestCase):
         self.assertEqual(self.page.locator("#editar-caso-responsavel").input_value(), "Título pendente")
         self.assertFalse(self.errors)
 
-    def test_descarte_restaura_partes_individuais_inclusive_campos_adicionados(self):
-        self.case["autor"] = "Autora de teste, Segunda autora"
+    def test_capa_sem_partes_exibe_ausencia_sem_edicao_pendente(self):
+        self.case["processos"] = ["10063142720238260005"]
+        self.context.route("**/casos/caso-1/processos/*/capa", lambda route: route.fulfill(json={"partes": [], "advogados": []}))
         self.open_case()
-        self.page.evaluate("_preencherCamposPartes('autor', ['Alteração', 'Segunda autora', 'Terceira autora'])")
-        self.page.locator("#caso-voltar").click()
-        self.choose("descartar")
-        self.page.wait_for_function("!document.getElementById('caso-vista-lista').hidden")
-        self.assertEqual(self.page.evaluate("_lerCamposPartes('autor')"), ["Autora de teste", "Segunda autora"])
+        self.assertEqual(self.page.locator("#lista-capa-processos .capa-card-auto dd").filter(has_text="Não informado pelo DJEN").count(), 3)
+        self.assertFalse(self.page.evaluate("formulariosPendentes().length"))
         self.assertFalse(self.errors)
 
     def test_vincular_publicacao_abre_formulario_e_envia_vinculo(self):
@@ -432,7 +438,7 @@ class InterfaceTest(unittest.TestCase):
         self.page.keyboard.press("ArrowRight")
         self.assertEqual(self.page.locator("#caso-subaba-atividades-botao").evaluate("el => getComputedStyle(el).outlineStyle"), "solid")
         self.page.locator("#caso-subaba-cadastro-botao").click()
-        self.page.locator("#editar-caso-autor").fill("Alteração de teste")
+        self.page.locator("#editar-caso-responsavel").select_option("Título pendente")
         self.page.locator("#caso-voltar").click()
         self.page.wait_for_selector("#modal-edicao-pendente.is-visible")
         for width in (1440, 768, 390, 320):

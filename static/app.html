@@ -502,8 +502,6 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 @media (max-width: 480px) {
   #form-contato-cadastro .token-acoes > .cds--btn { inline-size: 100%; max-inline-size: none; }
 }
-.caso-advogados-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-.caso-advogados-tags .cds--tag { height: auto; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 
 /* Fluxos no documento: sem sobreposição, fundo bloqueado ou foco preso. */
 .fluxo-pagina { display: none; margin-block: 0 2rem; scroll-margin-top: 4rem; }
@@ -1324,34 +1322,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="cds--form-item"><label class="cds--label" for="editar-caso-responsavel">Responsável</label><select class="cds--select-input" id="editar-caso-responsavel"><option value="">Selecione um responsável</option></select></div>
 <div id="resultado-caso-editar"></div>
 <div class="form-acoes-detalhe"><button class="cds--btn cds--btn--primary cds--btn--sm" type="submit">Salvar responsável</button><button class="cds--btn cds--btn--danger--ghost cds--btn--sm" type="button" id="btn-excluir-caso">Excluir processo</button></div></form>
-<h3 class="lista-rapida-titulo">Partes e advogados</h3>
-<form id="form-caso-partes" class="form-detalhe">
-<div class="cds--form-item">
-<label class="cds--label" for="editar-caso-autor">Polo Ativo</label>
-<div id="campos-caso-autor" style="display:flex;flex-direction:column;gap:0.5rem">
-<input class="cds--text-input" type="text" id="editar-caso-autor" name="autor" placeholder="Ex.: Maria Aparecida Souza" autocomplete="off">
-</div>
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="editar-caso-reu">Polo Passivo</label>
-<div id="campos-caso-reu" style="display:flex;flex-direction:column;gap:0.5rem">
-<input class="cds--text-input" type="text" id="editar-caso-reu" name="reu" placeholder="Ex.: Construtora Horizonte Ltda" autocomplete="off">
-</div>
-</div>
-<div class="cds--form-item">
-<span class="cds--label" id="rotulo-caso-advogados">Advogados</span>
-<div id="campos-caso-advogados" class="caso-advogados-tags" role="list" aria-labelledby="rotulo-caso-advogados">
-<input type="hidden" id="editar-caso-advogados" name="advogados">
-</div>
-</div>
-<p class="campo-ajuda">Preenchimento automático ao atualizar a capa. Revise os polos e salve as partes. Advogados são identificados por nome e OAB/UF, quando informados pelo DJen.</p>
-<div id="resultado-caso-partes" class="app-resultado"></div>
-<div class="form-acoes-detalhe">
-<button class="cds--btn cds--btn--primary cds--btn--sm" type="submit" form="form-caso-partes">Salvar partes</button>
-<button class="cds--btn cds--btn--secondary cds--btn--sm" type="button" id="btn-buscar-partes">Atualizar pelo DJen</button>
-<div id="status-partes-djen"></div>
-</div>
-</form>
+
 </section>
 
 
