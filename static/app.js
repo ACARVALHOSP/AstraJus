@@ -4056,7 +4056,53 @@ async function _aplicarStatusPubOab(hashes, status) {
 
 let _pubOabContadorLinha = 0;
 
-function linhaPublicacaoOab(p) {
+// Colunas com chaves estáveis: preferências não dependem da ordem de exibição.
+function _tituloPubOab(valor) {
+  return String(valor ?? "").toLocaleLowerCase("pt-BR").replace(/(^|[^\p{L}\p{N}])(\p{L})/gu,
+    (_, separador, letra) => separador + letra.toLocaleUpperCase("pt-BR"));
+}
+
+function _valorPubOab(valor, literal = false) {
+  if (valor === null || valor === undefined || valor === "") return "—";
+  if (Array.isArray(valor)) return valor.map((v) => _valorPubOab(v, literal)).join(" · ") || "—";
+  if (typeof valor === "object") return Object.entries(valor).map(([k, v]) => `${_tituloPubOab(k.replace(/_/g, " "))}: ${_valorPubOab(v, literal)}`).join("; ");
+  if (typeof valor === "boolean") return valor ? "Sim" : "Não";
+  return literal ? String(valor) : _tituloPubOab(valor);
+}
+
+function _colunasPubOab(publicacoes = []) {
+  const colunas = [
+    ["divulgado", "Divulgado", (p) => formatarDataSimples(p.dados?.data_disponibilizacao), true],
+    ["capturado", "Capturado", (p) => formatarData(p.criado_em), true],
+    ["tipo", "Tipo", (p) => p.dados?.tipoComunicacao, true],
+    ["processo", "Processo", () => "", true],
+    ["tribunal", "Tribunal", (p) => p.dados?.siglaTribunal, true],
+    ["orgao", "Órgão", (p) => p.dados?.nomeOrgao, false],
+    ["nome", "Nome Do Processo", (p) => (p.dados?.destinatarios || []).map((d) => d.nome).filter(Boolean), true],
+    ["referencia", "Nome De Referência", (p) => p.nome_pesquisado, true],
+    ["status", "Status", (p) => _ROTULO_STATUS_PUB_OAB[p.status] || p.status, true],
+    ["documento", "Tipo De Documento", (p) => p.dados?.tipoDocumento, false],
+    ["classe", "Classe", (p) => p.dados?.nomeClasse, false],
+    ["destinatarios", "Destinatários", (p) => p.dados?.destinatarios, false],
+    ["polos", "Polos Dos Destinatários", (p) => (p.dados?.destinatarios || []).map((d) => d.polo), false],
+    ["advogados", "Advogados", (p) => (p.dados?.destinatarioadvogados || []).map((d) => d.nome), false],
+    ["oab", "Número Da OAB", (p) => (p.dados?.destinatarioadvogados || []).map((d) => d.numero_oab), false, true],
+    ["uf", "UF Da OAB", (p) => (p.dados?.destinatarioadvogados || []).map((d) => d.uf_oab), false],
+    ["dados_advogados", "Dados Dos Advogados", (p) => p.dados?.destinatarioadvogados, false],
+    ["texto", "Texto", (p) => p.dados?.texto, false],
+    ["hash", "Hash", (p) => p.dados?.hash || p.hash, false, true],
+    ["link", "Link", (p) => p.dados?.link, false, true],
+  ].map(([id, rotulo, valor, padrao, literal = false]) => ({ id, rotulo, valor, padrao, literal }));
+  const conhecidos = new Set(["data_disponibilizacao", "siglaTribunal", "nomeOrgao", "tipoComunicacao", "tipoDocumento", "nomeClasse", "numeroprocessocommascara", "destinatarios", "destinatarioadvogados", "texto", "hash", "link"]);
+  const extras = new Set(publicacoes.flatMap((p) => Object.keys(p.dados || {})).filter((k) => !conhecidos.has(k)));
+  for (const chave of [...extras].sort()) {
+    colunas.push({ id: `djen:${chave}`, rotulo: _tituloPubOab(chave.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ")),
+      valor: (p) => p.dados?.[chave], padrao: false, literal: /(^id$|hash|url|link|numero)/i.test(chave) });
+  }
+  return colunas;
+}
+
+function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
   const d = p.dados || {};
   const linhas = [];
   const tr = el("tr", {});
@@ -4071,12 +4117,6 @@ function linhaPublicacaoOab(p) {
     _sincronizarSelecaoPubOab();
   });
   tr.appendChild(el("td", { "data-label": "Selecionar" }, [checkbox]));
-
-  tr.appendChild(el("td", { "data-label": "Divulgado em" }, [
-    el("div", { texto: formatarDataSimples(d.data_disponibilizacao) }),
-    el("div", { class: "campo-ajuda", texto: `Capturado em ${formatarData(p.criado_em)}` }),
-    el("div", { class: "campo-ajuda", texto: d.tipoComunicacao || d.tipoDocumento || "-" }),
-  ]));
 
   const celProcesso = el("td", { "data-label": "Processo" });
   if (p.numero_processo) {
@@ -4093,7 +4133,7 @@ function linhaPublicacaoOab(p) {
   if (d.texto) {
     const trTexto = el("tr", {});
     trTexto.hidden = true;
-    trTexto.appendChild(el("td", { colspan: "8" }, [el("div", { id: idTexto, class: "pub-oab-texto-expandido", texto: d.texto })]));
+    trTexto.appendChild(el("td", { colspan: String(colunas.length + 2) }, [el("div", { id: idTexto, class: "pub-oab-texto-expandido", texto: _tituloPubOab(d.texto) })]));
     const botaoExpandir = el("button", {
       class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Ler mais",
       "aria-expanded": "false", "aria-controls": idTexto,
@@ -4108,18 +4148,18 @@ function linhaPublicacaoOab(p) {
   } else {
     linhas.push(tr);
   }
-  tr.appendChild(celProcesso);
-
-  tr.appendChild(el("td", { "data-label": "Diário" }, [
-    el("div", { texto: d.siglaTribunal || "-" }),
-    el("div", { class: "campo-ajuda", texto: d.nomeOrgao || "" }),
-  ]));
-  const nomesPartes = (d.destinatarios || []).map((dest) => dest.nome).filter(Boolean);
-  const celPartes = el("td", { "data-label": "Partes", texto: nomesPartes.length ? nomesPartes.join(", ") : "-" });
-  if (nomesPartes.length) celPartes.title = nomesPartes.join(", ");
-  tr.appendChild(celPartes);
-  tr.appendChild(el("td", { "data-label": "Nome de referência", texto: p.nome_pesquisado || "-" }));
-  tr.appendChild(el("td", { "data-label": "Status" }, [_badgeStatusPubOab(p.status)]));
+  for (const coluna of colunas) {
+    let celula;
+    if (coluna.id === "processo") celula = celProcesso;
+    else if (coluna.id === "status") {
+      const badge = _badgeStatusPubOab(p.status);
+      badge.textContent = _tituloPubOab(badge.textContent);
+      celula = el("td", {}, [badge]);
+    } else celula = el("td", { texto: _valorPubOab(coluna.valor(p), coluna.literal) });
+    celula.setAttribute("data-coluna", coluna.id);
+    celula.setAttribute("data-label", coluna.rotulo);
+    tr.appendChild(celula);
+  }
 
   const celAcoes = el("td", { "data-label": "Ações" });
   const acoesLinha = el("div", { class: "pub-oab-acoes-linha" });
@@ -4225,8 +4265,9 @@ function linhaPublicacaoOab(p) {
       }
     });
     _trVincularForm = el("tr", {});
-    _trVincularForm.appendChild(el("td", { colspan: "8" }, [miniForm]));
+    _trVincularForm.appendChild(el("td", { colspan: String(colunas.length + 2) }, [miniForm]));
     tr.after(_trVincularForm);
+    tr.closest("table")?._pubOabAplicarColunas?.();
     selectCasoVincular.focus();
   });
   menu.appendChild(itemVincular);
@@ -4290,37 +4331,47 @@ function linhaPublicacaoOab(p) {
   celAcoes.appendChild(acoesLinha);
   tr.appendChild(celAcoes);
 
+  for (const linha of linhas) _capitalizarTextosPubOab(linha);
   return linhas;
 }
 
-function criarTabelaPublicacoesOab(tabela, quantidade) {
-  const chave = "cnj_pub_oab_colunas_ocultas";
-  const opcionais = [[1, "Divulgado em"], [3, "Diário"], [4, "Partes"], [5, "Nome de referência"], [6, "Status"]];
-  let ocultas = [];
+function _capitalizarTextosPubOab(raiz) {
+  const walker = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const no = walker.currentNode;
+    if (!no.parentElement?.closest('[data-coluna="hash"], [data-coluna="link"], [data-coluna="oab"], [data-coluna^="djen:"]')) no.textContent = _tituloPubOab(no.textContent);
+  }
+}
+
+function criarTabelaPublicacoesOab(tabela, quantidade, colunas) {
+  const chave = "cnj_pub_oab_colunas_visiveis_v2";
+  const opcionais = colunas.filter((c) => c.id !== "processo");
+  let visiveis = colunas.filter((c) => c.padrao).map((c) => c.id);
   try {
-    const valor = JSON.parse(localStorage.getItem(chave) || "[]");
-    if (Array.isArray(valor)) ocultas = valor.filter((indice) => opcionais.some(([i]) => i === indice));
-  } catch { /* usa todas as colunas quando o armazenamento não está disponível */ }
+    const valor = JSON.parse(localStorage.getItem(chave) || "null");
+    if (Array.isArray(valor)) visiveis = valor.filter((id) => colunas.some((c) => c.id === id));
+  } catch { /* usa as colunas padrão */ }
   const aplicar = () => {
+    const quantidadeVisivel = 2 + colunas.filter((c) => c.id === "processo" || visiveis.includes(c.id)).length;
     for (const linha of tabela.rows) {
-      if (linha.cells.length === 8) {
-        for (const [indice] of opcionais) linha.cells[indice].hidden = ocultas.includes(indice);
-      } else if (linha.cells.length === 1) linha.cells[0].colSpan = 8 - ocultas.length;
+      for (const celula of linha.querySelectorAll("[data-coluna]")) celula.hidden = celula.dataset.coluna !== "processo" && !visiveis.includes(celula.dataset.coluna);
+      if (linha.cells.length === 1) linha.cells[0].colSpan = quantidadeVisivel;
     }
-    tabela.classList.toggle("pub-oab-tabela--reduzida", ocultas.length >= 2);
+    tabela.classList.toggle("pub-oab-tabela--reduzida", quantidadeVisivel <= 6);
   };
+  tabela._pubOabAplicarColunas = aplicar;
   const seletor = el("details", { class: "pub-oab-colunas" });
   const resumo = el("summary", { texto: "Colunas" });
   const campos = el("fieldset", {}, [el("legend", { texto: "Colunas visíveis" })]);
-  for (const [indice, rotulo] of opcionais) {
+  for (const coluna of opcionais) {
     const input = el("input", { type: "checkbox" });
-    input.checked = !ocultas.includes(indice);
+    input.checked = visiveis.includes(coluna.id);
     input.addEventListener("change", () => {
-      ocultas = input.checked ? ocultas.filter((i) => i !== indice) : [...ocultas, indice];
+      visiveis = input.checked ? [...visiveis, coluna.id] : visiveis.filter((id) => id !== coluna.id);
       aplicar();
-      try { localStorage.setItem(chave, JSON.stringify(ocultas)); } catch { /* preferência da sessão */ }
+      try { localStorage.setItem(chave, JSON.stringify(visiveis)); } catch { /* preferência da sessão */ }
     });
-    campos.appendChild(el("label", { class: "pub-oab-coluna-opcao" }, [input, document.createTextNode(rotulo)]));
+    campos.appendChild(el("label", { class: "pub-oab-coluna-opcao" }, [input, document.createTextNode(coluna.rotulo)]));
   }
   campos.appendChild(el("p", { class: "campo-ajuda", texto: "Seleção, processo e ações ficam sempre visíveis." }));
   seletor.append(resumo, campos);
@@ -4336,6 +4387,7 @@ function criarTabelaPublicacoesOab(tabela, quantidade) {
     seletor,
   ]);
   aplicar();
+  _capitalizarTextosPubOab(barra);
   return el("div", { class: "pub-oab-grade" }, [barra,
     el("div", { class: "tabela-responsiva-wrap pub-oab-rolagem", tabindex: "0", role: "region", "aria-label": "Tabela de publicações; role horizontalmente para ver todas as colunas" }, [tabela]),
   ]);
@@ -4380,28 +4432,22 @@ async function carregarPublicacoesOab() {
       _sincronizarSelecaoPubOab();
     });
 
-    const thead = el("thead", {}, [
-      el("tr", {}, [
-        el("th", {}, [checkboxTodos]),
-        el("th", { texto: "Divulgado em" }),
-        el("th", { texto: "Processo" }),
-        el("th", { texto: "Diário" }),
-        el("th", { texto: "Partes" }),
-        el("th", { texto: "Nome de referência" }),
-        el("th", { texto: "Status" }),
-        el("th", { texto: "Ações" }),
-      ]),
-    ]);
+    const colunas = _colunasPubOab(publicacoes);
+    const thead = el("thead", {}, [el("tr", {}, [
+      el("th", {}, [checkboxTodos]),
+      ...colunas.map((c) => el("th", { texto: c.rotulo, "data-coluna": c.id })),
+      el("th", { texto: "Ações" }),
+    ])]);
     const tbody = el("tbody", {});
     for (const p of publicacoes) {
-      for (const linha of linhaPublicacaoOab(p)) tbody.appendChild(linha);
+      for (const linha of linhaPublicacaoOab(p, colunas)) tbody.appendChild(linha);
     }
     const resumo = total > publicacoes.length
       ? `Exibindo as ${publicacoes.length} publicações mais recentes de ${total}. Use o filtro de status para refinar a lista.`
       : `Exibindo ${publicacoes.length} ${publicacoes.length === 1 ? "publicação" : "publicações"}.`;
     container.appendChild(el("p", { class: "campo-ajuda", texto: resumo }));
     for (const cabecalho of thead.querySelectorAll("th")) cabecalho.scope = "col";
-    container.appendChild(criarTabelaPublicacoesOab(el("table", { class: "tabela-responsiva pub-oab-tabela", "aria-label": "Publicações monitoradas" }, [thead, tbody]), publicacoes.length));
+    container.appendChild(criarTabelaPublicacoesOab(el("table", { class: "tabela-responsiva pub-oab-tabela", "aria-label": "Publicações monitoradas" }, [thead, tbody]), publicacoes.length, colunas));
     _sincronizarSelecaoPubOab();
   } catch (erro) {
     limpar(container);

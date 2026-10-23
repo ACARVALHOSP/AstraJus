@@ -228,6 +228,21 @@ class DataJudTest(_Simulado, unittest.TestCase):
 
 
 class DjenTest(_Simulado, unittest.TestCase):
+    def test_extracao_preserva_campos_adicionais_para_colunas(self):
+        bruto = {"id": 123, "meio": "D", "ativo": False,
+                 "destinatarios": [{"nome": "MARIA SILVA", "polo": "A", "id": 7}],
+                 "destinatarioadvogados": [{"id": 8, "advogado": {"nome": "JOÃO", "numero_oab": "123", "uf_oab": "SP", "id": 9}}],
+                 "texto": "<p>Texto original</p>"}
+        extraido = server._extrair_publicacao_djen(bruto)
+        self.assertEqual(extraido["id"], 123)
+        self.assertEqual(extraido["meio"], "D")
+        self.assertIs(extraido["ativo"], False)
+        self.assertEqual(extraido["destinatarios"][0]["id"], 7)
+        self.assertEqual(extraido["destinatarioadvogados"][0]["id"], 8)
+        self.assertEqual(extraido["destinatarioadvogados"][0]["advogado"]["id"], 9)
+        self.assertEqual(extraido["texto"], "Texto original")
+
+
     def consultar(self, **kwargs):
         return _rodar(server.consultar_publicacoes_djen(**kwargs))
 

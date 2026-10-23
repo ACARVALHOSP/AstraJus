@@ -645,6 +645,7 @@ def _mensagem_geobloqueio() -> str:
 
 def _extrair_publicacao_djen(item: dict) -> dict:
     return {
+        **item,
         "data_disponibilizacao": item.get("data_disponibilizacao"),
         "siglaTribunal": item.get("siglaTribunal"),
         "nomeOrgao": item.get("nomeOrgao"),
@@ -655,10 +656,11 @@ def _extrair_publicacao_djen(item: dict) -> dict:
         "hash": item.get("hash"),
         "link": item.get("link"),
         "destinatarios": [
-            {"nome": d.get("nome"), "polo": d.get("polo")} for d in item.get("destinatarios") or []
+            {**d, "nome": d.get("nome"), "polo": d.get("polo")} for d in item.get("destinatarios") or []
         ],
         "destinatarioadvogados": [
             {
+                **da,
                 "nome": (da.get("advogado") or {}).get("nome"),
                 "numero_oab": (da.get("advogado") or {}).get("numero_oab"),
                 "uf_oab": (da.get("advogado") or {}).get("uf_oab"),
