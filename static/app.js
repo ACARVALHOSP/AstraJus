@@ -35,10 +35,6 @@ function marcarFormularioSalvo(form, aposReset = false) {
   if (form.id === "form-contato-cadastro") {
     estado.contato = !aposReset && estado.contatoEnviado ? estado.contatoEnviado : _lerCadastroCompleto("contato", gruposContato);
   }
-  if (form.id === "form-caso-partes") {
-    estado.partes = !aposReset && estado.partesEnviadas ? estado.partesEnviadas
-      : Object.fromEntries(["autor", "reu", "advogados"].map((tipo) => [tipo, _lerCamposPartes(tipo)]));
-  }
   atualizarIndicadorEdicao(form);
 }
 
@@ -56,23 +52,21 @@ function registrarSalvamento(form, salvar) {
     if (estado.salvando) return;
     estado.enviado = valoresFormulario(form);
     if (form.id === "form-contato-cadastro") estado.contatoEnviado = _lerCadastroCompleto("contato", gruposContato);
-    if (form.id === "form-caso-partes") estado.partesEnviadas = Object.fromEntries(["autor", "reu", "advogados"].map((tipo) => [tipo, _lerCamposPartes(tipo)]));
     estado.salvando = (async () => {
       await Promise.resolve(); // Registra a operação antes de executar o handler.
       try { await salvar(evento); }
-      finally { estado.enviado = null; estado.contatoEnviado = null; estado.partesEnviadas = null; estado.salvando = null; atualizarIndicadorEdicao(form); }
+      finally { estado.enviado = null; estado.contatoEnviado = null; estado.salvando = null; atualizarIndicadorEdicao(form); }
     })();
   });
 }
 
 function formulariosPendentes(raiz = document) {
   return [...formulariosProtegidos.keys()].filter((form) => raiz.contains(form) &&
-    !form.closest(".cds--modal:not(.is-visible)") && formularioAlterado(form));
+    !form.closest(".fluxo-pagina:not(.is-visible)") && formularioAlterado(form));
 }
 
 function revelarFormulario(form) {
   if (form.id === "form-caso-editar") _selecionarSubabaCaso("cadastro");
-  if (form.id === "form-caso-partes") _selecionarSubabaCaso("partes");
   if (form.id === "form-contato-cadastro") _selecionarSubabaContato("cadastro");
   // Um campo inválido pode estar numa seção interna do cadastro.
   const invalido = form.querySelector(":invalid");
@@ -105,9 +99,6 @@ async function permitirSaidaEdicao(raiz = document) {
         if (estado.contato) {
           _preencherCadastroCompleto("contato", gruposContato, estado.contato, definirTipoPessoaContato, definirPerfilContato);
         }
-        if (estado.partes) {
-          for (const [tipo, nomes] of Object.entries(estado.partes)) _preencherCamposPartes(tipo, nomes);
-        }
         const porId = new Map(valores.filter(([id]) => id).map((valor) => [valor[0], valor]));
         [...form.querySelectorAll("input, select, textarea")].forEach((campo, i) => {
           const valor = campo.id ? porId.get(campo.id) : estado.contato ? null : valores[i];
@@ -123,11 +114,7 @@ async function permitirSaidaEdicao(raiz = document) {
   } finally { decisaoEdicaoPendente = false; }
 }
 
-window.addEventListener("beforeunload", (evento) => {
-  if (!formulariosPendentes().length) return;
-  evento.preventDefault();
-  evento.returnValue = "";
-});
+
 
 class ErroMCP extends Error {
   constructor(status, mensagem) {
@@ -303,7 +290,7 @@ function mostrarAviso(container, mensagem) {
 
 function mostrarToast(tipo, titulo, mensagem, duracao = 5000) {
   const container = document.getElementById("toast-global");
-  if (!container) { if (tipo === "error") window.alert(mensagem || titulo); return; }
+  if (!container) { console.error(mensagem || titulo); return; }
   const ntf = notificacao(tipo, titulo, mensagem || "");
   ntf.style.cssText += ";pointer-events:all;box-shadow:0 2px 6px rgba(0,0,0,.2)";
   const fechar = document.createElement("button");
@@ -414,7 +401,7 @@ for (const id of ["numero-processo", "pub-numero-processo", "vinculos-numero-pro
 
 function formatarDataSimples(valor) {
   if (!valor) return "não informado";
-  const bruto = String(valor);
+  const bruto = String(valor).replace(/^(\d{4})(\d{2})(\d{2})(?:\d{6})?$/, "$1-$2-$3");
   // Data pura ("AAAA-MM-DD", sem hora): formata direto dos componentes. O construtor Date
   // trata esse formato como meia-noite UTC, e em fusos atrás de UTC (ex.: Brasília, UTC-3)
   // toLocaleDateString devolveria o dia anterior - crítico aqui porque esta função formata
@@ -612,13 +599,13 @@ async function renderizarCasosFavoritos() {
       const resposta = await _buscarJson("/casos");
       _cache.casos = resposta.casos || [];
     } catch {
-      // segue com o cache vazio - a lista mostra "Nenhum caso favorito ainda" se não achar nada
+      // segue com o cache vazio - a lista mostra "Nenhum processo favorito ainda" se não achar nada
     }
   }
   limpar(listaCasosFavoritos);
   const casosFavoritos = idsFavoritos.map((id) => _cache.casos.find((c) => c.id === id)).filter(Boolean);
   if (!casosFavoritos.length) {
-    listaCasosFavoritos.appendChild(el("li", { class: "lista-rapida-vazio", texto: "Nenhum caso favorito ainda." }));
+    listaCasosFavoritos.appendChild(el("li", { class: "lista-rapida-vazio", texto: "Nenhum processo favorito ainda." }));
     return;
   }
   for (const caso of casosFavoritos) {
@@ -656,7 +643,7 @@ function renderizarListaRapida() {
   for (const fav of favoritos) {
     listaFavoritos.appendChild(
       el("li", { class: "lista-rapida-item cds--tile" }, [
-        el("span", { texto: `${(fav.tribunal || "?").toUpperCase()} · ${fav.numero}` }),
+        el("span", { texto: `${(fav.tribunal || "?").toUpperCase()} · ${formatarNumeroCNJ(fav.numero)}` }),
         el("div", {}, [
           el("button", {
             class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Consultar",
@@ -889,7 +876,7 @@ function cartaoProcesso(proc) {
     ])
   );
   card.appendChild(el("h3", { texto: proc.classe || "Classe não informada" }));
-  card.appendChild(el("p", { texto: `Número: ${proc.numeroProcesso || "não informado"}` }));
+  card.appendChild(el("p", { texto: `Número: ${formatarNumeroCNJ(proc.numeroProcesso) || "não informado"}` }));
   card.appendChild(el("p", { texto: `Órgão julgador: ${proc.orgaoJulgador || "não informado"}` }));
   card.appendChild(el("p", { texto: `Distribuído em: ${formatarDataSimples(proc.dataAjuizamento)}` }));
   const movimentos = proc.movimentos || [];
@@ -1519,7 +1506,7 @@ function cartaoPublicacao(item) {
   if (item.numeroprocessocommascara) {
     const nomesPartes = (item.destinatarios || []).map((d) => d.nome).filter(Boolean);
     anexarBotaoCadastrarCaso(acoes, item.numeroprocessocommascara, null, {
-      rotulo: "Cadastrar cliente e caso",
+      rotulo: "Cadastrar cliente e processo",
       nomeSugerido: nomesPartes[0] || "",
       tituloSugerido: item.nomeClasse || item.tipoComunicacao || "",
       partes: nomesPartes,
@@ -1616,7 +1603,7 @@ async function executarBuscaPublicacoes(args, pagina) {
 
       if (pagina === 1) {
         const resumo = args.numero_processo
-          ? `Publicações do processo ${args.numero_processo}`
+          ? `Publicações do processo ${formatarNumeroCNJ(args.numero_processo)}`
           : `Publicações da OAB ${args.numero_oab}/${args.uf_oab || "?"}`;
         adicionarHistorico({ tipo: "publicacoes", args, resumo });
       }
@@ -1679,7 +1666,7 @@ botaoAcompanharBusca.addEventListener("click", () => {
 // --- Monitoramentos: "Meus monitoramentos" ----------------------------------------------------
 
 function _descreverCriterioMonitoramento(criterio) {
-  if (criterio.numero_processo) return `Processo ${criterio.numero_processo}`;
+  if (criterio.numero_processo) return `Processo ${formatarNumeroCNJ(criterio.numero_processo)}`;
   return `OAB ${criterio.numero_oab}/${criterio.uf_oab || "?"}`;
 }
 
@@ -1956,7 +1943,7 @@ function cartaoJurimetria(item) {
       item.valor_condenacao != null ? el("span", { class: "cds--tag cds--tag--purple", texto: formatarReais(item.valor_condenacao) }) : null,
     ])
   );
-  card.appendChild(el("h3", { texto: item.numero_processo || "Número não identificado" }));
+  card.appendChild(el("h3", { texto: formatarNumeroCNJ(item.numero_processo) || "Número não identificado" }));
   card.appendChild(el("p", { texto: `${item.classe || "?"} / ${item.assunto || "?"}` }));
   card.appendChild(el("p", { texto: `${item.magistrado || "?"} · ${item.vara || "?"} · ${item.comarca || "?"} · ${item.data_disponibilizacao || "?"}` }));
   if (item.trecho) {
@@ -2094,92 +2081,46 @@ formJurimetria.addEventListener("submit", async (evento) => {
 
 document.getElementById("botao-atualizar-monitoramentos").addEventListener("click", carregarMonitoramentos);
 
-// --- Modais Carbon -----------------------------------------------------------------------
-
-const pilhaModais = [];
-const inertOriginais = new Map();
-let overflowAnterior = "";
-
-function atualizarFundoModais() {
-  for (const [elemento, valor] of inertOriginais) elemento.inert = valor;
-  inertOriginais.clear();
-  const ativo = pilhaModais.at(-1)?.modal;
-  if (!ativo) { document.body.style.overflow = overflowAnterior; return; }
-  let ramo = ativo;
-  while (ramo && ramo !== document.body) {
-    for (const irmao of ramo.parentElement.children) {
-      if (irmao === ramo || ["SCRIPT", "STYLE"].includes(irmao.tagName)) continue;
-      inertOriginais.set(irmao, irmao.inert);
-      irmao.inert = true;
-    }
-    ramo = ramo.parentElement;
-  }
-  document.body.style.overflow = "hidden";
-}
-
-function controlesModal(modal) {
-  return [...modal.querySelectorAll('button, input, select, textarea, a[href], [tabindex]')]
-    .filter((campo) => !campo.disabled && campo.tabIndex >= 0 && !campo.closest("[inert]") && campo.getClientRects().length);
-}
+// --- Seções de formulário e confirmação na própria página ------------------
+// Os identificadores antigos são mantidos para os chamadores de cada fluxo.
+const secoesAbertas = [];
 
 function abrirModal(id) {
-  const modal = document.getElementById(id);
-  if (!modal || pilhaModais.some((item) => item.modal === modal)) return;
-  if (!pilhaModais.length) overflowAnterior = document.body.style.overflow;
-  pilhaModais.push({ modal, origem: document.activeElement });
-  modal.style.zIndex = String(9000 + pilhaModais.length);
-  modal.classList.add("is-visible");
-  modal.tabIndex = -1;
-  for (const form of modal.querySelectorAll("form")) marcarFormularioSalvo(form, true);
-  atualizarFundoModais();
-  const controles = controlesModal(modal);
-  const primeiro = controles.find((campo) => campo.matches("input, select, textarea")) || controles[0];
-  (primeiro || modal).focus();
+  const secao = document.getElementById(id);
+  if (!secao || secao.classList.contains("is-visible")) return;
+  const origem = document.activeElement;
+  const anterior = secoesAbertas.at(-1)?.secao;
+  if (anterior) anterior.after(secao);
+  else document.getElementById("conteudo").prepend(secao);
+  secoesAbertas.push({ secao, origem });
+  secao.classList.add("is-visible");
+  secao.tabIndex = -1;
+  for (const form of secao.querySelectorAll("form")) marcarFormularioSalvo(form, true);
+  secao.focus();
 }
 
 async function fecharModal(id) {
-  const modal = document.getElementById(id);
-  if (!modal?.classList.contains("is-visible")) return true;
-  if (formulariosPendentes(modal).length && !(await permitirSaidaEdicao(modal))) return false;
-  const indice = pilhaModais.findIndex((item) => item.modal === modal);
-  const entrada = indice >= 0 ? pilhaModais.splice(indice, 1)[0] : null;
-  modal.classList.remove("is-visible");
-  modal.style.zIndex = "";
-  atualizarFundoModais();
-  if (entrada?.origem?.isConnected && !entrada.origem.closest("[hidden], [inert]")) entrada.origem.focus();
-  else {
-    const topo = pilhaModais.at(-1)?.modal;
-    if (topo) (controlesModal(topo)[0] || topo).focus();
-  }
+  const secao = document.getElementById(id);
+  if (!secao?.classList.contains("is-visible")) return true;
+  if (formulariosPendentes(secao).length && !(await permitirSaidaEdicao(secao))) return false;
+  const indice = secoesAbertas.findIndex((item) => item.secao === secao);
+  const entrada = indice >= 0 ? secoesAbertas.splice(indice, 1)[0] : null;
+  secao.classList.remove("is-visible");
+  if (entrada?.origem?.isConnected && entrada.origem.getClientRects().length) entrada.origem.focus();
   return true;
 }
 
 document.addEventListener("keydown", (ev) => {
-  const modal = pilhaModais.at(-1)?.modal;
-  if (!modal || ev.defaultPrevented) return;
-  if (ev.key === "Escape") { ev.preventDefault(); fecharModal(modal.id); }
-  if (ev.key !== "Tab") return;
-  const controles = controlesModal(modal);
-  const primeiro = controles[0] || modal;
-  const ultimo = controles.at(-1) || modal;
-  if (!modal.contains(document.activeElement) || (ev.shiftKey && document.activeElement === primeiro) || (!ev.shiftKey && document.activeElement === ultimo)) {
+  const secao = ev.target.closest(".fluxo-pagina.is-visible");
+  if (secao && ev.key === "Escape" && !ev.defaultPrevented) {
     ev.preventDefault();
-    (ev.shiftKey ? ultimo : primeiro).focus();
+    fecharModal(secao.id);
   }
-});
-
-document.addEventListener("focusin", (ev) => {
-  const modal = pilhaModais.at(-1)?.modal;
-  if (modal && !modal.contains(ev.target)) (controlesModal(modal)[0] || modal).focus();
 });
 
 document.addEventListener("click", (ev) => {
   const alvo = ev.target.closest("[data-fechar-modal]");
   if (alvo) fecharModal(alvo.dataset.fecharModal);
-});
-
-document.querySelectorAll(".cds--modal").forEach((modal) => {
-  modal.addEventListener("click", (ev) => { if (ev.target === modal) fecharModal(modal.id); });
 });
 
 function escolherSaidaEdicao() {
@@ -2205,7 +2146,7 @@ function escolherSaidaEdicao() {
   });
 }
 
-// Substitui window.confirm() por um modal Carbon: devolve uma Promise<boolean> (true = confirmou).
+// Confirmação na própria página: devolve uma Promise<boolean> (true = confirmou).
 function confirmarAcao(mensagem, opcoes = {}) {
   const { titulo = "Confirmar ação", textoConfirmar = "Confirmar" } = opcoes;
   return new Promise((resolve) => {
@@ -2519,7 +2460,7 @@ function _resumoEventoCaso(evento) {
 
 function linhaDoTempoCaso(eventos) {
   if (!eventos.length) {
-    return notificacao("info", "Nenhuma movimentação registrada ainda", "Publicações de processos monitorados vinculados a este caso aparecem aqui automaticamente.");
+    return notificacao("info", "Nenhuma movimentação registrada ainda", "Publicações deste processo aparecem aqui automaticamente quando ele está monitorado.");
   }
   const lista = el("ul", { class: "linha-tempo-caso" });
   for (const evento of eventos) {
@@ -2527,7 +2468,7 @@ function linhaDoTempoCaso(eventos) {
       el("li", {}, [
         el("strong", { texto: formatarData(evento.criado_em) }),
         ` — ${_resumoEventoCaso(evento)}`,
-        evento.numero_processo ? el("span", { class: "campo-ajuda", texto: ` (processo ${evento.numero_processo})` }) : null,
+        evento.numero_processo ? el("span", { class: "campo-ajuda", texto: ` (processo ${formatarNumeroCNJ(evento.numero_processo)})` }) : null,
       ])
     );
   }
@@ -2554,7 +2495,7 @@ function linhaCaso(caso, aoExcluir) {
 
   const celTitulo = el("td", { "data-label": "Título" });
   const linhaTitulo = el("div", { class: "caso-titulo-linha" }, [
-    el("span", { texto: `Nº ${caso.numero} — ${caso.titulo || "(sem título)"}` }),
+    el("span", { texto: caso.titulo || "(sem título)" }),
   ]);
   if (caso.monitorado) {
     linhaTitulo.appendChild(el("span", { class: "cds--tag cds--tag--green cds--tag--sm", texto: "Monitorado" }));
@@ -2570,7 +2511,7 @@ function linhaCaso(caso, aoExcluir) {
   ]);
   processos.forEach((numero, indice) => {
     if (indice > 0) subtitulo.appendChild(document.createTextNode(", "));
-    const linkProcesso = el("a", { href: "#", texto: numero });
+    const linkProcesso = el("a", { href: "#", texto: formatarNumeroCNJ(numero) });
     linkProcesso.addEventListener("click", (ev) => {
       ev.preventDefault();
       _irParaConsultaProcesso(numero);
@@ -2651,7 +2592,7 @@ function linhaCaso(caso, aoExcluir) {
 }
 
 async function excluirCaso(casoId, titulo, botao, aoExcluir) {
-  if (!(await confirmarAcao(`Excluir o caso "${titulo || "(sem título)"}"? Essa ação não pode ser desfeita.`))) return;
+  if (!(await confirmarAcao(`Excluir o processo "${titulo || "(sem título)"}"? Essa ação não pode ser desfeita.`))) return;
   botao.disabled = true;
   try {
     await _enviarJson(`/casos/${casoId}`, {}, "DELETE");
@@ -2690,7 +2631,7 @@ function cartoesCasos(casos, aoExcluir) {
     const card = el("article", { class: "cds--tile" });
 
     const tituloLinha = el("div", { class: "caso-titulo-linha" }, [
-      el("span", { texto: `Nº ${caso.numero} — ${caso.titulo || "(sem título)"}` }),
+      el("span", { texto: caso.titulo || "(sem título)" }),
     ]);
     if (caso.monitorado) {
       tituloLinha.appendChild(el("span", { class: "cds--tag cds--tag--green cds--tag--sm", texto: "Monitorado" }));
@@ -2770,7 +2711,7 @@ function _renderizarLancamentos(lancamentos) {
       el("th", { texto: "Valor" }),
       el("th", { texto: "Descrição" }),
       el("th", { texto: "Cliente" }),
-      el("th", { texto: "Caso" }),
+      el("th", { texto: "Processo" }),
       el("th", { texto: "Responsável" }),
       el("th", { texto: "Direção" }),
       el("th", { texto: "Ações" }),
@@ -2783,7 +2724,7 @@ function _renderizarLancamentos(lancamentos) {
       el("td", { "data-label": "Valor", texto: formatarMoeda(lanc.valor) }),
       el("td", { "data-label": "Descrição", texto: lanc.descricao + (lanc.recorrente ? " (mensal)" : "") }),
       el("td", { "data-label": "Cliente", texto: nomeCliente(lanc.cliente_id) }),
-      el("td", { "data-label": "Caso", texto: tituloCaso(lanc.caso_id) }),
+      el("td", { "data-label": "Processo", texto: tituloCaso(lanc.caso_id) }),
       el("td", { "data-label": "Responsável", texto: lanc.responsavel }),
     ]);
 
@@ -3094,7 +3035,8 @@ registrarSalvamento(document.getElementById("form-nova-cobranca"), async (evento
   const campo = document.getElementById("cobranca-vencimento");
   if (!campo || typeof window.flatpickr !== "function") return;
   window.flatpickr(campo, {
-    altInput: false,
+    altInput: true,
+    altFormat: "d/m/Y",
     allowInput: true,
     locale: window.flatpickr.l10ns && window.flatpickr.l10ns.pt,
     dateFormat: "Y-m-d",
@@ -3114,7 +3056,7 @@ async function _abrirModalHonorario() {
 
   const selectCaso = document.getElementById("honorario-caso");
   limpar(selectCaso);
-  selectCaso.appendChild(el("option", { value: "", texto: "— selecione o caso —" }));
+  selectCaso.appendChild(el("option", { value: "", texto: "— selecione o processo —" }));
   for (const c of _cache.casos) selectCaso.appendChild(el("option", { value: c.id, texto: c.titulo || "(sem título)" }));
 
   const selectCliente = document.getElementById("honorario-cliente");
@@ -3129,7 +3071,7 @@ function cartaoPendente(p) {
   const d = p.dados || {};
   const card = el("article", { class: "cds--tile resultado-card" });
   card.appendChild(el("h3", { texto: d.tipoComunicacao || "Processo novo encontrado" }));
-  card.appendChild(el("p", { texto: `Processo: ${d.numeroprocessocommascara || p.numero_processo}` }));
+  card.appendChild(el("p", { texto: `Processo: ${formatarNumeroCNJ(d.numeroprocessocommascara || p.numero_processo)}` }));
   if (d.nomeOrgao) card.appendChild(el("p", { texto: `Órgão: ${d.nomeOrgao}` }));
   if (d.siglaTribunal) card.appendChild(el("p", { texto: `Tribunal: ${d.siglaTribunal}` }));
   card.appendChild(el("p", { class: "campo-ajuda", texto: `Encontrado monitorando a OAB de ${p.usuario} em ${formatarData(p.criado_em)}` }));
@@ -3220,7 +3162,7 @@ function _renderizarTabelaCasosPagina() {
       })
     : _cache.casos;
   if (!filtrados.length) {
-    listaCasosEl.appendChild(notificacao("info", termo ? "Nenhum caso corresponde ao filtro." : "Nenhum caso cadastrado ainda"));
+    listaCasosEl.appendChild(notificacao("info", termo ? "Nenhum processo corresponde ao filtro." : "Nenhum processo cadastrado ainda"));
   } else {
     listaCasosEl.appendChild(
       _visualizacaoCasos === "cards"
@@ -3622,7 +3564,7 @@ registrarSalvamento(formCaso, async (evento) => {
     foro: document.getElementById("caso-foro").value.trim(),
     numeros_processo: numeros,
   };
-  const pararEspera = mostrarEspera(resultadoCaso, botao, "Cadastrando caso");
+  const pararEspera = mostrarEspera(resultadoCaso, botao, "Cadastrando processo");
   try {
     const novoCaso = await _enviarJson("/casos", corpo);
     formCaso.reset();
@@ -3633,12 +3575,12 @@ registrarSalvamento(formCaso, async (evento) => {
     _renderizarTabelaCasosPagina();
     limpar(resultadoCaso);
     const divSucesso = el("div", {});
-    divSucesso.appendChild(notificacao("success", `Caso "${novoCaso.titulo || "sem título"}" cadastrado.`));
+    divSucesso.appendChild(notificacao("success", `Processo "${novoCaso.titulo || "sem título"}" cadastrado.`));
     const btnAbrirCaso = el("button", {
       class: "cds--btn cds--btn--primary cds--btn--sm",
       type: "button",
       style: "margin-top: 0.75rem; display: block;",
-      texto: "Abrir caso criado",
+      texto: "Abrir processo criado",
     });
     btnAbrirCaso.addEventListener("click", async () => {
       fecharModal("modal-novo-caso");
@@ -3792,12 +3734,12 @@ document.getElementById("contato-excluir").addEventListener("click", async () =>
   }
 });
 
-// Botão "Cadastrar como caso" no resultado da consulta de processo (DataJud): abre um mini
+// Botão "Cadastrar como processo" no resultado da consulta de processo (DataJud): abre um mini
 // formulário inline, sem precisar trocar de aba. Cria o cliente na hora se for novo (Fase 1).
 function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) {
   const { rotulo, tituloModal, nomeSugerido, tituloSugerido, partes, tribunal, hashPublicacao, dadosPublicacao, classeBotao } = opcoes;
   const botao = el("button", {
-    class: classeBotao || "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: rotulo || "Cadastrar como caso",
+    class: classeBotao || "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: rotulo || "Cadastrar como processo",
   });
   acoes.appendChild(botao);
 
@@ -3823,10 +3765,10 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
       placeholder: usaCheckboxesPartes ? "+ outro cliente (opcional)" : "Nome do novo cliente",
       value: usaCheckboxesPartes ? "" : (nomeSugerido || ""),
     });
-    const campoTitulo = el("input", { class: "cds--text-input", "aria-label": "Título do caso (opcional)", placeholder: "Título do caso (opcional)", value: tituloSugerido || "" });
+    const campoTitulo = el("input", { class: "cds--text-input", "aria-label": "Título do processo (opcional)", placeholder: "Título do processo (opcional)", value: tituloSugerido || "" });
     const campoAcao = el("input", { class: "cds--text-input", "aria-label": "Ação (opcional)", placeholder: "Ação (opcional)" });
     const campoForo = el("input", { class: "cds--text-input", "aria-label": "Foro (opcional)", placeholder: "Foro (opcional)" });
-    const botaoSalvar = el("button", { class: "cds--btn cds--btn--primary cds--btn--sm", type: "submit", texto: "Salvar caso" });
+    const botaoSalvar = el("button", { class: "cds--btn cds--btn--primary cds--btn--sm", type: "submit", texto: "Salvar processo" });
     const miniForm = el("form", { class: "mini-form-caso", id: "form-caso-publicacao" });
     const statusMini = el("span", { class: "app-espera app-espera--inline" });
 
@@ -3848,7 +3790,7 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
       blocoPartes = el(
         "div", { class: "cds--form-item partes-checkbox-lista" },
         [
-          el("label", { class: "cds--label", texto: "Cadastrar como cliente(s) deste caso" }),
+          el("label", { class: "cds--label", texto: "Cadastrar como cliente(s) deste processo" }),
           ...checkboxesPartes.map(({ nome, checkbox }) =>
             el("label", { class: "parte-checkbox-item" }, [checkbox, ` ${nome}`])
           ),
@@ -3933,12 +3875,12 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
             });
             publicacaoVinculada = true;
           } catch (erroVinculo) {
-            mostrarToast("warning", "Caso criado", `Caso cadastrado, mas não foi possível vincular a publicação: ${erroVinculo.message}`);
+            mostrarToast("warning", "Processo criado", `Processo cadastrado, mas não foi possível vincular a publicação: ${erroVinculo.message}`);
           }
         }
         marcarFormularioSalvo(miniForm);
         fecharModal("modal-cadastrar-caso-publicacao");
-        mostrarToast("success", "Caso cadastrado", publicacaoVinculada ? "Caso criado e publicação vinculada." : "Caso criado.");
+        mostrarToast("success", "Processo cadastrado", publicacaoVinculada ? "Processo criado e publicação vinculada." : "Processo criado.");
         if (aoSalvar) aoSalvar();
       } catch (erro) {
         statusMini.textContent = erro.message;
@@ -3961,7 +3903,7 @@ function anexarBotaoCadastrarCaso(acoes, numeroProcesso, aoSalvar, opcoes = {}) 
     const corpoModal = document.getElementById("modal-cadastrar-caso-publicacao-corpo");
     for (const form of corpoModal.querySelectorAll("form")) formulariosProtegidos.delete(form);
     limpar(corpoModal);
-    document.getElementById("modal-cadastrar-caso-publicacao-titulo").textContent = tituloModal || rotulo || "Cadastrar como caso";
+    document.getElementById("modal-cadastrar-caso-publicacao-titulo").textContent = tituloModal || rotulo || "Cadastrar como processo";
     corpoModal.appendChild(miniForm);
     abrirModal("modal-cadastrar-caso-publicacao");
   });
@@ -3994,7 +3936,7 @@ function anexarBotaoEventoAgenda(container, numeroProcesso, dataVencimentoISO, t
       return;
     }
     if (!casos.length) {
-      container.appendChild(notificacao("info", "Nenhum caso cadastrado", "Cadastre um caso para este processo antes de criar o evento na agenda."));
+      container.appendChild(notificacao("info", "Nenhum processo cadastrado", "Cadastre este processo antes de criar o evento na agenda."));
       return;
     }
     const numeroDigitos = _soDigitos(numeroProcesso);
@@ -4025,7 +3967,7 @@ function anexarBotaoEventoAgenda(container, numeroProcesso, dataVencimentoISO, t
     });
 
     const miniForm = el("div", { class: "mini-form-caso" }, [
-      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", texto: "Vincular ao caso" }), selectCaso]),
+      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", texto: "Vincular ao processo" }), selectCaso]),
       botaoSalvar,
       statusMini,
     ]);
@@ -4112,7 +4054,7 @@ function linhaPublicacaoOab(p) {
 
   const celProcesso = el("td", { "data-label": "Processo" });
   if (p.numero_processo) {
-    celProcesso.appendChild(el("div", { texto: d.numeroprocessocommascara || p.numero_processo }));
+    celProcesso.appendChild(el("div", { texto: formatarNumeroCNJ(d.numeroprocessocommascara || p.numero_processo) }));
   } else {
     celProcesso.appendChild(el("div", { texto: "Número do processo não informado" }));
     const linkBusca = el("a", { href: "#", texto: "Consultar processo" });
@@ -4165,17 +4107,17 @@ function linhaPublicacaoOab(p) {
     );
   }
 
-  // ComboButton Carbon: ação primária "Cadastrar caso" + menu com "Marcar como tratada" e "Arquivar".
+  // ComboButton Carbon: ação primária "Cadastrar processo" + menu com "Marcar como tratada" e "Arquivar".
   const comboContainer = el("div", { class: "cds--combo-button__container cds--combo-button__container--sm pub-oab-combo" });
   const primaryWrap = el("div", { class: "cds--combo-button__primary-action" });
   const podeAdcCaso = p.status !== "tratada" && Boolean(p.numero_processo);
   if (podeAdcCaso) {
     anexarBotaoCadastrarCaso(primaryWrap, p.numero_processo, () => {
-      _statusGeralPubOab("Caso cadastrado a partir da publicação.");
+      _statusGeralPubOab("Processo cadastrado a partir da publicação.");
       carregarPublicacoesOab();
     }, {
-      rotulo: "Cadastrar caso",
-      tituloModal: "Cadastrar cliente e caso",
+      rotulo: "Cadastrar processo",
+      tituloModal: "Cadastrar cliente e processo",
       nomeSugerido: p.nome_pesquisado || "",
       tituloSugerido: d.nomeClasse || d.tipoComunicacao || "",
       hashPublicacao: p.hash || null,
@@ -4185,7 +4127,7 @@ function linhaPublicacaoOab(p) {
     });
   } else {
     primaryWrap.appendChild(el("button", {
-      class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Cadastrar caso", disabled: "disabled",
+      class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Cadastrar processo", disabled: "disabled",
       title: p.status === "tratada" ? "Já está tratada" : "Sem número de processo identificado",
     }));
   }
@@ -4205,7 +4147,7 @@ function linhaPublicacaoOab(p) {
 
   // Vincular a caso existente: abre mini-form inline logo abaixo da linha.
   const itemVincular = el("li", { class: "cds--menu-item", role: "menuitem" }, [
-    el("div", { class: "cds--menu-item__label", texto: "Vincular a caso existente" }),
+    el("div", { class: "cds--menu-item__label", texto: "Vincular a processo existente" }),
   ]);
   let _trVincularForm = null;
   itemVincular.addEventListener("click", () => {
@@ -4213,21 +4155,21 @@ function linhaPublicacaoOab(p) {
     if (_trVincularForm) { _trVincularForm.remove(); _trVincularForm = null; return; }
     const status = el("p", { class: "campo-ajuda", style: "margin:0.25rem 0 0" });
     const selectCasoVincular = el("select", { class: "cds--select-input" });
-    selectCasoVincular.appendChild(el("option", { value: "", texto: "— selecione o caso —" }));
+    selectCasoVincular.appendChild(el("option", { value: "", texto: "— selecione o processo —" }));
     (_cache.casos || []).forEach((c) => {
       selectCasoVincular.appendChild(el("option", { value: String(c.id), texto: c.titulo || "(sem título)" }));
     });
     const btnConfirmar = el("button", { class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Vincular" });
     const btnCancelar = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Cancelar" });
     const miniForm = el("div", { class: "mini-form-caso" }, [
-      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", texto: "Vincular ao caso" }), selectCasoVincular]),
+      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", texto: "Vincular ao processo" }), selectCasoVincular]),
       el("div", { style: "display:flex;gap:0.5rem;flex-wrap:wrap" }, [btnConfirmar, btnCancelar]),
       status,
     ]);
     btnCancelar.addEventListener("click", () => { if (_trVincularForm) { _trVincularForm.remove(); _trVincularForm = null; } });
     btnConfirmar.addEventListener("click", async () => {
       const casoId = selectCasoVincular.value;
-      if (!casoId) { status.textContent = "Selecione um caso."; return; }
+      if (!casoId) { status.textContent = "Selecione um processo."; return; }
       btnConfirmar.disabled = true;
       try {
         await _enviarJson(`/casos/${casoId}/publicacoes`, {
@@ -4236,7 +4178,7 @@ function linhaPublicacaoOab(p) {
           dados: p.dados || null,
         });
         if (_trVincularForm) { _trVincularForm.remove(); _trVincularForm = null; }
-        mostrarToast("success", "Vinculada", "Publicação vinculada ao caso.");
+        mostrarToast("success", "Vinculada", "Publicação vinculada ao processo.");
         carregarPublicacoesOab();
       } catch (err) {
         status.textContent = err.message;
@@ -4432,7 +4374,7 @@ document.getElementById("form-pub-oab-manual").addEventListener("submit", async 
 async function buscarAcaoForoDataJud(numerosCampo, campAcao, campForo, statusEl, botao) {
   if (!cliente) { mostrarErro(statusEl, "Conecte-se em Acesso antes de consultar o DataJud."); return; }
   const numeros = numerosCampo.value.split(",").map((s) => s.trim()).filter(Boolean);
-  if (!numeros.length) { mostrarAviso(statusEl, "Informe ao menos um número de processo."); return; }
+  if (numeros.length !== 1) { mostrarAviso(statusEl, "Informe um único número CNJ para consultar."); return; }
   const numero = numeros[0];
   const tribunal = _siglaTribunal(numero);
   if (!tribunal) { mostrarAviso(statusEl, "Não foi possível determinar o tribunal pelo número informado."); return; }
@@ -4469,16 +4411,6 @@ document.getElementById("btn-datajud-modal").addEventListener("click", () =>
   )
 );
 
-document.getElementById("btn-datajud-detalhe").addEventListener("click", () =>
-  buscarAcaoForoDataJud(
-    document.getElementById("editar-caso-processos"),
-    document.getElementById("editar-caso-acao"),
-    document.getElementById("editar-caso-foro"),
-    document.getElementById("status-datajud-detalhe"),
-    document.getElementById("btn-datajud-detalhe"),
-  )
-);
-
 // ─── Vista de detalhe do caso ────────────────────────────────────────────────
 
 let _casoDetalheAtual = null;
@@ -4491,7 +4423,7 @@ async function voltarParaCasos() {
 }
 
 function _selecionarSubabaCaso(nome) {
-  for (const n of ["cadastro", "partes", "atividades", "publicacoes", "movimentacoes", "vinculos"]) {
+  for (const n of ["cadastro", "atividades", "publicacoes", "movimentacoes", "vinculos"]) {
     document.getElementById(`caso-subaba-${n}`).hidden = n !== nome;
     const btn = document.getElementById(`caso-subaba-${n}-botao`);
     btn.classList.toggle("sub-aba-ativa", n === nome);
@@ -4508,24 +4440,27 @@ async function abrirCaso(casoId) {
   document.getElementById("caso-detalhe-titulo").textContent = "Carregando…";
   limpar(document.getElementById("lista-atividades"));
   limpar(document.getElementById("resultado-caso-editar"));
-  limpar(document.getElementById("resultado-caso-partes"));
   try {
     const caso = await _buscarJson(`/casos/${casoId}`);
     _casoDetalheAtual = caso;
-    document.getElementById("caso-detalhe-titulo").textContent = `Nº ${caso.numero} — ${caso.titulo || "(sem título)"}`;
-    document.getElementById("editar-caso-titulo").value = caso.titulo || "";
-    document.getElementById("editar-caso-responsavel").value = caso.responsavel || "";
-    document.getElementById("editar-caso-acao").value = caso.acao || "";
-    document.getElementById("editar-caso-foro").value = caso.foro || "";
-    document.getElementById("editar-caso-desfecho").value = caso.desfecho || "";
-    document.getElementById("editar-caso-processos").value = (caso.processos || []).join(", ");
-    _preencherCamposPartes("autor", (caso.autor || "").split(","));
-    _preencherCamposPartes("reu", (caso.reu || "").split(","));
-    _preencherCamposPartes("advogados", (caso.advogados || "").split(","));
+    document.getElementById("caso-detalhe-titulo").textContent = caso.titulo || "(sem título)";
+    const responsavel = document.getElementById("editar-caso-responsavel");
+    limpar(responsavel);
+    responsavel.appendChild(el("option", {value: "", texto: "Selecione um responsável"}));
+    try {
+      const dados = await _buscarJson("/responsaveis");
+      for (const nome of [...new Set([...(dados.responsaveis || []), caso.responsavel].filter(Boolean))]) {
+        responsavel.appendChild(el("option", {value: nome, texto: nome}));
+      }
+    } catch (erro) {
+      if (caso.responsavel) responsavel.appendChild(el("option", {value: caso.responsavel, texto: caso.responsavel}));
+      mostrarAviso(document.getElementById("resultado-caso-editar"), "Não foi possível carregar os responsáveis. Reabra o processo para tentar novamente.");
+    }
+    responsavel.value = caso.responsavel || "";
     document.getElementById("form-caso-editar").dataset.casoId = casoId;
-    document.getElementById("form-caso-partes").dataset.casoId = casoId;
     marcarFormularioSalvo(document.getElementById("form-caso-editar"), true);
-    marcarFormularioSalvo(document.getElementById("form-caso-partes"), true);
+    limpar(document.getElementById("lista-movimentacoes"));
+    await _carregarCapaProcessos(casoId);
     await _carregarAtividades(casoId);
   } catch (erro) {
     document.getElementById("caso-detalhe-titulo").textContent = "Erro ao carregar";
@@ -4574,7 +4509,7 @@ function _renderizarAtividades(casoId, atividades) {
     const titulo = el("p", { class: `atividade-titulo${atv.status === "concluida" ? " concluida" : ""}`, texto: atv.titulo });
     corpo.appendChild(titulo);
     const partesMeta = [_ROTULO_TIPO_ATIVIDADE[atv.tipo] || atv.tipo];
-    if (atv.data) partesMeta.push(atv.data);
+    if (atv.data) partesMeta.push(formatarDataSimples(atv.data));
     if (atv.hora) partesMeta.push(atv.hora);
     corpo.appendChild(el("p", { class: "atividade-meta", texto: partesMeta.join(" · ") }));
     if (atv.observacoes) corpo.appendChild(el("p", { class: "atividade-meta", texto: atv.observacoes }));
@@ -4662,7 +4597,7 @@ async function _carregarPublicacoesCaso(casoId) {
     const resp = await _buscarJson(`/casos/${casoId}/publicacoes`);
     const pubs = resp.publicacoes || [];
     if (!pubs.length) {
-      lista.textContent = "Nenhuma publicação vinculada a este caso.";
+      lista.textContent = "Nenhuma publicação vinculada a este processo.";
       return;
     }
     const ul = document.createElement("ul");
@@ -4685,7 +4620,7 @@ async function _carregarPublicacoesCaso(casoId) {
       li.querySelector("button").addEventListener("click", async (e) => {
         const h = e.currentTarget.dataset.hash;
         const cid = e.currentTarget.dataset.caso;
-        if (!(await confirmarAcao("Desvincular esta publicação do caso?"))) return;
+        if (!(await confirmarAcao("Desvincular esta publicação do processo?"))) return;
         try {
           await _enviarJson(`/casos/${cid}/publicacoes/${h}`, {}, "DELETE");
           await _carregarPublicacoesCaso(cid);
@@ -4704,13 +4639,14 @@ async function _carregarPublicacoesCaso(casoId) {
 const _CAMPOS_CAPA_MANUAIS = [
   ["area_direito", "Área do direito"],
   ["magistrado", "Magistrado"],
-  ["tipo_justica", "Tipo de justiça"],
-  ["cidade", "Cidade"],
-  ["uf", "UF"],
   ["valor_causa", "Valor da causa"],
   ["fase", "Fase"],
   ["status_processo", "Status do processo"],
 ];
+
+function formatarNumeroCNJ(valor) {
+  return String(valor || "").replace(/^(\d{7})(\d{2})(\d{4})(\d)(\d{2})(\d{4})$/, "$1-$2.$3.$4.$5.$6");
+}
 
 async function _carregarCapaProcessos(casoId) {
   const lista = document.getElementById("lista-capa-processos");
@@ -4723,17 +4659,23 @@ async function _carregarCapaProcessos(casoId) {
     return;
   }
   if (!numeros.length) {
-    lista.appendChild(notificacao("info", "Nenhum número de processo vinculado a este caso."));
+    lista.appendChild(notificacao("info", "Este processo não tem número CNJ para consultar a capa."));
     return;
   }
+  const movimentos = [];
   for (const numero of numeros) {
     try {
       const capa = await _buscarJson(`/casos/${casoId}/processos/${numero}/capa`);
       lista.appendChild(_cardCapaProcesso(casoId, numero, capa));
+      movimentos.push(...(capa.movimentos || []));
     } catch (erro) {
       lista.appendChild(notificacao("error", `${numero}: ${erro.message}`));
     }
   }
+  const listaMovs = document.getElementById("lista-movimentacoes");
+  limpar(listaMovs);
+  if (movimentos.length) listaMovs.appendChild(linhaDoTempoMovimentos(movimentos));
+  else listaMovs.appendChild(notificacao("info", "Nenhuma movimentação disponível. Atualize a capa para consultar o DataJud."));
 }
 
 async function _atualizarCapaProcessos(casoId) {
@@ -4741,7 +4683,7 @@ async function _atualizarCapaProcessos(casoId) {
   limpar(statusEl);
   const numeros = (await _buscarJson(`/casos/${casoId}`)).processos || [];
   if (!numeros.length) {
-    mostrarAviso(statusEl, "Nenhum número de processo vinculado a este caso.");
+    mostrarAviso(statusEl, "Este processo não tem número CNJ para consultar a capa.");
     return;
   }
   const botao = document.getElementById("btn-atualizar-capa");
@@ -4760,20 +4702,60 @@ async function _atualizarCapaProcessos(casoId) {
   botao.disabled = false;
   limpar(statusEl);
   if (erros.length) mostrarAviso(statusEl, erros.join(" | "));
+  const caso = await _buscarJson(`/casos/${casoId}`);
+  if (_casoDetalheAtual?.id !== casoId) return;
+  _casoDetalheAtual = caso;
+  document.getElementById("caso-detalhe-titulo").textContent = caso.titulo || "(sem título)";
   await _carregarCapaProcessos(casoId);
+}
+
+function _numeroProcessoComMascara(numero) {
+  return String(numero).replace(/\D/g, "").replace(/^(\d{7})(\d{2})(\d{4})(\d)(\d{2})(\d{4})$/, "$1-$2.$3.$4.$5.$6");
+}
+
+function _dataDistribuicaoLegivel(valor) {
+  if (!valor) return "";
+  const partes = String(valor).match(/^(\d{4})-?(\d{2})-?(\d{2})(?:T|\s)?(\d{2}):?(\d{2}):?(\d{2})/);
+  if (partes) return `${partes[3]}/${partes[2]}/${partes[1]} ${partes[4]}:${partes[5]}:${partes[6]}`;
+  const data = String(valor).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return data ? `${data[3]}/${data[2]}/${data[1]}` : String(valor);
+}
+
+function _participantesCapa(capa) {
+  const nomes = (registros) => [...new Set(registros.map(p => (p.nome || "").trim()).filter(Boolean))].join("; ");
+  const partes = capa.partes || [];
+  const poloAtivo = p => /^(A|AT|ATIVO)$/i.test(p.polo || "");
+  const poloPassivo = p => /^(P|PA|PASSIVO)$/i.test(p.polo || "");
+  const advogados = [...new Set((capa.advogados || []).map(registro => {
+    const advogado = registro.advogado || registro;
+    const nome = (advogado.nome || "").trim();
+    if (!nome) return "";
+    const oab = String(advogado.numero_oab || "").trim();
+    const uf = String(advogado.uf_oab || "").trim().toUpperCase();
+    return oab ? `${nome} — OAB ${oab}${uf ? `/${uf}` : ""}` : nome;
+  }).filter(Boolean))].join("; ");
+  return [
+    ["Polo ativo", nomes(partes.filter(poloAtivo)) || "Não informado pelo DJEN"],
+    ["Polo passivo", nomes(partes.filter(poloPassivo)) || "Não informado pelo DJEN"],
+    ["Partes sem polo informado", nomes(partes.filter(p => !poloAtivo(p) && !poloPassivo(p)))],
+    ["Advogados", advogados || "Não informado pelo DJEN"],
+  ];
 }
 
 function _cardCapaProcesso(casoId, numero, capa) {
   const autoCampos = [
-    ["Tribunal", capa.tribunal], ["Classe", capa.classe], ["Grau", capa.grau],
-    ["Assuntos", (capa.assuntos || []).join(", ")], ["Distribuição", capa.data_distribuicao],
+    ["Tribunal", capa.tribunal], ["Ação", _casoDetalheAtual?.acao], ["Classe", capa.classe], ["Grau", capa.grau],
+    ["Foro / Vara (órgão julgador)", capa.orgao_julgador],
+    ["Tipo de justiça", capa.tipo_justica], ["Município", capa.cidade], ["UF", capa.uf],
+    ["Assuntos", (capa.assuntos || []).join(", ")], ["Distribuição", _dataDistribuicaoLegivel(capa.data_distribuicao)],
     ["Nível de sigilo", capa.nivel_sigilo], ["Nome do processo", capa.nome_processo],
+    ..._participantesCapa(capa),
   ].filter(([, valor]) => valor !== null && valor !== undefined && valor !== "");
 
   const blocoAuto = autoCampos.length
     ? el("dl", { class: "capa-card-auto" }, autoCampos.flatMap(([rotulo, valor]) => [
         el("dt", {}, [document.createTextNode(rotulo)]),
-        el("dd", {}, [document.createTextNode(String(valor))]),
+        el("dd", {}, [document.createTextNode(String(valor ?? "Não informado"))]),
       ]))
     : el("p", { class: "texto-auxiliar" }, [document.createTextNode(
         "Sem dados automáticos ainda — clique em \"Atualizar capa\" para buscar no DataJud/DJEN.",
@@ -4784,10 +4766,12 @@ function _cardCapaProcesso(casoId, numero, capa) {
     const input = el("input", {
       class: "cds--text-input", type: chave === "valor_causa" ? "number" : "text",
       placeholder: rotulo, value: capa[chave] ?? "",
+      id: `capa-${numero}-${chave}`,
+      ...(chave === "valor_causa" ? { step: "0.01", min: "0" } : {}),
     });
     campos[chave] = input;
     return el("div", { class: "cds--form-item capa-card-campo" }, [
-      el("label", { class: "cds--label" }, [document.createTextNode(rotulo)]),
+      el("label", { class: "cds--label", for: `capa-${numero}-${chave}` }, [document.createTextNode(rotulo)]),
       input,
     ]);
   });
@@ -4814,7 +4798,7 @@ function _cardCapaProcesso(casoId, numero, capa) {
   });
 
   return el("div", { class: "capa-card" }, [
-    el("h4", {}, [document.createTextNode(numero)]),
+    el("h4", {}, [document.createTextNode(formatarNumeroCNJ(numero))]),
     blocoAuto,
     el("div", { class: "capa-card-campos" }, inputs),
     btnSalvar,
@@ -4829,7 +4813,7 @@ async function _buscarMovimentacoes(casoId) {
   const resp = await _buscarJson(`/casos/${casoId}`);
   const numeros = resp.processos || [];
   if (!numeros.length) {
-    mostrarAviso(statusEl, "Nenhum número de processo vinculado a este caso.");
+    mostrarAviso(statusEl, "Informe o número CNJ no Cadastro para consultar as movimentações.");
     return;
   }
   statusEl.appendChild(notificacao("info", `Consultando ${numeros.length} processo(s) no DataJud…`));
@@ -4878,7 +4862,7 @@ const _ROTULO_DESFECHO_CASO = {
   desprovido: "Desprovido",
 };
 
-// ─── Vínculos entre casos ────────────────────────────────────────────────────
+// ─── Vínculos entre processos ────────────────────────────────────────────────────
 
 const _ROTULO_TIPO_VINCULO = {
   recurso: "Recurso",
@@ -4937,7 +4921,7 @@ function _buscarCasoPorNumeroProcesso() {
     preview.hidden = false;
   } else {
     campoCasoId.value = "";
-    preview.textContent = "Nenhum caso cadastrado com esse número de processo.";
+    preview.textContent = "Nenhum processo cadastrado com esse número de processo.";
     preview.hidden = false;
   }
 }
@@ -4948,7 +4932,7 @@ function _renderizarVinculos(casoId, vinculos) {
   const lista = document.getElementById("lista-vinculos");
   limpar(lista);
   if (!vinculos.length) {
-    lista.appendChild(notificacao("info", "Nenhum caso vinculado"));
+    lista.appendChild(notificacao("info", "Nenhum processo vinculado"));
     return;
   }
   const thead = el("thead", {}, [
@@ -5005,7 +4989,7 @@ document.getElementById("form-vinculos-adicionar").addEventListener("submit", as
   const outroId = document.getElementById("vinculos-caso-select").value;
   const tipo = document.getElementById("vinculos-tipo-select").value;
   if (!outroId) {
-    resultado.appendChild(notificacao("error", "Selecione um caso."));
+    resultado.appendChild(notificacao("error", "Selecione um processo."));
     return;
   }
   const botao = evento.target.querySelector("button[type=submit]");
@@ -5018,7 +5002,7 @@ document.getElementById("form-vinculos-adicionar").addEventListener("submit", as
     document.getElementById("vinculos-preview").hidden = true;
     document.getElementById("vinculos-tipo-select").value = "relacionado";
     document.getElementById("vinculos-adicionar-painel").open = false;
-    mostrarToast("success", "Vínculo criado", "Caso vinculado com sucesso.");
+    mostrarToast("success", "Vínculo criado", "Processo vinculado com sucesso.");
     await _carregarVinculos(casoId);
   } catch (erro) {
     resultado.appendChild(notificacao("error", erro.message));
@@ -5029,7 +5013,6 @@ document.getElementById("form-vinculos-adicionar").addEventListener("submit", as
 
 document.getElementById("caso-voltar").addEventListener("click", voltarParaCasos);
 document.getElementById("caso-subaba-cadastro-botao").addEventListener("click", () => _selecionarSubabaCaso("cadastro"));
-document.getElementById("caso-subaba-partes-botao").addEventListener("click", () => _selecionarSubabaCaso("partes"));
 document.getElementById("caso-subaba-atividades-botao").addEventListener("click", () => _selecionarSubabaCaso("atividades"));
 document.getElementById("caso-subaba-publicacoes-botao").addEventListener("click", () => {
   _selecionarSubabaCaso("publicacoes");
@@ -5039,7 +5022,6 @@ document.getElementById("caso-subaba-publicacoes-botao").addEventListener("click
 document.getElementById("caso-subaba-movimentacoes-botao").addEventListener("click", () => {
   _selecionarSubabaCaso("movimentacoes");
   const casoId = document.getElementById("form-caso-editar").dataset.casoId;
-  if (casoId) _carregarCapaProcessos(casoId);
 });
 document.getElementById("caso-subaba-vinculos-botao").addEventListener("click", () => {
   _selecionarSubabaCaso("vinculos");
@@ -5067,140 +5049,17 @@ registrarSalvamento(document.getElementById("form-caso-editar"), async (evento) 
   if (!casoId) return;
   const botao = evento.target.querySelector("button[type=submit]");
   const resultado = document.getElementById("resultado-caso-editar");
-  const numeros = document.getElementById("editar-caso-processos").value.split(",").map((s) => s.trim()).filter(Boolean);
-  const corpo = {
-    titulo: document.getElementById("editar-caso-titulo").value.trim(),
-    responsavel: document.getElementById("editar-caso-responsavel").value.trim(),
-    acao: document.getElementById("editar-caso-acao").value.trim(),
-    foro: document.getElementById("editar-caso-foro").value.trim(),
-    desfecho: document.getElementById("editar-caso-desfecho").value || null,
-    numeros_processo: numeros,
-  };
+  const corpo = {responsavel: document.getElementById("editar-caso-responsavel").value.trim()};
   const pararEspera = mostrarEspera(resultado, botao, "Salvando");
   try {
     const atualizado = await _enviarJson(`/casos/${casoId}`, corpo, "PATCH");
     limpar(resultado);
-    resultado.appendChild(notificacao("success", "Caso atualizado"));
+    resultado.appendChild(notificacao("success", "Processo atualizado"));
     marcarFormularioSalvo(evento.target);
-    document.getElementById("caso-detalhe-titulo").textContent = `Nº ${atualizado.numero} — ${atualizado.titulo || "(sem título)"}`;
+    _casoDetalheAtual = atualizado;
+    document.getElementById("caso-detalhe-titulo").textContent = atualizado.titulo || "(sem título)";
     const indice = _cache.casos.findIndex((c) => c.id === casoId);
     if (indice !== -1) _cache.casos[indice] = { ..._cache.casos[indice], ...atualizado };
-  } catch (erro) {
-    mostrarErro(resultado, erro.message);
-  } finally {
-    pararEspera();
-  }
-});
-
-// O cadastro persiste listas de nomes separadas por vírgula; a interface edita um nome por campo.
-function _lerCamposPartes(tipo) {
-  return Array.from(document.getElementById(`campos-caso-${tipo}`).querySelectorAll("input"))
-    .map((campo) => campo.value.trim()).filter(Boolean);
-}
-
-function _preencherCamposPartes(tipo, nomes) {
-  const container = document.getElementById(`campos-caso-${tipo}`);
-  const primeiro = document.getElementById(`editar-caso-${tipo}`);
-  const rotulo = { autor: "Autor", reu: "Réu", advogados: "Advogado" }[tipo];
-  const unicos = [...new Set(nomes.map((nome) => nome.trim()).filter(Boolean))];
-  limpar(container);
-  primeiro.value = unicos.shift() || "";
-  container.appendChild(primeiro);
-  for (const [indice, nome] of unicos.entries()) {
-    const id = `editar-caso-${tipo}-${indice + 2}`;
-    container.appendChild(el("div", { class: "cds--form-item" }, [
-      el("label", { class: "cds--label", for: id, texto: `${rotulo} ${indice + 2}` }),
-      el("input", { class: "cds--text-input", type: "text", id, value: nome, autocomplete: "off" }),
-    ]));
-  }
-}
-
-document.getElementById("btn-buscar-partes").addEventListener("click", () => {
-  const casoId = document.getElementById("form-caso-partes").dataset.casoId;
-  if (casoId) _buscarPartesDJEN(casoId);
-});
-
-async function _buscarPartesDJEN(casoId) {
-  const statusEl = document.getElementById("status-partes-djen");
-  const botao = document.getElementById("btn-buscar-partes");
-  limpar(statusEl);
-  statusEl.appendChild(notificacao("info", "Buscando…"));
-  botao.disabled = true;
-
-  try {
-    // 1. Tenta extrair das publicações já vinculadas ao caso
-    let destinatarios = [];
-    let advogados = [];
-    const respPubs = await _buscarJson(`/casos/${casoId}/publicacoes`);
-    for (const pub of (respPubs.publicacoes || [])) {
-      const d = pub.dados || {};
-      destinatarios.push(...(d.destinatarios || []));
-      advogados.push(...(d.destinatarioadvogados || []));
-    }
-
-    // 2. Se não achou nada nas publicações vinculadas, consulta DJEN diretamente
-    if (!destinatarios.length && !advogados.length) {
-      const respCaso = await _buscarJson(`/casos/${casoId}`);
-      const numeros = respCaso.processos || [];
-      for (const num of numeros) {
-        try {
-          const r = await cliente.chamarTool("consultar_publicacoes_djen", { numero_processo: num });
-          if (r.erro) continue;
-          for (const item of (r.itens || [])) {
-            destinatarios.push(...(item.destinatarios || []));
-            advogados.push(...(item.destinatarioadvogados || []));
-          }
-        } catch (_) { /* ignora falha por processo */ }
-      }
-    }
-
-    if (!destinatarios.length && !advogados.length) {
-      mostrarAviso(statusEl, "Nenhuma parte encontrada no DJEN para este caso.");
-      return;
-    }
-
-    // Deduplica por nome
-    const _nomes = (arr) => [...new Set(arr.map((x) => (x.nome || "").trim()).filter(Boolean))];
-
-    const ativos  = _nomes(destinatarios.filter((d) => /AT(IVO)?$/i.test(d.polo || "")));
-    const passivos = _nomes(destinatarios.filter((d) => /PA(SSIVO)?$/i.test(d.polo || "")));
-    // Polo desconhecido: junta em ativos se não tiver nenhum dos lados ainda
-    if (!ativos.length && !passivos.length) {
-      ativos.push(..._nomes(destinatarios));
-    }
-    const advsNomes = _nomes(advogados);
-
-    // Mantém as edições locais e acrescenta cada nome encontrado em seu próprio campo.
-    for (const [tipo, nomes] of [["autor", ativos], ["reu", passivos], ["advogados", advsNomes]]) {
-      _preencherCamposPartes(tipo, [..._lerCamposPartes(tipo), ...nomes]);
-    }
-
-    atualizarIndicadorEdicao(document.getElementById("form-caso-partes"));
-    mostrarSucesso(statusEl, "Preenchido. Revise e salve.");
-  } catch (err) {
-    mostrarErro(statusEl, err.message || "Erro ao buscar partes.");
-  } finally {
-    botao.disabled = false;
-  }
-}
-
-registrarSalvamento(document.getElementById("form-caso-partes"), async (evento) => {
-  evento.preventDefault();
-  const casoId = evento.target.dataset.casoId;
-  if (!casoId) return;
-  const botao = evento.target.querySelector("button[type=submit]");
-  const resultado = document.getElementById("resultado-caso-partes");
-  const corpo = {
-    autor: _lerCamposPartes("autor").join(", "),
-    reu: _lerCamposPartes("reu").join(", "),
-    advogados: _lerCamposPartes("advogados").join(", "),
-  };
-  const pararEspera = mostrarEspera(resultado, botao, "Salvando");
-  try {
-    await _enviarJson(`/casos/${casoId}`, corpo, "PATCH");
-    limpar(resultado);
-    resultado.appendChild(notificacao("success", "Partes atualizadas"));
-    marcarFormularioSalvo(evento.target);
   } catch (erro) {
     mostrarErro(resultado, erro.message);
   } finally {
@@ -5211,17 +5070,16 @@ registrarSalvamento(document.getElementById("form-caso-partes"), async (evento) 
 document.getElementById("btn-excluir-caso").addEventListener("click", async () => {
   const casoId = document.getElementById("form-caso-editar").dataset.casoId;
   if (!casoId) return;
-  const titulo = document.getElementById("editar-caso-titulo").value || "(sem título)";
-  if (!(await confirmarAcao(`Excluir o caso "${titulo}"? Essa ação não pode ser desfeita.`))) return;
+  const titulo = _casoDetalheAtual?.titulo || "(sem título)";
+  if (!(await confirmarAcao(`Excluir o processo "${titulo}"? Essa ação não pode ser desfeita.`))) return;
   const botao = document.getElementById("btn-excluir-caso");
   botao.disabled = true;
   try {
     await _enviarJson(`/casos/${casoId}`, {}, "DELETE");
     _cache.casos = _cache.casos.filter((c) => c.id !== casoId);
     marcarFormularioSalvo(document.getElementById("form-caso-editar"), true);
-    marcarFormularioSalvo(document.getElementById("form-caso-partes"), true);
     await voltarParaCasos();
-    mostrarToast("success", "Caso excluído");
+    mostrarToast("success", "Processo excluído");
     _renderizarTabelaCasosPagina();
   } catch (erro) {
     mostrarErro(document.getElementById("resultado-caso-editar"), erro.message);
@@ -5270,7 +5128,8 @@ function _inicializarDatePickerRange(idInicio, idFim, opcoes) {
   const elFim = document.getElementById(idFim);
   if (!elInicio || !elFim || typeof window.flatpickr !== "function") return;
   window.flatpickr(elInicio, Object.assign({
-    altInput: false,
+    altInput: opcoes.dateFormat === "Y-m-d",
+    altFormat: "d/m/Y",
     allowInput: true,
     locale: window.flatpickr.l10ns && window.flatpickr.l10ns.pt,
     plugins: [new window.rangePlugin({ input: elFim })],
@@ -5287,7 +5146,8 @@ _inicializarDatePickerRange("pub-oab-manual-data-inicio", "pub-oab-manual-data-f
   const el = document.getElementById("atividade-data");
   if (!el || typeof window.flatpickr !== "function") return;
   const fp = window.flatpickr(el, {
-    altInput: false,
+    altInput: true,
+    altFormat: "d/m/Y",
     allowInput: true,
     locale: window.flatpickr.l10ns && window.flatpickr.l10ns.pt,
     dateFormat: "Y-m-d",
@@ -5445,7 +5305,7 @@ document.addEventListener("click", (ev) => {
   }
 });
 
-// --- Header: busca global (cliente, caso, número de processo) ------------------------------
+// --- Header: busca global (cliente, processo, número de processo) ------------------------------
 _btnBuscaToggle.addEventListener("click", async () => {
   const abrindo = _painelBusca.hidden;
   _fecharPainelNotificacoes();
@@ -5477,7 +5337,7 @@ function _buscaGlobalResultados(termo) {
     const tituloBate = (c.titulo || "").toLowerCase().includes(t);
     const processoBate = tDigitos.length >= 3 && (c.processos || []).some((p) => p.replace(/\D/g, "").includes(tDigitos));
     if (tituloBate || processoBate) {
-      resultados.push({ tipo: "caso", id: c.id, rotulo: c.titulo || "(sem título)", sub: processoBate ? "Caso · " + (c.processos || []).find((p) => p.replace(/\D/g, "").includes(tDigitos)) : "Caso" });
+      resultados.push({ tipo: "caso", id: c.id, rotulo: c.titulo || "(sem título)", sub: processoBate ? "Processo · " + (c.processos || []).find((p) => p.replace(/\D/g, "").includes(tDigitos)) : "Processo" });
     }
   }
   return resultados.slice(0, 20);

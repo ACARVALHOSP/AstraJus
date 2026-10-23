@@ -2061,6 +2061,14 @@ class CapaProcessoTest(unittest.TestCase):
         lido = self.gestao.obter_capa_processo(self.caso["id"], self.numero)
         self.assertEqual(lido, capa)
 
+    def test_salvar_caso_preserva_capa_dos_processos_mantidos(self):
+        self.gestao.salvar_capa_processo(self.caso["id"], self.numero, self.agora, fase="Conhecimento")
+        self.gestao.atualizar_caso(
+            self.caso["id"], "Novo título", None, None, None, None, None, None,
+            numeros_processo=[self.numero],
+        )
+        self.assertEqual(self.gestao.obter_capa_processo(self.caso["id"], self.numero)["fase"], "Conhecimento")
+
     def test_campo_invalido_recusado(self):
         with self.assertRaises(ValueError):
             self.gestao.salvar_capa_processo(self.caso["id"], self.numero, self.agora, comarca="SP")
@@ -2116,6 +2124,9 @@ class CapaProcessoHttpTest(unittest.TestCase):
             "instancias": [{
                 "tribunal": "TJSP", "classe": "Cobrança", "assuntos": ["Dano Moral"],
                 "grau": "G1", "dataAjuizamento": "20230101000000", "nivel_sigilo": 0,
+                "codigoMunicipioIBGE": 3550308,
+                "movimentos": [{"nome": "Distribuição", "dataHora": "2023-01-01T12:00:00Z"}],
+                "orgaoJulgador": "3ª Vara Cível",
             }],
             "partes": [{"nome": "FULANO", "polo": "A"}, {"nome": "SICRANO", "polo": "P"}],
             "advogados": [{"nome": "ADV", "numero_oab": "1", "uf_oab": "SP"}],
@@ -2125,9 +2136,55 @@ class CapaProcessoHttpTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(resultado["tribunal"], "TJSP")
         self.assertEqual(resultado["nome_processo"], "FULANO x SICRANO")
+        self.assertEqual(resultado["orgao_julgador"], "3ª Vara Cível")
+        self.assertEqual(resultado["tipo_justica"], "Justiça Estadual")
+        caso = self.gestao.obter_caso(self.caso["id"])
+        self.assertEqual(caso["titulo"], "FULANO x SICRANO")
+        self.assertEqual(caso["foro"], "3ª Vara Cível")
         self.assertEqual(resultado["partes"], resultado_unificado["partes"])
         self.assertEqual(resultado["advogados"], resultado_unificado["advogados"])
+        self.assertEqual(resultado["cidade"], "São Paulo")
+        self.assertEqual(resultado["uf"], "SP")
+        self.assertEqual(resultado["movimentos"][0]["nome"], "Distribuição")
+        status, reaberto = self._chamar("GET", None)
+        self.assertEqual(status, 200)
+        self.assertEqual(reaberto, resultado)
+
+    def test_codigo_municipio_desconhecido_preserva_localidade_manual(self):
+        self._chamar("PATCH", None, {"cidade": "Praia Grande", "uf": "SP"})
+        with mock.patch.object(server, "consultar_processo_unificado", return_value={
+            "instancias": [{"codigoMunicipioIBGE": "9999999"}],
+        }):
+            status, resultado = self._chamar("POST", "atualizar", {"tribunal": "tjsp"})
+        self.assertEqual(status, 200)
+        self.assertEqual(resultado["cidade"], "Praia Grande")
+        self.assertEqual(resultado["uf"], "SP")
+
+    def test_extracao_datajud_preserva_codigo_ibge(self):
+        resultado = server._extrair_processo_datajud({"orgaoJulgador": {
+            "nome": "Vara Cível", "codigoMunicipioIBGE": 3550308,
+        }})
+        self.assertEqual(resultado["codigoMunicipioIBGE"], 3550308)
+
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CasoPatchParcialTest(unittest.TestCase):
+    def test_salvar_partes_preserva_cadastro(self):
+        gestao = mock.Mock()
+        gestao.obter_caso.return_value = {
+            "titulo": "Caso existente", "responsavel": "Ana", "acao": "Cobrança",
+            "foro": "São Paulo", "autor": "Autor", "reu": "Réu",
+            "advogados": "Advogado", "desfecho": "acordo",
+        }
+        gestao.atualizar_caso.return_value = {"id": "caso-1"}
+        app = server._AutenticacaoBearer(mock.Mock(), mock.Mock(), gestao=gestao)
+        receive = mock.AsyncMock(return_value={"type": "http.request", "body": b'{"autor":"Novo autor"}', "more_body": False})
+        asyncio.run(app._caso_detalhe({"method": "PATCH"}, receive, mock.AsyncMock(), "caso-1"))
+        campos = gestao.atualizar_caso.call_args.kwargs
+        self.assertEqual(campos["autor"], "Novo autor")
+        for campo in ("titulo", "responsavel", "acao", "foro", "reu", "advogados", "desfecho"):
+            self.assertEqual(campos[campo], gestao.obter_caso.return_value[campo])

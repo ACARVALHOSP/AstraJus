@@ -57,7 +57,7 @@ class InterfaceTest(unittest.TestCase):
         self.page.on("pageerror", lambda erro: self.errors.append(str(erro)))
         self.requests = []
         self.fail_save = False
-        self.case = {"id": "caso-1", "numero": 1, "titulo": "Caso de teste", "autor": "Autora de teste", "processos": []}
+        self.case = {"id": "caso-1", "numero": 1, "titulo": "Caso de teste", "autor": "Autora de teste", "responsavel": "Ana", "processos": []}
         self.contact = {"id": "cliente-1", "nome": "Cliente de teste", "telefones": [{"tipo": "celular", "telefone": "11999999999"}]}
         self.context.route("**/*", self.route)
         self.page.goto(self.url)
@@ -88,7 +88,7 @@ class InterfaceTest(unittest.TestCase):
                 return route.fulfill(json=self.contact)
             if path == "/casos":
                 return route.fulfill(json={**self.case, **request.post_data_json})
-        data = {"/casos/caso-1": self.case, "/clientes/cliente-1": self.contact,
+        data = {"/responsaveis": {"responsaveis": ["Ana", "Título pendente", "Título salvo", "Não perder"]}, "/casos/caso-1": self.case, "/clientes/cliente-1": self.contact,
                 "/casos": {"casos": [self.case]}, "/clientes": {"clientes": [self.contact]}}.get(path, {"atividades": [], "publicacoes": [], "casos": [], "vinculos": []})
         route.fulfill(json=data)
 
@@ -104,6 +104,88 @@ class InterfaceTest(unittest.TestCase):
 
     def choose(self, value):
         self.page.locator(f"#modal-edicao-pendente [data-escolha-edicao={value}]").click()
+
+    def test_capa_unifica_cadastro_e_atualiza_movimentacoes(self):
+        numero = "10006070420255020401"
+        self.case["processos"] = [numero]
+        self.case["autor"] = ""
+        capa = {}
+        def responder(route):
+            if route.request.method == "POST":
+                capa.update({"tribunal": "TRT2", "classe": "Ação trabalhista",
+                    "data_distribuicao": "20250102120000", "cidade": "Praia Grande", "uf": "SP",
+                    "partes": [{"nome": "Maria", "polo": "A"}],
+                    "movimentos": [{"nome": "Distribuído", "codigo": 26, "dataHora": "2025-01-02T12:00:00Z"}]})
+            route.fulfill(json=capa)
+        self.context.route("**/casos/caso-1/processos/**", responder)
+        self.open_case()
+        self.assertEqual(self.page.locator("#caso-detalhe-titulo").inner_text(), "Caso de teste")
+        self.assertEqual(self.page.locator("#caso-subaba-partes-botao").count(), 0)
+        self.assertEqual(self.page.locator("#editar-caso-titulo").count(), 0)
+        self.assertTrue(self.page.locator("#lista-capa-processos").is_visible())
+        chamadas_antes = len(self.requests)
+        self.page.locator("#btn-atualizar-capa").click()
+        self.page.wait_for_function("document.getElementById('lista-capa-processos').textContent.includes('02/01/2025')")
+        self.assertIn("1000607-04.2025.5.02.0401", self.page.locator("#lista-capa-processos").inner_text())
+        self.assertIn("Maria", self.page.locator("#lista-capa-processos").inner_text())
+        self.assertEqual(self.page.locator("#form-caso-partes").count(), 0)
+        self.assertEqual(self.page.locator("#btn-buscar-partes").count(), 0)
+        self.assertFalse(self.page.evaluate("formulariosPendentes().length"))
+        self.page.locator("#caso-subaba-movimentacoes-botao").click()
+        self.page.wait_for_function("document.getElementById('lista-movimentacoes').textContent.includes('Distribuído')")
+        self.assertFalse(any(path == "/mcp" and method == "POST" for method, path in self.requests[chamadas_antes:]))
+        self.page.locator("#caso-subaba-cadastro-botao").click()
+        for width in (1440, 390):
+            self.page.set_viewport_size({"width": width, "height": 1000})
+            self.page.wait_for_timeout(350)
+            self.assertEqual(self.page.evaluate("document.documentElement.scrollWidth"), width)
+            self.page.screenshot(path=f"/tmp/astrajus-capa-{width}.png", full_page=True)
+        self.assertFalse(self.errors)
+
+    def test_capa_no_cadastro_com_mascara_distribuicao_e_ibge(self):
+        self.case["processos"] = ["10063142720238260005"]
+        self.context.route("**/casos/caso-1/processos/*/capa", lambda route: route.fulfill(json={
+            "nome_processo": "Autora x Réu", "classe": "Cobrança", "assuntos": ["Contratos"],
+            "orgao_julgador": "3ª Vara Cível", "data_distribuicao": "20230102123456",
+            "cidade": "São Paulo", "uf": "SP", "tipo_justica": "Justiça Estadual",
+        }))
+        self.open_case()
+        capa = self.page.locator("#caso-subaba-cadastro #lista-capa-processos")
+        self.assertTrue(capa.is_visible())
+        for texto in ["1006314-27.2023.8.26.0005", "02/01/2023 12:34:56", "3ª Vara Cível"]:
+            self.assertIn(texto, capa.inner_text())
+        self.assertIn("São Paulo", capa.inner_text())
+        self.assertIn("SP", capa.inner_text())
+        self.assertEqual(capa.get_by_label("Valor da causa").get_attribute("step"), "0.01")
+        self.page.locator("#caso-subaba-movimentacoes-botao").click()
+        self.assertFalse(capa.is_visible())
+        self.assertEqual(self.page.locator("#caso-subaba-movimentacoes #lista-capa-processos").count(), 0)
+        self.assertFalse(self.errors)
+
+    def test_partes_e_advogados_sao_dados_da_capa_sem_formulario(self):
+        self.case["processos"] = ["10063142720238260005"]
+        capa = {"partes": [
+            {"nome": "Autora DJen", "polo": "A"}, {"nome": "Segunda autora", "polo": "ATIVO"},
+            {"nome": "Autora DJen", "polo": "A"}, {"nome": "Réu DJen", "polo": "P"},
+            {"nome": "Sem polo"}],
+            "advogados": [{"nome": "Ana Silva", "numero_oab": "12345", "uf_oab": "sp"},
+                          {"nome": "Ana Silva", "numero_oab": "12345", "uf_oab": "sp"}]}
+        self.context.route("**/casos/caso-1/processos/*/capa", lambda route: route.fulfill(json=capa))
+        self.open_case()
+        dados = self.page.locator("#lista-capa-processos .capa-card-auto")
+        for texto in ["Autora DJen", "Segunda autora", "Réu DJen", "Sem polo", "Ana Silva — OAB 12345/SP"]:
+            self.assertIn(texto, dados.inner_text())
+        self.assertEqual(dados.inner_text().count("Autora DJen"), 1)
+        self.assertEqual(dados.inner_text().count("Ana Silva"), 1)
+        self.assertEqual(dados.locator("input, select, textarea, button").count(), 0)
+        self.assertEqual(self.page.locator("#form-caso-partes, #editar-caso-autor, #editar-caso-reu, #editar-caso-advogados").count(), 0)
+        self.assertEqual(self.page.get_by_role("button", name="Salvar partes").count(), 0)
+        self.page.locator("#caso-voltar").click()
+        self.page.wait_for_function("!document.getElementById('caso-vista-lista').hidden")
+        self.assertFalse(any(method == "PATCH" for method, _ in self.requests))
+        self.page.evaluate("abrirCaso('caso-1')")
+        self.page.wait_for_function("document.getElementById('lista-capa-processos').textContent.includes('Ana Silva')")
+        self.assertFalse(self.errors)
 
     def test_token_invalido_permanece_no_acesso_e_nao_e_lembrado(self):
         self.page.locator("#token").fill("invalido")
@@ -123,50 +205,69 @@ class InterfaceTest(unittest.TestCase):
         self.assertTrue(self.page.locator("#aba-acesso").is_visible())
         self.assertIsNone(self.page.evaluate("localStorage.getItem('cnj_token')"))
 
-    def test_modal_contem_foco_escape_e_restaura_origem(self):
+    def test_secao_sem_modal_permite_foco_fora_e_restaura_origem(self):
         self.connect()
         self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-casos')); }")
         self.page.locator("#btn-novo-caso").click()
-        for _ in range(18):
-            self.page.keyboard.press("Tab")
-            self.assertTrue(self.page.evaluate("document.getElementById('modal-novo-caso').contains(document.activeElement)"))
+        self.assertEqual(self.page.locator('[aria-modal="true"], [role="dialog"], [role="alertdialog"]').count(), 0)
+        self.assertEqual(self.page.locator("#modal-novo-caso").evaluate("el => getComputedStyle(el).position"), "static")
+        self.page.locator("#btn-novo-caso").focus()
+        self.assertEqual(self.page.evaluate("document.activeElement.id"), "btn-novo-caso")
+        self.page.locator("#modal-novo-caso").focus()
         self.page.keyboard.press("Escape")
         self.page.locator("#modal-novo-caso").wait_for(state="hidden")
         self.assertFalse(self.page.locator("#modal-novo-caso").is_visible())
         self.assertEqual(self.page.evaluate("document.activeElement.id"), "btn-novo-caso")
         self.assertFalse(self.page.locator("main").evaluate("el => el.closest('[inert]') !== null"))
 
-    def test_saida_caso_continuar_descartar_e_salvar_ambas_secoes(self):
+    def test_todos_fluxos_sao_secoes_no_documento(self):
+        self.connect()
+        ids = self.page.locator(".fluxo-pagina").evaluate_all("els => els.map(el => el.id)")
+        self.assertEqual(len(ids), 8)
+        for width in (1440, 390):
+            self.page.set_viewport_size({"width": width, "height": 960})
+            for ident in ids:
+                self.page.evaluate("id => abrirModal(id)", ident)
+                section = self.page.locator(f"#{ident}")
+                self.assertTrue(section.is_visible())
+                self.assertEqual(section.get_attribute("role"), "region")
+                self.assertTrue(section.evaluate("el => !!el.closest('main')"))
+                self.assertEqual(section.evaluate("el => getComputedStyle(el).position"), "static")
+                self.assertEqual(self.page.locator("[inert]").count(), 0)
+                self.assertNotEqual(self.page.locator("body").evaluate("el => getComputedStyle(el).overflow"), "hidden")
+                self.assertLessEqual(section.bounding_box()["width"], width)
+                self.page.evaluate("id => fecharModal(id)", ident)
+                self.assertFalse(section.is_visible())
+        self.assertFalse(self.errors)
+
+    def test_saida_caso_continuar_descartar_e_salvar_responsavel(self):
         self.open_case()
-        self.page.locator("#editar-caso-titulo").fill("Título pendente")
+        self.page.locator("#editar-caso-responsavel").select_option("Título pendente")
         self.page.locator("#caso-voltar").click()
         self.choose("continuar")
         self.assertTrue(self.page.locator("#caso-vista-detalhe").is_visible())
-        self.assertEqual(self.page.locator("#editar-caso-titulo").input_value(), "Título pendente")
+        self.assertEqual(self.page.locator("#editar-caso-responsavel").input_value(), "Título pendente")
         self.page.locator("#caso-voltar").click()
         self.choose("descartar")
         self.page.wait_for_function("!document.getElementById('caso-vista-lista').hidden")
-        self.assertEqual(self.page.locator("#editar-caso-titulo").input_value(), "Caso de teste")
+        self.assertEqual(self.page.locator("#editar-caso-responsavel").input_value(), "Ana")
         self.page.evaluate("abrirCaso('caso-1')")
-        self.page.locator("#editar-caso-titulo").fill("Título salvo")
-        self.page.locator("#caso-subaba-partes-botao").click()
-        self.page.locator("#editar-caso-autor").fill("Autora alterada")
+        self.page.locator("#editar-caso-responsavel").select_option("Título salvo")
         self.page.locator("#caso-voltar").click()
         self.choose("salvar")
         self.page.wait_for_function("!document.getElementById('caso-vista-lista').hidden")
-        self.assertEqual(self.case["titulo"], "Título salvo")
-        self.assertEqual(self.case["autor"], "Autora alterada")
+        self.assertEqual(self.case["responsavel"], "Título salvo")
         self.assertFalse(self.errors)
 
     def test_falha_ao_salvar_preserva_edicao_e_bloqueia_saida(self):
         self.open_case()
-        self.page.locator("#editar-caso-titulo").fill("Não perder")
+        self.page.locator("#editar-caso-responsavel").select_option("Não perder")
         self.fail_save = True
         self.page.locator("#caso-voltar").click()
         self.choose("salvar")
         self.page.wait_for_function("document.getElementById('resultado-caso-editar').textContent.includes('Falha simulada')")
         self.assertTrue(self.page.locator("#caso-vista-detalhe").is_visible())
-        self.assertEqual(self.page.locator("#editar-caso-titulo").input_value(), "Não perder")
+        self.assertEqual(self.page.locator("#editar-caso-responsavel").input_value(), "Não perder")
         self.assertTrue(self.page.locator("#form-caso-editar .edicao-pendente").is_visible())
         self.assertFalse(self.errors)
 
@@ -201,16 +302,16 @@ class InterfaceTest(unittest.TestCase):
 
     def test_navegacao_entre_secoes_nao_descarta_edicao_ao_cancelar(self):
         self.open_case()
-        self.page.locator("#editar-caso-titulo").fill("Título pendente")
+        self.page.locator("#editar-caso-responsavel").select_option("Título pendente")
         self.page.locator("#aba-contatos-botao").click()
         self.choose("continuar")
         self.page.locator("#modal-edicao-pendente").wait_for(state="hidden")
         self.assertTrue(self.page.locator("#aba-casos").is_visible())
-        self.assertEqual(self.page.locator("#editar-caso-titulo").input_value(), "Título pendente")
+        self.assertEqual(self.page.locator("#editar-caso-responsavel").input_value(), "Título pendente")
         self.page.locator("#aba-contatos-botao").click()
         self.choose("salvar")
         self.page.wait_for_function("!document.getElementById('aba-contatos').hidden")
-        self.assertEqual(self.case["titulo"], "Título pendente")
+        self.assertEqual(self.case["responsavel"], "Título pendente")
         self.assertFalse(self.errors)
 
     def test_cadastro_de_caso_por_publicacao_salva_ao_sair(self):
@@ -218,7 +319,7 @@ class InterfaceTest(unittest.TestCase):
         self.page.evaluate("() => { const area = document.getElementById('resultado-processo'); anexarBotaoCadastrarCaso(area, '00000000000000000001', null); }")
         self.page.locator("#resultado-processo button").click()
         self.page.locator("#form-caso-publicacao input[aria-label='Nome do novo cliente']").fill("Cliente de teste")
-        self.page.locator("#form-caso-publicacao input[aria-label='Título do caso (opcional)']").fill("Novo caso de teste")
+        self.page.locator("#form-caso-publicacao input[aria-label='Título do processo (opcional)']").fill("Novo caso de teste")
         self.page.keyboard.press("Escape")
         self.choose("salvar")
         self.page.locator("#modal-cadastrar-caso-publicacao").wait_for(state="hidden")
@@ -235,30 +336,27 @@ class InterfaceTest(unittest.TestCase):
 
     def test_cancelar_mudanca_da_url_preserva_secao_e_edicao(self):
         self.open_case()
-        self.page.locator("#editar-caso-titulo").fill("Título pendente")
+        self.page.locator("#editar-caso-responsavel").select_option("Título pendente")
         self.page.evaluate("location.hash = '#aba-contatos'")
         self.choose("continuar")
         self.page.wait_for_function("location.hash === '#aba-casos'")
         self.assertTrue(self.page.locator("#aba-casos").is_visible())
-        self.assertEqual(self.page.locator("#editar-caso-titulo").input_value(), "Título pendente")
+        self.assertEqual(self.page.locator("#editar-caso-responsavel").input_value(), "Título pendente")
         self.assertFalse(self.errors)
 
-    def test_descarte_restaura_partes_individuais_inclusive_campos_adicionados(self):
-        self.case["autor"] = "Autora de teste, Segunda autora"
+    def test_capa_sem_partes_exibe_ausencia_sem_edicao_pendente(self):
+        self.case["processos"] = ["10063142720238260005"]
+        self.context.route("**/casos/caso-1/processos/*/capa", lambda route: route.fulfill(json={"partes": [], "advogados": []}))
         self.open_case()
-        self.page.locator("#caso-subaba-partes-botao").click()
-        self.page.evaluate("_preencherCamposPartes('autor', ['Alteração', 'Segunda autora', 'Terceira autora'])")
-        self.page.locator("#caso-voltar").click()
-        self.choose("descartar")
-        self.page.wait_for_function("!document.getElementById('caso-vista-lista').hidden")
-        self.assertEqual(self.page.evaluate("_lerCamposPartes('autor')"), ["Autora de teste", "Segunda autora"])
+        self.assertEqual(self.page.locator("#lista-capa-processos .capa-card-auto dd").filter(has_text="Não informado pelo DJEN").count(), 3)
+        self.assertFalse(self.page.evaluate("formulariosPendentes().length"))
         self.assertFalse(self.errors)
 
     def test_vincular_publicacao_abre_formulario_e_envia_vinculo(self):
         self.open_case()
         self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-processo')); _cache.casos = [{id: 'caso-1', titulo: 'Caso de teste'}]; const area = document.getElementById('resultado-processo'); const table = document.createElement('table'); for (const row of linhaPublicacaoOab({hash:'publicacao-teste',status:'nao_tratada',numero_processo:'00000000000000000001',dados:{}})) table.appendChild(row); area.appendChild(table); }")
         self.page.locator("#resultado-processo button[aria-label='Mais ações']").click()
-        self.page.get_by_text("Vincular a caso existente", exact=True).click()
+        self.page.get_by_text("Vincular a processo existente", exact=True).click()
         self.page.locator("#resultado-processo .mini-form-caso select").select_option("caso-1")
         self.page.locator("#resultado-processo .mini-form-caso").get_by_role("button", name="Vincular", exact=True).click()
         self.page.wait_for_function("!document.querySelector('#resultado-processo .mini-form-caso')")
@@ -285,6 +383,38 @@ class InterfaceTest(unittest.TestCase):
         self.assertEqual(self.page.evaluate("document.activeElement.id"), "contato-cadastro-aba-documentacao-botao")
         self.assertFalse(self.errors)
 
+    def test_layout_aproveita_largura_sem_rolagem_horizontal(self):
+        self.open_case()
+        for width in (1920, 1440, 1024, 820, 768, 390, 320):
+            with self.subTest(width=width):
+                self.page.set_viewport_size({"width": width, "height": 960})
+                self.page.wait_for_timeout(250)
+                self.assertEqual(self.page.evaluate("document.documentElement.scrollWidth"), width)
+                self.assertTrue(self.page.locator(".sub-abas").evaluate("el => el.scrollWidth <= el.clientWidth"))
+        self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-contatos')); await abrirContato('cliente-1'); }")
+        for width in (1440, 820, 390, 320):
+            self.page.set_viewport_size({"width": width, "height": 960})
+            self.assertTrue(self.page.locator(".cadastro-tabs").evaluate("el => el.scrollWidth <= el.clientWidth"))
+        self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-contatos')); document.getElementById('contato-voltar').click(); }")
+        # Conteúdo sem espaços deve quebrar dentro da coluna, sem ocultar dados.
+        self.page.evaluate("""() => {
+            const table = document.querySelector('.contatos-tabela');
+            table.querySelector('td[data-label="E-mail"]').textContent = 'contato'.repeat(30) + '@exemplo.com.br';
+        }""")
+        for width in (1920, 1440, 1024, 820, 768, 390, 320):
+            for expanded in (True, False):
+                with self.subTest(width=width, expanded=expanded):
+                    self.page.set_viewport_size({"width": width, "height": 960})
+                    self.page.evaluate("_sideNavAbrir()" if expanded and width > 768 else "_sideNavFechar()")
+                    self.page.wait_for_timeout(250)
+                    table = self.page.locator('.contatos-tabela')
+                    self.assertTrue(table.evaluate("el => el.closest('.tabela-responsiva-wrap').scrollWidth <= el.closest('.tabela-responsiva-wrap').clientWidth"))
+                    self.assertEqual(self.page.evaluate("document.documentElement.scrollWidth"), width)
+                    if width >= 1440:
+                        right = self.page.locator('main').bounding_box()
+                        self.assertAlmostEqual(right['x'] + right['width'], width, delta=1)
+        self.assertFalse(self.errors)
+
     def test_paineis_do_cabecalho_permanecem_dentro_da_tela(self):
         self.connect()
         for width in (1440, 768, 390, 320):
@@ -306,15 +436,16 @@ class InterfaceTest(unittest.TestCase):
         self.assertAlmostEqual(icon["y"] + icon["height"] / 2, button["y"] + button["height"] / 2, delta=1)
         self.page.locator("#caso-subaba-cadastro-botao").focus()
         self.page.keyboard.press("ArrowRight")
-        self.assertEqual(self.page.locator("#caso-subaba-partes-botao").evaluate("el => getComputedStyle(el).outlineStyle"), "solid")
-        self.page.locator("#editar-caso-autor").fill("Alteração de teste")
+        self.assertEqual(self.page.locator("#caso-subaba-atividades-botao").evaluate("el => getComputedStyle(el).outlineStyle"), "solid")
+        self.page.locator("#caso-subaba-cadastro-botao").click()
+        self.page.locator("#editar-caso-responsavel").select_option("Título pendente")
         self.page.locator("#caso-voltar").click()
         self.page.wait_for_selector("#modal-edicao-pendente.is-visible")
         for width in (1440, 768, 390, 320):
             self.page.set_viewport_size({"width": width, "height": 960})
             self.page.wait_for_timeout(300)  # Aguarda a transição de entrada/reposicionamento do Carbon.
-            container = self.page.locator("#modal-edicao-pendente .cds--modal-container").bounding_box()
-            for item in self.page.locator("#modal-edicao-pendente .cds--modal-footer button").all():
+            container = self.page.locator("#modal-edicao-pendente .fluxo-pagina-container").bounding_box()
+            for item in self.page.locator("#modal-edicao-pendente .fluxo-pagina-footer button").all():
                 rect = item.bounding_box()
                 self.assertGreaterEqual(rect["x"], container["x"])
                 self.assertLessEqual(rect["x"] + rect["width"], container["x"] + container["width"] + 1)
@@ -339,8 +470,8 @@ class InterfaceTest(unittest.TestCase):
         self.page.screenshot(path="/tmp/astrajus-case-desktop.png")
         self.page.locator("#caso-subaba-cadastro-botao").focus()
         self.page.keyboard.press("ArrowRight")
-        self.assertEqual(self.page.evaluate("document.activeElement.id"), "caso-subaba-partes-botao")
-        self.assertTrue(self.page.locator("#caso-subaba-partes").is_visible())
+        self.assertEqual(self.page.evaluate("document.activeElement.id"), "caso-subaba-atividades-botao")
+        self.assertTrue(self.page.locator("#caso-subaba-atividades").is_visible())
         self.assertFalse(self.errors)
 
 

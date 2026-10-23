@@ -8,15 +8,15 @@ web
 
 ## Users
 
-Advogados membros de pequenos e médios escritórios de advocacia brasileiros (2–10 advogados), que compartilham clientes e casos com colegas de equipe. Uso predominantemente em desktop com tela larga; acesso móvel eventual mas não o cenário principal.
+Advogados membros de pequenos e médios escritórios de advocacia brasileiros (2–10 advogados), que compartilham clientes e processos com colegas de equipe. Uso predominantemente em desktop com tela larga; acesso móvel eventual mas não o cenário principal.
 
 Contexto real de uso: o advogado alterna entre o painel e audiências, petições e o Claude Desktop — o AstraJus é a fonte de verdade do escritório para clientes, casos e publicações do DJEN.
 
 ## Product Purpose
 
-Plataforma integrada de gestão processual para escritórios de advocacia brasileiros. Conecta as APIs públicas do CNJ (DataJud e DJEN) a um fluxo de trabalho jurídico completo: consulta e monitoramento de processos e publicações, gestão de clientes e casos (com partes, atividades, movimentações), e integração com Google Drive e Calendar. Expõe os mesmos dados ao Claude Desktop via MCP, eliminando a cópia-cola entre sistemas.
+Plataforma integrada de gestão processual para escritórios de advocacia brasileiros. Conecta as APIs públicas do CNJ (DataJud e DJEN) a um fluxo de trabalho jurídico completo: consulta e monitoramento de processos e publicações, gestão de clientes e processos (com partes, atividades, movimentações), e integração com Google Drive e Calendar. Expõe os mesmos dados ao Claude Desktop via MCP, eliminando a cópia-cola entre sistemas.
 
-Sucesso: o escritório acompanha todos os processos ativos, recebe alertas de novas publicações antes do prazo, e mantém o histórico de cada caso num único lugar — sem depender de planilhas ou e-mail.
+Sucesso: o escritório acompanha todos os processos ativos, recebe alertas de novas publicações antes do prazo, e mantém o histórico de cada processo num único lugar — sem depender de planilhas ou e-mail.
 
 ## Positioning
 
@@ -30,7 +30,7 @@ Plataforma auto-hospedada com controle total dos dados: roda no VPS do próprio 
 - Números de processo CNJ (20 dígitos) e registro OAB como identificadores primários
 - Prazos processuais: feriados forenses do TJSP por comarca, monitoramento com expiração de 180 dias
 - Claude Desktop como cliente MCP para consultas assistidas por IA sem cópia-cola
-- Google Drive (pasta por caso) e Google Calendar (eventos) como integrações externas opcionais
+- Google Drive (pasta por processo) e Google Calendar (eventos) como integrações externas opcionais
 - Deploy via Docker + Caddy no VPS do escritório; deploy automático por GitHub Actions
 
 ## Capabilities and Constraints
@@ -40,8 +40,8 @@ Plataforma auto-hospedada com controle total dos dados: roda no VPS do próprio 
 - Consulta pontual com histórico local por dispositivo (localStorage, não sincronizado)
 - Favoritos de processo (tribunal + número)
 - CRUD de clientes (pessoa física ou jurídica) com paginação e typeahead
-- CRUD de casos vinculados a clientes; sub-abas: Cadastro, Partes, Atividades, Publicações, Movimentações
-- Publicações por OAB: painel dedicado, gestão de status em lote, captura manual, vinculação a caso
+- CRUD de processos vinculados a clientes; sub-abas: Cadastro (capa com partes e advogados automáticos, somente leitura, e seleção de responsável), Atividades, Publicações, Movimentações, Vínculos
+- Publicações por OAB: painel dedicado, gestão de status em lote, captura manual, vinculação a processo
 - Máximo 5 monitoramentos por usuário; expiração automática após 180 dias sem publicação nova
 
 **Servidor MCP (tools):**
