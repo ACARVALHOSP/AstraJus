@@ -40,7 +40,7 @@ Plataforma auto-hospedada com controle total dos dados: roda no VPS do próprio 
 - Consulta pontual com histórico local por dispositivo (localStorage, não sincronizado)
 - Favoritos de processo (tribunal + número)
 - CRUD de clientes (pessoa física ou jurídica) com paginação e typeahead
-- CRUD de processos vinculados a clientes; sub-abas: Cadastro, Partes, Atividades, Publicações, Movimentações
+- CRUD de processos vinculados a clientes; sub-abas: Cadastro (capa, responsável, partes e advogados), Atividades, Publicações, Movimentações, Vínculos
 - Publicações por OAB: painel dedicado, gestão de status em lote, captura manual, vinculação a processo
 - Máximo 5 monitoramentos por usuário; expiração automática após 180 dias sem publicação nova
 

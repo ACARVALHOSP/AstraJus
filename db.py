@@ -279,6 +279,10 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
             );
             """
         )
+        colunas_capa = {r[1] for r in conexao.execute("PRAGMA table_info(caso_processo_capa)")}
+        for campo in ("movimentos", "partes", "advogados"):
+            if campo not in colunas_capa:
+                conexao.execute(f"ALTER TABLE caso_processo_capa ADD COLUMN {campo} TEXT")
         if "orgao_julgador" not in {c[1] for c in conexao.execute("PRAGMA table_info(caso_processo_capa)")}:
             conexao.execute("ALTER TABLE caso_processo_capa ADD COLUMN orgao_julgador TEXT")
         _migrar_colunas_casos(conexao)
@@ -845,6 +849,7 @@ class RegistroClientesCasos:
     _CAMPOS_CAPA = (
         "tribunal", "classe", "assuntos", "grau", "data_distribuicao", "nivel_sigilo", "nome_processo", "orgao_julgador",
         "area_direito", "magistrado", "tipo_justica", "cidade", "uf", "valor_causa", "fase", "status_processo",
+        "movimentos", "partes", "advogados",
     )
 
     def obter_capa_processo(self, caso_id: str, numero_processo: str) -> dict | None:
@@ -857,7 +862,8 @@ class RegistroClientesCasos:
             if not linha:
                 return None
             capa = dict(zip((*self._CAMPOS_CAPA, "atualizado_em"), linha))
-            capa["assuntos"] = json.loads(capa["assuntos"]) if capa["assuntos"] else []
+            for campo in ("assuntos", "movimentos", "partes", "advogados"):
+                capa[campo] = json.loads(capa[campo]) if capa[campo] else []
             return capa
 
     def salvar_capa_processo(self, caso_id: str, numero_processo: str, agora, **campos) -> dict:
@@ -867,8 +873,9 @@ class RegistroClientesCasos:
         invalidos = set(campos) - set(self._CAMPOS_CAPA)
         if invalidos:
             raise ValueError(f"Campos inválidos para capa de processo: {sorted(invalidos)}")
-        if campos.get("assuntos") is not None:
-            campos["assuntos"] = json.dumps(campos["assuntos"])
+        for campo in ("assuntos", "movimentos", "partes", "advogados"):
+            if campos.get(campo) is not None:
+                campos[campo] = json.dumps(campos[campo])
         atualizado_em = agora().isoformat()
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             conexao.execute(

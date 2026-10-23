@@ -3197,6 +3197,9 @@ class _AutenticacaoBearer:
             await _json(send, 200, {"google": self._google_configurado(), "asaas": _asaas_config() is not None})
             return
 
+        if caminho == "/responsaveis" and scope.get("method") == "GET":
+            await _json(send, 200, {"responsaveis": self.registro.ativos()})
+            return
         if caminho == "/clientes" and self.gestao is not None:
             await self._clientes(scope, receive, send)
             return
@@ -3985,18 +3988,21 @@ class _AutenticacaoBearer:
                 await _json(send, 502, resultado)
                 return
             instancia = (resultado.get("instancias") or [{}])[0]
+            municipios = json.loads((Path(__file__).parent / "static" / "municipios.json").read_text(encoding="utf-8"))["data"]
+            codigo = str(instancia.get("codigoMunicipioIBGE") or "")
+            municipio = next((m for m in municipios if str(m["Codigo"]) == codigo), None)
+            localidade = {"cidade": municipio["Nome"], "uf": municipio["Uf"]} if municipio else {}
+            movimentos = [{**m, "numero": numero, "grau": i.get("grau_descricao") or i.get("grau")}
+                          for i in resultado.get("instancias") or [] for m in i.get("movimentos") or []]
             nome_processo = None
             if resultado.get("partes"):
                 autores = [p["nome"] for p in resultado["partes"] if p.get("polo") == "A"]
                 reus = [p["nome"] for p in resultado["partes"] if p.get("polo") == "P"]
                 if autores or reus:
                     nome_processo = " x ".join(filter(None, [" / ".join(autores), " / ".join(reus)]))
-            codigo_ibge = str(instancia.get("codigoMunicipioIBGE") or "")
             segmento = numero[13:14]
             tipo_justica = {"1": "Supremo Tribunal Federal", "2": "Conselho Nacional de Justiça", "3": "Superior Tribunal de Justiça", "4": "Justiça Federal", "5": "Justiça do Trabalho", "6": "Justiça Eleitoral", "7": "Justiça Militar da União", "8": "Justiça Estadual", "9": "Justiça Militar Estadual"}.get(segmento)
             automaticos = {"tipo_justica": tipo_justica, "orgao_julgador": instancia.get("orgaoJulgador")}
-            if len(codigo_ibge) == 7 and codigo_ibge.isdigit():
-                automaticos.update(cidade=codigo_ibge, uf=codigo_ibge[:2])
             capa = self.gestao.salvar_capa_processo(
                 caso_id, numero, agora=lambda: datetime.now(timezone.utc),
                 **{k: v for k, v in automaticos.items() if v},
@@ -4004,6 +4010,8 @@ class _AutenticacaoBearer:
                 assuntos=instancia.get("assuntos"), grau=instancia.get("grau"),
                 data_distribuicao=instancia.get("dataAjuizamento"), nivel_sigilo=instancia.get("nivel_sigilo"),
                 **({"nome_processo": nome_processo} if nome_processo else {}),
+                **localidade, movimentos=movimentos, partes=resultado.get("partes") or [],
+                advogados=resultado.get("advogados") or [],
             )
             caso = self.gestao.obter_caso(caso_id)
             if caso and (caso.get("processos") or [None])[0] == numero:

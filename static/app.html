@@ -163,7 +163,7 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 .cliente-sugestoes { position: absolute; top: 100%; left: 0; right: 0; z-index: 9999; background: var(--cds-layer, #f4f4f4); border: 1px solid var(--cds-border-subtle, #e0e0e0); max-height: 12rem; overflow-y: auto; box-shadow: 0 4px 8px rgba(0,0,0,.12); }
 .cliente-sugestoes button { display: block; width: 100%; text-align: left; padding: 0.5rem 1rem; background: none; border: none; border-bottom: 1px solid var(--cds-border-subtle, #e0e0e0); cursor: pointer; font-size: var(--fonte-base); }
 .cliente-sugestoes button:hover, .cliente-sugestoes button:focus { background: var(--cds-layer-hover-01, #e8e8e8); outline: none; }
-.secao-cabecalho { display: flex; align-items: center; justify-content: space-between; margin: 0 0 0.5rem; }
+.secao-cabecalho { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; justify-content: space-between; margin: 0 0 0.5rem; }
 .secao-cabecalho .lista-rapida-titulo { margin: 0; }
 .contatos-tabela th:nth-child(1), .contatos-tabela td:nth-child(1) { width: 4%; }
 .contatos-tabela th:nth-child(2), .contatos-tabela td:nth-child(2) { width: 5%; }
@@ -212,7 +212,7 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 }
 .capa-card-auto { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 0.75rem; font-size: 0.875rem; }
 .capa-card-auto dt { font-weight: 600; color: var(--cds-text-secondary, #525252); }
-.capa-card-auto dd { margin: 0; overflow-wrap: anywhere; }
+.capa-card-auto dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 #caso-subaba-cadastro > .secao-cabecalho { margin-top: 1.5rem; gap: 1rem; flex-wrap: wrap; }
 @media (max-width: 600px) {
   .capa-card-auto { grid-template-columns: minmax(0, 1fr); row-gap: 0.25rem; }
@@ -1306,7 +1306,6 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 
 <div class="sub-abas" role="tablist" aria-label="Detalhes do processo">
 <button class="sub-aba-botao sub-aba-ativa" id="caso-subaba-cadastro-botao" role="tab" aria-selected="true" aria-controls="caso-subaba-cadastro" type="button">Cadastro</button>
-<button class="sub-aba-botao" id="caso-subaba-partes-botao" role="tab" aria-selected="false" aria-controls="caso-subaba-partes" type="button">Partes</button>
 <button class="sub-aba-botao" id="caso-subaba-atividades-botao" role="tab" aria-selected="false" aria-controls="caso-subaba-atividades" type="button">Atividades</button>
 <button class="sub-aba-botao" id="caso-subaba-publicacoes-botao" role="tab" aria-selected="false" aria-controls="caso-subaba-publicacoes" type="button">Publicações</button>
 <button class="sub-aba-botao" id="caso-subaba-movimentacoes-botao" role="tab" aria-selected="false" aria-controls="caso-subaba-movimentacoes" type="button">Movimentações</button>
@@ -1314,48 +1313,6 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 
 <section id="caso-subaba-cadastro" role="tabpanel" aria-labelledby="caso-subaba-cadastro-botao">
-<form id="form-caso-editar" class="form-detalhe">
-<div class="cds--form-item">
-<label class="cds--label" for="editar-caso-titulo">Título do processo</label>
-<input class="cds--text-input" type="text" id="editar-caso-titulo" name="titulo" placeholder="Ex.: Cobrança de honorários" autocomplete="off">
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="editar-caso-responsavel">Responsável</label>
-<input class="cds--text-input" type="text" id="editar-caso-responsavel" name="responsavel" placeholder="Ex.: Dra. Fernanda Reis" autocomplete="off">
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="editar-caso-acao">Ação</label>
-<input class="cds--text-input" type="text" id="editar-caso-acao" name="acao" placeholder="Ex.: Cumprimento de sentença" autocomplete="off">
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="editar-caso-foro">Foro / Vara</label>
-<input class="cds--text-input" type="text" id="editar-caso-foro" name="foro" placeholder="Ex.: 3ª Vara Cível" autocomplete="off">
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="editar-caso-desfecho">Desfecho</label>
-<select class="cds--select-input" id="editar-caso-desfecho" name="desfecho" autocomplete="off">
-<option value="">— Em andamento —</option>
-<option value="procedente">Procedente</option>
-<option value="procedente_parcial">Parcialmente procedente</option>
-<option value="improcedente">Improcedente</option>
-<option value="acordo">Acordo / Transação</option>
-<option value="extinto">Extinto sem resolução do mérito</option>
-<option value="provido">Provido (recurso)</option>
-<option value="desprovido">Desprovido (recurso)</option>
-</select>
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="editar-caso-processos">Número CNJ (opcional)</label>
-<input class="cds--text-input" type="text" id="editar-caso-processos" name="numeros_processo" placeholder="0000000-00.0000.0.00.0000" autocomplete="off">
-<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="btn-datajud-detalhe">Consultar ação/foro no DataJud</button>
-<div id="status-datajud-detalhe" class="campo-ajuda"></div>
-</div>
-<div id="resultado-caso-editar" class="app-resultado"></div>
-<div class="form-acoes-detalhe">
-<button class="cds--btn cds--btn--primary cds--btn--sm" type="submit" form="form-caso-editar">Salvar</button>
-<button class="cds--btn cds--btn--danger--ghost cds--btn--sm" type="button" id="btn-excluir-caso">Excluir processo</button>
-</div>
-</form>
 <div class="secao-cabecalho">
 <h3 class="lista-rapida-titulo">Capa do processo</h3>
 <button class="cds--btn cds--btn--secondary cds--btn--sm" type="button" id="btn-atualizar-capa">Atualizar capa (DataJud + DJEN)</button>
@@ -1363,9 +1320,11 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div id="capa-status"></div>
 <div id="lista-capa-processos" class="app-resultado"></div>
 
-</section>
-
-<section id="caso-subaba-partes" role="tabpanel" aria-labelledby="caso-subaba-partes-botao" hidden>
+<form id="form-caso-editar" class="form-detalhe">
+<div class="cds--form-item"><label class="cds--label" for="editar-caso-responsavel">Responsável</label><select class="cds--select-input" id="editar-caso-responsavel"><option value="">Selecione um responsável</option></select></div>
+<div id="resultado-caso-editar"></div>
+<div class="form-acoes-detalhe"><button class="cds--btn cds--btn--primary cds--btn--sm" type="submit">Salvar responsável</button><button class="cds--btn cds--btn--danger--ghost cds--btn--sm" type="button" id="btn-excluir-caso">Excluir processo</button></div></form>
+<h3 class="lista-rapida-titulo">Partes e advogados</h3>
 <form id="form-caso-partes" class="form-detalhe">
 <div class="cds--form-item">
 <label class="cds--label" for="editar-caso-autor">Polo Ativo</label>
@@ -1385,7 +1344,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <input type="hidden" id="editar-caso-advogados" name="advogados">
 </div>
 </div>
-<p class="campo-ajuda">Preenchimento automático pelo DJen ao abrir esta aba. Revise os polos e salve as partes. Advogados são identificados por nome e OAB/UF, quando informados pelo DJen.</p>
+<p class="campo-ajuda">Preenchimento automático ao atualizar a capa. Revise os polos e salve as partes. Advogados são identificados por nome e OAB/UF, quando informados pelo DJen.</p>
 <div id="resultado-caso-partes" class="app-resultado"></div>
 <div class="form-acoes-detalhe">
 <button class="cds--btn cds--btn--primary cds--btn--sm" type="submit" form="form-caso-partes">Salvar partes</button>
@@ -1394,6 +1353,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 </form>
 </section>
+
 
 <section id="caso-subaba-atividades" role="tabpanel" aria-labelledby="caso-subaba-atividades-botao" hidden>
 <div class="secao-cabecalho">
@@ -1411,7 +1371,6 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </section>
 
 <section id="caso-subaba-movimentacoes" role="tabpanel" aria-labelledby="caso-subaba-movimentacoes-botao" hidden>
-
 <div class="secao-cabecalho">
 <h3 class="lista-rapida-titulo">Movimentações</h3>
 <button class="cds--btn cds--btn--secondary cds--btn--sm" type="button" id="btn-buscar-movimentacoes">Buscar no DataJud</button>
