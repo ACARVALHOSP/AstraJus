@@ -4,6 +4,10 @@ Status: ready-for-agent
 Versão: 1.0 — 24/10/2026
 Escopo: tabelas de gestão do `/app`; primeira aplicação em Publicações OAB.
 
+### Revisão do perfil Publicações OAB — 24/10/2026
+
+Por solicitação posterior, o perfil Publicações OAB passa a usar Web Components Carbon: `cds-table` com `size="md"` (40 px), `cds-toggletip` com checkboxes para selecionar colunas, `cds-icon-button` com ícone Launch para abrir a publicação e `cds-tag` com texto de 10 px para o status. Essa revisão substitui as medidas XS e a apresentação de status deste perfil. Seleção, expansão, paginação e confirmação inline continuam seguindo os contratos abaixo. O padrão XS permanece disponível como referência para outras tabelas.
+
 ## Objetivo e estado
 
 Definir um contrato de layout e interação para reutilizar tabelas densas no mesmo projeto. O padrão combina seleção múltipla, expansão de linha, paginação, ações em lote, menu de três pontos e seletor de colunas.
