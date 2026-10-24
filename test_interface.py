@@ -120,11 +120,16 @@ class InterfaceTest(unittest.TestCase):
                 self.pub_oab_posts.append(request.post_data_json)
                 if self.pub_oab_fail:
                     return route.fulfill(status=500, json={"mensagem": "Falha de teste"})
-                return route.fulfill(json={"ok": True})
+                return route.fulfill(json={"atualizadas": len(request.post_data_json.get("hashes", [])), "hashes_atualizados": request.post_data_json.get("hashes", []), "hashes_falharam": []})
             self.pub_oab_gets += 1
             status = parse_qs(urlparse(request.url).query).get("status", [""])[0]
             itens = [p for p in self.pub_oab_items if not status or p["status"] == status]
-            return route.fulfill(json={"publicacoes": itens, "total": len(itens)})
+            query = parse_qs(urlparse(request.url).query)
+            tamanho = int(query.get("tamanho", ["5"])[0])
+            pagina = min(int(query.get("pagina", ["1"])[0]), max(1, (len(itens) + tamanho - 1) // tamanho))
+            campos = sorted(set(k for p in self.pub_oab_items for k in p["dados"]))
+            return route.fulfill(json={"publicacoes": itens[(pagina-1)*tamanho:pagina*tamanho], "total": len(itens),
+                "pagina": pagina, "tamanho": tamanho, "campos_djen": campos})
         self.context.route("**/publicacoes-oab**", responder)
         self.connect()
         self.page.evaluate("selecionarAba(abas.find(a => a.painel.id === 'aba-publicacoes-oab'))")
@@ -143,6 +148,10 @@ class InterfaceTest(unittest.TestCase):
         self.page.evaluate("carregarPublicacoesOab()")
         tabela = self.page.locator(".pub-oab-tabela")
         self.page.get_by_role("columnheader", name="Nome Do Processo", exact=True).wait_for()
+        self.page.locator(".pub-oab-colunas summary").click()
+        for rotulo in ("Divulgado", "Capturado", "Tipo"):
+            self.page.locator(".pub-oab-colunas").get_by_label(rotulo, exact=True).check()
+        self.page.locator(".pub-oab-colunas summary").press("Escape")
         self.assertTrue(self.page.get_by_role("columnheader", name="Divulgado", exact=True).is_visible())
         self.assertTrue(self.page.get_by_role("columnheader", name="Capturado", exact=True).is_visible())
         self.assertTrue(self.page.get_by_role("columnheader", name="Tipo", exact=True).is_visible())
@@ -156,7 +165,7 @@ class InterfaceTest(unittest.TestCase):
         self.assertEqual(linha.locator('[data-coluna="hash"]').inner_text(), "aBc123")
         self.assertEqual(linha.locator('[data-coluna="link"]').inner_text(), "https://example.test/AbC")
         self.assertEqual(linha.locator('[data-coluna="djen:meio"]').inner_text(), "Diário Eletrônico")
-        linha.get_by_role("button", name="Ler Mais", exact=True).click()
+        linha.get_by_role("button", name="Expandir publicação:", exact=False).click()
         self.page.locator(".pub-oab-colunas summary").click()
         self.page.locator(".pub-oab-colunas").get_by_label("Capturado", exact=True).uncheck()
         self.page.locator(".pub-oab-colunas summary").press("Escape")
@@ -174,6 +183,93 @@ class InterfaceTest(unittest.TestCase):
             fieldset = self.page.locator(".pub-oab-colunas fieldset")
             self.assertTrue(fieldset.evaluate("el => el.getBoundingClientRect().left >= 0 && el.getBoundingClientRect().right <= window.innerWidth"))
             self.page.locator(".pub-oab-colunas summary").press("Escape")
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_xs_paginacao_selecao_entre_paginas_e_catalogo_completo(self):
+        self.open_publicacoes_oab()
+        self.pub_oab_items.extend({"hash": f"pub-{i}", "numero_processo": str(i).zfill(20),
+            "status": "nao_tratada", "dados": {"campo_fora_da_pagina": "Valor"} if i == 11 else {}}
+            for i in range(3, 12))
+        self.page.evaluate("carregarPublicacoesOab()")
+        self.assertEqual(self.page.locator('input[data-publicacao-hash]').count(), 5)
+        self.assertEqual(self.page.locator('.pub-oab-linha').first.evaluate("el => el.getBoundingClientRect().height"), 24)
+        self.assertEqual(self.page.locator('.pub-oab-tabela thead tr').evaluate("el => el.getBoundingClientRect().height"), 24)
+        self.page.locator('.pub-oab-colunas summary').click()
+        self.assertTrue(self.page.locator('.pub-oab-colunas').get_by_label('Campo Fora Da Pagina', exact=True).is_visible())
+        self.page.locator('.pub-oab-colunas summary').press('Escape')
+        self.page.locator('input[data-publicacao-hash="pub-1"]').check()
+        self.assertFalse(self.page.locator('.pub-oab-tabela-toolbar').is_visible())
+        self.page.get_by_role('button', name='Próxima página', exact=True).click()
+        self.page.locator('input[data-publicacao-hash="pub-6"]').wait_for()
+        self.assertFalse(self.page.locator('input[data-publicacoes-todas]').is_checked())
+        self.page.locator('input[data-publicacoes-todas]').check()
+        self.assertIn('6 Selecionadas', self.page.locator('#pub-oab-selecionadas').inner_text())
+        self.page.get_by_role('button', name='Página anterior', exact=True).click()
+        self.assertTrue(self.page.locator('input[data-publicacao-hash="pub-1"]').is_checked())
+        self.assertTrue(self.page.locator('input[data-publicacoes-todas]').evaluate('el => el.indeterminate'))
+        self.page.locator('#pub-oab-marcar-tratada').click()
+        self.page.wait_for_function('!_pubOabAtualizando && !_pubOabCarregando')
+        self.assertEqual(set(self.pub_oab_posts[-1]['hashes']), {'pub-1', 'pub-6', 'pub-7', 'pub-8', 'pub-9', 'pub-10'})
+        self.page.locator('input[data-publicacao-hash="pub-1"]').check()
+        self.page.get_by_label('Itens por página:', exact=True).select_option('10')
+        self.page.wait_for_function("document.querySelectorAll('input[data-publicacao-hash]').length === 10")
+        self.assertEqual(self.page.locator('input[data-publicacao-hash]:checked').count(), 0)
+        self.assertIn('1–10 de 11', self.page.locator('.pub-oab-paginacao').inner_text())
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_xs_expansao_independente_tooltip_e_toque(self):
+        self.open_publicacoes_oab()
+        nome = 'Parte Ativa Com Nome Muito Extenso ' * 5
+        self.pub_oab_items[0]['dados'] = {'texto': 'TEXTO original sem Alteração.',
+            'destinatarios': [{'nome': nome, 'polo': 'A'}, {'nome': 'Banco', 'polo': 'P'}]}
+        self.page.evaluate('carregarPublicacoesOab()')
+        row = self.page.locator('.pub-oab-linha').first
+        self.assertEqual(row.evaluate('el => el.getBoundingClientRect().height'), 24)
+        name = row.locator('.pub-oab-nome-processo')
+        name.focus()
+        self.assertTrue(self.page.locator('.pub-oab-tooltip-nome:popover-open').is_visible())
+        name.press('Escape')
+        row.get_by_role('button', name='Expandir publicação:', exact=False).click()
+        self.assertTrue(self.page.locator('.pub-oab-publicacao-completa').first.is_visible())
+        self.assertEqual(self.page.locator('input[data-publicacao-hash]:checked').count(), 0)
+        self.page.locator('input[data-publicacao-hash]').first.check()
+        self.assertTrue(self.page.locator('.pub-oab-publicacao-completa').first.is_visible())
+        self.page.get_by_role('button', name='Próxima página', exact=True).is_disabled()
+        self.page.emulate_media(media='screen')
+        self.page.set_viewport_size({'width': 390, 'height': 900})
+        self.assertTrue(self.page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_lote_parcial_mantem_falhas_e_nao_repete_envio(self):
+        self.open_publicacoes_oab()
+        self.page.locator('input[data-publicacoes-todas]').check()
+        def responder(route):
+            return route.fulfill(json={'atualizadas': 1, 'hashes_atualizados': ['pub-1'], 'hashes_falharam': ['pub-2']})
+        self.context.route('**/publicacoes-oab/status', responder)
+        self.page.locator('#pub-oab-marcar-tratada').click()
+        self.page.wait_for_function('!_pubOabAtualizando && !_pubOabCarregando')
+        self.assertFalse(self.page.locator('input[data-publicacao-hash="pub-1"]').is_checked())
+        self.assertTrue(self.page.locator('input[data-publicacao-hash="pub-2"]').is_checked())
+        self.assertIn('Atualização parcial', self.page.locator('#toast-global').inner_text())
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_xs_toque_amplia_alvos_e_erro_preserva_selecao(self):
+        self.context = self.browser.new_context(viewport={"width": 390, "height": 900}, has_touch=True, is_mobile=True)
+        self.addCleanup(self.context.close)
+        self.page = self.context.new_page()
+        self.page.on("pageerror", lambda erro: self.errors.append(str(erro)))
+        self.context.route("**/*", self.route)
+        self.page.goto(self.url)
+        self.page.wait_for_function("typeof abrirCaso === 'function'")
+        self.open_publicacoes_oab()
+        self.assertGreaterEqual(self.page.locator('.pub-oab-linha').first.evaluate('el => el.getBoundingClientRect().height'), 44)
+        self.assertGreaterEqual(self.page.locator('.pub-oab-expandir').first.evaluate('el => el.getBoundingClientRect().width'), 44)
+        self.page.locator('input[data-publicacao-hash]').first.check()
+        self.context.route('**/publicacoes-oab?**', lambda route: route.fulfill(status=500, json={'mensagem': 'Falha de carregamento'}))
+        self.page.locator('#pub-oab-atualizar').click()
+        self.page.get_by_role('button', name='Tentar novamente', exact=True).wait_for()
+        self.assertTrue(self.page.locator('input[data-publicacao-hash]').first.is_checked())
+        self.assertTrue(self.page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
         self.assertFalse(self.errors)
 
     def test_publicacoes_colunas_clique_no_nome_checkbox_e_teclado(self):
@@ -308,11 +404,11 @@ class InterfaceTest(unittest.TestCase):
         self.assertEqual(row.locator('[data-coluna="tribunal"]').inner_text(), "TJSP")
         self.assertTrue(row.locator('[data-coluna="processo"]').is_visible())
         self.assertEqual(row.locator('.pub-oab-nome-processo').get_attribute("title"), "Maria Silva X Banco Exemplo")
-        self.assertEqual(row.locator('.pub-oab-nome-processo').evaluate("el => getComputedStyle(el).webkitLineClamp"), "2")
+        self.assertEqual(row.locator('.pub-oab-nome-processo').evaluate("el => getComputedStyle(el).whiteSpace"), "nowrap")
         self.page.locator(".pub-oab-colunas summary").click()
-        self.assertEqual(self.page.locator('#pub-oab-coluna-nome, #pub-oab-coluna-tribunal, #pub-oab-coluna-processo').count(), 0)
+        self.assertEqual(self.page.locator('#pub-oab-coluna-nome:disabled:checked, #pub-oab-coluna-tribunal:disabled:checked, #pub-oab-coluna-processo:disabled:checked').count(), 3)
         self.page.locator(".pub-oab-colunas summary").press("Escape")
-        row.get_by_role("button", name="Ler Mais", exact=True).click()
+        row.get_by_role("button", name="Expandir publicação:", exact=False).click()
         full = self.page.locator(".pub-oab-publicacao-completa").first
         self.assertEqual(full.locator(".pub-oab-publicacao-texto").inner_text(), texto)
         self.assertEqual(full.locator(".pub-oab-publicacao-texto").evaluate("el => getComputedStyle(el).fontSize"), "10px")

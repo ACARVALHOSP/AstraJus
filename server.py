@@ -4256,13 +4256,25 @@ class _AutenticacaoBearer:
         if scope.get("method") != "GET":
             await _responder(send, 404, b"Nao encontrado")
             return
-        status = dict(_query(scope)).get("status") or None
+        parametros = dict(_query(scope))
+        status = parametros.get("status") or None
         if status and status not in ("nao_tratada", "tratada", "arquivada"):
             await _json(send, 400, _erro("status inválido."))
             return
-        publicacoes = self.publicacoes.listar(status)
+        try:
+            pagina = int(parametros.get("pagina", "1"))
+            tamanho = int(parametros.get("tamanho", "300"))
+            if pagina < 1 or tamanho < 1 or tamanho > 300:
+                raise ValueError
+        except ValueError:
+            await _json(send, 400, _erro("Paginação inválida: página deve ser positiva e tamanho entre 1 e 300."))
+            return
         total = self.publicacoes.contar(status)
-        await _json(send, 200, {"publicacoes": publicacoes, "total": total})
+        pagina = min(pagina, max(1, (total + tamanho - 1) // tamanho))
+        publicacoes = self.publicacoes.listar(status, tamanho, (pagina - 1) * tamanho)
+        await _json(send, 200, {"publicacoes": publicacoes, "total": total,
+                              "pagina": pagina, "tamanho": tamanho, "campos_djen": self.publicacoes.campos_djen(),
+                              "hashes_disponiveis": self.publicacoes.hashes_disponiveis(status)})
 
     async def _publicacoes_oab_status(self, scope, receive, send):
         """POST /publicacoes-oab/status: atualização em lote - {hashes: [...], status: "..."}."""
@@ -4277,14 +4289,14 @@ class _AutenticacaoBearer:
             return
         hashes = dados.get("hashes")
         status = dados.get("status")
-        if not isinstance(hashes, list) or not hashes:
+        if not isinstance(hashes, list) or not hashes or len(hashes) > 10000 or not all(isinstance(h, str) and h for h in hashes):
             await _json(send, 400, _erro("Informe ao menos um hash em 'hashes'."))
             return
         if status not in ("nao_tratada", "tratada", "arquivada"):
             await _json(send, 400, _erro("status deve ser nao_tratada, tratada ou arquivada."))
             return
-        quantidade = self.publicacoes.atualizar_status(hashes, status)
-        await _json(send, 200, {"atualizadas": quantidade})
+        resultado = self.publicacoes.atualizar_status_detalhado(hashes, status)
+        await _json(send, 200, resultado)
 
     async def _publicacoes_oab_capturar_manual(self, scope, receive, send):
         """POST /publicacoes-oab/capturar-manual: captura sob demanda por OAB + intervalo de datas."""
