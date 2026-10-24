@@ -1,5 +1,9 @@
 ## Agent skills
 
+### Carbon Builder: aprovação visual
+
+Sempre que usar a skill `carbon-builder`, apresentar um mockup e obter autorização explícita do usuário antes de alterar o frontend. Preparar a prévia em um artefato separado, preservando a aplicação até a aprovação.
+
 ### Issue tracker
 
 Markdown local — issues e specs vivem em `.scratch/<feature>/`. See `docs/agents/issue-tracker.md`.
