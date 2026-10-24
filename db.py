@@ -1481,22 +1481,54 @@ class RegistroPublicacoesOAB:
             )
             return cursor.rowcount > 0
 
-    def listar(self, status: str | None = None, limite: int = 300) -> list[dict]:
+    def listar(self, status: str | None = None, limite: int = 300, deslocamento: int = 0) -> list[dict]:
         with _abrir(self.caminho) as conexao:
             if status:
                 cursor = conexao.execute(
                     "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, "
                     "caso_id, criado_em FROM publicacoes_capturadas WHERE status = ? "
-                    "ORDER BY criado_em DESC LIMIT ?",
-                    (status, limite),
+                    "ORDER BY criado_em DESC, hash DESC LIMIT ? OFFSET ?",
+                    (status, limite, deslocamento),
                 )
             else:
                 cursor = conexao.execute(
                     "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, "
-                    "caso_id, criado_em FROM publicacoes_capturadas ORDER BY criado_em DESC LIMIT ?",
-                    (limite,),
+                    "caso_id, criado_em FROM publicacoes_capturadas ORDER BY criado_em DESC, hash DESC LIMIT ? OFFSET ?",
+                    (limite, deslocamento),
                 )
             return [_linha_publicacao(linha) for linha in cursor.fetchall()]
+
+    def campos_djen(self) -> list[str]:
+        """Catálogo completo, independente da página e do filtro atuais."""
+        with _abrir(self.caminho) as conexao:
+            return [r[0] for r in conexao.execute(
+                "SELECT DISTINCT campo.key FROM publicacoes_capturadas, "
+                "json_each(publicacoes_capturadas.dados) AS campo ORDER BY campo.key"
+            )]
+
+    def hashes_disponiveis(self, status: str | None = None) -> list[str]:
+        with _abrir(self.caminho) as conexao:
+            return [r[0] for r in conexao.execute(
+                "SELECT hash FROM publicacoes_capturadas" + (" WHERE status = ?" if status else ""),
+                (status,) if status else ())]
+
+    def atualizar_status_detalhado(self, hashes: list[str], status: str) -> dict:
+        """Atualização atômica com identificação dos registros ausentes."""
+        if status not in _STATUS_PUBLICACAO_VALIDOS:
+            raise ValueError(f"status inválido: {status}")
+        hashes = list(dict.fromkeys(hashes))
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            # Reserva a escrita antes de verificar os IDs, evitando corrida com remoções.
+            conexao.execute("BEGIN IMMEDIATE")
+            existentes = []
+            for hash_publicacao in hashes:
+                cursor = conexao.execute(
+                    "UPDATE publicacoes_capturadas SET status = ? WHERE hash = ?", (status, hash_publicacao))
+                if cursor.rowcount:
+                    existentes.append(hash_publicacao)
+        encontrados = set(existentes)
+        return {"atualizadas": len(existentes), "hashes_atualizados": existentes,
+                "hashes_falharam": [h for h in hashes if h not in encontrados]}
 
     def contar(self, status: str | None = None) -> int:
         with _abrir(self.caminho) as conexao:
