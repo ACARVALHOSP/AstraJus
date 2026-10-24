@@ -2645,17 +2645,24 @@ function tabelaCasos(casos, aoExcluir) {
 
 function cartoesCasos(casos, aoExcluir) {
   const nomeCliente = (id) => (_cache.clientes.find((c) => c.id === id) || {}).nome || id;
+  const formatarTitulo = (titulo) => {
+    const texto = String(titulo || "sem título").trim().toLocaleLowerCase("pt-BR");
+    return texto.replace(/(^|[\s/–—-])(\p{L})/gu, (_trecho, separador, letra) =>
+      `${separador}${letra.toLocaleUpperCase("pt-BR")}`
+    );
+  };
   const ordenados = [...casos].sort((a, b) => (b.ultima_movimentacao || "").localeCompare(a.ultima_movimentacao || ""));
   const grade = el("div", { class: "cds--grid grade-casos" });
   const linha = el("div", { class: "cds--row grade-casos-linha" });
   grade.appendChild(linha);
   for (const caso of ordenados) {
-    const card = el("cds-card", { class: "processo-card", density: "expressive", "aria-label": caso.titulo || "(sem título)" });
+    const tituloCartao = formatarTitulo(caso.titulo);
+    const card = el("cds-card", { class: "processo-card", density: "productive", "aria-label": tituloCartao });
     const cabecalho = el("cds-card-header");
     const corpo = el("cds-card-body");
 
     const tituloLinha = el("cds-card-title", {}, [
-      el("span", { texto: caso.titulo || "(sem título)" }),
+      el("span", { texto: tituloCartao }),
     ]);
     if (caso.monitorado) {
       tituloLinha.appendChild(el("span", { class: "cds--tag cds--tag--green cds--tag--sm", texto: "Monitorado" }));
