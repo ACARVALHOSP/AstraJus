@@ -34,6 +34,9 @@
     input.blur = () => campo.shadowRoot?.querySelector('input')?.blur();
     input.select = () => campo.shadowRoot?.querySelector('input')?.select();
     campo.addEventListener('cds-search-input', (evento) => {
+      // O formulário inline controla sua própria consulta. Não deixe a DataTable
+      // interpretar este campo como sua barra de filtro e ocultar as linhas.
+      evento.stopPropagation();
       // Carbon emite o evento antes de atualizar value. Os handlers legados
       // (incluindo máscaras CNJ) precisam receber o valor já atualizado.
       input.value = evento.detail.value;

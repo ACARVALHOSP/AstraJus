@@ -352,14 +352,16 @@ class InterfaceTest(unittest.TestCase):
         menu.get_by_role("menuitem").last.press("Home")
         menu.get_by_role("menuitem").first.press("ArrowDown")
         menu.get_by_role("menuitem").nth(1).press("Space")
-        busca = self.page.get_by_label("Consultar Processo", exact=True)
-        self.assertTrue(busca.evaluate("el => el === document.activeElement"))
+        busca = self.page.locator(".pub-oab-inline-form cds-search input")
+        self.assertTrue(busca.evaluate("el => el === el.getRootNode().activeElement"))
         busca.fill("Caso")
+        self.assertTrue(botao.is_visible(), "Consulta inline não deve filtrar as linhas da DataTable")
         form = self.page.locator(".pub-oab-inline-form")
         form.get_by_role("button", name="Caso de teste", exact=False).click()
         self.assertTrue(form.locator(".pub-oab-confirmacao").is_visible())
         self.assertTrue(form.get_by_role("button", name="Confirmar Vínculo", exact=True).is_enabled())
         form.get_by_role("button", name="Cancelar", exact=True).click()
+        self.page.wait_for_function("document.querySelector('.pub-oab-combo .cds--menu-button__trigger') === document.activeElement")
         self.assertTrue(botao.evaluate("el => el === document.activeElement"))
         self.assertFalse(self.errors)
 
@@ -432,7 +434,7 @@ class InterfaceTest(unittest.TestCase):
         self.page.locator(".pub-oab-combo .cds--menu-button__trigger").first.click()
         self.page.get_by_role("menuitem", name="Cadastrar Processo", exact=True).click()
         form = self.page.get_by_role("form", name="Cadastrar Processo", exact=True)
-        form.get_by_label("Cliente", exact=True).fill("Cliente")
+        form.locator("cds-search input").fill("Cliente")
         form.get_by_role("button", name="Cliente de teste", exact=True).click()
         form.get_by_label("Responsável", exact=True).select_option("Ana")
         self.page.set_viewport_size({"width": 390, "height": 900})
@@ -457,7 +459,7 @@ class InterfaceTest(unittest.TestCase):
             route.fulfill(json={"casos": [self.case]})
         self.context.route("**/casos?q=*", responder)
         for termo in ("1000607", "Maria", "Cliente"):
-            form.get_by_label("Consultar Processo", exact=True).fill(termo)
+            form.locator("cds-search input").fill(termo)
             form.get_by_role("button", name="Caso de teste", exact=False).click()
             self.assertTrue(form.locator(".pub-oab-confirmacao").is_visible())
             self.assertTrue(confirmar.is_enabled())
@@ -739,13 +741,14 @@ class InterfaceTest(unittest.TestCase):
         self.assertFalse(self.errors)
 
     def test_vincular_publicacao_abre_formulario_e_envia_vinculo(self):
-        self.open_case()
-        self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-processo')); _cache.casos = [{id: 'caso-1', titulo: 'Caso de teste'}]; const area = document.getElementById('resultado-processo'); const table = document.createElement('table'); for (const row of linhaPublicacaoOab({hash:'publicacao-teste',status:'nao_tratada',numero_processo:'00000000000000000001',dados:{}})) table.appendChild(row); area.appendChild(table); }")
-        self.page.locator("#resultado-processo button[aria-label='Mais ações']").click()
-        self.page.get_by_text("Vincular a processo existente", exact=True).click()
-        self.page.locator("#resultado-processo .mini-form-caso select").select_option("caso-1")
-        self.page.locator("#resultado-processo .mini-form-caso").get_by_role("button", name="Vincular", exact=True).click()
-        self.page.wait_for_function("!document.querySelector('#resultado-processo .mini-form-caso')")
+        self.open_publicacoes_oab()
+        self.page.locator(".pub-oab-combo .cds--menu-button__trigger").first.click()
+        self.page.get_by_role("menuitem", name="Vincular A Processo Existente", exact=True).click()
+        form = self.page.get_by_role("form", name="Vincular A Processo Existente", exact=True)
+        form.locator("cds-search input").fill("Caso")
+        form.get_by_role("button", name="Caso de teste", exact=False).click()
+        form.get_by_role("button", name="Confirmar Vínculo", exact=True).click()
+        self.page.wait_for_function("!document.querySelector('.pub-oab-inline-form')")
         self.assertIn(("POST", "/casos/caso-1/publicacoes"), self.requests)
         self.assertFalse(self.errors)
 
@@ -858,6 +861,185 @@ class InterfaceTest(unittest.TestCase):
         self.page.keyboard.press("ArrowRight")
         self.assertEqual(self.page.evaluate("document.activeElement.id"), "caso-subaba-atividades-botao")
         self.assertTrue(self.page.locator("#caso-subaba-atividades").is_visible())
+        self.assertFalse(self.errors)
+
+
+    def test_auditoria_consulta_global_lenta_parcial_e_recuperacao(self):
+        self.connect()
+        pendentes = []
+        self.context.route("**/clientes", lambda rota: pendentes.append(rota))
+        self.page.locator("#btn-busca-toggle").click()
+        self.page.locator("cds-search:has(+ #header-busca-input) input").fill("Cliente")
+        self.page.wait_for_function("document.getElementById('header-busca-resultados').textContent.includes('Carregando')")
+        self.page.wait_for_function("document.getElementById('header-busca-input').value === 'Cliente'")
+        self.assertTrue(pendentes)
+        pendentes.pop().fulfill(status=500, json={"mensagem": "Falha simulada"})
+        self.page.get_by_text("Consulta incompleta", exact=True).wait_for()
+        self.assertNotIn("Nenhum resultado.", self.page.locator("#header-busca-resultados").inner_text())
+        self.page.get_by_role("button", name="Tentar novamente", exact=True).click()
+        self.page.wait_for_timeout(100)
+        pendentes.pop().fulfill(json={"clientes": [self.contact]})
+        self.page.locator(".header-busca-resultado-item").filter(has_text="Cliente de teste").wait_for()
+        self.assertEqual(self.page.locator("#header-busca-input").input_value(), "Cliente")
+        self.page.locator("cds-search:has(+ #header-busca-input) input").press("Escape")
+        self.assertTrue(self.page.locator("#header-busca-painel").is_hidden())
+        self.assertEqual(self.page.evaluate("document.activeElement.id"), "btn-busca-toggle")
+        self.assertFalse(self.errors)
+
+    def test_auditoria_integracoes_sem_acesso_http_e_resposta_invalida(self):
+        self.page.evaluate("selecionarAba(abas.find(a => a.painel.id === 'aba-integracoes'))")
+        self.assertEqual(self.page.locator("#integracao-google-status").inner_text(), "Acesso necessário")
+        self.page.locator("#aba-acesso-botao").click()
+        self.connect()
+        resposta = {"status": 401, "json": {"mensagem": "Sem acesso"}}
+        self.context.route("**/integracoes/status", lambda rota: rota.fulfill(**resposta))
+        self.page.evaluate("selecionarAba(abas.find(a => a.painel.id === 'aba-integracoes'))")
+        self.page.wait_for_function("document.getElementById('integracoes-resultado').textContent.includes('Acesso expirado')")
+        for payload in ({"status": 500, "json": {}}, {"status": 200, "json": {}}, {"status": 200, "body": "invalido"}):
+            resposta.clear(); resposta.update(payload)
+            self.page.locator("#integracoes-atualizar").click()
+            self.page.wait_for_function("document.getElementById('integracao-google-status').textContent === 'Falha na verificação'")
+        resposta.clear(); resposta.update({"json": {"google": True, "asaas": False}})
+        self.page.locator("#integracoes-atualizar").click()
+        self.page.wait_for_function("document.getElementById('integracao-google-status').textContent === 'Configurado'")
+        self.assertEqual(self.page.locator("#integracao-asaas-status").inner_text(), "Não configurado")
+        self.assertFalse(self.errors)
+
+    def test_auditoria_storage_falha_nao_favorita_e_recupera(self):
+        self.page.evaluate("() => { window.setItemOriginal = Storage.prototype.setItem; Storage.prototype.setItem = function(){ throw new Error('quota'); }; }")
+        self.assertFalse(self.page.evaluate("alternarFavorito('tjsp', '10006070420255020401')"))
+        self.assertFalse(self.page.evaluate("ehFavorito('tjsp', '10006070420255020401')"))
+        self.assertFalse(self.page.evaluate("alternarCasoFavorito('caso-1')"))
+        self.assertIn("Não foi possível guardar", self.page.locator("#toast-global").inner_text())
+        self.page.evaluate("() => { Storage.prototype.setItem = window.setItemOriginal; }")
+        self.assertTrue(self.page.evaluate("alternarFavorito('tjsp', '10006070420255020401')"))
+        self.page.reload()
+        self.page.wait_for_function("typeof ehFavorito === 'function'")
+        self.assertTrue(self.page.evaluate("ehFavorito('tjsp', '10006070420255020401')"))
+        self.assertFalse(self.errors)
+
+    def test_auditoria_grupos_repetiveis_rotulados_sem_ids_duplicados(self):
+        self.connect()
+        self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-contatos')); await abrirContato('cliente-1'); }")
+        self.page.evaluate("gruposContato.enderecos.definirValores([{rua:'Rua A'}, {rua:'Rua B'}]); gruposContato.emails.definirValores([{email:'a@example.test'}, {email:'b@example.test'}])")
+        self.assertTrue(self.page.evaluate("[...document.querySelectorAll('.campo-repetivel input, .campo-repetivel select')].every(c => c.labels.length === 1 && c.labels[0].textContent.trim())"))
+        self.assertTrue(self.page.evaluate("(() => { const ids = [...document.querySelectorAll('[id]')].map(c=>c.id); return ids.length === new Set(ids).size; })()"))
+        grupos = self.page.locator("#contato-enderecos-lista [role=group]")
+        self.assertEqual(grupos.count(), 2)
+        self.assertEqual(grupos.nth(1).get_attribute("aria-labelledby"), grupos.nth(1).locator(".grupo-repetivel-titulo").get_attribute("id"))
+        self.assertFalse(self.errors)
+
+    def test_auditoria_menu_movel_e_alternador_teclado(self):
+        self.connect()
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        self.page.locator("#btn-menu-toggle").click()
+        self.page.locator("#aba-casos-botao").click()
+        self.page.wait_for_function("document.getElementById('btn-menu-toggle').getAttribute('aria-expanded') === 'false'")
+        self.assertEqual(self.page.evaluate("document.activeElement.id"), "aba-casos")
+        self.page.locator("#casos-vista-tabela-botao").focus()
+        self.page.keyboard.press("End")
+        self.assertEqual(self.page.locator("#casos-vista-cards-botao").get_attribute("aria-pressed"), "true")
+        self.page.keyboard.press("Home")
+        self.assertEqual(self.page.locator("#casos-vista-tabela-botao").get_attribute("aria-pressed"), "true")
+        self.page.locator("#btn-menu-toggle").click()
+        self.page.locator("#aba-casos-botao").focus()
+        self.page.keyboard.press("Escape")
+        self.assertEqual(self.page.evaluate("document.activeElement.id"), "btn-menu-toggle")
+        self.assertFalse(self.errors)
+
+    def test_auditoria_atividades_agregadas_filtro_falha_e_conclusao(self):
+        self.connect()
+        casos = [{**self.case, "id": f"caso-{i}", "titulo": f"Processo {i}", "responsavel": "Ana" if i == 1 else "Bia"} for i in (1, 2, 3)]
+        atividades = {str(i): [{"id": i, "titulo": f"Providência {i}", "tipo": "prazo" if i == 2 else "tarefa", "status": "pendente", "data": None}] for i in (1, 2, 3)}
+        atividades['1'].append({"id": 9, "titulo": "Já concluída", "tipo": "tarefa", "status": "concluida"})
+        falha = [True]
+        self.context.route("**/casos", lambda rota: rota.fulfill(json={"casos": casos}))
+        def responder(rota):
+            i = rota.request.url.split('/caso-')[1].split('/')[0]
+            if i == '3' and falha[0]:
+                return rota.fulfill(status=500, json={"mensagem": "Falha simulada"})
+            if rota.request.method == 'PATCH':
+                atividades[i][0]['status'] = 'concluida'
+                return rota.fulfill(json=atividades[i][0])
+            rota.fulfill(json={"atividades": atividades[i]})
+        self.context.route("**/casos/caso-*/atividades**", responder)
+        self.page.evaluate("selecionarAba(abas.find(a => a.painel.id === 'aba-atividades'))")
+        self.page.get_by_text("Lista incompleta", exact=True).wait_for()
+        self.assertEqual(self.page.locator("#atividades-lista article").count(), 2)
+        self.assertNotIn("Já concluída", self.page.locator("#atividades-lista").inner_text())
+        self.page.locator("#atividades-tipo").select_option('prazo')
+        self.assertEqual(self.page.locator("#atividades-lista article").count(), 1)
+        self.page.locator("#atividades-tipo").select_option('')
+        self.page.locator("#atividades-responsavel").select_option('Ana')
+        self.page.get_by_role('button', name='Concluir atividade: Providência 1', exact=True).click()
+        self.page.wait_for_function("!document.getElementById('atividades-lista').textContent.includes('Providência 1')")
+        falha[0] = False
+        self.page.locator("#atividades-responsavel").select_option('')
+        self.page.locator("#atividades-atualizar").click()
+        self.page.wait_for_function("document.getElementById('atividades-status').textContent.includes('Revisados 3')")
+        self.assertEqual(self.page.locator("#atividades-lista article").count(), 2)
+        self.assertFalse(self.errors)
+
+    def test_auditoria_layout_atividades_e_enderecos_desktop_mobile(self):
+        self.connect()
+        pasta = Path(__file__).parent / 'output' / 'playwright' / 'auditoria-gtd'
+        pasta.mkdir(parents=True, exist_ok=True)
+        self.context.route('**/casos/caso-1/atividades', lambda rota: rota.fulfill(json={'atividades': [
+            {'id': 1, 'titulo': 'Conferir intimação e registrar a providência necessária no processo ' + 'X' * 90, 'tipo': 'prazo', 'status': 'pendente', 'data': '2026-10-30'}]}))
+        self.page.evaluate("selecionarAba(abas.find(a => a.painel.id === 'aba-atividades'))")
+        self.page.locator('#atividades-lista article').wait_for()
+        for largura in (1440, 390, 320):
+            self.page.set_viewport_size({'width': largura, 'height': 900})
+            self.page.wait_for_timeout(150)
+            self.assertEqual(self.page.evaluate('document.documentElement.scrollWidth'), largura)
+            self.page.screenshot(path=str(pasta / f'atividades-{largura}.png'), full_page=True)
+        self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-contatos')); await abrirContato('cliente-1'); }")
+        self.page.evaluate("gruposContato.enderecos.definirValores([{rua:'Rua de teste', numero:'123', cidade:'São Paulo'}, {rua:'Outro endereço', numero:'456'}])")
+        for largura in (1440, 390):
+            self.page.set_viewport_size({'width': largura, 'height': 900})
+            self.page.wait_for_timeout(150)
+            self.assertEqual(self.page.evaluate('document.documentElement.scrollWidth'), largura)
+            self.page.locator('#contato-enderecos-lista').screenshot(path=str(pasta / f'enderecos-{largura}.png'))
+        self.assertFalse(self.errors)
+
+    def test_auditoria_publicacao_atividade_falha_persistencia_e_origem(self):
+        self.open_publicacoes_oab()
+        self.pub_oab_items[0]['caso_id'] = 'caso-1'
+        self.pub_oab_items[0]['dados'] = {'texto': 'Texto integral da publicação de teste'}
+        salvas = []
+        falha = [True]
+        def responder(rota):
+            if rota.request.method == 'POST':
+                if falha[0]:
+                    return rota.fulfill(status=500, json={'mensagem': 'Falha simulada'})
+                salvas.append({**rota.request.post_data_json, 'id': 42, 'status': 'pendente'})
+                return rota.fulfill(json=salvas[-1])
+            rota.fulfill(json={'atividades': salvas})
+        self.context.route('**/casos/caso-1/atividades', responder)
+        self.context.route('**/casos/caso-1/publicacoes', lambda rota: rota.fulfill(json={'publicacoes': self.pub_oab_items[:1]}))
+        self.page.evaluate('carregarPublicacoesOab()')
+        self.page.locator('.pub-oab-tabela').wait_for()
+        self.page.locator('.pub-oab-tabela .cds--menu-button__trigger').first.click()
+        self.page.get_by_role('menuitem', name='Criar Atividade', exact=True).click()
+        self.page.locator('#atividade-titulo').fill('Conferir intimação')
+        self.page.locator('#atividade-observacoes').fill('Verificar providência necessária')
+        self.page.locator("button[form='form-atividade'][type='submit']").click()
+        self.page.get_by_text('Falha simulada', exact=True).wait_for()
+        self.assertEqual(self.page.locator('#atividade-titulo').input_value(), 'Conferir intimação')
+        self.assertEqual(len(salvas), 0)
+        self.assertEqual(len(self.pub_oab_posts), 0)
+        falha[0] = False
+        self.page.locator("button[form='form-atividade'][type='submit']").click()
+        self.page.get_by_role('button', name='Ver publicação de origem', exact=True).wait_for()
+        self.assertIn('Publicação de origem (DJEN): pub-1', salvas[0]['observacoes'])
+        self.assertEqual(len(self.pub_oab_posts), 0)
+        self.page.reload()
+        self.page.wait_for_function("typeof abrirCaso === 'function'")
+        self.page.locator("#aba-acesso-botao").click()
+        self.open_case()
+        self.page.locator('#caso-subaba-atividades-botao').click()
+        self.page.get_by_role('button', name='Ver publicação de origem', exact=True).click()
+        self.page.get_by_text('Texto integral da publicação de teste', exact=True).wait_for()
         self.assertFalse(self.errors)
 
 
