@@ -2647,7 +2647,7 @@ function cartoesCasos(casos, aoExcluir) {
   const nomeCliente = (id) => (_cache.clientes.find((c) => c.id === id) || {}).nome || id;
   const ordenados = [...casos].sort((a, b) => (b.ultima_movimentacao || "").localeCompare(a.ultima_movimentacao || ""));
   const grade = el("div", { class: "cds--grid grade-casos" });
-  const linha = el("div", { class: "cds--row" });
+  const linha = el("div", { class: "cds--row grade-casos-linha" });
   grade.appendChild(linha);
   for (const caso of ordenados) {
     const card = el("cds-card", { class: "processo-card", density: "expressive", "aria-label": caso.titulo || "(sem título)" });
