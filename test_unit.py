@@ -2060,6 +2060,37 @@ class PublicacaoCadastroInlineTest(unittest.TestCase):
             "destinatarioadvogados": [{"nome": "Ana", "numero_oab": "123", "uf_oab": "SP"}], "texto": "Texto ORIGINAL"}
         self.publicacoes.registrar("pub-inline", None, None, self.numero, self.dados, "nao_tratada", None, self.agora)
 
+    def test_paginacao_deterministica_catalogo_e_status_parcial(self):
+        for i in range(12):
+            self.publicacoes.registrar(f"pagina-{i:02}", None, None, self.numero,
+                {"campo_extra": i}, "nao_tratada", None, self.agora)
+        paginas = [self.publicacoes.listar(None, 5, offset) for offset in (0, 5, 10)]
+        hashes = [p["hash"] for pagina in paginas for p in pagina]
+        self.assertEqual(len(hashes), 13)
+        self.assertEqual(len(set(hashes)), 13)
+        self.assertEqual(hashes, sorted(hashes, reverse=True))
+        self.assertIn("campo_extra", self.publicacoes.campos_djen())
+        resultado = self.publicacoes.atualizar_status_detalhado(["pagina-01", "ausente", "pagina-01"], "tratada")
+        self.assertEqual(resultado, {"atualizadas": 1, "hashes_atualizados": ["pagina-01"], "hashes_falharam": ["ausente"]})
+        self.assertEqual(self.publicacoes.contar("tratada"), 1)
+
+    def test_endpoint_paginacao_valida_limites_e_ajusta_pagina_vazia(self):
+        mw = server._AutenticacaoBearer(None, None, gestao=self.gestao, publicacoes=self.publicacoes)
+        async def consultar(query):
+            respostas = []
+            async def send(mensagem):
+                respostas.append(mensagem)
+            await mw._publicacoes_oab({"method": "GET", "query_string": query.encode()}, send)
+            return respostas[0]["status"], json.loads(respostas[1]["body"])
+        for query in ("pagina=0", "tamanho=0", "tamanho=301", "pagina=abc"):
+            self.assertEqual(_rodar(consultar(query))[0], 400)
+        status, dados = _rodar(consultar("pagina=999&tamanho=5"))
+        self.assertEqual(status, 200)
+        self.assertEqual(dados["pagina"], 1)
+        self.assertEqual(dados["total"], 1)
+        self.assertIn("texto", dados["campos_djen"])
+        self.assertEqual(dados["hashes_disponiveis"], ["pub-inline"])
+
     def test_cadastro_preenche_dados_capa_e_vincula_publicacao(self):
         publicacao = self.publicacoes.obter("pub-inline")
         caso, erro = server._criar_caso_de_publicacao(self.gestao, self.publicacoes, publicacao,
