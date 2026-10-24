@@ -2827,7 +2827,8 @@ def _pagina_autorizacao(params: dict, erro: str | None = None) -> str:
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>cnj-processual · autorizar acesso</title>
-<style>{_ESTILO_PAGINAS}</style></head><body>
+<link rel="stylesheet" href="/static/carbon/styles.min.css">
+<style>{_ESTILO_PAGINAS}</style>{_RECURSOS_TEMA}</head><body>
 <h1>Autorizar o Claude a usar o cnj-processual</h1>
 <p>Cole o token que você recebeu por e-mail. Ele não fica salvo nesta página.</p>
 {aviso}
@@ -3133,7 +3134,8 @@ class _AutenticacaoBearer:
             else:
                 await _responder(send, 404, b"Nao encontrado")
             return
-        if caminho in ("/static/search-fields.js", "/static/search-fields.css", "/static/carbon/search-components.min.js") and scope.get("method") == "GET":
+        if caminho in ("/static/search-fields.js", "/static/search-fields.css", "/static/carbon/search-components.min.js",
+                       "/static/theme.js", "/static/theme.css", "/static/carbon/theme-components.min.js") and scope.get("method") == "GET":
             arquivo = Path(__file__).resolve().parent / caminho.lstrip("/")
             tipo = "text/css; charset=utf-8" if caminho.endswith(".css") else "application/javascript; charset=utf-8"
             if arquivo.is_file():
@@ -4458,6 +4460,9 @@ async def _responder(send, status: int, corpo: bytes, tipo: str = "text/plain; c
     await send({"type": "http.response.body", "body": corpo})
 
 
+_RECURSOS_TEMA = '<script src="/static/theme.js"></script>\n<link rel="stylesheet" href="/static/theme.css">\n<script src="/static/carbon/theme-components.min.js" defer></script>'
+
+
 _ESTILO_PAGINAS = """
 body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
 table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
@@ -4713,7 +4718,8 @@ def _pagina_termos(mensagem: str | None = None, erro: bool = False) -> str:
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Termos de uso · cnj-processual</title>
-<style>{_ESTILO_CADASTRO}</style></head><body>
+<link rel="stylesheet" href="/static/carbon/styles.min.css">
+<style>{_ESTILO_CADASTRO}</style>{_RECURSOS_TEMA}</head><body>
 <main class="cartao">
 <p class="marca">cnj-processual · versão {_escapar(TERMOS_VERSAO)}</p>
 <h1>Termos de uso</h1>
@@ -4751,7 +4757,8 @@ def _pagina_cadastro(mensagem: str | None = None, erro: bool = False, site_key: 
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pedir token de acesso · cnj-processual</title>
-<style>{_ESTILO_CADASTRO}</style></head><body>
+<link rel="stylesheet" href="/static/carbon/styles.min.css">
+<style>{_ESTILO_CADASTRO}</style>{_RECURSOS_TEMA}</head><body>
 <main class="cartao">
 <p class="marca">cnj-processual</p>
 <h1>Pedir seu token de acesso</h1>
@@ -4892,8 +4899,8 @@ def _pagina_admin(registro: RegistroUsuarios, mensagem: str | None, token_novo: 
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Administração · cnj-processual</title>
 <link rel="stylesheet" href="/static/carbon/styles.min.css">
-<style>{_ESTILO_ADMIN_LAYOUT}</style></head>
-<body class="cds--g10">
+<style>{_ESTILO_ADMIN_LAYOUT}</style>{_RECURSOS_TEMA}</head>
+<body>
 <main class="admin-pagina">
 <header class="admin-cabecalho">
 <p class="cds--label">cnj-processual · administração</p>

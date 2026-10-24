@@ -1478,6 +1478,18 @@ class PainelWebTest(_RegistroTemporario):
     def test_script_do_painel_so_aceita_get(self):
         self.assertEqual(_chamar_asgi(self.mw, "POST", "/static/app.js", [], b"")[0], 401)
 
+    def test_tema_assets_publicos_sem_cache(self):
+        for caminho, tipo in (("/static/theme.js", b"javascript"),
+                              ("/static/theme.css", b"text/css"),
+                              ("/static/carbon/theme-components.min.js", b"javascript")):
+            with self.subTest(caminho=caminho):
+                status, corpo, cab = _chamar_asgi(self.mw, "GET", caminho)
+                self.assertEqual(status, 200)
+                self.assertTrue(corpo)
+                self.assertIn(tipo, cab[b"content-type"])
+                self.assertEqual(cab[b"cache-control"], b"no-store")
+                self.assertEqual(_chamar_asgi(self.mw, "POST", caminho, [], b"")[0], 401)
+
     def test_search_carbon_assets_publicos_sem_cache(self):
         for caminho, tipo in (("/static/search-fields.js", b"javascript"),
                               ("/static/search-fields.css", b"text/css"),

@@ -1,6 +1,6 @@
 ---
 name: AstraJus
-description: Interface Carbon white para gestão processual jurídica.
+description: Interface Carbon white/g100 para gestão processual jurídica.
 colors:
   interactive: "#0f62fe"
   background: "#ffffff"
@@ -26,11 +26,11 @@ spacing:
 
 ## Overview
 
-Carbon white, com interface sóbria e densa para trabalho jurídico. Preservar a identidade existente, conforme escolha do usuário. Hierarquia, leitura de dados e ações previsíveis orientam a composição.
+Carbon white/g100, com interface sóbria e densa para trabalho jurídico. Preservar a identidade existente, conforme escolha do usuário. Hierarquia, leitura de dados e ações previsíveis orientam a composição.
 
 ## Colors
 
-Azul interativo para ações e seleção; superfícies brancas e cinza claro, texto escuro e divisores discretos. Os tokens semânticos Carbon são a referência para os estados.
+Azul interativo para ações e seleção; superfícies brancas e cinza claro, texto escuro e divisores discretos. Os tokens semânticos Carbon são a referência para os estados. O toggle no shell alterna Claro (white) e Escuro (g100), com preferência local compartilhada pelas páginas do frontend. O frontmatter descreve a base white; g100 usa os tokens oficiais do CSS Carbon, sem inversão de cores.
 
 ## Typography
 
@@ -54,7 +54,7 @@ Botões primários, secundários e ghost, campos com rótulos, tabelas com sele�
 
 ## Do's and Don'ts
 
-- Do preservar Carbon white e português brasileiro.
+- Do preservar Carbon white/g100 e português brasileiro.
 - Do manter foco visível, navegação por teclado e rótulos associados aos controles.
 - Do preservar consulta, seleção, status e vinculação das publicações ao alterar sua apresentação.
 - Don't introduzir frameworks CSS externos ou identidade visual concorrente.

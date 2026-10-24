@@ -1,0 +1,54 @@
+/* Os temas completos white/g100 vêm do CSS Carbon vendorizado. */
+:root[data-carbon-theme] {
+  --cds-text-placeholder: var(--cds-text-secondary);
+  --fundo: var(--cds-background);
+  --cartao: var(--cds-layer);
+  --texto: var(--cds-text-primary);
+  --texto-suave: var(--cds-text-secondary);
+  --suave: var(--cds-text-secondary);
+  --borda: var(--cds-border-subtle);
+  --acento: var(--cds-link-primary);
+  --acento-hover: var(--cds-link-primary-hover);
+  --foco: var(--cds-focus);
+  --codigo: var(--cds-layer-accent);
+  --erro-fundo: var(--cds-notification-background-error);
+  --erro-texto: var(--cds-text-primary);
+  --aviso-fundo: var(--cds-notification-background-info);
+  --aviso-texto: var(--cds-text-primary);
+}
+body { background: var(--cds-background); color: var(--cds-text-primary); }
+::selection { background: var(--cds-highlight); color: var(--cds-text-primary); }
+header svg, #side-nav svg { fill: var(--cds-icon-primary); }
+.theme-control { display: flex; align-items: center; position: relative; }
+.theme-control--shell { padding-inline: 1rem; min-inline-size: 7rem; border-inline: 1px solid var(--cds-border-subtle); }
+.theme-control--public { justify-content: flex-end; margin-block-end: 1rem; }
+.theme-status { font-size: .75rem; line-height: 1.5; margin: 0; color: var(--cds-text-primary); }
+.theme-status:empty { display: none; }
+.theme-control--shell .theme-status:not(:empty) {
+  position: fixed; inset-block-start: 3rem; inset-inline-end: 1rem; inline-size: min(18rem, calc(100vw - 2rem));
+  padding: 1rem; background: var(--cds-layer); border: 1px solid var(--cds-border-subtle);
+}
+/* Páginas públicas legadas usam botão preenchido; links continuam usando link-primary. */
+.cartao button:not([class]) { background: var(--cds-button-primary); color: var(--cds-text-on-color); }
+.cartao button:not([class]):hover { background: var(--cds-button-primary-hover); }
+body > form > button { background: var(--cds-button-primary); color: var(--cds-text-on-color); border: 0; }
+body > form input { background: var(--cds-field); color: var(--cds-text-primary); border: 1px solid var(--cds-border-strong); }
+body > .aviso { background: var(--cds-notification-background-info); color: var(--cds-text-primary); }
+.passos li::before { background: var(--cds-background-brand); color: var(--cds-text-on-color); }
+/* O calendário é externo ao Shadow DOM dos componentes Carbon. */
+.flatpickr-calendar { background: var(--cds-layer); color: var(--cds-text-primary); border: 1px solid var(--cds-border-subtle); box-shadow: 0 2px 6px var(--cds-shadow); }
+.flatpickr-month, .flatpickr-weekdays, .flatpickr-weekday { background: var(--cds-layer); color: var(--cds-text-primary); }
+.flatpickr-current-month input, .flatpickr-current-month select { background: var(--cds-layer); color: var(--cds-text-primary); }
+.flatpickr-day { color: var(--cds-text-primary); }
+.flatpickr-day:hover, .flatpickr-day:focus, .flatpickr-day.inRange { background: var(--cds-layer-hover); border-color: var(--cds-border-subtle); }
+.flatpickr-day.selected, .flatpickr-day.startRange, .flatpickr-day.endRange { background: var(--cds-background-brand); border-color: var(--cds-background-brand); color: var(--cds-text-on-color); }
+.flatpickr-day.prevMonthDay, .flatpickr-day.nextMonthDay, .flatpickr-day.flatpickr-disabled { color: var(--cds-text-disabled); }
+.flatpickr-prev-month svg, .flatpickr-next-month svg { fill: var(--cds-icon-primary); }
+@media (max-width: 768px) {
+  .theme-control--shell { padding-inline: .5rem; min-inline-size: 4.5rem; }
+  #status-conexao { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+@media (max-width: 480px) {
+  #link-home { padding-inline: .375rem; font-size: .75rem; }
+  #btn-menu-toggle, #btn-busca-toggle, #btn-notificacoes-toggle { inline-size: 2.5rem; padding-inline: .75rem; }
+}

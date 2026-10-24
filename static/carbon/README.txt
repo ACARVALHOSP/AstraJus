@@ -26,3 +26,10 @@ Para regenerar, na raiz do repositório:
 npm install --prefix output/carbon-build --no-audit --no-fund @carbon/web-components@2.66.0 esbuild@0.25.12
 node static/carbon/build-oab-components.cjs
 Os arquivos de trabalho em output/carbon-build não fazem parte da distribuição.
+
+Tema Claro/Escuro: Toggle de @carbon/web-components 2.66.0, Apache-2.0.
+Bundle independente theme-components.min.js, gerado por build-theme-components.cjs.
+Build: use as mesmas dependências indicadas acima e execute node static/carbon/build-theme-components.cjs.
+CARBON_BUILD_MODULES permite reutilizar um diretório node_modules de build fora da árvore.
+Licenças: LICENSE-theme-components.txt e theme-components.min.js.LEGAL.txt.
+As variáveis white/g100 estão no CSS Carbon já distribuído; não há CDN em execução.

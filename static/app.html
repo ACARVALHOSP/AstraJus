@@ -15,7 +15,7 @@
   --fonte-titulo: 1.25rem;     /* título da página (h1) */
 }
 body { margin: 0; min-height: 100dvh; caret-color: var(--cds-interactive, #0f62fe); }
-body.cds--white { --cds-text-placeholder: var(--cds-text-secondary, #525252); }
+
 ::selection { background: var(--cds-highlight, #d0e2ff); color: var(--cds-text-primary, #161616); }
 a { text-underline-offset: 0.15em; }
 [hidden] { display: none !important; }
@@ -713,8 +713,11 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 .linha-repetivel .campo-repetivel input, .linha-repetivel .campo-repetivel select { width: 100%; min-width: 0; }
 </style>
 <link rel="stylesheet" href="/static/search-fields.css">
+<script src="/static/theme.js"></script>
+<link rel="stylesheet" href="/static/theme.css">
+<script src="/static/carbon/theme-components.min.js" defer></script>
 </head>
-<body class="cds--white">
+<body>
 <div id="toast-global" aria-live="polite" style="position:fixed;top:1rem;right:1rem;z-index:9999;width:min(380px,calc(100vw - 2rem));display:flex;flex-direction:column;gap:0.5rem;pointer-events:none"></div>
 <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
 <a class="skip-link" href="#aba-casos-botao">Ir para Processos</a>
@@ -747,6 +750,7 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 <p class="campo-ajuda" style="padding:1rem">A central de notificações ainda não está disponível. Consulte Publicações monitoradas e Atividades para revisar o trabalho.</p>
 </div>
 </div>
+<div class="theme-control theme-control--shell" data-theme-control></div>
 <div class="header-acesso">
 <button class="cds--btn cds--btn--ghost cds--btn--sm" id="aba-acesso-botao" role="tab" aria-selected="true" aria-controls="aba-acesso" type="button">Acesso</button>
 <span role="status" id="status-conexao" class="cds--tag cds--tag--gray">Sem token</span>
