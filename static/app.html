@@ -370,8 +370,26 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 .grade-integracoes p { margin: 0; font-size: var(--fonte-base); }
 
 .grade-casos { margin-block: 1rem; }
-.processo-card-coluna { margin-block-end: 2rem; min-width: 0; }
-.processo-card { height: 100%; --cds-layer: #fff; --cds-layer-01: #fff; }
+.grade-casos-linha {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr));
+  gap: var(--cds-spacing-05, 1rem);
+  margin: 0;
+}
+.processo-card-coluna {
+  position: relative;
+  aspect-ratio: 1;
+  min-width: 0;
+  width: auto;
+  max-width: none;
+  padding: 0;
+}
+.processo-card {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: var(--cds-layer);
+}
 .processo-card cds-card-title { overflow-wrap: anywhere; }
 .processo-card cds-card-body { display: flex; flex-direction: column; gap: 0.5rem; }
 .processo-card cds-card-body p { margin: 0; }
