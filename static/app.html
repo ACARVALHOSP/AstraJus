@@ -589,6 +589,60 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 .pub-oab-grade .pub-oab-tabela :is(th,td):first-child { width: 3rem; }
 .pub-oab-grade .campo-ajuda { font-size: var(--fonte-ajuda); line-height: 1.5; }
 
+/* Contrato tabela Carbon XS: .scratch/tabela-carbon-xs/spec.md.
+   Tokens locais mapeiam a escala Carbon (03=8, 05=16, 06=24 px). */
+.pub-oab-grade { --pub-space-03: var(--cds-spacing-03, 0.5rem); --pub-space-05: var(--cds-spacing-05, 1rem); --pub-xs: 1.5rem; font-size: 0.75rem; }
+.pub-oab-grade .pub-oab-tabela-toolbar { min-block-size: 2rem; padding: 0 var(--pub-space-03); gap: var(--pub-space-05); font-size: inherit; }
+.pub-oab-grade .pub-oab-colunas summary { padding: var(--pub-space-03) var(--pub-space-05); }
+.pub-oab-coluna-fixa { margin-inline-start: auto; color: var(--cds-text-secondary); font-size: inherit; white-space: nowrap; }
+.pub-oab-grade .pub-oab-colunas label { gap: var(--pub-space-03); }
+.pub-oab-grade .pub-oab-coluna-opcao, .pub-oab-grade .pub-oab-coluna-opcao > label { min-block-size: 2rem; }
+.pub-oab-grade .pub-oab-tabela { font-size: 0.75rem; }
+.pub-oab-grade .pub-oab-tabela :is(th,td) { height: var(--pub-xs); padding: 0 var(--pub-space-03); vertical-align: middle; white-space: nowrap; }
+.pub-oab-grade .pub-oab-tabela .pub-oab-controle,
+.pub-oab-grade .pub-oab-tabela :is(th,td):first-child { inline-size: 2rem; min-inline-size: 2rem; padding: 0 var(--pub-space-03); }
+.pub-oab-grade .pub-oab-tabela :is(th,td):last-child { inline-size: 5rem; min-inline-size: 5rem; }
+.pub-oab-grade .pub-oab-tabela :is(th,td)[data-coluna="tribunal"] { inline-size: 4.375rem; }
+.pub-oab-grade .pub-oab-tabela :is(th,td)[data-coluna="processo"] { inline-size: 12.8125rem; }
+.pub-oab-grade .pub-oab-tabela td[data-coluna="nome"] { white-space: nowrap; }
+.pub-oab-grade .pub-oab-nome-processo { display: block; inline-size: clamp(14rem, 28vw, 32rem); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-line-clamp: unset; overflow-wrap: normal; }
+.pub-oab-tooltip-nome { position: fixed; inset: auto; margin: 0; border: 0; padding: 0.5rem 1rem; max-inline-size: min(32rem, calc(100vw - 1rem)); background: var(--cds-background-inverse); color: var(--cds-text-inverse); font-size: 0.75rem; white-space: normal; }
+.pub-oab-grade .pub-oab-expandir { display: flex; justify-content: center; align-items: center; inline-size: 1rem; block-size: calc(var(--pub-xs) - 1px); border: 0; padding: 0; background: transparent; color: var(--cds-icon-primary); cursor: pointer; font: inherit; }
+.pub-oab-grade .pub-oab-acoes-linha { flex-wrap: nowrap; gap: 0; }
+.pub-oab-grade .pub-oab-overflow { min-block-size: 0; block-size: calc(var(--pub-xs) - 1px); padding: 0; min-inline-size: 1.5rem; }
+.pub-oab-grade .pub-oab-abrir { margin-inline-end: 0.25rem; }
+.pub-oab-grade .pub-oab-linha--selecionada { background: var(--cds-layer-selected); }
+.pub-oab-grade .pub-oab-tabela .pub-oab-expansao > td { padding: var(--pub-space-05) 1.5rem; white-space: normal; background: var(--cds-layer); }
+.pub-oab-grade .pub-oab-publicacao-completa { max-inline-size: min(56rem, calc(100vw - 6rem)); }
+.pub-oab-grade .pub-oab-inline-row > td { white-space: normal; }
+.pub-oab-grade .pub-oab-tabela td[data-coluna="texto"] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pub-oab-grade .pub-oab-celula-valor { display: block; inline-size: 12rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pub-oab-grade [data-coluna="tribunal"] .pub-oab-celula-valor { inline-size: auto; }
+.pub-oab-status { display: inline-flex; align-items: center; gap: 0.375rem; font-size: inherit; }
+.pub-oab-status::before { content: ""; inline-size: 0.375rem; block-size: 0.375rem; border-radius: 50%; background: var(--cds-icon-secondary); }
+.pub-oab-status--green::before { background: var(--cds-support-success); }
+.pub-oab-grade .pub-oab-batch { gap: var(--pub-space-03); padding: 0 var(--pub-space-03); min-block-size: var(--pub-xs); }
+.pub-oab-grade .pub-oab-batch button { min-block-size: var(--pub-xs); padding-block: 0; }
+.pub-oab-paginacao { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--pub-space-03, 0.5rem); min-block-size: 2.5rem; background: var(--cds-layer); border-block-end: 1px solid var(--cds-border-subtle); font-size: 0.75rem; padding-inline-start: var(--pub-space-05, 1rem); }
+.pub-oab-paginacao-grupo { display: flex; align-items: center; flex-wrap: wrap; gap: var(--pub-space-03, 0.5rem); }
+.pub-oab-pagina-tamanho { block-size: 2.5rem; padding: 0 0.75rem; border: 0; border-inline-start: 1px solid var(--cds-border-subtle); background: var(--cds-layer); color: var(--cds-text-primary); font: inherit; }
+.pub-oab-pagina-botao { block-size: 2.5rem; inline-size: 2.5rem; border: 0; border-inline-start: 1px solid var(--cds-border-subtle); background: transparent; color: var(--cds-icon-primary); font: inherit; cursor: pointer; }
+.pub-oab-pagina-botao:hover:not(:disabled) { background: var(--cds-layer-hover); }
+.pub-oab-pagina-botao:disabled { color: var(--cds-text-disabled); cursor: not-allowed; }
+.pub-oab-paginacao :is(button,select):focus-visible, .pub-oab-nome-processo:focus-visible { outline: 2px solid var(--cds-focus); outline-offset: -2px; }
+@media (pointer: coarse) {
+  .pub-oab-grade { --pub-xs: 2.75rem; }
+  .pub-oab-grade .pub-oab-tabela .pub-oab-controle, .pub-oab-grade .pub-oab-tabela :is(th,td):first-child { min-inline-size: 2.75rem; }
+  .pub-oab-grade .pub-oab-expandir, .pub-oab-grade .pub-oab-overflow { min-inline-size: 2.75rem; }
+  .pub-oab-grade .pub-oab-coluna-opcao, .pub-oab-grade .pub-oab-coluna-opcao > label { min-block-size: 2.75rem; }
+  .pub-oab-pagina-botao, .pub-oab-pagina-tamanho { min-block-size: 2.75rem; }
+}
+@media (max-width: 600px) {
+  .pub-oab-grade .pub-oab-publicacao-completa { max-inline-size: calc(100vw - 6rem); }
+  .pub-oab-paginacao { padding: 0.5rem; }
+  .pub-oab-paginacao-grupo { gap: 0.5rem; }
+}
+
 /* Fluxos no documento: sem sobreposição, fundo bloqueado ou foco preso. */
 .fluxo-pagina { display: none; margin-block: 0 2rem; scroll-margin-top: 4rem; }
 .fluxo-pagina.is-visible { display: block; }
