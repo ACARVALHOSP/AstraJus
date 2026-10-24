@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-24T16:49:14.192964-03:00",
+  "generatedAt": "2026-10-24T18:24:02.421286-03:00",
   "title": "Design System: AstraJus",
   "extensions": {
     "colorMeta": {
@@ -210,9 +210,9 @@
     }
   ],
   "narrative": {
-    "overview": "Carbon white, com interface sóbria e densa para trabalho jurídico. Preservar a identidade existente, conforme escolha do usuário. Hierarquia, leitura de dados e ações previsíveis orientam a composição.",
+    "overview": "Carbon white/g100, com interface sóbria e densa para trabalho jurídico. Preservar a identidade existente, conforme escolha do usuário. Hierarquia, leitura de dados e ações previsíveis orientam a composição.",
     "dos": [
-      "Do preservar Carbon white e português brasileiro.",
+      "Do preservar Carbon white/g100 e português brasileiro.",
       "Do manter foco visível, navegação por teclado e rótulos associados aos controles.",
       "Do preservar consulta, seleção, status e vinculação das publicações ao alterar sua apresentação."
     ],
@@ -221,4 +221,3 @@
     ]
   }
 }
-

@@ -47,17 +47,17 @@ Plataforma auto-hospedada com controle total dos dados: roda no VPS do próprio 
 **Servidor MCP (tools):**
 `consultar_processo_datajud`, `consultar_publicacoes_djen`, `baixar_certidao_djen`, `buscar_feriados_forenses`, `consultar_jurimetria_cjpg`, `monitorar_publicacoes`, `listar_monitoramentos`, `remover_monitoramento`, `perfil_decisorio_magistrado`
 
-**Stack:** Python 3.12 ASGI puro, HTML/JS vanilla, Carbon Design System (white theme), SQLite, Docker
+**Stack:** Python 3.12 ASGI puro, HTML/JS vanilla, Carbon Design System (white e g100), SQLite, Docker
 
 **Constraints:**
-- Frontend obrigatoriamente em Carbon Design System (white theme) — sem frameworks CSS externos, sem diálogos nativos soltos
+- Frontend obrigatoriamente em Carbon Design System (white e g100) — sem frameworks CSS externos, sem diálogos nativos soltos
 - Idioma da interface: português brasileiro
 - SQLite local; sem banco externo
 
 ## Brand Commitments
 
 - **Nome do produto:** AstraJus
-- **Componentes:** Carbon Design System (white theme) — regra obrigatória para todo o painel web; sem exceções
+- **Componentes:** Carbon Design System (white e g100) — regra obrigatória para todo o painel web; sem exceções
 - **Idioma:** português brasileiro em toda a interface
 - **Vocabulário de domínio (CONTEXT.md — vinculante):**
   - *Consulta* — busca pontual manual via API; evitar: Busca, Pesquisa
@@ -71,7 +71,7 @@ Plataforma auto-hospedada com controle total dos dados: roda no VPS do próprio 
 - Glossário de domínio: `CONTEXT.md`
 - Documentação de features e arquitetura: `README.md`
 - Servidor em produção no VPS (porta 8080 local em dev)
-- Sem ativos de branding visual (logo, paleta própria, tipografia customizada) além do Carbon white theme
+- Sem ativos de branding visual (logo, paleta própria, tipografia customizada) além do Carbon white/g100 theme
 
 ## Product Principles
 

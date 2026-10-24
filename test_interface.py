@@ -1043,5 +1043,90 @@ class InterfaceTest(unittest.TestCase):
         self.assertFalse(self.errors)
 
 
+    def test_tema_persistencia_teclado_e_sincronizacao_entre_paginas(self):
+        self.page.get_by_role("switch", name="Tema", exact=True).wait_for()
+        self.assertEqual(self.page.locator("html").get_attribute("data-carbon-theme"), "white")
+        segunda = self.context.new_page()
+        segunda.goto(self.url)
+        segunda.get_by_role("switch", name="Tema", exact=True).wait_for()
+        self.page.get_by_role("switch", name="Tema", exact=True).focus()
+        self.page.keyboard.press("Space")
+        self.page.wait_for_function("document.documentElement.dataset.carbonTheme === 'g100'")
+        segunda.wait_for_function("document.documentElement.dataset.carbonTheme === 'g100'")
+        self.assertEqual(self.page.evaluate("getComputedStyle(document.body).backgroundColor"), "rgb(22, 22, 22)")
+        self.page.reload()
+        self.page.get_by_role("switch", name="Tema", exact=True).wait_for()
+        self.assertEqual(self.page.get_by_role("switch", name="Tema", exact=True).get_attribute("aria-checked"), "true")
+        self.page.locator("#tema-interface label").click()
+        self.page.wait_for_function("document.documentElement.dataset.carbonTheme === 'white'")
+        self.assertFalse(self.errors)
+
+    def test_tema_armazenamento_indisponivel_mantem_interface_funcional(self):
+        self.context.add_init_script("""(() => {
+          const ler = Storage.prototype.getItem, guardar = Storage.prototype.setItem;
+          Storage.prototype.getItem = function(k) { if(k === 'cnj_tema') throw new Error('bloqueado'); return ler.call(this,k); };
+          Storage.prototype.setItem = function(k,v) { if(k === 'cnj_tema') throw new Error('bloqueado'); return guardar.call(this,k,v); };
+        })()""")
+        self.page.reload()
+        self.page.locator("#tema-interface label").click()
+        self.page.wait_for_function("document.documentElement.dataset.carbonTheme === 'g100'")
+        self.assertIn("Não foi possível lembrar", self.page.locator("#theme-status").inner_text())
+        self.page.reload()
+        self.page.get_by_role("switch", name="Tema", exact=True).wait_for()
+        self.assertEqual(self.page.locator("html").get_attribute("data-carbon-theme"), "white")
+        self.assertFalse(self.errors)
+
+    def test_tema_cobre_paginas_publicas_admin_e_autorizacao(self):
+        import server
+        from unittest.mock import Mock
+        paginas = {
+            '/guia': (Path(__file__).parent / 'guia-do-usuario.html').read_text(encoding='utf-8'),
+            '/documentacao': (Path(__file__).parent / 'documentacao-funcionalidades.html').read_text(encoding='utf-8'),
+            '/cadastro': server._pagina_cadastro(),
+            '/termos': server._pagina_termos(),
+            '/oauth/authorize': server._pagina_autorizacao({}),
+            '/admin': server._pagina_admin(Mock(), None),
+        }
+        self.context.add_init_script("localStorage.setItem('cnj_tema', 'g100'); document.addEventListener('DOMContentLoaded', () => {window.temaInicial = document.documentElement.dataset.carbonTheme;});")
+        base = self.url.split('/static/')[0]
+        pasta = Path(__file__).parent / 'output' / 'playwright' / 'temas'
+        pasta.mkdir(parents=True, exist_ok=True)
+        for caminho, html in paginas.items():
+            self.context.route('**' + caminho, lambda rota, request, html=html: rota.fulfill(content_type='text/html', body=html))
+            self.page.goto(base + caminho)
+            self.page.get_by_role("switch", name="Tema", exact=True).wait_for()
+            with self.subTest(pagina=caminho):
+                self.assertEqual(self.page.evaluate('window.temaInicial'), 'g100')
+                self.assertEqual(self.page.evaluate('getComputedStyle(document.body).backgroundColor'), 'rgb(22, 22, 22)')
+                self.assertEqual(self.page.get_by_role("switch", name="Tema", exact=True).get_attribute('aria-checked'), 'true')
+                if caminho in ('/cadastro', '/admin', '/guia'):
+                    self.page.screenshot(path=str(pasta / (caminho.strip('/') + '-g100.png')))
+        self.assertFalse(self.errors)
+
+    def test_tema_shell_responsivo_tabela_e_formulario_escuros(self):
+        pasta = Path(__file__).parent / 'output' / 'playwright' / 'temas'
+        pasta.mkdir(parents=True, exist_ok=True)
+        self.open_publicacoes_oab()
+        self.page.locator("#tema-interface label").click()
+        self.page.wait_for_function("document.documentElement.dataset.carbonTheme === 'g100'")
+        self.assertEqual(self.page.locator('cds-table').evaluate("e => getComputedStyle(e).getPropertyValue('--cds-background').trim()"), '#161616')
+        for largura in (1440, 768, 390, 320):
+            self.page.set_viewport_size({'width': largura, 'height': 960})
+            self.page.wait_for_timeout(150)
+            self.assertEqual(self.page.evaluate('document.documentElement.scrollWidth'), largura)
+            for seletor in ('cds-toggle#tema-interface', '#aba-acesso-botao'):
+                rect = self.page.locator(seletor).bounding_box()
+                self.assertGreaterEqual(rect['x'], 0)
+                self.assertLessEqual(rect['x'] + rect['width'], largura + 1)
+            if largura in (1440, 390): self.page.screenshot(path=str(pasta / f'publicacoes-g100-{largura}.png'))
+        self.page.set_viewport_size({'width':1440,'height':960})
+        self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-contatos')); await abrirContato('cliente-1'); }")
+        self.assertEqual(self.page.locator('#contato-nome').evaluate('e => getComputedStyle(e).color'), 'rgb(244, 244, 244)')
+        self.page.screenshot(path=str(pasta / 'cliente-g100.png'))
+        self.page.locator("#tema-interface label").click()
+        self.page.screenshot(path=str(pasta / 'cliente-white.png'))
+        self.assertFalse(self.errors)
+
+
 if __name__ == "__main__":
     unittest.main()
