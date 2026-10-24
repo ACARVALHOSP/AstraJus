@@ -369,11 +369,12 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 .grade-integracoes h3 { font-size: var(--fonte-subtitulo); font-weight: 600; margin: 0; }
 .grade-integracoes p { margin: 0; font-size: var(--fonte-base); }
 
-.grade-casos {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1rem; margin: 1rem 0;
-}
-.grade-casos .cds--tile { display: flex; flex-direction: column; gap: 0.5rem; }
+.grade-casos { margin-block: 1rem; }
+.processo-card-coluna { margin-block-end: 2rem; min-width: 0; }
+.processo-card { height: 100%; --cds-layer: #fff; --cds-layer-01: #fff; }
+.processo-card cds-card-title { overflow-wrap: anywhere; }
+.processo-card cds-card-body { display: flex; flex-direction: column; gap: 0.5rem; }
+.processo-card cds-card-body p { margin: 0; }
 
 .seletor-arvore {
   border: 1px solid var(--cds-border-subtle, #c6c6c6); border-radius: 4px;
