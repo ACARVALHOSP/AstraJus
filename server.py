@@ -3151,8 +3151,9 @@ class _AutenticacaoBearer:
             "/static/carbon/flatpickr.min.js",
             "/static/carbon/flatpickr-l10n-pt.js",
             "/static/carbon/flatpickr-rangePlugin.js",
+            "/static/carbon/oab-components.min.js",
         ) and scope.get("method") == "GET":
-            # flatpickr (calendário do Date Picker do Carbon), vendorizado - sem dados sensíveis
+            # Bibliotecas de interface vendorizadas, sem dados sensíveis.
             js = Path(__file__).resolve().parent / caminho.lstrip("/")
             if js.is_file():
                 await _responder(send, 200, js.read_bytes(), tipo="application/javascript; charset=utf-8")
