@@ -3133,6 +3133,15 @@ class _AutenticacaoBearer:
             else:
                 await _responder(send, 404, b"Nao encontrado")
             return
+        if caminho in ("/static/search-fields.js", "/static/search-fields.css", "/static/carbon/search-components.min.js") and scope.get("method") == "GET":
+            arquivo = Path(__file__).resolve().parent / caminho.lstrip("/")
+            tipo = "text/css; charset=utf-8" if caminho.endswith(".css") else "application/javascript; charset=utf-8"
+            if arquivo.is_file():
+                await _responder(send, 200, arquivo.read_bytes(), tipo=tipo,
+                                 cabecalhos_extra=[(b"cache-control", b"no-store")])
+            else:
+                await _responder(send, 404, b"Nao encontrado")
+            return
         if caminho == "/static/app.js" and scope.get("method") == "GET":
             # script externo do painel web (cliente MCP em JavaScript puro). Sem cache: o arquivo
             # muda a cada deploy e não tem ETag/Last-Modified - sem "no-store" o navegador pode

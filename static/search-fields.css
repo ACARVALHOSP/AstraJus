@@ -1,0 +1,4 @@
+.app-search { display: block; inline-size: 100%; min-inline-size: 0; }
+.seletor-arvore-busca > .app-search { flex: 1; }
+/* Os controles originais continuam disponíveis aos handlers e ao FormData. */
+input[aria-hidden="true"][hidden] { display: none !important; }
