@@ -430,6 +430,10 @@ def _migrar_colunas_casos(conexao: sqlite3.Connection) -> None:
             conexao.execute("ALTER TABLE casos ADD COLUMN desfecho TEXT")
         if "numero" not in colunas:
             conexao.execute("ALTER TABLE casos ADD COLUMN numero INTEGER")
+        if "pasta" not in colunas:
+            conexao.execute("ALTER TABLE casos ADD COLUMN pasta TEXT")
+        if "acesso" not in colunas:
+            conexao.execute("ALTER TABLE casos ADD COLUMN acesso TEXT NOT NULL DEFAULT 'equipe'")
     if "numero" not in colunas:
         _atribuir_numeros_casos_existentes(conexao)
 
@@ -809,20 +813,26 @@ class RegistroClientesCasos:
 
     # Casos
 
+    _ACESSOS_VALIDOS = ("equipe", "publico", "privado")
+
     def criar_caso(
         self, cliente_id: str, titulo: str | None, responsavel: str | None,
         numeros_processo: list[str], agora, clientes_adicionais: list[str] | None = None,
         acao: str | None = None, foro: str | None = None,
+        pasta: str | None = None, acesso: str | None = None,
     ) -> dict:
         numeros_processo = normalizar_numero_processo(numeros_processo)
+        if acesso and acesso not in self._ACESSOS_VALIDOS:
+            raise ValueError(f"Acesso inválido: use um entre {self._ACESSOS_VALIDOS}.")
         novo_id = uuid.uuid4().hex
         criado_em = agora().isoformat()
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             proximo_numero = conexao.execute("SELECT COALESCE(MAX(numero), 0) + 1 FROM casos").fetchone()[0]
             conexao.execute(
-                "INSERT INTO casos (id, cliente_id, titulo, responsavel, acao, foro, status, criado_em, numero) "
-                "VALUES (?, ?, ?, ?, ?, ?, 'ativo', ?, ?)",
-                (novo_id, cliente_id, titulo, responsavel, acao, foro, criado_em, proximo_numero),
+                "INSERT INTO casos (id, cliente_id, titulo, responsavel, acao, foro, status, criado_em, numero, "
+                "pasta, acesso) VALUES (?, ?, ?, ?, ?, ?, 'ativo', ?, ?, ?, ?)",
+                (novo_id, cliente_id, titulo, responsavel, acao, foro, criado_em, proximo_numero,
+                 pasta, acesso or "equipe"),
             )
             conexao.executemany(
                 "INSERT OR IGNORE INTO caso_processos (caso_id, numero_processo) VALUES (?, ?)",
@@ -851,6 +861,19 @@ class RegistroClientesCasos:
         "area_direito", "magistrado", "tipo_justica", "cidade", "uf", "valor_causa", "fase", "status_processo",
         "movimentos", "partes", "advogados",
     )
+
+    def capas_vinculadas(self) -> list[dict]:
+        """Processos cuja capa já foi preenchida ao menos uma vez a partir de um tribunal
+        (coluna `tribunal` não nula) - são os candidatos ao job de atualização automática de
+        movimentos (Fase 1 do roadmap de buscas), que precisa saber em qual tribunal consultar."""
+        with _abrir(self.caminho) as conexao:
+            cursor = conexao.execute(
+                "SELECT caso_id, numero_processo, tribunal FROM caso_processo_capa WHERE tribunal IS NOT NULL"
+            )
+            return [
+                {"caso_id": caso_id, "numero_processo": numero, "tribunal": tribunal}
+                for caso_id, numero, tribunal in cursor.fetchall()
+            ]
 
     def obter_capa_processo(self, caso_id: str, numero_processo: str) -> dict | None:
         with _abrir(self.caminho) as conexao:
@@ -895,7 +918,7 @@ class RegistroClientesCasos:
         with _abrir(self.caminho) as conexao:
             linha = conexao.execute(
                 "SELECT id, cliente_id, titulo, responsavel, status, drive_pasta_id, "
-                "criado_em, acao, foro, autor, reu, advogados, desfecho, numero "
+                "criado_em, acao, foro, autor, reu, advogados, desfecho, numero, pasta, acesso "
                 "FROM casos WHERE id = ?",
                 (caso_id,),
             ).fetchone()
@@ -911,18 +934,21 @@ class RegistroClientesCasos:
         self, caso_id: str, titulo: str | None, responsavel: str | None,
         acao: str | None, foro: str | None, autor: str | None, reu: str | None,
         advogados: str | None, numeros_processo: list[str] | None = None,
-        desfecho: str | None = None,
+        desfecho: str | None = None, pasta: str | None = None, acesso: str | None = None,
     ) -> dict | None:
         if numeros_processo is not None:
             numeros_processo = normalizar_numero_processo(numeros_processo)
+        if acesso and acesso not in self._ACESSOS_VALIDOS:
+            raise ValueError(f"Acesso inválido: use um entre {self._ACESSOS_VALIDOS}.")
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             cursor = conexao.execute("SELECT 1 FROM casos WHERE id = ?", (caso_id,))
             if cursor.fetchone() is None:
                 return None
             conexao.execute(
-                "UPDATE casos SET titulo=?, responsavel=?, acao=?, foro=?, autor=?, reu=?, advogados=?, desfecho=? "
-                "WHERE id = ?",
-                (titulo, responsavel, acao, foro, autor, reu, advogados, desfecho or None, caso_id),
+                "UPDATE casos SET titulo=?, responsavel=?, acao=?, foro=?, autor=?, reu=?, advogados=?, desfecho=?, "
+                "pasta=?, acesso=? WHERE id = ?",
+                (titulo, responsavel, acao, foro, autor, reu, advogados, desfecho or None,
+                 pasta, acesso or "equipe", caso_id),
             )
             if numeros_processo is not None:
                 existentes = {r[0] for r in conexao.execute("SELECT numero_processo FROM caso_processos WHERE caso_id = ?", (caso_id,))}
@@ -940,7 +966,7 @@ class RegistroClientesCasos:
         with _abrir(self.caminho) as conexao:
             linhas = conexao.execute(
                 "SELECT id, cliente_id, titulo, responsavel, status, drive_pasta_id, "
-                "criado_em, acao, foro, autor, reu, advogados, desfecho, numero "
+                "criado_em, acao, foro, autor, reu, advogados, desfecho, numero, pasta, acesso "
                 "FROM casos ORDER BY criado_em DESC"
             ).fetchall()
             if not linhas:
@@ -1435,12 +1461,14 @@ def _linha_lancamento(linha) -> dict:
 
 
 def _linha_caso(linha) -> dict:
-    id_, cliente_id, titulo, responsavel, status, drive_pasta_id, criado_em, acao, foro, autor, reu, advogados, desfecho, numero = linha
+    (id_, cliente_id, titulo, responsavel, status, drive_pasta_id, criado_em, acao, foro, autor, reu,
+     advogados, desfecho, numero, pasta, acesso) = linha
     return {
         "id": id_, "cliente_id": cliente_id, "titulo": titulo, "responsavel": responsavel,
         "status": status, "drive_pasta_id": drive_pasta_id,
         "criado_em": criado_em, "acao": acao, "foro": foro,
         "autor": autor, "reu": reu, "advogados": advogados, "desfecho": desfecho, "numero": numero,
+        "pasta": pasta, "acesso": acesso,
     }
 
 
@@ -1481,22 +1509,54 @@ class RegistroPublicacoesOAB:
             )
             return cursor.rowcount > 0
 
-    def listar(self, status: str | None = None, limite: int = 300) -> list[dict]:
+    def listar(self, status: str | None = None, limite: int = 300, deslocamento: int = 0) -> list[dict]:
         with _abrir(self.caminho) as conexao:
             if status:
                 cursor = conexao.execute(
                     "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, "
                     "caso_id, criado_em FROM publicacoes_capturadas WHERE status = ? "
-                    "ORDER BY criado_em DESC LIMIT ?",
-                    (status, limite),
+                    "ORDER BY criado_em DESC, hash DESC LIMIT ? OFFSET ?",
+                    (status, limite, deslocamento),
                 )
             else:
                 cursor = conexao.execute(
                     "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, "
-                    "caso_id, criado_em FROM publicacoes_capturadas ORDER BY criado_em DESC LIMIT ?",
-                    (limite,),
+                    "caso_id, criado_em FROM publicacoes_capturadas ORDER BY criado_em DESC, hash DESC LIMIT ? OFFSET ?",
+                    (limite, deslocamento),
                 )
             return [_linha_publicacao(linha) for linha in cursor.fetchall()]
+
+    def campos_djen(self) -> list[str]:
+        """Catálogo completo, independente da página e do filtro atuais."""
+        with _abrir(self.caminho) as conexao:
+            return [r[0] for r in conexao.execute(
+                "SELECT DISTINCT campo.key FROM publicacoes_capturadas, "
+                "json_each(publicacoes_capturadas.dados) AS campo ORDER BY campo.key"
+            )]
+
+    def hashes_disponiveis(self, status: str | None = None) -> list[str]:
+        with _abrir(self.caminho) as conexao:
+            return [r[0] for r in conexao.execute(
+                "SELECT hash FROM publicacoes_capturadas" + (" WHERE status = ?" if status else ""),
+                (status,) if status else ())]
+
+    def atualizar_status_detalhado(self, hashes: list[str], status: str) -> dict:
+        """Atualização atômica com identificação dos registros ausentes."""
+        if status not in _STATUS_PUBLICACAO_VALIDOS:
+            raise ValueError(f"status inválido: {status}")
+        hashes = list(dict.fromkeys(hashes))
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            # Reserva a escrita antes de verificar os IDs, evitando corrida com remoções.
+            conexao.execute("BEGIN IMMEDIATE")
+            existentes = []
+            for hash_publicacao in hashes:
+                cursor = conexao.execute(
+                    "UPDATE publicacoes_capturadas SET status = ? WHERE hash = ?", (status, hash_publicacao))
+                if cursor.rowcount:
+                    existentes.append(hash_publicacao)
+        encontrados = set(existentes)
+        return {"atualizadas": len(existentes), "hashes_atualizados": existentes,
+                "hashes_falharam": [h for h in hashes if h not in encontrados]}
 
     def contar(self, status: str | None = None) -> int:
         with _abrir(self.caminho) as conexao:
