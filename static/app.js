@@ -2646,11 +2646,15 @@ function tabelaCasos(casos, aoExcluir) {
 function cartoesCasos(casos, aoExcluir) {
   const nomeCliente = (id) => (_cache.clientes.find((c) => c.id === id) || {}).nome || id;
   const ordenados = [...casos].sort((a, b) => (b.ultima_movimentacao || "").localeCompare(a.ultima_movimentacao || ""));
-  const grade = el("div", { class: "grade-casos" });
+  const grade = el("div", { class: "cds--grid grade-casos" });
+  const linha = el("div", { class: "cds--row" });
+  grade.appendChild(linha);
   for (const caso of ordenados) {
-    const card = el("article", { class: "cds--tile" });
+    const card = el("cds-card", { class: "processo-card", density: "expressive", "aria-label": caso.titulo || "(sem título)" });
+    const cabecalho = el("cds-card-header");
+    const corpo = el("cds-card-body");
 
-    const tituloLinha = el("div", { class: "caso-titulo-linha" }, [
+    const tituloLinha = el("cds-card-title", {}, [
       el("span", { texto: caso.titulo || "(sem título)" }),
     ]);
     if (caso.monitorado) {
@@ -2659,10 +2663,10 @@ function cartoesCasos(casos, aoExcluir) {
     if (caso.desfecho && _ROTULO_DESFECHO_CASO[caso.desfecho]) {
       tituloLinha.appendChild(el("span", { class: "cds--tag cds--tag--purple cds--tag--sm", texto: _ROTULO_DESFECHO_CASO[caso.desfecho] }));
     }
-    card.appendChild(tituloLinha);
+    cabecalho.appendChild(tituloLinha);
 
     const nomesClientes = [caso.cliente_id, ...(caso.clientes_adicionais || [])].map(nomeCliente).filter(Boolean);
-    card.appendChild(el("p", { class: "campo-ajuda", texto: nomesClientes.join(", ") || "Sem cliente vinculado" }));
+    corpo.appendChild(el("p", { class: "campo-ajuda", texto: nomesClientes.join(", ") || "Sem cliente vinculado" }));
 
     const containerAcao = el("div", { style: "display:flex; flex-wrap:wrap; gap:4px" });
     const pedacosAcao = (caso.acao || "").split(" - ").map((pedaco) => pedaco.trim()).filter(Boolean);
@@ -2674,21 +2678,29 @@ function cartoesCasos(casos, aoExcluir) {
       });
     }
     if (caso.foro) containerAcao.appendChild(el("span", { class: "cds--tag cds--tag--gray cds--tag--sm", texto: caso.foro }));
-    card.appendChild(containerAcao);
+    corpo.appendChild(containerAcao);
 
-    card.appendChild(el("p", { class: "campo-ajuda", texto: `Últ. mov.: ${formatarDataSimples(caso.ultima_movimentacao)}` }));
+    corpo.appendChild(el("p", { class: "campo-ajuda", texto: `Últ. mov.: ${formatarDataSimples(caso.ultima_movimentacao)}` }));
 
-    const botaoAbrirCaso = el("button", {
-      class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Abrir",
-    });
+    const criarAcao = (nome, rotulo) => {
+      const botao = el("cds-icon-button", { kind: "ghost", size: "sm", label: rotulo });
+      const criarSvg = (item) => _elSvg(document, item.elem, item.attrs || {}, (item.content || []).map(criarSvg));
+      const icone = criarSvg(window.cnjProcessoIcones[nome]);
+      icone.setAttribute("slot", "icon");
+      icone.setAttribute("aria-hidden", "true");
+      botao.append(icone, el("span", { slot: "tooltip-content", texto: rotulo }));
+      return botao;
+    };
+    const botaoAbrirCaso = criarAcao("editar", "Editar");
     botaoAbrirCaso.addEventListener("click", () => abrirCaso(caso.id));
-    const botaoExcluirCaso = el("button", {
-      class: "cds--btn cds--btn--danger--tertiary cds--btn--sm", type: "button", texto: "Excluir",
-    });
+    const botaoExcluirCaso = criarAcao("excluir", "Excluir");
     botaoExcluirCaso.addEventListener("click", () => excluirCaso(caso.id, caso.titulo, botaoExcluirCaso, aoExcluir));
-    card.appendChild(el("div", { style: "display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:auto" }, [botaoAbrirCaso, botaoExcluirCaso]));
-
-    grade.appendChild(card);
+    cabecalho.appendChild(el("cds-card-actions", {}, [
+      el("cds-card-action", { label: "Editar" }, [botaoAbrirCaso]),
+      el("cds-card-action", { label: "Excluir" }, [botaoExcluirCaso]),
+    ]));
+    card.append(cabecalho, corpo);
+    linha.appendChild(el("div", { class: "cds--col-sm-4 cds--col-md-4 cds--col-lg-4 processo-card-coluna" }, [card]));
   }
   return grade;
 }
