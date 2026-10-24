@@ -4007,7 +4007,9 @@ const _TAG_COR_STATUS_PUB_OAB = { nao_tratada: "warm-gray", tratada: "green", ar
 
 function _badgeStatusPubOab(status) {
   const cor = _TAG_COR_STATUS_PUB_OAB[status] || "gray";
-  return el("span", { class: `pub-oab-status pub-oab-status--${cor}`, texto: _ROTULO_STATUS_PUB_OAB[status] || status });
+  return el("cds-tag", { class: "pub-oab-status", type: cor, size: "sm" }, [
+    el("span", { class: "pub-oab-status-texto", texto: _ROTULO_STATUS_PUB_OAB[status] || status }),
+  ]);
 }
 
 async function _irParaConsultaProcesso(numeroProcesso) {
@@ -4036,7 +4038,9 @@ function _sincronizarSelecaoPubOab() {
   for (const campo of linhas) {
     campo.checked = _publicacoesOabSelecionadas.has(campo.dataset.publicacaoHash);
     campo.disabled = _pubOabAtualizando;
-    campo.closest("tr").classList.toggle("pub-oab-linha--selecionada", campo.checked);
+    const linha = campo.closest("cds-table-row");
+    linha.classList.toggle("pub-oab-linha--selecionada", campo.checked);
+    linha.selected = campo.checked;
   }
   const todos = container.querySelector("input[data-publicacoes-todas]");
   if (todos) {
@@ -4162,10 +4166,15 @@ async function _abrirFluxoInlinePubOab(tr, p, colunas, tipo, origem) {
     ...(tipo === "cadastro" ? [el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: responsavel.id, texto: "Responsável" }), responsavel])] : []),
     status, el("div", { class: "pub-oab-inline-acoes" }, [confirmar, cancelar]),
   ]);
-  const linha = el("tr", { class: "pub-oab-inline-row", "data-fluxo-publicacao": p.hash }, [el("td", { colspan: String(colunas.length + 3) }, [form])]);
-  tr.after(linha);
-  tr.closest("table")?._pubOabAplicarColunas?.();
+  const linha = el("cds-table-expanded-row", { class: "pub-oab-inline-row", expanded: "", colspan: String(colunas.length + 3), "data-fluxo-publicacao": p.hash }, [form]);
+  const expansao = tr.nextElementSibling;
+  if (expansao?.matches(".pub-oab-expansao")) expansao.after(linha);
+  else tr.after(linha);
+  tr.closest("cds-table")?._pubOabAplicarColunas?.();
   cancelar.addEventListener("click", () => { linha.remove(); origem.focus(); });
+  // O conteúdo só fica disponível para foco após o primeiro render do Web Component.
+  await linha.updateComplete;
+  if (!linha.isConnected) return;
   busca.focus();
   let selecionado = null, clientes = [], pronto = false, requisicao = 0, temporizador;
   const escolher = (item, descricao) => {
@@ -4273,7 +4282,7 @@ function _colunasPubOab(publicacoes = [], camposDjen = []) {
 function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
   const d = p.dados || {};
   const linhas = [];
-  const tr = el("tr", { class: "pub-oab-linha", "data-publicacao": p.hash });
+  const tr = el("cds-table-row", { class: "pub-oab-linha", "data-publicacao": p.hash, size: "md" });
   const idTexto = `pub-oab-texto-${++_pubOabContadorLinha}`;
   const identificacao = d.numeroprocessocommascara || p.numero_processo || p.nome_pesquisado || "publicação";
 
@@ -4284,11 +4293,11 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
     else _publicacoesOabSelecionadas.delete(p.hash);
     _sincronizarSelecaoPubOab();
   });
-  tr.appendChild(el("td", { "data-label": "Selecionar" }, [checkbox]));
+  tr.appendChild(el("cds-table-cell", { "data-label": "Selecionar", class: "pub-oab-controle" }, [checkbox]));
 
-  const celExpansao = el("td", { "data-label": "Expandir", class: "pub-oab-controle" });
+  const celExpansao = el("cds-table-cell", { "data-label": "Expandir", class: "pub-oab-controle" });
   tr.appendChild(celExpansao);
-  const celProcesso = el("td", { "data-label": "Processo" });
+  const celProcesso = el("cds-table-cell", { "data-label": "Processo" });
   if (p.numero_processo) {
     celProcesso.appendChild(el("div", { texto: formatarNumeroCNJ(d.numeroprocessocommascara || p.numero_processo) }));
   } else {
@@ -4300,9 +4309,10 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
     });
     celProcesso.appendChild(linkBusca);
   }
-  const trTexto = el("tr", { class: "pub-oab-expansao" });
+  const trTexto = el("cds-table-expanded-row", { class: "pub-oab-expansao", expanded: "", colspan: String(colunas.length + 3) }, [_publicacaoCompletaPubOab(p, idTexto)]);
   trTexto.hidden = !_pubOabExpandidas.has(p.hash);
-  trTexto.appendChild(el("td", { colspan: String(colunas.length + 3) }, [_publicacaoCompletaPubOab(p, idTexto)]));
+  tr.expanded = !trTexto.hidden;
+  trTexto.expanded = !trTexto.hidden;
   const botaoExpandir = el("button", {
     class: "pub-oab-expandir", type: "button", texto: trTexto.hidden ? "›" : "⌄",
     "aria-label": `Expandir publicação: ${identificacao}`,
@@ -4310,6 +4320,8 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
   });
   botaoExpandir.addEventListener("click", () => {
     trTexto.hidden = !trTexto.hidden;
+    tr.expanded = !trTexto.hidden;
+    trTexto.expanded = !trTexto.hidden;
     if (trTexto.hidden) _pubOabExpandidas.delete(p.hash); else _pubOabExpandidas.add(p.hash);
     botaoExpandir.textContent = trTexto.hidden ? "›" : "⌄";
     botaoExpandir.setAttribute("aria-expanded", String(!trTexto.hidden));
@@ -4322,11 +4334,11 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
     if (coluna.id === "processo") celula = celProcesso;
     else if (coluna.id === "status") {
       const badge = _badgeStatusPubOab(p.status);
-      badge.textContent = _tituloPubOab(badge.textContent);
-      celula = el("td", {}, [badge]);
+      badge.querySelector(".pub-oab-status-texto").textContent = _tituloPubOab(badge.textContent);
+      celula = el("cds-table-cell", {}, [badge]);
     } else {
       const valor = _valorPubOab(coluna.valor(p), coluna.literal);
-      celula = el("td", {}, [el("span", { class: "pub-oab-celula-valor", texto: valor, title: valor })]);
+      celula = el("cds-table-cell", {}, [el("span", { class: "pub-oab-celula-valor", texto: valor, title: valor })]);
     }
     if (coluna.id === "nome") {
       const nome = _nomeProcessoPubOab(p);
@@ -4354,15 +4366,22 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
     tr.appendChild(celula);
   }
 
-  const celAcoes = el("td", { "data-label": "Ações" });
+  const celAcoes = el("cds-table-cell", { "data-label": "Ações" });
   const acoesLinha = el("div", { class: "pub-oab-acoes-linha" });
 
   if (d.link) {
     acoesLinha.appendChild(
-      el("a", {
-        class: "cds--link pub-oab-abrir", href: d.link, target: "_blank", rel: "noopener",
-        texto: "Abrir", title: "Abrir publicação no DJEN", "aria-label": "Abrir publicação no DJEN",
-      })
+      el("cds-icon-button", {
+        class: "pub-oab-abrir", href: d.link, target: "_blank", rel: "noopener noreferrer",
+        kind: "ghost", size: "md", align: "left", "link-role": "link",
+      }, [
+        el("span", { class: "pub-oab-abrir-rotulo", texto: "Abrir publicação no DJEN (nova aba)" }),
+        _elSvg(document, "svg", { slot: "icon", width: "16", height: "16", viewBox: "0 0 16 16", "aria-hidden": "true", focusable: "false", fill: "currentColor" }, [
+          _elSvg(document, "path", { d: "M13,14H3c-0.6,0-1-0.4-1-1V3c0-0.6,0.4-1,1-1h5v1H3v10h10V8h1v5C14,13.6,13.6,14,13,14z" }),
+          _elSvg(document, "polygon", { points: "10,1 10,2 13.3,2 9,6.3 9.7,7 14,2.7 14,6 15,6 15,1" }),
+        ]),
+        el("span", { slot: "tooltip-content", texto: "Abrir publicação no DJEN (nova aba)" }),
+      ])
     );
   }
 
@@ -4480,7 +4499,7 @@ function _capitalizarTextosPubOab(raiz) {
   const walker = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT);
   while (walker.nextNode()) {
     const no = walker.currentNode;
-    if (!no.parentElement?.closest('.pub-oab-publicacao-completa, [data-coluna="texto"], [data-coluna="tribunal"], [data-coluna="hash"], [data-coluna="link"], [data-coluna="oab"], [data-coluna^="djen:"]')) no.textContent = _tituloPubOab(no.textContent);
+    if (!no.parentElement?.closest('.pub-oab-publicacao-completa, .pub-oab-abrir, [data-coluna="texto"], [data-coluna="tribunal"], [data-coluna="hash"], [data-coluna="link"], [data-coluna="oab"], [data-coluna^="djen:"]')) no.textContent = _tituloPubOab(no.textContent);
   }
 }
 
@@ -4497,16 +4516,17 @@ function criarTabelaPublicacoesOab(tabela, quantidade, colunas) {
   } catch { /* usa as colunas padrão */ }
   const aplicar = () => {
     const quantidadeVisivel = 3 + colunas.filter((c) => _COLUNAS_FIXAS_PUB_OAB.has(c.id) || visiveis.includes(c.id)).length;
-    for (const linha of tabela.rows) {
+    for (const linha of tabela.querySelectorAll("cds-table-header-row, cds-table-row, cds-table-expanded-row")) {
       for (const celula of linha.querySelectorAll("[data-coluna]")) celula.hidden = !_COLUNAS_FIXAS_PUB_OAB.has(celula.dataset.coluna) && !visiveis.includes(celula.dataset.coluna);
-      if (linha.cells.length === 1) linha.cells[0].colSpan = quantidadeVisivel;
+      if (linha.matches("cds-table-expanded-row")) linha.colSpan = quantidadeVisivel;
     }
+    tabela.headerCount = quantidadeVisivel;
     tabela.classList.toggle("pub-oab-tabela--reduzida", quantidadeVisivel <= 6);
   };
   tabela._pubOabAplicarColunas = aplicar;
-  const seletor = el("details", { class: "pub-oab-colunas" });
-  const resumo = el("summary", { texto: "Colunas" });
-  const campos = el("fieldset", {}, [el("legend", { texto: "Colunas visíveis" })]);
+  const seletor = el("cds-toggletip", { id: "pub-oab-colunas-toggletip", class: "pub-oab-colunas", alignment: "bottom-right", "button-label": "Colunas" });
+  const resumo = el("span", { slot: "trigger", class: "pub-oab-colunas-trigger", texto: "Colunas" });
+  const campos = el("fieldset", { slot: "body-text", class: "pub-oab-colunas-campos" }, [el("legend", { texto: "Colunas visíveis" })]);
   let atualizacaoColunas = null;
   for (const coluna of opcionais) {
     const id = `pub-oab-coluna-${encodeURIComponent(coluna.id)}`;
@@ -4526,22 +4546,18 @@ function criarTabelaPublicacoesOab(tabela, quantidade, colunas) {
     });
     const rotulo = el("label", { for: id, texto: coluna.rotulo });
     if (_COLUNAS_FIXAS_PUB_OAB.has(coluna.id)) rotulo.appendChild(el("small", { class: "pub-oab-coluna-fixa", texto: "Sempre visível" }));
-    // Mantém o foco no controle: desfocar para o rótulo fecha o <details>
-    // durante o clique e pode derrubar o renderer do Chrome.
+    // Mantém a ativação nativa do label sem mover o foco antes do checkbox.
     rotulo.addEventListener("pointerdown", (evento) => evento.preventDefault());
     campos.appendChild(el("div", { class: "pub-oab-coluna-opcao" }, [input, rotulo]));
   }
   campos.appendChild(el("p", { class: "campo-ajuda", texto: "Seleção, Processo, Tribunal, Nome Do Processo E Ações Ficam Sempre Visíveis." }));
   seletor.append(resumo, campos);
   seletor.addEventListener("keydown", (evento) => {
-    if (evento.key === "Escape") { evento.preventDefault(); seletor.open = false; resumo.focus(); }
+    if (evento.key === "Escape") { evento.preventDefault(); seletor.open = false; seletor.focus(); }
   });
   document.addEventListener("click", function fecharColunas(evento) {
     if (!seletor.isConnected) { document.removeEventListener("click", fecharColunas); return; }
-    if (!seletor.contains(evento.target)) seletor.open = false;
-  });
-  seletor.addEventListener("focusout", (evento) => {
-    if (!seletor.contains(evento.relatedTarget)) seletor.open = false;
+    if (!evento.composedPath().includes(seletor)) seletor.open = false;
   });
   const criarAcaoLote = (id, rotulo, status) => {
     const botao = el("button", { id, type: "button", class: "cds--btn cds--btn--primary cds--btn--sm", "data-status-lote": status, texto: rotulo, disabled: "disabled" });
@@ -4566,6 +4582,7 @@ function criarTabelaPublicacoesOab(tabela, quantidade, colunas) {
     seletor,
   ]);
   aplicar();
+  tabela.updateComplete?.then(aplicar);
   _capitalizarTextosPubOab(barra);
   return el("div", { class: "pub-oab-grade" }, [barra, lote,
     el("div", { class: "tabela-responsiva-wrap pub-oab-rolagem", tabindex: "0", role: "region", "aria-label": "Tabela de publicações; role horizontalmente para ver todas as colunas" }, [tabela]),
@@ -4638,15 +4655,15 @@ async function carregarPublicacoesOab() {
       _sincronizarSelecaoPubOab();
     });
     const colunas = _colunasPubOab(publicacoes, dados.campos_djen || []);
-    const thead = el("thead", {}, [el("tr", {}, [
-      el("th", { scope: "col", class: "pub-oab-controle" }, [checkboxTodos]),
-      el("th", { scope: "col", class: "pub-oab-controle", "aria-label": "Expandir publicação" }),
-      ...colunas.map((c) => el("th", { scope: "col", texto: c.rotulo, "data-coluna": c.id })),
-      el("th", { scope: "col", texto: "Ações" }),
+    const thead = el("cds-table-head", {}, [el("cds-table-header-row", { size: "md" }, [
+      el("cds-table-header-cell", { class: "pub-oab-controle" }, [checkboxTodos]),
+      el("cds-table-header-cell", { class: "pub-oab-controle", "aria-label": "Expandir publicação" }),
+      ...colunas.map((c) => el("cds-table-header-cell", { texto: c.rotulo, "data-coluna": c.id })),
+      el("cds-table-header-cell", { texto: "Ações" }),
     ])]);
-    const tbody = el("tbody", {});
+    const tbody = el("cds-table-body", {});
     for (const p of publicacoes) for (const linha of linhaPublicacaoOab(p, colunas)) tbody.appendChild(linha);
-    const tabela = el("table", { class: "tabela-responsiva pub-oab-tabela", "aria-label": "Publicações monitoradas" }, [thead, tbody]);
+    const tabela = el("cds-table", { class: "pub-oab-tabela", size: "md", locale: "pt-BR", "aria-label": "Publicações monitoradas" }, [thead, tbody]);
     container.appendChild(criarTabelaPublicacoesOab(tabela, total, colunas));
     container.querySelector(".pub-oab-grade").appendChild(_paginacaoPubOab(total));
     _sincronizarSelecaoPubOab();
