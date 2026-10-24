@@ -698,6 +698,19 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
   .fluxo-pagina-container { padding: 1rem; }
   .fluxo-pagina-footer .cds--btn { max-inline-size: none; inline-size: 100%; }
 }
+
+.linha-repetivel { align-items: flex-end; }
+.grupo-repetivel-titulo { flex-basis: 100%; margin: 0; }
+.campo-repetivel { display: block; flex: 1 1 160px; min-width: 0; }
+.atividade-titulo, .atividade-meta { overflow-wrap: anywhere; }
+@media (max-width: 768px) {
+  #atividades-lista .atividade-item { flex-wrap: wrap; }
+  #atividades-lista .atividade-corpo { flex-basis: 100%; }
+  #atividades-lista .atividade-acoes { flex-wrap: wrap; max-width: 100%; }
+}
+.endereco-card-topo { flex-wrap: wrap; align-items: flex-end; }
+.endereco-grade .campo-repetivel { min-width: 0; }
+.linha-repetivel .campo-repetivel input, .linha-repetivel .campo-repetivel select { width: 100%; min-width: 0; }
 </style>
 <link rel="stylesheet" href="/static/search-fields.css">
 </head>
@@ -731,7 +744,7 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M14.4,10.1L13,8.8V6.5c0-2.6-1.9-4.7-4.5-5v-1h-1v1C5,1.8,3,3.9,3,6.5v2.3l-1.4,1.3c-0.1,0.1-0.2,0.2-0.1,0.4V12c0,0.3,0.2,0.5,0.4,0.5c0,0,0,0,0.1,0h3.5C5.5,13.9,6.6,15,8,15s2.5-1.1,2.5-2.5H14c0.3,0,0.5-0.2,0.5-0.4c0,0,0,0,0-0.1v-1.5C14.5,10.4,14.4,10.2,14.4,10.1z M8,14c-0.8,0-1.5-0.7-1.5-1.5h3C9.5,13.3,8.8,14,8,14z M13.5,11.5h-11v-0.8l1.3-1.4C3.9,9.3,4,9.1,4,9V6.5c0-2.2,1.8-4,4-4s4,1.8,4,4V9c0,0.1,0.1,0.3,0.1,0.4l1.4,1.3V11.5z"/></svg>
 </button>
 <div class="header-notificacoes-painel" id="header-notificacoes-painel" hidden>
-<p class="campo-ajuda" style="padding:1rem">Nenhuma notificação</p>
+<p class="campo-ajuda" style="padding:1rem">A central de notificações ainda não está disponível. Consulte Publicações monitoradas e Atividades para revisar o trabalho.</p>
 </div>
 </div>
 <div class="header-acesso">
@@ -772,6 +785,7 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 <li role="presentation" class="cds--side-nav__menu-item">
 <button class="cds--side-nav__link" id="aba-casos-botao" role="tab" aria-selected="false" aria-controls="aba-casos" type="button"><span class="cds--side-nav__link-text">Processos</span></button>
 </li>
+<li role="presentation" class="cds--side-nav__menu-item"><button class="cds--side-nav__link" id="aba-atividades-botao" role="tab" aria-selected="false" aria-controls="aba-atividades" type="button"><span class="cds--side-nav__link-text">Atividades</span></button></li>
 </ul>
 </li>
 <li role="presentation" class="cds--side-nav__item">
@@ -840,6 +854,7 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 <main id="conteudo" class="app-corpo cds--content">
 
 <section id="aba-acesso" role="tabpanel" aria-labelledby="aba-acesso-botao">
+<h2 class="lista-rapida-titulo">Acesso</h2>
 <p class="campo-ajuda">Cole o token recebido por e-mail para liberar as consultas. Ele fica só neste navegador.</p>
 <form id="form-token" class="app-formulario" autocomplete="off">
 <div class="cds--form-item">
@@ -856,6 +871,7 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 </section>
 
 <section id="aba-processo" role="tabpanel" aria-labelledby="aba-processo-botao" hidden>
+<h2 class="lista-rapida-titulo">Consultar processo</h2>
 <form id="form-processo" class="app-formulario">
 <div class="cds--form-item">
 <label class="cds--label" for="tribunal">Tribunal</label>
@@ -935,6 +951,7 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 </section>
 
 <section id="aba-publicacoes" role="tabpanel" aria-labelledby="aba-publicacoes-botao" hidden>
+<h2 class="lista-rapida-titulo">Consultar publicações</h2>
 <form id="form-publicacoes" class="app-formulario">
 <div class="cds--form-item">
 <label class="cds--label" for="pub-numero-processo">Número do processo</label>
@@ -1090,11 +1107,12 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 </section>
 
 <section id="aba-historico" role="tabpanel" aria-labelledby="aba-historico-botao" hidden>
-<h2 class="lista-rapida-titulo">Favoritos</h2>
-<p class="campo-ajuda">Processos marcados manualmente na aba Processo (DataJud).</p>
+<h2 class="lista-rapida-titulo">Histórico e favoritos</h2>
+<h2 class="lista-rapida-titulo">Favoritos de consulta</h2>
+<p class="campo-ajuda">Favoritos deste navegador, sem sincronização. Use Consultar para repetir a consulta ao DataJud.</p>
 <ul id="lista-favoritos" class="lista-rapida"></ul>
-<h2 class="lista-rapida-titulo">Processos favoritos</h2>
-<p class="campo-ajuda">Processos marcados com a estrela na aba Processos.</p>
+<h2 class="lista-rapida-titulo">Processos cadastrados favoritos</h2>
+<p class="campo-ajuda">Favoritos deste navegador, sem sincronização. Use Abrir para acessar o cadastro do processo.</p>
 <ul id="lista-casos-favoritos" class="lista-rapida"></ul>
 <h2 class="lista-rapida-titulo">Histórico recente</h2>
 <p class="campo-ajuda">Últimas consultas feitas neste navegador. Clique para repetir.</p>
@@ -1102,12 +1120,14 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 </section>
 
 <section id="aba-monitoramentos" role="tabpanel" aria-labelledby="aba-monitoramentos-botao" hidden>
+<h2 class="lista-rapida-titulo">Monitoramentos</h2>
 <p class="campo-ajuda">Os avisos por e-mail são verificados a cada 6 horas, quando o envio de e-mail está configurado no servidor. A captura de publicações por OAB para o painel "Publicações monitoradas" ocorre separadamente, a cada 24 horas. Falhas de conexão podem adiar as verificações.</p>
 <button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="botao-atualizar-monitoramentos">Atualizar lista</button>
 <div id="resultado-monitoramentos" class="app-resultado" aria-live="polite"></div>
 </section>
 
 <section id="aba-jurimetria" role="tabpanel" aria-labelledby="aba-jurimetria-botao" hidden>
+<h2 class="lista-rapida-titulo">Jurimetria</h2>
 <p class="campo-ajuda">
 Preencha os filtros abaixo e escolha a análise - todas usam a mesma busca no CJPG (julgados de 1º
 grau do TJSP). As demais ideias ao final ainda são só conceitos de próximos passos.
@@ -1236,21 +1256,25 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </section>
 
 <section id="aba-integracoes" role="tabpanel" aria-labelledby="aba-integracoes-botao" hidden>
+<h2 class="lista-rapida-titulo">Integrações</h2>
 <p class="campo-ajuda">Conexões com serviços externos usados pelo escritório.</p>
+<button class="cds--btn cds--btn--tertiary cds--btn--sm" type="button" id="integracoes-atualizar">Verificar novamente</button>
+<p class="campo-ajuda">A configuração é mantida pelo administrador do servidor. “Configurado” indica credenciais cadastradas; não confirma a disponibilidade do serviço externo.</p>
+<div id="integracoes-resultado" aria-live="polite"></div>
 <div class="grade-integracoes">
 
 <div class="cds--tile">
 <div class="integracao-icone"><img src="/static/icons/google.svg" alt="" width="40" height="40"></div>
 <h3>Google</h3>
 <p>Agenda e Drive do escritório (conta institucional).</p>
-<span class="cds--tag cds--tag--sm" id="integracao-google-status">Verificando…</span>
+<span class="cds--tag cds--tag--sm" id="integracao-google-status">Acesso necessário</span>
 </div>
 
 <div class="cds--tile">
 <div class="integracao-icone"><img src="/static/icons/asaas.png" alt="" width="40" height="40"></div>
 <h3>Asaas</h3>
 <p>Cobranças e boletos. Veja em Financeiro &gt; Pagamentos.</p>
-<span class="cds--tag cds--tag--sm" id="integracao-asaas-status">Verificando…</span>
+<span class="cds--tag cds--tag--sm" id="integracao-asaas-status">Acesso necessário</span>
 </div>
 
 <div class="cds--tile">
@@ -1455,6 +1479,15 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 
 </section>
 
+<section id="aba-atividades" role="tabpanel" aria-labelledby="aba-atividades-botao" hidden>
+<div class="secao-cabecalho"><h2 class="lista-rapida-titulo">Atividades abertas</h2><button class="cds--btn cds--btn--tertiary cds--btn--sm" type="button" id="atividades-atualizar">Atualizar atividades</button></div>
+<p class="campo-ajuda">Atividades pendentes de todos os processos. O responsável abaixo é o responsável pelo processo; não representa delegação da atividade. As datas são as cadastradas, sem cálculo de prazo.</p>
+<div class="contatos-barra">
+<div class="cds--form-item"><label class="cds--label" for="atividades-responsavel">Responsável pelo processo</label><select class="cds--select-input" id="atividades-responsavel"><option value="">Todos</option></select></div>
+<div class="cds--form-item"><label class="cds--label" for="atividades-tipo">Tipo</label><select class="cds--select-input" id="atividades-tipo"><option value="">Todos</option><option value="tarefa">Tarefa</option><option value="prazo">Prazo</option><option value="audiencia">Audiência</option><option value="reuniao">Reunião</option><option value="outro">Outro</option></select></div>
+</div><div id="atividades-status" aria-live="polite"></div><div id="atividades-lista"></div>
+</section>
+
 <section id="aba-casos" role="tabpanel" aria-labelledby="aba-casos-botao" hidden>
 
 <div id="caso-vista-lista">
@@ -1471,9 +1504,9 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="cds--form-item contatos-busca-campo" style="margin:0;max-width:360px">
 <input class="cds--text-input" type="search" id="casos-busca" placeholder="Filtrar por título, cliente, ação, processo…" aria-label="Buscar processos" autocomplete="off">
 </div>
-<div class="cds--content-switcher cds--content-switcher--light" id="casos-vista-switcher" role="tablist" aria-label="Visualização da lista de processos">
-<button class="cds--content-switcher-btn cds--content-switcher--selected" type="button" id="casos-vista-tabela-botao" role="tab" aria-selected="true"><span class="cds--content-switcher__label">Tabela</span></button>
-<button class="cds--content-switcher-btn" type="button" id="casos-vista-cards-botao" role="tab" aria-selected="false"><span class="cds--content-switcher__label">Cards</span></button>
+<div class="cds--content-switcher cds--content-switcher--light" id="casos-vista-switcher" role="group" aria-label="Visualização da lista de processos">
+<button class="cds--content-switcher-btn cds--content-switcher--selected" type="button" id="casos-vista-tabela-botao" aria-pressed="true"><span class="cds--content-switcher__label">Tabela</span></button>
+<button class="cds--content-switcher-btn" type="button" id="casos-vista-cards-botao" aria-pressed="false"><span class="cds--content-switcher__label">Cards</span></button>
 </div>
 </div>
 <div id="lista-casos" class="app-resultado"></div>
@@ -1514,6 +1547,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <h3 class="lista-rapida-titulo">Atividades</h3>
 <button class="cds--btn cds--btn--primary cds--btn--sm" type="button" id="btn-nova-atividade">Nova atividade</button>
 </div>
+<div id="atividade-origem" aria-live="polite"></div>
 <div id="lista-atividades" class="app-resultado"></div>
 </section>
 
@@ -1571,6 +1605,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </section>
 
 <section id="aba-publicacoes-oab" role="tabpanel" aria-labelledby="aba-publicacoes-oab-botao" hidden>
+<h2 class="lista-rapida-titulo">Publicações monitoradas</h2>
 <div class="cds--accordion pub-oab-ajuda">
 <details class="cds--accordion__item">
 <summary class="cds--accordion__heading"><svg class="cds--accordion__arrow" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 11 3 6l.7-.7L8 9.6l4.3-4.3.7.7z"></path></svg><span class="cds--accordion__title">Como funciona a captura</span></summary>
@@ -1750,6 +1785,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 <div class="fluxo-pagina-content">
 <form id="form-atividade">
+<p id="atividade-publicacao-origem" class="campo-ajuda"></p>
 <input type="hidden" id="atividade-id">
 <div class="cds--form-item">
 <label class="cds--label" for="atividade-tipo">Tipo</label>

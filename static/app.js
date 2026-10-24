@@ -276,6 +276,15 @@ function notificacao(tipo, titulo, subtitulo) {
 function mostrarErro(container, mensagem) {
   limpar(container);
   container.appendChild(notificacao("error", "Não foi possível concluir", mensagem));
+  const recuperar = {
+    "lista-contatos": carregarContatos,
+    "lista-casos": carregarCasosPagina,
+    "lista-lancamentos": carregarLancamentos,
+    "lista-pagamentos": carregarPagamentos,
+    "lista-publicacoes-oab": carregarPublicacoesOab,
+    "resultado-monitoramentos": carregarMonitoramentos,
+  }[container.id];
+  if (recuperar) container.appendChild(el("button", { type: "button", class: "cds--btn cds--btn--tertiary cds--btn--sm", texto: "Tentar novamente", onclick: recuperar }));
 }
 
 function mostrarSucesso(container, mensagem) {
@@ -302,7 +311,7 @@ function mostrarToast(tipo, titulo, mensagem, duracao = 5000) {
   fechar.addEventListener("click", () => ntf.remove());
   ntf.querySelector(".cds--inline-notification__details").after(fechar);
   container.appendChild(ntf);
-  setTimeout(() => { if (ntf.parentNode) ntf.remove(); }, duracao);
+  if (duracao > 0) setTimeout(() => { if (ntf.parentNode) ntf.remove(); }, duracao);
 }
 
 function mostrarEspera(container, botao, titulo) {
@@ -514,9 +523,11 @@ function _lerLista(chave) {
 function _salvarLista(chave, lista) {
   try {
     localStorage.setItem(chave, JSON.stringify(lista));
+    return true;
   } catch {
-    // localStorage indisponível (modo privado, cota esgotada etc.): a utilidade só deixa de
-    // persistir entre sessões, o restante do painel continua funcionando.
+    mostrarToast("warning", "Não foi possível guardar neste navegador",
+      "O histórico ou favorito não foi alterado. Libere o armazenamento do navegador e tente novamente.", 0);
+    return false;
   }
 }
 
@@ -550,7 +561,7 @@ function alternarFavorito(tribunal, numero) {
   const index = lista.findIndex((f) => _chaveFavorito(f.tribunal, f.numero) === chave);
   if (index === -1) lista.unshift({ tribunal, numero });
   else lista.splice(index, 1);
-  _salvarLista(CHAVE_FAVORITOS, lista);
+  if (!_salvarLista(CHAVE_FAVORITOS, lista)) return index !== -1;
   renderizarListaRapida();
   return index === -1; // true = acabou de favoritar
 }
@@ -570,7 +581,7 @@ function alternarCasoFavorito(casoId) {
   const index = lista.indexOf(casoId);
   if (index === -1) lista.unshift(casoId);
   else lista.splice(index, 1);
-  _salvarLista(CHAVE_FAVORITOS_CASOS, lista);
+  if (!_salvarLista(CHAVE_FAVORITOS_CASOS, lista)) return index !== -1;
   return index === -1; // true = acabou de favoritar
 }
 
@@ -687,6 +698,7 @@ const abas = [
   { botao: document.getElementById("aba-jurimetria-botao"), painel: document.getElementById("aba-jurimetria") },
   { botao: document.getElementById("aba-contatos-botao"), painel: document.getElementById("aba-contatos") },
   { botao: document.getElementById("aba-casos-botao"), painel: document.getElementById("aba-casos") },
+  { botao: document.getElementById("aba-atividades-botao"), painel: document.getElementById("aba-atividades") },
   { botao: document.getElementById("aba-publicacoes-oab-botao"), painel: document.getElementById("aba-publicacoes-oab") },
   { botao: document.getElementById("aba-integracoes-botao"), painel: document.getElementById("aba-integracoes") },
   { botao: document.getElementById("aba-financeiro-botao"), painel: document.getElementById("aba-financeiro") },
@@ -709,11 +721,16 @@ async function selecionarAba(alvo, { registrarHistorico = true } = {}) {
   // Expande o grupo do item ativo caso esteja colapsado
   const submenu = alvo.botao.closest(".cds--side-nav__item")?.querySelector(".cds--side-nav__submenu");
   if (submenu) submenu.setAttribute("aria-expanded", "true");
-  alvo.botao.focus();
+  if (_mqMobile.matches) {
+    _sideNavFechar();
+    alvo.painel.tabIndex = -1;
+    alvo.painel.focus();
+  } else alvo.botao.focus();
   if (alvo.painel.id === "aba-historico") { renderizarListaRapida(); renderizarCasosFavoritos(); }
   if (alvo.painel.id === "aba-monitoramentos") carregarMonitoramentos();
   if (alvo.painel.id === "aba-contatos") { voltarParaContatos(); carregarContatos(); }
   if (alvo.painel.id === "aba-casos") carregarCasosPagina();
+  if (alvo.painel.id === "aba-atividades") carregarAtividadesAbertas();
   if (alvo.painel.id === "aba-publicacoes-oab") carregarPublicacoesOab();
   if (alvo.painel.id === "aba-integracoes") carregarStatusIntegracoes();
   if (alvo.painel.id === "aba-financeiro") carregarLancamentos();
@@ -1721,7 +1738,13 @@ async function carregarMonitoramentos() {
 async function carregarStatusIntegracoes() {
   const seloGoogle = document.getElementById("integracao-google-status");
   const seloAsaas = document.getElementById("integracao-asaas-status");
-  if (!cliente) return;
+  const resultado = document.getElementById("integracoes-resultado");
+  limpar(resultado);
+  if (!cliente) {
+    for (const selo of [seloGoogle, seloAsaas]) selo.textContent = "Acesso necessário";
+    mostrarAviso(resultado, "Conecte-se na aba Acesso para verificar a configuração dos serviços.");
+    return;
+  }
   for (const selo of [seloGoogle, seloAsaas]) {
     if (!selo) continue;
     selo.textContent = "Verificando…";
@@ -1729,25 +1752,35 @@ async function carregarStatusIntegracoes() {
   }
   try {
     const resposta = await fetch("/integracoes/status", { headers: { Authorization: `Bearer ${cliente.token}` } });
+    if (!resposta.ok) throw new ErroMCP(resposta.status, resposta.status === 401
+      ? "Acesso expirado. Conecte-se novamente na aba Acesso."
+      : `Falha ao verificar os serviços (HTTP ${resposta.status}). Tente novamente.`);
     const dados = await resposta.json();
+    if (typeof dados.google !== "boolean" || typeof dados.asaas !== "boolean") throw new Error("Resposta de configuração inválida. Tente novamente.");
     for (const [selo, conectado] of [[seloGoogle, dados.google], [seloAsaas, dados.asaas]]) {
       if (!selo) continue;
       if (conectado) {
-        selo.textContent = "Conectado";
+        selo.textContent = "Configurado";
         selo.className = "cds--tag cds--tag--green cds--tag--sm";
       } else {
         selo.textContent = "Não configurado";
         selo.className = "cds--tag cds--tag--gray cds--tag--sm";
       }
     }
-  } catch {
+  } catch (erro) {
+    mostrarErro(resultado, erro instanceof SyntaxError
+      ? "O servidor retornou uma resposta inválida. Tente novamente."
+      : erro instanceof TypeError ? "Não foi possível conectar. Confira sua conexão e tente novamente."
+      : erro.message || "Não foi possível verificar. Confira sua conexão e tente novamente.");
     for (const selo of [seloGoogle, seloAsaas]) {
       if (!selo) continue;
-      selo.textContent = "Não foi possível verificar";
+      selo.textContent = erro.status === 401 ? "Acesso necessário" : "Falha na verificação";
       selo.className = "cds--tag cds--tag--gray cds--tag--sm";
     }
   }
 }
+
+document.getElementById("integracoes-atualizar").addEventListener("click", carregarStatusIntegracoes);
 
 // --- Jurimetria: seletores de árvore (Vara/Classe/Assunto) e autocomplete (Magistrado) --------
 //
@@ -2224,12 +2257,15 @@ document.addEventListener("click", (ev) => {
   if (!ev.target.closest(".pub-oab-combo")) _fecharTodosComboMenusOab();
 });
 document.addEventListener("keydown", (ev) => {
-  if (ev.key === "Escape") {
+  if (ev.key === "Escape" && !ev.defaultPrevented) {
+    const destino = !_painelBusca.hidden ? _btnBuscaToggle : !_painelNotificacoes.hidden ? _btnNotificacoesToggle : null;
+
     _fecharTodosComboMenusOab(true);
     // Painéis do header (notificações e busca). As funções são declaradas no fim do arquivo
     // (function declarations são hoisted, então já existem quando este listener dispara).
     _fecharPainelNotificacoes();
     _fecharPainelBusca();
+    destino?.focus();
   }
 });
 
@@ -3173,6 +3209,7 @@ async function carregarCasosPagina() {
   const listaCasosEl = document.getElementById("lista-casos");
   if (!exigirCliente(listaCasosEl)) return;
   limpar(listaCasosEl);
+  listaCasosEl.appendChild(el("p", { class: "app-espera", role: "status", texto: "Carregando processos…" }));
   carregarPendentes();
   try {
     const [{ clientes }, { casos }] = await Promise.all([_buscarJson("/clientes"), _buscarJson("/casos")]);
@@ -3291,6 +3328,31 @@ const _TIPOS_TELEFONE = [["", "Tipo"], ["celular", "Celular"], ["residencial", "
 const _TIPOS_EMAIL = [["", "Tipo"], ["pessoal", "Pessoal"], ["comercial", "Comercial"], ["outro", "Outro"]];
 const _TIPOS_ENDERECO = [["", "Tipo"], ["residencial", "Residencial"], ["comercial", "Comercial"], ["cobranca", "Cobrança"], ["outro", "Outro"]];
 
+let _sequenciaCampoRepetivel = 0;
+function identificarGrupoRepetivel(grupo, nome, rotulos) {
+  const identificador = ++_sequenciaCampoRepetivel;
+  grupo.setAttribute("role", "group");
+  const titulo = el("p", { id: `grupo-repetivel-${identificador}`, class: "campo-ajuda grupo-repetivel-titulo", texto: nome });
+  grupo.prepend(titulo);
+  grupo.setAttribute("aria-labelledby", titulo.id);
+  [...grupo.querySelectorAll("input, select")].forEach((campo, i) => {
+    campo.id = `campo-repetivel-${identificador}-${i}`;
+    const item = el("div", { class: "cds--form-item campo-repetivel" });
+    campo.before(item);
+    item.append(el("label", { class: "cds--label", for: campo.id, texto: rotulos[i] }), campo);
+  });
+  const remover = grupo.querySelector("button");
+  if (remover) remover.setAttribute("aria-label", `Remover ${nome.toLowerCase()}`);
+  queueMicrotask(() => {
+    [...(grupo.parentElement?.children || [])].forEach((item, i) => {
+      const tituloItem = item.querySelector(".grupo-repetivel-titulo");
+      if (!tituloItem) return;
+      tituloItem.textContent = `${nome.replace(/ \d+$/, "")} ${i + 1}`;
+      item.querySelector("button")?.setAttribute("aria-label", `Remover ${tituloItem.textContent.toLowerCase()}`);
+    });
+  });
+}
+
 // Grupo repetível de telefones: tipo + telefone + operadora + remover.
 function _criarGrupoTelefones(prefixo) {
   const lista = document.getElementById(`${prefixo}-telefones-lista`);
@@ -3308,6 +3370,7 @@ function _criarGrupoTelefones(prefixo) {
     linha.appendChild(inputTelefone);
     linha.appendChild(inputOperadora);
     linha.appendChild(_criarBotaoRemoverLinha(() => { linha.remove(); if (!lista.children.length) adicionarLinha(); }));
+    identificarGrupoRepetivel(linha, `Telefone ${lista.children.length + 1}`, ["Tipo", "Telefone", "Operadora"]);
     lista.appendChild(linha);
   }
 
@@ -3341,6 +3404,7 @@ function _criarGrupoEmails(prefixo) {
     linha.appendChild(selectTipo);
     linha.appendChild(inputEmail);
     linha.appendChild(_criarBotaoRemoverLinha(() => { linha.remove(); if (!lista.children.length) adicionarLinha(); }));
+    identificarGrupoRepetivel(linha, `E-mail ${lista.children.length + 1}`, ["Tipo", "E-mail"]);
     lista.appendChild(linha);
   }
 
@@ -3372,6 +3436,7 @@ function _criarGrupoSites(prefixo) {
     inputSite.value = valor.site || "";
     linha.appendChild(inputSite);
     linha.appendChild(_criarBotaoRemoverLinha(() => { linha.remove(); if (!lista.children.length) adicionarLinha(); }));
+    identificarGrupoRepetivel(linha, `Site ${lista.children.length + 1}`, ["Site"]);
     lista.appendChild(linha);
   }
 
@@ -3491,6 +3556,8 @@ function _criarGrupoEnderecos(prefixo) {
     card.appendChild(topo);
     card.appendChild(grade);
     card.appendChild(statusCep);
+    statusCep.setAttribute("role", "status");
+    identificarGrupoRepetivel(card, `Endereço ${lista.children.length + 1}`, ["Tipo", "CEP", "Rua", "Número", "Bairro", "Complemento", "Cidade", "Estado", "País"]);
     lista.appendChild(card);
   }
 
@@ -4437,6 +4504,16 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
       if (await selecionarAba(abas.find((a) => a.painel.id === "aba-casos"))) await abrirCaso(p.caso_id);
     });
     menu.appendChild(abrir);
+    const atividade = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1" }, [el("div", { class: "cds--menu-item__label", texto: "Criar atividade" })]);
+    atividade.addEventListener("click", async () => {
+      _fecharTodosComboMenusOab(true);
+      if (!(await selecionarAba(abas.find((a) => a.painel.id === "aba-casos")))) return;
+      if (!(await abrirCaso(p.caso_id))) return;
+      _selecionarSubabaCaso("atividades");
+      _abrirModalAtividade(p.caso_id, null, p.hash);
+    });
+    menu.appendChild(atividade);
+
   }
 
   // Vincular a caso existente: abre mini-form inline logo abaixo da linha.
@@ -4589,6 +4666,7 @@ function criarTabelaPublicacoesOab(tabela, quantidade, colunas) {
     _sincronizarSelecaoPubOab();
     tabela.querySelector("input[data-publicacoes-todas]")?.focus();
   });
+
   const lote = el("div", { id: "pub-oab-batch", class: "cds--batch-actions pub-oab-batch", role: "region", "aria-label": "Ações Das Publicações Selecionadas" }, [
     el("span", { id: "pub-oab-selecionadas", role: "status", "aria-live": "polite" }),
     criarAcaoLote("pub-oab-marcar-tratada", "Marcar Como Tratada", "tratada"),
@@ -4796,7 +4874,8 @@ function _selecionarSubabaCaso(nome) {
 }
 
 async function abrirCaso(casoId) {
-  if (!(await permitirSaidaEdicao())) return;
+  if (!(await permitirSaidaEdicao())) return false;
+  limpar(document.getElementById("atividade-origem"));
   document.getElementById("caso-vista-lista").hidden = true;
   document.getElementById("caso-vista-detalhe").hidden = false;
   _selecionarSubabaCaso("cadastro");
@@ -4825,9 +4904,11 @@ async function abrirCaso(casoId) {
     limpar(document.getElementById("lista-movimentacoes"));
     await _carregarCapaProcessos(casoId);
     await _carregarAtividades(casoId);
+    return true;
   } catch (erro) {
     document.getElementById("caso-detalhe-titulo").textContent = "Erro ao carregar";
     mostrarErro(document.getElementById("resultado-caso-editar"), erro.message);
+    return false;
   }
 }
 
@@ -4876,6 +4957,8 @@ function _renderizarAtividades(casoId, atividades) {
     if (atv.hora) partesMeta.push(atv.hora);
     corpo.appendChild(el("p", { class: "atividade-meta", texto: partesMeta.join(" · ") }));
     if (atv.observacoes) corpo.appendChild(el("p", { class: "atividade-meta", texto: atv.observacoes }));
+    const origem = origemPublicacaoAtividade(atv.observacoes);
+    if (origem) corpo.appendChild(el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Ver publicação de origem", onclick: () => mostrarOrigemAtividade(casoId, origem) }));
     item.appendChild(corpo);
 
     const acoes = el("div", { class: "atividade-acoes" });
@@ -4898,7 +4981,30 @@ function _renderizarAtividades(casoId, atividades) {
   }
 }
 
-function _abrirModalAtividade(casoId, atividade = null) {
+const _MARCADOR_ORIGEM_ATIVIDADE = /^Publicação de origem \(DJEN\): (.+)$/m;
+function origemPublicacaoAtividade(observacoes) {
+  return String(observacoes || "").match(_MARCADOR_ORIGEM_ATIVIDADE)?.[1] || "";
+}
+async function mostrarOrigemAtividade(casoId, hash) {
+  const destino = document.getElementById("atividade-origem");
+  limpar(destino);
+  destino.appendChild(el("p", { role: "status", texto: "Carregando publicação de origem…" }));
+  try {
+    const { publicacoes } = await _buscarJson(`/casos/${casoId}/publicacoes`);
+    const origem = (publicacoes || []).find((p) => p.hash === hash);
+    limpar(destino);
+    if (!origem) destino.appendChild(notificacao("warning", "Publicação de origem indisponível", `Referência DJEN: ${hash}. Ela pode ter sido desvinculada deste processo.`));
+    else destino.appendChild(_publicacaoCompletaPubOab(origem, "publicacao-origem-atividade"));
+  } catch (erro) {
+    mostrarErro(destino, erro.message);
+    destino.appendChild(el("button", { type: "button", class: "cds--btn cds--btn--tertiary cds--btn--sm", texto: "Tentar novamente", onclick: () => mostrarOrigemAtividade(casoId, hash) }));
+  }
+  destino.tabIndex = -1;
+  destino.focus();
+}
+
+function _abrirModalAtividade(casoId, atividade = null, publicacaoHash = "") {
+  document.getElementById("form-atividade").dataset.publicacaoHash = publicacaoHash || origemPublicacaoAtividade(atividade?.observacoes);
   document.getElementById("atividade-id").value = atividade ? atividade.id : "";
   document.getElementById("atividade-tipo").value = atividade ? atividade.tipo : "tarefa";
   document.getElementById("atividade-titulo").value = atividade ? atividade.titulo : "";
@@ -4908,7 +5014,10 @@ function _abrirModalAtividade(casoId, atividade = null) {
     document.getElementById("atividade-data").value = atividade ? (atividade.data || "") : "";
   }
   document.getElementById("atividade-hora").value = atividade ? (atividade.hora || "") : "";
-  document.getElementById("atividade-observacoes").value = atividade ? (atividade.observacoes || "") : "";
+  document.getElementById("atividade-observacoes").value = String(atividade?.observacoes || "").replace(_MARCADOR_ORIGEM_ATIVIDADE, "").trim();
+  const origem = document.getElementById("atividade-publicacao-origem");
+  origem.textContent = document.getElementById("form-atividade").dataset.publicacaoHash
+    ? `Origem: publicação DJEN ${document.getElementById("form-atividade").dataset.publicacaoHash}. Criar a atividade não altera o status da publicação.` : "";
   document.getElementById("modal-atividade-titulo").textContent = atividade ? "Editar atividade" : "Nova atividade";
   document.getElementById("form-atividade").dataset.casoId = casoId;
   limpar(document.getElementById("resultado-atividade"));
@@ -5464,6 +5573,8 @@ registrarSalvamento(document.getElementById("form-atividade"), async (evento) =>
     hora: document.getElementById("atividade-hora").value || null,
     observacoes: document.getElementById("atividade-observacoes").value.trim() || null,
   };
+  const origem = evento.target.dataset.publicacaoHash;
+  if (origem) corpo.observacoes = [corpo.observacoes, `Publicação de origem (DJEN): ${origem.replace(/[\r\n]/g, "")}`].filter(Boolean).join("\n");
   if (!corpo.titulo) { mostrarErro(resultado, "Informe o título."); return; }
   const pararEspera = mostrarEspera(resultado, botao, "Salvando");
   try {
@@ -5475,6 +5586,8 @@ registrarSalvamento(document.getElementById("form-atividade"), async (evento) =>
     marcarFormularioSalvo(document.getElementById("form-atividade"));
     fecharModal("modal-atividade");
     await _carregarAtividades(casoId);
+    _selecionarSubabaCaso("atividades");
+    mostrarToast("success", "Atividade salva", origem ? "A publicação mantém o status anterior. Use Ver publicação de origem para conferir a referência." : "");
   } catch (erro) {
     mostrarErro(resultado, erro.message);
   } finally {
@@ -5580,17 +5693,112 @@ registrarSalvamento(document.getElementById("form-honorario"), async (evento) =>
     _visualizacaoCasos = visualizacao;
     for (const outro of switcher.querySelectorAll("button")) {
       outro.classList.remove("cds--content-switcher--selected");
-      outro.setAttribute("aria-selected", "false");
+      outro.setAttribute("aria-pressed", "false");
     }
     const ativo = visualizacao === "cards" ? botaoCards : botaoTabela;
     ativo.classList.add("cds--content-switcher--selected");
-    ativo.setAttribute("aria-selected", "true");
+    ativo.setAttribute("aria-pressed", "true");
     _renderizarTabelaCasosPagina();
   }
 
   botaoTabela.addEventListener("click", () => selecionar("tabela"));
   botaoCards.addEventListener("click", () => selecionar("cards"));
+  switcher.addEventListener("keydown", (ev) => {
+    const botoes = [botaoTabela, botaoCards];
+    let alvo;
+    if (ev.key === "ArrowRight" || ev.key === "ArrowLeft") alvo = botoes[1 - botoes.indexOf(document.activeElement)];
+    else if (ev.key === "Home") alvo = botaoTabela;
+    else if (ev.key === "End") alvo = botaoCards;
+    if (alvo) { ev.preventDefault(); alvo.click(); alvo.focus(); }
+  });
 })();
+
+// Revisão transversal usando as mesmas permissões e endpoints do detalhe.
+let _atividadesAbertas = [];
+let _geracaoAtividades = 0;
+async function carregarAtividadesAbertas() {
+  const lista = document.getElementById("atividades-lista");
+  const status = document.getElementById("atividades-status");
+  const geracao = ++_geracaoAtividades;
+  _atividadesAbertas = [];
+  limpar(lista); limpar(status);
+  if (!exigirCliente(status)) return;
+  const atualizar = document.getElementById("atividades-atualizar");
+  atualizar.disabled = true;
+  status.appendChild(el("p", { role: "status", texto: "Carregando atividades dos processos…" }));
+  try {
+    const { casos } = await _buscarJson("/casos");
+    if (!Array.isArray(casos)) throw new Error("Resposta de processos inválida.");
+    const resultados = [];
+    const falhas = [];
+    let indice = 0;
+    // Limita concorrência para não disparar uma requisição por processo de uma vez.
+    await Promise.all(Array.from({ length: Math.min(4, casos.length) }, async () => {
+      while (indice < casos.length && geracao === _geracaoAtividades) {
+        const caso = casos[indice++];
+        try {
+          const dados = await _buscarJson(`/casos/${caso.id}/atividades`);
+          if (!Array.isArray(dados.atividades)) throw new Error("Resposta de atividades inválida.");
+          resultados.push(...dados.atividades.filter((a) => a.status !== "concluida").map((atividade) => ({ caso, atividade })));
+        } catch { falhas.push(caso.titulo || "Processo sem título"); }
+      }
+    }));
+    if (geracao !== _geracaoAtividades) return;
+    _atividadesAbertas = resultados;
+    const responsavel = document.getElementById("atividades-responsavel");
+    const anterior = responsavel.value;
+    limpar(responsavel);
+    responsavel.appendChild(el("option", { value: "", texto: "Todos" }));
+    for (const nome of [...new Set(casos.map((c) => c.responsavel || "Sem responsável"))].sort()) responsavel.appendChild(el("option", { value: nome, texto: nome }));
+    if ([...responsavel.options].some((o) => o.value === anterior)) responsavel.value = anterior;
+    limpar(status);
+    if (falhas.length) {
+      status.appendChild(notificacao("warning", "Lista incompleta", `Não foi possível carregar ${falhas.length} processo(s): ${falhas.join(", ")}. Use Atualizar atividades para tentar novamente.`));
+    } else status.appendChild(el("p", { class: "campo-ajuda", role: "status", texto: `Revisados ${casos.length} processos. Atualizado às ${new Date().toLocaleTimeString("pt-BR")}.` }));
+    renderizarAtividadesAbertas();
+  } catch (erro) {
+    if (geracao === _geracaoAtividades) mostrarErro(status, `${erro.message} Use Atualizar atividades para tentar novamente.`);
+  } finally {
+    if (geracao === _geracaoAtividades) atualizar.disabled = false;
+  }
+}
+function renderizarAtividadesAbertas() {
+  const lista = document.getElementById("atividades-lista");
+  limpar(lista);
+  const responsavel = document.getElementById("atividades-responsavel").value;
+  const tipo = document.getElementById("atividades-tipo").value;
+  const itens = _atividadesAbertas.filter(({ caso, atividade }) => (!responsavel || (caso.responsavel || "Sem responsável") === responsavel) && (!tipo || atividade.tipo === tipo));
+  if (!itens.length) {
+    lista.appendChild(notificacao("info", "Nenhuma atividade aberta nos processos carregados com estes filtros"));
+    return;
+  }
+  for (const { caso, atividade } of itens) {
+    const item = el("article", { class: "atividade-item" });
+    const corpo = el("div", { class: "atividade-corpo" }, [
+      el("h3", { class: "atividade-titulo", texto: atividade.titulo }),
+      el("p", { class: "atividade-meta", texto: `${caso.titulo || "Processo sem título"} · Responsável pelo processo: ${caso.responsavel || "Não definido"}` }),
+      el("p", { class: "atividade-meta", texto: `${_ROTULO_TIPO_ATIVIDADE[atividade.tipo] || atividade.tipo} · ${atividade.data ? formatarDataSimples(atividade.data) : "Sem data"}${atividade.hora ? " · " + atividade.hora : ""}` }),
+    ]);
+    const abrir = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Abrir processo", onclick: async () => {
+      if (!(await selecionarAba(abas.find((a) => a.painel.id === "aba-casos")))) return;
+      if (await abrirCaso(caso.id)) _selecionarSubabaCaso("atividades");
+    } });
+    const concluir = el("button", { type: "button", class: "cds--btn cds--btn--tertiary cds--btn--sm", texto: "Concluir atividade", "aria-label": `Concluir atividade: ${atividade.titulo}`, onclick: async () => {
+      concluir.disabled = true;
+      try {
+        await _enviarJson(`/casos/${caso.id}/atividades/${atividade.id}`, { status: "concluida" }, "PATCH");
+        _atividadesAbertas = _atividadesAbertas.filter((a) => !(a.caso.id === caso.id && a.atividade.id === atividade.id));
+        renderizarAtividadesAbertas();
+        document.getElementById("atividades-atualizar").focus();
+        mostrarToast("success", "Atividade concluída", atividade.titulo);
+      } catch (erro) { mostrarToast("error", "Não foi possível concluir a atividade", erro.message); concluir.disabled = false; }
+    } });
+    item.append(corpo, el("div", { class: "atividade-acoes" }, [abrir, concluir]));
+    lista.appendChild(item);
+  }
+}
+document.getElementById("atividades-atualizar").addEventListener("click", carregarAtividadesAbertas);
+for (const id of ["atividades-responsavel", "atividades-tipo"]) document.getElementById(id).addEventListener("change", renderizarAtividadesAbertas);
 
 // --- Header: hambúrguer / side-nav rail ----------------------------------------------------
 const _mqMobile = window.matchMedia("(max-width: 768px)");
@@ -5624,6 +5832,11 @@ _btnMenuToggle.addEventListener("click", () => {
   }
 });
 _sideNavOverlay.addEventListener("click", _sideNavFechar);
+_sideNav.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && _mqMobile.matches) {
+    ev.preventDefault(); _sideNavFechar(); _btnMenuToggle.focus();
+  }
+});
 _mqMobile.addEventListener("change", _sideNavInicializar);
 _sideNavInicializar();
 
@@ -5660,15 +5873,42 @@ _btnNotificacoesToggle.addEventListener("click", () => {
   }
 });
 document.addEventListener("click", (ev) => {
-  if (!_painelNotificacoes.hidden && !ev.target.closest("#header-notificacoes-painel") && !ev.target.closest("#btn-notificacoes-toggle")) {
+  const caminho = ev.composedPath();
+  if (!_painelNotificacoes.hidden && !caminho.includes(_painelNotificacoes) && !caminho.includes(_btnNotificacoesToggle)) {
     _fecharPainelNotificacoes();
   }
-  if (!_painelBusca.hidden && !ev.target.closest("#header-busca-painel") && !ev.target.closest("#btn-busca-toggle")) {
+  if (!_painelBusca.hidden && !caminho.includes(_painelBusca) && !caminho.includes(_btnBuscaToggle)) {
     _fecharPainelBusca();
   }
 });
 
 // --- Header: busca global (cliente, processo, número de processo) ------------------------------
+let _consultaGlobalCarregando = false;
+let _consultaGlobalFalhas = [];
+let _consultaGlobalGeracao = 0;
+async function carregarConsultaGlobal() {
+  const geracao = ++_consultaGlobalGeracao;
+  _consultaGlobalCarregando = true;
+  _consultaGlobalFalhas = [];
+  atualizarConsultaGlobal();
+  const fontes = [["clientes", "/clientes", "Clientes"], ["casos", "/casos", "Processos"]];
+  const respostas = await Promise.allSettled(fontes.map(async ([chave, url]) => {
+    const dados = await _buscarJson(url);
+    if (!Array.isArray(dados[chave])) throw new Error("Resposta inválida");
+    return dados[chave];
+  }));
+  if (geracao !== _consultaGlobalGeracao) return;
+  respostas.forEach((resposta, i) => {
+    const [chave, , nome] = fontes[i];
+    if (resposta.status === "fulfilled") _cache[chave] = resposta.value;
+    else { _cache[chave] = []; _consultaGlobalFalhas.push(nome); }
+  });
+  _consultaGlobalCarregando = false;
+  atualizarConsultaGlobal();
+}
+function atualizarConsultaGlobal() {
+  _renderizarResultadosBusca(_buscaGlobalResultados(_inputBusca.value));
+}
 _btnBuscaToggle.addEventListener("click", async () => {
   const abrindo = _painelBusca.hidden;
   _fecharPainelNotificacoes();
@@ -5676,14 +5916,7 @@ _btnBuscaToggle.addEventListener("click", async () => {
   _painelBusca.hidden = false;
   _btnBuscaToggle.setAttribute("aria-expanded", "true");
   _inputBusca.focus();
-  if (!_cache.clientes.length || !_cache.casos.length) {
-    limpar(document.getElementById("header-busca-resultados"));
-    try {
-      const [{ clientes }, { casos }] = await Promise.all([_buscarJson("/clientes"), _buscarJson("/casos")]);
-      _cache.clientes = clientes || [];
-      _cache.casos = casos || [];
-    } catch (_) { /* busca fica limitada ao que já estava em cache */ }
-  }
+  await carregarConsultaGlobal();
 });
 
 function _buscaGlobalResultados(termo) {
@@ -5703,17 +5936,30 @@ function _buscaGlobalResultados(termo) {
       resultados.push({ tipo: "caso", id: c.id, rotulo: c.titulo || "(sem título)", sub: processoBate ? "Processo · " + (c.processos || []).find((p) => p.replace(/\D/g, "").includes(tDigitos)) : "Processo" });
     }
   }
-  return resultados.slice(0, 20);
+  return resultados;
 }
 
 function _renderizarResultadosBusca(resultados) {
   const container = document.getElementById("header-busca-resultados");
   limpar(container);
-  if (!resultados.length) {
-    container.appendChild(el("p", { class: "campo-ajuda", texto: "Nenhum resultado." }));
+  if (_consultaGlobalCarregando) {
+    container.appendChild(el("p", { class: "campo-ajuda", role: "status", texto: "Carregando clientes e processos…" }));
     return;
   }
-  for (const r of resultados) {
+  if (_consultaGlobalFalhas.length) {
+    container.appendChild(notificacao("warning", "Consulta incompleta", `Não foi possível carregar: ${_consultaGlobalFalhas.join(", ")}. Conecte-se na aba Acesso se necessário e tente novamente.`));
+    container.appendChild(el("button", { type: "button", class: "cds--btn cds--btn--tertiary cds--btn--sm", texto: "Tentar novamente", onclick: carregarConsultaGlobal }));
+  }
+  if (!_inputBusca.value.trim()) {
+    container.appendChild(el("p", { class: "campo-ajuda", texto: "Digite um nome, título ou número de processo." }));
+    return;
+  }
+  if (!resultados.length) {
+    container.appendChild(el("p", { class: "campo-ajuda", texto: _consultaGlobalFalhas.length ? "Nenhuma correspondência nas fontes disponíveis." : "Nenhum resultado." }));
+    return;
+  }
+  if (resultados.length > 20) container.appendChild(el("p", { class: "campo-ajuda", texto: `Mostrando 20 de ${resultados.length} resultados. Refine o termo para localizar o registro.` }));
+  for (const r of resultados.slice(0, 20)) {
     const botao = el("button", {
       class: "header-busca-resultado-item", type: "button",
       texto: `${r.rotulo} — ${r.sub}`,
