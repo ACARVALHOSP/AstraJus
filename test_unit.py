@@ -1447,6 +1447,8 @@ class PainelWebTest(_RegistroTemporario):
         self.assertIn(b"text/html", cab[b"content-type"])
         self.assertIn(b'src="/static/app.js"', corpo)
         self.assertIn(b'href="/static/carbon/styles.min.css"', corpo)
+        self.assertIn(b'src="/static/carbon/oab-components.min.js"', corpo)
+        self.assertLess(corpo.index(b'/static/carbon/oab-components.min.js'), corpo.index(b'/static/app.js'))
         self.assertIn(b'id="form-processo"', corpo)
         self.assertIn(b'id="form-publicacoes"', corpo)
 
@@ -1467,6 +1469,11 @@ class PainelWebTest(_RegistroTemporario):
         self.assertIn(b"consultar_processo_datajud", corpo)
         self.assertIn(b"consultar_publicacoes_djen", corpo)
         self.assertIn(b"baixar_certidao_djen", corpo)
+        status, bundle, cab = _chamar_asgi(self.mw, "GET", "/static/carbon/oab-components.min.js")
+        self.assertEqual(status, 200)
+        self.assertIn(b"javascript", cab[b"content-type"])
+        for componente in (b"cds-table", b"cds-toggletip", b"cds-tag", b"cds-icon-button"):
+            self.assertIn(componente, bundle)
 
     def test_script_do_painel_so_aceita_get(self):
         self.assertEqual(_chamar_asgi(self.mw, "POST", "/static/app.js", [], b"")[0], 401)
