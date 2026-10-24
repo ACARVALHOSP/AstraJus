@@ -228,6 +228,21 @@ class DataJudTest(_Simulado, unittest.TestCase):
 
 
 class DjenTest(_Simulado, unittest.TestCase):
+    def test_extracao_preserva_campos_adicionais_para_colunas(self):
+        bruto = {"id": 123, "meio": "D", "ativo": False,
+                 "destinatarios": [{"nome": "MARIA SILVA", "polo": "A", "id": 7}],
+                 "destinatarioadvogados": [{"id": 8, "advogado": {"nome": "JOÃO", "numero_oab": "123", "uf_oab": "SP", "id": 9}}],
+                 "texto": "<p>Texto original</p>"}
+        extraido = server._extrair_publicacao_djen(bruto)
+        self.assertEqual(extraido["id"], 123)
+        self.assertEqual(extraido["meio"], "D")
+        self.assertIs(extraido["ativo"], False)
+        self.assertEqual(extraido["destinatarios"][0]["id"], 7)
+        self.assertEqual(extraido["destinatarioadvogados"][0]["id"], 8)
+        self.assertEqual(extraido["destinatarioadvogados"][0]["advogado"]["id"], 9)
+        self.assertEqual(extraido["texto"], "Texto original")
+
+
     def consultar(self, **kwargs):
         return _rodar(server.consultar_publicacoes_djen(**kwargs))
 
@@ -1432,6 +1447,8 @@ class PainelWebTest(_RegistroTemporario):
         self.assertIn(b"text/html", cab[b"content-type"])
         self.assertIn(b'src="/static/app.js"', corpo)
         self.assertIn(b'href="/static/carbon/styles.min.css"', corpo)
+        self.assertIn(b'src="/static/carbon/oab-components.min.js"', corpo)
+        self.assertLess(corpo.index(b'/static/carbon/oab-components.min.js'), corpo.index(b'/static/app.js'))
         self.assertIn(b'id="form-processo"', corpo)
         self.assertIn(b'id="form-publicacoes"', corpo)
 
@@ -1452,6 +1469,11 @@ class PainelWebTest(_RegistroTemporario):
         self.assertIn(b"consultar_processo_datajud", corpo)
         self.assertIn(b"consultar_publicacoes_djen", corpo)
         self.assertIn(b"baixar_certidao_djen", corpo)
+        status, bundle, cab = _chamar_asgi(self.mw, "GET", "/static/carbon/oab-components.min.js")
+        self.assertEqual(status, 200)
+        self.assertIn(b"javascript", cab[b"content-type"])
+        for componente in (b"cds-table", b"cds-toggletip", b"cds-tag", b"cds-icon-button"):
+            self.assertIn(componente, bundle)
 
     def test_script_do_painel_so_aceita_get(self):
         self.assertEqual(_chamar_asgi(self.mw, "POST", "/static/app.js", [], b"")[0], 401)
@@ -2040,6 +2062,121 @@ class AsaasIntegracaoTest(unittest.TestCase):
                 return await asaas_integracao.listar_cobrancas(cliente, "https://api-sandbox.asaas.com/v3", "chave")
         with self.assertRaises(asaas_integracao.ErroAsaas):
             _rodar(ir())
+
+
+class PublicacaoCadastroInlineTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        caminho = Path(self.tmp.name) / "teste.db"
+        self.gestao = db.RegistroClientesCasos(caminho)
+        self.publicacoes = db.RegistroPublicacoesOAB(caminho)
+        self.agora = lambda: datetime(2026, 1, 1)
+        self.cliente = self.gestao.criar_cliente("Cliente Árvore", None, None, self.agora)
+        self.numero = "10063142720238260005"
+        self.dados = {"siglaTribunal": "tjsp", "nomeClasse": "Procedimento Comum", "nomeOrgao": "Vara Cível",
+            "destinatarios": [{"nome": "Maria Silva", "polo": "A"}, {"nome": "Banco Exemplo", "polo": "P"}],
+            "destinatarioadvogados": [{"nome": "Ana", "numero_oab": "123", "uf_oab": "SP"}], "texto": "Texto ORIGINAL"}
+        self.publicacoes.registrar("pub-inline", None, None, self.numero, self.dados, "nao_tratada", None, self.agora)
+
+    def test_paginacao_deterministica_catalogo_e_status_parcial(self):
+        for i in range(12):
+            self.publicacoes.registrar(f"pagina-{i:02}", None, None, self.numero,
+                {"campo_extra": i}, "nao_tratada", None, self.agora)
+        paginas = [self.publicacoes.listar(None, 5, offset) for offset in (0, 5, 10)]
+        hashes = [p["hash"] for pagina in paginas for p in pagina]
+        self.assertEqual(len(hashes), 13)
+        self.assertEqual(len(set(hashes)), 13)
+        self.assertEqual(hashes, sorted(hashes, reverse=True))
+        self.assertIn("campo_extra", self.publicacoes.campos_djen())
+        resultado = self.publicacoes.atualizar_status_detalhado(["pagina-01", "ausente", "pagina-01"], "tratada")
+        self.assertEqual(resultado, {"atualizadas": 1, "hashes_atualizados": ["pagina-01"], "hashes_falharam": ["ausente"]})
+        self.assertEqual(self.publicacoes.contar("tratada"), 1)
+
+    def test_endpoint_paginacao_valida_limites_e_ajusta_pagina_vazia(self):
+        mw = server._AutenticacaoBearer(None, None, gestao=self.gestao, publicacoes=self.publicacoes)
+        async def consultar(query):
+            respostas = []
+            async def send(mensagem):
+                respostas.append(mensagem)
+            await mw._publicacoes_oab({"method": "GET", "query_string": query.encode()}, send)
+            return respostas[0]["status"], json.loads(respostas[1]["body"])
+        for query in ("pagina=0", "tamanho=0", "tamanho=301", "pagina=abc"):
+            self.assertEqual(_rodar(consultar(query))[0], 400)
+        status, dados = _rodar(consultar("pagina=999&tamanho=5"))
+        self.assertEqual(status, 200)
+        self.assertEqual(dados["pagina"], 1)
+        self.assertEqual(dados["total"], 1)
+        self.assertIn("texto", dados["campos_djen"])
+        self.assertEqual(dados["hashes_disponiveis"], ["pub-inline"])
+
+    def test_cadastro_preenche_dados_capa_e_vincula_publicacao(self):
+        publicacao = self.publicacoes.obter("pub-inline")
+        caso, erro = server._criar_caso_de_publicacao(self.gestao, self.publicacoes, publicacao,
+            {"cliente_id": self.cliente["id"], "responsavel": "Ana"})
+        self.assertIsNone(erro)
+        self.assertEqual(caso["titulo"], "Maria Silva X Banco Exemplo")
+        self.assertEqual(caso["cliente_id"], self.cliente["id"])
+        self.assertEqual(caso["responsavel"], "Ana")
+        self.assertEqual(caso["autor"], "Maria Silva")
+        self.assertEqual(caso["reu"], "Banco Exemplo")
+        self.assertEqual(caso["acao"], "Procedimento Comum")
+        self.assertEqual(caso["foro"], "Vara Cível")
+        capa = self.gestao.obter_capa_processo(caso["id"], self.numero)
+        self.assertEqual(capa["tribunal"], "TJSP")
+        self.assertEqual(capa["partes"], self.dados["destinatarios"])
+        self.assertEqual(capa["advogados"], self.dados["destinatarioadvogados"])
+        self.assertIsNone(capa["data_distribuicao"])
+        pub = self.publicacoes.obter("pub-inline")
+        self.assertEqual(pub["caso_id"], caso["id"])
+        self.assertEqual(pub["status"], "tratada")
+        self.assertEqual(pub["dados"]["texto"], "Texto ORIGINAL")
+        for termo in ("1006314-27.2023.8.26.0005", "Maria", "Banco", "arvore"):
+            self.assertEqual(server._consultar_casos_para_vinculo(self.gestao, termo)[0]["id"], caso["id"])
+        self.assertEqual(server._consultar_casos_para_vinculo(self.gestao, "inexistente"), [])
+        self.gestao.salvar_capa_processo(caso["id"], self.numero, agora=self.agora,
+            partes=[{"nome": "Parte Só Na Capa", "polo": "P"}])
+        self.assertEqual(server._consultar_casos_para_vinculo(self.gestao, "so na capa")[0]["id"], caso["id"])
+
+    def test_endpoint_cadastro_normaliza_numero_com_mascara_antes_de_salvar_capa(self):
+        import io
+        from contextlib import redirect_stdout
+        registro = server.RegistroUsuarios(Path(self.tmp.name) / "usuarios.json")
+        saida = io.StringIO()
+        with redirect_stdout(saida):
+            self.assertEqual(server._criar_usuario(registro, "ana"), 0)
+        token = saida.getvalue().strip().splitlines()[-1]
+        numero_com_mascara = "1006314-27.2023.8.26.0005"
+        self.publicacoes.registrar("pub-mascarada", None, None, numero_com_mascara, self.dados,
+                                  "nao_tratada", None, self.agora)
+        mw = server._AutenticacaoBearer(None, registro, gestao=self.gestao, publicacoes=self.publicacoes)
+        status, corpo, _ = _chamar_asgi(mw, "POST", "/publicacoes-oab/pub-mascarada/criar-caso",
+            headers=[(b"authorization", ("Bearer " + token).encode())],
+            corpo=json.dumps({"cliente_id": self.cliente["id"], "responsavel": "ana"}).encode())
+        self.assertEqual(status, 201)
+        caso = json.loads(corpo)
+        self.assertEqual(caso["processos"], [self.numero])
+        self.assertEqual(len(self.gestao.listar_casos()), 1)
+        capa = self.gestao.obter_capa_processo(caso["id"], self.numero)
+        self.assertEqual(capa["nome_processo"], "Maria Silva X Banco Exemplo")
+        pub = self.publicacoes.obter("pub-mascarada")
+        self.assertEqual(pub["caso_id"], caso["id"])
+        self.assertEqual(pub["status"], "tratada")
+
+    def test_numero_invalido_nao_deixa_cadastro_parcial(self):
+        pub = {**self.publicacoes.obter("pub-inline"), "numero_processo": "123"}
+        caso, erro = server._criar_caso_de_publicacao(self.gestao, self.publicacoes, pub,
+            {"cliente_id": self.cliente["id"], "responsavel": "ana"})
+        self.assertIsNone(caso)
+        self.assertTrue(erro["erro"])
+        self.assertEqual(self.gestao.listar_casos(), [])
+
+    def test_cliente_inexistente_nao_cria_processo(self):
+        caso, erro = server._criar_caso_de_publicacao(self.gestao, self.publicacoes,
+            self.publicacoes.obter("pub-inline"), {"cliente_id": "inexistente", "responsavel": "Ana"})
+        self.assertIsNone(caso)
+        self.assertTrue(erro["erro"])
+        self.assertEqual(self.gestao.listar_casos(), [])
 
 
 class CapaProcessoTest(unittest.TestCase):

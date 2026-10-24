@@ -14,3 +14,15 @@ Bundle independente search-components.min.js; fonte search-components.entry.js.
 Build: npm install --prefix output/carbon-build --no-audit --no-fund @carbon/web-components@2.66.0 esbuild@0.25.12
 Depois: node static/carbon/build-search-components.cjs
 Licença: LICENSE-search-components.txt e search-components.min.js.LEGAL.txt.
+
+Web Components de Publicações OAB: @carbon/web-components 2.66.0.
+Bundle local oab-components.min.js: DataTable, Toggletip, Tag e IconButton.
+Fonte: https://github.com/carbon-design-system/carbon/tree/main/packages/web-components
+Licenças: LICENSE-web-components.txt e oab-components.min.js.LEGAL.txt.
+O bundle inclui estilos encapsulados dos componentes; o CSS Carbon existente continua
+atendendo o restante do painel. Não há dependência de CDN em execução.
+
+Para regenerar, na raiz do repositório:
+npm install --prefix output/carbon-build --no-audit --no-fund @carbon/web-components@2.66.0 esbuild@0.25.12
+node static/carbon/build-oab-components.cjs
+Os arquivos de trabalho em output/carbon-build não fazem parte da distribuição.

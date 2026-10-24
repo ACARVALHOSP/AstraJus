@@ -6,6 +6,7 @@
   const pares = new WeakMap();
   function preparar(input) {
     if (pares.has(input)) return;
+    const tinhaFoco = document.activeElement === input;
     const campo = document.createElement('cds-search');
     campo.className = 'app-search';
     campo.setAttribute('size', 'lg');
@@ -22,6 +23,7 @@
     input.before(campo);
     input.hidden = true;
     input.tabIndex = -1;
+    if (tinhaFoco) campo.updateComplete.then(() => campo.focus());
     input.setAttribute('aria-hidden', 'true');
     Object.defineProperty(input, 'value', {
       configurable: true,
