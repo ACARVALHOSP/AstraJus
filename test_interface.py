@@ -105,6 +105,394 @@ class InterfaceTest(unittest.TestCase):
     def choose(self, value):
         self.page.locator(f"#modal-edicao-pendente [data-escolha-edicao={value}]").click()
 
+    def open_publicacoes_oab(self):
+        self.pub_oab_gets = 0
+        self.pub_oab_posts = []
+        self.pub_oab_fail = False
+        self.pub_oab_items = [
+            {"hash": "pub-1", "numero_processo": "10006070420255020401", "status": "nao_tratada", "dados": {}},
+            {"hash": "pub-2", "numero_processo": "10006070420255020402", "status": "nao_tratada", "dados": {}},
+        ]
+        def responder(route):
+            from urllib.parse import urlparse, parse_qs
+            request = route.request
+            if request.method == "POST":
+                self.pub_oab_posts.append(request.post_data_json)
+                if self.pub_oab_fail:
+                    return route.fulfill(status=500, json={"mensagem": "Falha de teste"})
+                return route.fulfill(json={"atualizadas": len(request.post_data_json.get("hashes", [])), "hashes_atualizados": request.post_data_json.get("hashes", []), "hashes_falharam": []})
+            self.pub_oab_gets += 1
+            status = parse_qs(urlparse(request.url).query).get("status", [""])[0]
+            itens = [p for p in self.pub_oab_items if not status or p["status"] == status]
+            query = parse_qs(urlparse(request.url).query)
+            tamanho = int(query.get("tamanho", ["5"])[0])
+            pagina = min(int(query.get("pagina", ["1"])[0]), max(1, (len(itens) + tamanho - 1) // tamanho))
+            campos = sorted(set(k for p in self.pub_oab_items for k in p["dados"]))
+            return route.fulfill(json={"publicacoes": itens[(pagina-1)*tamanho:pagina*tamanho], "total": len(itens),
+                "pagina": pagina, "tamanho": tamanho, "campos_djen": campos})
+        self.context.route("**/publicacoes-oab**", responder)
+        self.connect()
+        self.page.evaluate("selecionarAba(abas.find(a => a.painel.id === 'aba-publicacoes-oab'))")
+        self.page.locator("#lista-publicacoes-oab cds-table").wait_for()
+        self.page.wait_for_function("['cds-table', 'cds-toggletip', 'cds-tag', 'cds-icon-button'].every(n => customElements.get(n))")
+
+    def test_publicacoes_colunas_djen_separadas_capitalizacao_e_persistencia(self):
+        self.open_publicacoes_oab()
+        self.pub_oab_items[0]["criado_em"] = "2026-10-23T12:00:00Z"
+        self.pub_oab_items[0]["dados"] = {
+            "data_disponibilizacao": "2026-10-22", "tipoComunicacao": "INTIMAÇÃO",
+            "tipoDocumento": "DESPACHO", "nomeOrgao": "VARA CÍVEL",
+            "destinatarios": [{"nome": "MARIA DA SILVA", "polo": "A"}],
+            "destinatarioadvogados": [{"nome": "JOÃO DOS SANTOS", "numero_oab": "0123", "uf_oab": "SP"}],
+            "texto": "TEXTO DA PUBLICAÇÃO", "meio": "DIÁRIO ELETRÔNICO",
+            "link": "https://example.test/AbC", "hash": "aBc123"}
+        self.page.evaluate("carregarPublicacoesOab()")
+        tabela = self.page.locator(".pub-oab-tabela")
+        self.page.get_by_role("columnheader", name="Nome Do Processo", exact=True).wait_for()
+        self.page.locator(".pub-oab-colunas button").click()
+        for rotulo in ("Divulgado", "Capturado", "Tipo"):
+            self.page.locator(".pub-oab-colunas").get_by_label(rotulo, exact=True).check()
+        self.page.locator(".pub-oab-colunas button").press("Escape")
+        self.assertTrue(self.page.get_by_role("columnheader", name="Divulgado", exact=True).is_visible())
+        self.assertTrue(self.page.get_by_role("columnheader", name="Capturado", exact=True).is_visible())
+        self.assertTrue(self.page.get_by_role("columnheader", name="Tipo", exact=True).is_visible())
+        self.assertEqual(tabela.locator('cds-table-body > cds-table-row').first.locator('[data-coluna="nome"]').inner_text(), "Maria Da Silva X Parte Passiva Não Informada")
+        self.page.locator(".pub-oab-colunas button").click()
+        for rotulo in ("Tipo De Documento", "Advogados", "Número Da Oab", "Texto", "Hash", "Link", "Meio"):
+            self.page.locator(".pub-oab-colunas").get_by_label(rotulo, exact=True).check()
+        self.page.locator(".pub-oab-colunas button").press("Escape")
+        linha = tabela.locator('cds-table-body > cds-table-row').first
+        self.assertEqual(linha.locator('[data-coluna="advogados"]').inner_text(), "João Dos Santos")
+        self.assertEqual(linha.locator('[data-coluna="hash"]').inner_text(), "aBc123")
+        self.assertEqual(linha.locator('[data-coluna="link"]').inner_text(), "https://example.test/AbC")
+        self.assertEqual(linha.locator('[data-coluna="djen:meio"]').inner_text(), "Diário Eletrônico")
+        linha.get_by_role("button", name="Expandir publicação:", exact=False).click()
+        self.page.locator(".pub-oab-colunas button").click()
+        self.page.locator(".pub-oab-colunas").get_by_label("Capturado", exact=True).uncheck()
+        self.page.locator(".pub-oab-colunas button").press("Escape")
+        self.assertTrue(tabela.locator("cds-table-expanded-row[colspan]").first.evaluate("el => el.colSpan === el.closest('cds-table').querySelectorAll('cds-table-head cds-table-header-cell:not([hidden])').length"))
+        self.page.evaluate("carregarPublicacoesOab()")
+        self.page.locator(".pub-oab-tabela").wait_for()
+        self.assertFalse(self.page.locator('cds-table-header-cell[data-coluna="capturado"]').is_visible())
+        self.assertTrue(self.page.locator('cds-table-header-cell[data-coluna="djen:meio"]').is_visible())
+        self.assertEqual(self.pub_oab_items[0]["dados"]["destinatarios"][0]["nome"], "MARIA DA SILVA")
+        for largura in (1440, 390):
+            self.page.set_viewport_size({"width": largura, "height": 900})
+            self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"))
+            self.assertEqual(tabela.locator('cds-table-cell[data-coluna="nome"]').first.evaluate("el => getComputedStyle(el).fontSize"), "12px")
+            self.page.locator(".pub-oab-colunas button").click()
+            fieldset = self.page.locator(".pub-oab-colunas fieldset")
+            self.assertTrue(fieldset.evaluate("el => el.getBoundingClientRect().left >= 0 && el.getBoundingClientRect().right <= window.innerWidth"))
+            self.page.locator(".pub-oab-colunas button").press("Escape")
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_webcomponents_m_paginacao_selecao_entre_paginas_e_catalogo_completo(self):
+        self.open_publicacoes_oab()
+        self.pub_oab_items.extend({"hash": f"pub-{i}", "numero_processo": str(i).zfill(20),
+            "status": "nao_tratada", "dados": {"campo_fora_da_pagina": "Valor"} if i == 11 else {}}
+            for i in range(3, 12))
+        self.page.evaluate("carregarPublicacoesOab()")
+        self.assertEqual(self.page.locator('input[data-publicacao-hash]').count(), 5)
+        self.assertEqual(self.page.locator('.pub-oab-linha').first.evaluate("el => el.getBoundingClientRect().height"), 40)
+        self.assertEqual(self.page.locator('.pub-oab-tabela cds-table-header-row').evaluate("el => el.getBoundingClientRect().height"), 40)
+        self.page.locator('.pub-oab-colunas button').click()
+        self.assertTrue(self.page.locator('.pub-oab-colunas').get_by_label('Campo Fora Da Pagina', exact=True).is_visible())
+        self.page.locator('.pub-oab-colunas button').press('Escape')
+        self.page.locator('input[data-publicacao-hash="pub-1"]').check()
+        self.assertFalse(self.page.locator('.pub-oab-tabela-toolbar').is_visible())
+        self.page.get_by_role('button', name='Próxima página', exact=True).click()
+        self.page.locator('input[data-publicacao-hash="pub-6"]').wait_for()
+        self.assertFalse(self.page.locator('input[data-publicacoes-todas]').is_checked())
+        self.page.locator('input[data-publicacoes-todas]').check()
+        self.assertIn('6 Selecionadas', self.page.locator('#pub-oab-selecionadas').inner_text())
+        self.page.get_by_role('button', name='Página anterior', exact=True).click()
+        self.assertTrue(self.page.locator('input[data-publicacao-hash="pub-1"]').is_checked())
+        self.assertTrue(self.page.locator('input[data-publicacoes-todas]').evaluate('el => el.indeterminate'))
+        self.page.locator('#pub-oab-marcar-tratada').click()
+        self.page.wait_for_function('!_pubOabAtualizando && !_pubOabCarregando')
+        self.assertEqual(set(self.pub_oab_posts[-1]['hashes']), {'pub-1', 'pub-6', 'pub-7', 'pub-8', 'pub-9', 'pub-10'})
+        self.page.locator('input[data-publicacao-hash="pub-1"]').check()
+        self.page.get_by_label('Itens por página:', exact=True).select_option('10')
+        self.page.wait_for_function("document.querySelectorAll('input[data-publicacao-hash]').length === 10")
+        self.assertEqual(self.page.locator('input[data-publicacao-hash]:checked').count(), 0)
+        self.assertIn('1–10 de 11', self.page.locator('.pub-oab-paginacao').inner_text())
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_webcomponents_m_expansao_independente_tooltip_e_toque(self):
+        self.open_publicacoes_oab()
+        nome = 'Parte Ativa Com Nome Muito Extenso ' * 5
+        self.pub_oab_items[0]['dados'] = {'texto': 'TEXTO original sem Alteração.',
+            'destinatarios': [{'nome': nome, 'polo': 'A'}, {'nome': 'Banco', 'polo': 'P'}]}
+        self.page.evaluate('carregarPublicacoesOab()')
+        row = self.page.locator('.pub-oab-linha').first
+        self.assertEqual(row.evaluate('el => el.getBoundingClientRect().height'), 40)
+        name = row.locator('.pub-oab-nome-processo')
+        name.focus()
+        self.assertTrue(self.page.locator('.pub-oab-tooltip-nome:popover-open').is_visible())
+        name.press('Escape')
+        row.get_by_role('button', name='Expandir publicação:', exact=False).click()
+        self.assertTrue(self.page.locator('.pub-oab-publicacao-completa').first.is_visible())
+        self.assertEqual(self.page.locator('input[data-publicacao-hash]:checked').count(), 0)
+        self.page.locator('input[data-publicacao-hash]').first.check()
+        self.assertTrue(self.page.locator('.pub-oab-publicacao-completa').first.is_visible())
+        self.page.get_by_role('button', name='Próxima página', exact=True).is_disabled()
+        self.page.emulate_media(media='screen')
+        self.page.set_viewport_size({'width': 390, 'height': 900})
+        self.assertTrue(self.page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_lote_parcial_mantem_falhas_e_nao_repete_envio(self):
+        self.open_publicacoes_oab()
+        self.page.locator('input[data-publicacoes-todas]').check()
+        def responder(route):
+            return route.fulfill(json={'atualizadas': 1, 'hashes_atualizados': ['pub-1'], 'hashes_falharam': ['pub-2']})
+        self.context.route('**/publicacoes-oab/status', responder)
+        self.page.locator('#pub-oab-marcar-tratada').click()
+        self.page.wait_for_function('!_pubOabAtualizando && !_pubOabCarregando')
+        self.assertFalse(self.page.locator('input[data-publicacao-hash="pub-1"]').is_checked())
+        self.assertTrue(self.page.locator('input[data-publicacao-hash="pub-2"]').is_checked())
+        self.assertIn('Atualização parcial', self.page.locator('#toast-global').inner_text())
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_webcomponents_m_toque_amplia_alvos_e_erro_preserva_selecao(self):
+        self.context = self.browser.new_context(viewport={"width": 390, "height": 900}, has_touch=True, is_mobile=True)
+        self.addCleanup(self.context.close)
+        self.page = self.context.new_page()
+        self.page.on("pageerror", lambda erro: self.errors.append(str(erro)))
+        self.context.route("**/*", self.route)
+        self.page.goto(self.url)
+        self.page.wait_for_function("typeof abrirCaso === 'function'")
+        self.open_publicacoes_oab()
+        self.assertGreaterEqual(self.page.locator('.pub-oab-linha').first.evaluate('el => el.getBoundingClientRect().height'), 44)
+        self.assertGreaterEqual(self.page.locator('.pub-oab-expandir').first.evaluate('el => el.getBoundingClientRect().width'), 44)
+        self.page.locator('input[data-publicacao-hash]').first.check()
+        self.context.route('**/publicacoes-oab?**', lambda route: route.fulfill(status=500, json={'mensagem': 'Falha de carregamento'}))
+        self.page.locator('#pub-oab-atualizar').click()
+        self.page.get_by_role('button', name='Tentar novamente', exact=True).wait_for()
+        self.assertTrue(self.page.locator('input[data-publicacao-hash]').first.is_checked())
+        self.assertTrue(self.page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_colunas_clique_no_nome_checkbox_e_teclado(self):
+        self.open_publicacoes_oab()
+        crashes = []
+        self.page.on("crash", lambda: crashes.append(True))
+        for largura in (1440, 390):
+            self.page.set_viewport_size({"width": largura, "height": 900})
+            self.page.locator(".pub-oab-colunas button").click()
+            label = self.page.locator('.pub-oab-coluna-opcao label[for="pub-oab-coluna-orgao"]')
+            campo = self.page.locator("#pub-oab-coluna-orgao")
+            for _ in range(4):
+                antes = campo.is_checked()
+                label.click()
+                self.assertEqual(campo.is_checked(), not antes)
+                self.page.wait_for_function("() => document.querySelector('cds-table-header-cell[data-coluna=orgao]').hidden !== document.getElementById('pub-oab-coluna-orgao').checked")
+                campo.click()
+                self.assertEqual(campo.is_checked(), antes)
+                self.page.wait_for_function("() => document.querySelector('cds-table-header-cell[data-coluna=orgao]').hidden !== document.getElementById('pub-oab-coluna-orgao').checked")
+            antes = campo.is_checked()
+            campo.focus()
+            campo.press("Space")
+            self.assertEqual(campo.is_checked(), not antes)
+            self.page.wait_for_function("() => document.querySelector('cds-table-header-cell[data-coluna=orgao]').hidden !== document.getElementById('pub-oab-coluna-orgao').checked")
+            self.assertTrue(campo.evaluate("el => el === document.activeElement"))
+            self.page.locator(".pub-oab-colunas button").press("Escape")
+        self.assertFalse(crashes)
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_selecao_parcial_sem_reconsulta_e_sem_perder_foco(self):
+        self.open_publicacoes_oab()
+        todos = self.page.locator("input[data-publicacoes-todas]")
+        linhas = self.page.locator("input[data-publicacao-hash]")
+        consultas = self.pub_oab_gets
+        linhas.first.check()
+        self.assertTrue(todos.evaluate("el => el.indeterminate"))
+        self.assertFalse(todos.is_checked())
+        todos.focus()
+        todos.press("Space")
+        self.assertEqual(linhas.evaluate_all("els => els.filter(el => el.checked).length"), 2)
+        self.assertTrue(todos.evaluate("el => el === document.activeElement"))
+        self.assertFalse(todos.evaluate("el => el.indeterminate"))
+        linhas.first.uncheck()
+        self.assertTrue(todos.evaluate("el => el.indeterminate"))
+        linhas.last.uncheck()
+        self.assertFalse(todos.is_checked())
+        self.assertFalse(todos.evaluate("el => el.indeterminate"))
+        self.assertTrue(self.page.locator("#pub-oab-arquivar").is_disabled())
+        self.assertEqual(self.pub_oab_gets, consultas)
+
+    def test_publicacoes_filtro_vazio_desabilita_acoes_e_limpa_selecao(self):
+        self.open_publicacoes_oab()
+        self.page.locator("input[data-publicacao-hash]").first.check()
+        self.assertTrue(self.page.locator("#pub-oab-arquivar").is_enabled())
+        self.page.locator("#pub-oab-filtro-status").select_option("arquivada")
+        self.page.get_by_text("Nenhuma publicação com este status", exact=True).wait_for()
+        self.assertEqual(self.page.locator("#pub-oab-arquivar").count(), 0)
+        self.assertEqual(self.page.locator("#pub-oab-marcar-tratada").count(), 0)
+        self.page.locator("#pub-oab-filtro-status").select_option("")
+        self.page.locator("#lista-publicacoes-oab cds-table").wait_for()
+        self.assertEqual(self.page.locator("input[data-publicacao-hash]:checked").count(), 0)
+
+    def test_publicacoes_menu_teclado_e_vinculo_com_rotulo_e_erro(self):
+        self.open_publicacoes_oab()
+        botao = self.page.locator(".pub-oab-combo .cds--menu-button__trigger").first
+        botao.focus()
+        botao.press("Enter")
+        menu = self.page.locator(".pub-oab-combo-menu:not([hidden])")
+        itens = menu.get_by_role("menuitem")
+        self.assertTrue(itens.first.evaluate("el => el === document.activeElement"))
+        itens.first.press("ArrowDown")
+        self.assertTrue(itens.nth(1).evaluate("el => el === document.activeElement"))
+        itens.nth(1).press("End")
+        self.assertTrue(itens.last.evaluate("el => el === document.activeElement"))
+        itens.last.press("Escape")
+        self.assertTrue(botao.evaluate("el => el === document.activeElement"))
+        self.assertEqual(botao.get_attribute("aria-expanded"), "false")
+        botao.press("ArrowUp")
+        menu.get_by_role("menuitem").last.press("Home")
+        menu.get_by_role("menuitem").first.press("ArrowDown")
+        menu.get_by_role("menuitem").nth(1).press("Space")
+        busca = self.page.locator(".pub-oab-inline-form cds-search input")
+        self.assertTrue(busca.evaluate("el => el === el.getRootNode().activeElement"))
+        busca.fill("Caso")
+        self.assertTrue(botao.is_visible(), "Consulta inline não deve filtrar as linhas da DataTable")
+        form = self.page.locator(".pub-oab-inline-form")
+        form.get_by_role("button", name="Caso de teste", exact=False).click()
+        self.assertTrue(form.locator(".pub-oab-confirmacao").is_visible())
+        self.assertTrue(form.get_by_role("button", name="Confirmar Vínculo", exact=True).is_enabled())
+        form.get_by_role("button", name="Cancelar", exact=True).click()
+        self.page.wait_for_function("document.querySelector('.pub-oab-combo .cds--menu-button__trigger') === document.activeElement")
+        self.assertTrue(botao.evaluate("el => el === document.activeElement"))
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_acoes_compactas_menu_e_barra_contextual(self):
+        self.open_publicacoes_oab()
+        self.pub_oab_items[0]["dados"]["link"] = "https://example.test/publicacao"
+        self.page.evaluate("carregarPublicacoesOab()")
+        tabela = self.page.locator(".pub-oab-tabela")
+        tabela.wait_for()
+        acoes = tabela.locator('cds-table-body > cds-table-row').first.locator('cds-table-cell[data-label="Ações"]')
+        self.assertEqual(acoes.locator('cds-icon-button.pub-oab-abrir').count(), 1)
+        abrir = acoes.get_by_role('link', name='Abrir publicação no DJEN (nova aba)', exact=True)
+        self.assertEqual(abrir.get_attribute('href'), 'https://example.test/publicacao')
+        self.assertEqual(abrir.get_attribute('target'), '_blank')
+        self.assertEqual(acoes.locator('.pub-oab-abrir svg[slot="icon"]').count(), 1)
+        self.page.locator('.pub-oab-colunas button').click()
+        self.page.locator('.pub-oab-colunas').get_by_label('Status', exact=True).check()
+        self.page.locator('.pub-oab-colunas button').press('Escape')
+        tag = tabela.locator('cds-tag.pub-oab-status').first
+        self.assertEqual(tag.get_attribute('size'), 'sm')
+        self.assertEqual(tag.locator('.pub-oab-status-texto').evaluate('el => getComputedStyle(el).fontSize'), '10px')
+        self.assertEqual(acoes.locator('.cds--combo-button__container').count(), 0)
+        self.assertEqual(acoes.locator('button.cds--btn--primary').count(), 0)
+        self.assertFalse(self.page.locator("#pub-oab-batch").is_visible())
+        self.page.locator("input[data-publicacao-hash]").first.check()
+        self.assertTrue(self.page.locator("#pub-oab-batch").is_visible())
+        self.assertIn("1 Selecionada", self.page.locator("#pub-oab-selecionadas").inner_text())
+        self.page.get_by_role("button", name="Cancelar Seleção", exact=True).click()
+        self.assertFalse(self.page.locator("#pub-oab-batch").is_visible())
+        self.assertTrue(self.page.locator("input[data-publicacoes-todas]").evaluate("el => el === document.activeElement"))
+        for largura in (1440, 390):
+            self.page.set_viewport_size({"width": largura, "height": 900})
+            botao = acoes.locator(".cds--menu-button__trigger")
+            botao.click()
+            menu = self.page.locator(".pub-oab-combo-menu:popover-open")
+            self.assertTrue(menu.is_visible())
+            self.assertTrue(menu.evaluate("el => { const r=el.getBoundingClientRect(); return r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight; }"))
+            menu.get_by_role("menuitem").first.press("Escape")
+        botao.click()
+        self.page.get_by_role("menuitem", name="Cadastrar Processo", exact=True).click()
+        self.page.get_by_role("form", name="Cadastrar Processo", exact=True).wait_for()
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_nome_polos_texto_original_e_colunas_fixas(self):
+        self.open_publicacoes_oab()
+        texto = "INTIMAÇÃO: Fica a parte intimada. Art. 5º — NÃO MODIFICAR."
+        self.pub_oab_items[0]["dados"] = {"siglaTribunal": "tjsp", "texto": texto,
+            "destinatarios": [{"nome": "MARIA SILVA", "polo": "A"}, {"nome": "BANCO EXEMPLO", "polo": "P"}]}
+        self.page.evaluate("localStorage.setItem('cnj_pub_oab_colunas_visiveis_v2', '[]')")
+        self.page.evaluate("carregarPublicacoesOab()")
+        row = self.page.locator(".pub-oab-tabela cds-table-body > cds-table-row").first
+        self.assertEqual(row.locator('[data-coluna="nome"]').inner_text(), "Maria Silva X Banco Exemplo")
+        self.assertEqual(row.locator('[data-coluna="tribunal"]').inner_text(), "TJSP")
+        self.assertTrue(row.locator('[data-coluna="processo"]').is_visible())
+        self.assertEqual(row.locator('.pub-oab-nome-processo').get_attribute("title"), "Maria Silva X Banco Exemplo")
+        self.assertEqual(row.locator('.pub-oab-nome-processo').evaluate("el => getComputedStyle(el).whiteSpace"), "nowrap")
+        self.page.locator(".pub-oab-colunas button").click()
+        self.assertEqual(self.page.locator('#pub-oab-coluna-nome:disabled:checked, #pub-oab-coluna-tribunal:disabled:checked, #pub-oab-coluna-processo:disabled:checked').count(), 3)
+        self.page.locator(".pub-oab-colunas button").press("Escape")
+        row.get_by_role("button", name="Expandir publicação:", exact=False).click()
+        full = self.page.locator(".pub-oab-publicacao-completa").first
+        self.assertEqual(full.locator(".pub-oab-publicacao-texto").inner_text(), texto)
+        self.assertEqual(full.locator(".pub-oab-publicacao-texto").evaluate("el => getComputedStyle(el).fontSize"), "10px")
+        self.assertEqual(full.locator(".pub-oab-publicacao-texto").evaluate("el => getComputedStyle(el).textAlign"), "justify")
+        self.assertGreater(full.locator("header strong").count(), 2)
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_cadastro_inline_cliente_responsavel_e_confirmacao(self):
+        self.open_publicacoes_oab()
+        self.page.locator(".pub-oab-combo .cds--menu-button__trigger").first.click()
+        self.page.get_by_role("menuitem", name="Cadastrar Processo", exact=True).click()
+        form = self.page.get_by_role("form", name="Cadastrar Processo", exact=True)
+        form.locator("cds-search input").fill("Cliente")
+        form.get_by_role("button", name="Cliente de teste", exact=True).click()
+        form.get_by_label("Responsável", exact=True).select_option("Ana")
+        self.page.set_viewport_size({"width": 390, "height": 900})
+        self.assertTrue(form.evaluate("el => el.getBoundingClientRect().width <= innerWidth && el.scrollWidth <= el.clientWidth"))
+        self.assertEqual(self.pub_oab_posts, [])
+        form.get_by_role("button", name="Confirmar Cadastro", exact=True).click()
+        self.page.wait_for_function("document.getElementById('toast-global').textContent.includes('Processo Cadastrado')")
+        self.assertEqual(self.pub_oab_posts, [{"cliente_id": "cliente-1", "responsavel": "Ana"}])
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_vinculo_exige_selecao_e_confirma_numero_parte_cliente(self):
+        self.open_publicacoes_oab()
+        self.page.locator(".pub-oab-combo .cds--menu-button__trigger").first.click()
+        self.page.get_by_role("menuitem", name="Vincular A Processo Existente", exact=True).click()
+        form = self.page.get_by_role("form", name="Vincular A Processo Existente", exact=True)
+        confirmar = form.get_by_role("button", name="Confirmar Vínculo", exact=True)
+        self.assertTrue(confirmar.is_disabled())
+        queries = []
+        def responder(route):
+            from urllib.parse import urlparse, parse_qs
+            queries.append(parse_qs(urlparse(route.request.url).query)["q"][0])
+            route.fulfill(json={"casos": [self.case]})
+        self.context.route("**/casos?q=*", responder)
+        for termo in ("1000607", "Maria", "Cliente"):
+            form.locator("cds-search input").fill(termo)
+            form.get_by_role("button", name="Caso de teste", exact=False).click()
+            self.assertTrue(form.locator(".pub-oab-confirmacao").is_visible())
+            self.assertTrue(confirmar.is_enabled())
+        self.assertEqual(queries, ["1000607", "Maria", "Cliente"])
+        self.assertFalse(any(m == "POST" and p.endswith("/publicacoes") for m, p in self.requests))
+        confirmar.click()
+        self.page.wait_for_function("document.getElementById('toast-global').textContent.includes('Publicação Vinculada')")
+        self.assertIn(("POST", "/casos/caso-1/publicacoes"), self.requests)
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_status_mantem_toast_apos_recarregar(self):
+        self.open_publicacoes_oab()
+        self.page.locator("input[data-publicacao-hash]").first.check()
+        self.page.locator("#pub-oab-marcar-tratada").click()
+        self.page.wait_for_function("!_pubOabAtualizando && !_pubOabCarregando")
+        self.assertIn("Status atualizado", self.page.locator("#toast-global").inner_text())
+        self.assertIn("1 publicação marcada", self.page.locator("#toast-global").inner_text())
+        self.assertEqual(len(self.pub_oab_posts), 1)
+        self.assertEqual(self.pub_oab_posts[0]["hashes"], ["pub-1"])
+        self.assertTrue(self.page.locator("#pub-oab-marcar-tratada").is_disabled())
+        self.assertFalse(self.errors)
+
+    def test_publicacoes_falha_de_status_preserva_selecao_e_permite_repetir(self):
+        self.open_publicacoes_oab()
+        self.pub_oab_fail = True
+        self.page.locator("input[data-publicacao-hash]").first.check()
+        self.page.locator("#pub-oab-arquivar").click()
+        self.page.wait_for_function("!_pubOabAtualizando")
+        self.assertIn("Não foi possível atualizar o status", self.page.locator("#toast-global").inner_text())
+        self.assertTrue(self.page.locator("input[data-publicacao-hash]").first.is_checked())
+        self.assertTrue(self.page.locator("#pub-oab-arquivar").is_enabled())
+        self.assertFalse(self.errors)
+
     def test_capa_unifica_cadastro_e_atualiza_movimentacoes(self):
         numero = "10006070420255020401"
         self.case["processos"] = [numero]
@@ -353,13 +741,14 @@ class InterfaceTest(unittest.TestCase):
         self.assertFalse(self.errors)
 
     def test_vincular_publicacao_abre_formulario_e_envia_vinculo(self):
-        self.open_case()
-        self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-processo')); _cache.casos = [{id: 'caso-1', titulo: 'Caso de teste'}]; const area = document.getElementById('resultado-processo'); const table = document.createElement('table'); for (const row of linhaPublicacaoOab({hash:'publicacao-teste',status:'nao_tratada',numero_processo:'00000000000000000001',dados:{}})) table.appendChild(row); area.appendChild(table); }")
-        self.page.locator("#resultado-processo button[aria-label='Mais ações']").click()
-        self.page.get_by_text("Vincular a processo existente", exact=True).click()
-        self.page.locator("#resultado-processo .mini-form-caso select").select_option("caso-1")
-        self.page.locator("#resultado-processo .mini-form-caso").get_by_role("button", name="Vincular", exact=True).click()
-        self.page.wait_for_function("!document.querySelector('#resultado-processo .mini-form-caso')")
+        self.open_publicacoes_oab()
+        self.page.locator(".pub-oab-combo .cds--menu-button__trigger").first.click()
+        self.page.get_by_role("menuitem", name="Vincular A Processo Existente", exact=True).click()
+        form = self.page.get_by_role("form", name="Vincular A Processo Existente", exact=True)
+        form.locator("cds-search input").fill("Caso")
+        form.get_by_role("button", name="Caso de teste", exact=False).click()
+        form.get_by_role("button", name="Confirmar Vínculo", exact=True).click()
+        self.page.wait_for_function("!document.querySelector('.pub-oab-inline-form')")
         self.assertIn(("POST", "/casos/caso-1/publicacoes"), self.requests)
         self.assertFalse(self.errors)
 
@@ -472,6 +861,270 @@ class InterfaceTest(unittest.TestCase):
         self.page.keyboard.press("ArrowRight")
         self.assertEqual(self.page.evaluate("document.activeElement.id"), "caso-subaba-atividades-botao")
         self.assertTrue(self.page.locator("#caso-subaba-atividades").is_visible())
+        self.assertFalse(self.errors)
+
+
+    def test_auditoria_consulta_global_lenta_parcial_e_recuperacao(self):
+        self.connect()
+        pendentes = []
+        self.context.route("**/clientes", lambda rota: pendentes.append(rota))
+        self.page.locator("#btn-busca-toggle").click()
+        self.page.locator("cds-search:has(+ #header-busca-input) input").fill("Cliente")
+        self.page.wait_for_function("document.getElementById('header-busca-resultados').textContent.includes('Carregando')")
+        self.page.wait_for_function("document.getElementById('header-busca-input').value === 'Cliente'")
+        self.assertTrue(pendentes)
+        pendentes.pop().fulfill(status=500, json={"mensagem": "Falha simulada"})
+        self.page.get_by_text("Consulta incompleta", exact=True).wait_for()
+        self.assertNotIn("Nenhum resultado.", self.page.locator("#header-busca-resultados").inner_text())
+        self.page.get_by_role("button", name="Tentar novamente", exact=True).click()
+        self.page.wait_for_timeout(100)
+        pendentes.pop().fulfill(json={"clientes": [self.contact]})
+        self.page.locator(".header-busca-resultado-item").filter(has_text="Cliente de teste").wait_for()
+        self.assertEqual(self.page.locator("#header-busca-input").input_value(), "Cliente")
+        self.page.locator("cds-search:has(+ #header-busca-input) input").press("Escape")
+        self.assertTrue(self.page.locator("#header-busca-painel").is_hidden())
+        self.assertEqual(self.page.evaluate("document.activeElement.id"), "btn-busca-toggle")
+        self.assertFalse(self.errors)
+
+    def test_auditoria_integracoes_sem_acesso_http_e_resposta_invalida(self):
+        self.page.evaluate("selecionarAba(abas.find(a => a.painel.id === 'aba-integracoes'))")
+        self.assertEqual(self.page.locator("#integracao-google-status").inner_text(), "Acesso necessário")
+        self.page.locator("#aba-acesso-botao").click()
+        self.connect()
+        resposta = {"status": 401, "json": {"mensagem": "Sem acesso"}}
+        self.context.route("**/integracoes/status", lambda rota: rota.fulfill(**resposta))
+        self.page.evaluate("selecionarAba(abas.find(a => a.painel.id === 'aba-integracoes'))")
+        self.page.wait_for_function("document.getElementById('integracoes-resultado').textContent.includes('Acesso expirado')")
+        for payload in ({"status": 500, "json": {}}, {"status": 200, "json": {}}, {"status": 200, "body": "invalido"}):
+            resposta.clear(); resposta.update(payload)
+            self.page.locator("#integracoes-atualizar").click()
+            self.page.wait_for_function("document.getElementById('integracao-google-status').textContent === 'Falha na verificação'")
+        resposta.clear(); resposta.update({"json": {"google": True, "asaas": False}})
+        self.page.locator("#integracoes-atualizar").click()
+        self.page.wait_for_function("document.getElementById('integracao-google-status').textContent === 'Configurado'")
+        self.assertEqual(self.page.locator("#integracao-asaas-status").inner_text(), "Não configurado")
+        self.assertFalse(self.errors)
+
+    def test_auditoria_storage_falha_nao_favorita_e_recupera(self):
+        self.page.evaluate("() => { window.setItemOriginal = Storage.prototype.setItem; Storage.prototype.setItem = function(){ throw new Error('quota'); }; }")
+        self.assertFalse(self.page.evaluate("alternarFavorito('tjsp', '10006070420255020401')"))
+        self.assertFalse(self.page.evaluate("ehFavorito('tjsp', '10006070420255020401')"))
+        self.assertFalse(self.page.evaluate("alternarCasoFavorito('caso-1')"))
+        self.assertIn("Não foi possível guardar", self.page.locator("#toast-global").inner_text())
+        self.page.evaluate("() => { Storage.prototype.setItem = window.setItemOriginal; }")
+        self.assertTrue(self.page.evaluate("alternarFavorito('tjsp', '10006070420255020401')"))
+        self.page.reload()
+        self.page.wait_for_function("typeof ehFavorito === 'function'")
+        self.assertTrue(self.page.evaluate("ehFavorito('tjsp', '10006070420255020401')"))
+        self.assertFalse(self.errors)
+
+    def test_auditoria_grupos_repetiveis_rotulados_sem_ids_duplicados(self):
+        self.connect()
+        self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-contatos')); await abrirContato('cliente-1'); }")
+        self.page.evaluate("gruposContato.enderecos.definirValores([{rua:'Rua A'}, {rua:'Rua B'}]); gruposContato.emails.definirValores([{email:'a@example.test'}, {email:'b@example.test'}])")
+        self.assertTrue(self.page.evaluate("[...document.querySelectorAll('.campo-repetivel input, .campo-repetivel select')].every(c => c.labels.length === 1 && c.labels[0].textContent.trim())"))
+        self.assertTrue(self.page.evaluate("(() => { const ids = [...document.querySelectorAll('[id]')].map(c=>c.id); return ids.length === new Set(ids).size; })()"))
+        grupos = self.page.locator("#contato-enderecos-lista [role=group]")
+        self.assertEqual(grupos.count(), 2)
+        self.assertEqual(grupos.nth(1).get_attribute("aria-labelledby"), grupos.nth(1).locator(".grupo-repetivel-titulo").get_attribute("id"))
+        self.assertFalse(self.errors)
+
+    def test_auditoria_menu_movel_e_alternador_teclado(self):
+        self.connect()
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        self.page.locator("#btn-menu-toggle").click()
+        self.page.locator("#aba-casos-botao").click()
+        self.page.wait_for_function("document.getElementById('btn-menu-toggle').getAttribute('aria-expanded') === 'false'")
+        self.assertEqual(self.page.evaluate("document.activeElement.id"), "aba-casos")
+        self.page.locator("#casos-vista-tabela-botao").focus()
+        self.page.keyboard.press("End")
+        self.assertEqual(self.page.locator("#casos-vista-cards-botao").get_attribute("aria-pressed"), "true")
+        self.page.keyboard.press("Home")
+        self.assertEqual(self.page.locator("#casos-vista-tabela-botao").get_attribute("aria-pressed"), "true")
+        self.page.locator("#btn-menu-toggle").click()
+        self.page.locator("#aba-casos-botao").focus()
+        self.page.keyboard.press("Escape")
+        self.assertEqual(self.page.evaluate("document.activeElement.id"), "btn-menu-toggle")
+        self.assertFalse(self.errors)
+
+    def test_auditoria_atividades_agregadas_filtro_falha_e_conclusao(self):
+        self.connect()
+        casos = [{**self.case, "id": f"caso-{i}", "titulo": f"Processo {i}", "responsavel": "Ana" if i == 1 else "Bia"} for i in (1, 2, 3)]
+        atividades = {str(i): [{"id": i, "titulo": f"Providência {i}", "tipo": "prazo" if i == 2 else "tarefa", "status": "pendente", "data": None}] for i in (1, 2, 3)}
+        atividades['1'].append({"id": 9, "titulo": "Já concluída", "tipo": "tarefa", "status": "concluida"})
+        falha = [True]
+        self.context.route("**/casos", lambda rota: rota.fulfill(json={"casos": casos}))
+        def responder(rota):
+            i = rota.request.url.split('/caso-')[1].split('/')[0]
+            if i == '3' and falha[0]:
+                return rota.fulfill(status=500, json={"mensagem": "Falha simulada"})
+            if rota.request.method == 'PATCH':
+                atividades[i][0]['status'] = 'concluida'
+                return rota.fulfill(json=atividades[i][0])
+            rota.fulfill(json={"atividades": atividades[i]})
+        self.context.route("**/casos/caso-*/atividades**", responder)
+        self.page.evaluate("selecionarAba(abas.find(a => a.painel.id === 'aba-atividades'))")
+        self.page.get_by_text("Lista incompleta", exact=True).wait_for()
+        self.assertEqual(self.page.locator("#atividades-lista article").count(), 2)
+        self.assertNotIn("Já concluída", self.page.locator("#atividades-lista").inner_text())
+        self.page.locator("#atividades-tipo").select_option('prazo')
+        self.assertEqual(self.page.locator("#atividades-lista article").count(), 1)
+        self.page.locator("#atividades-tipo").select_option('')
+        self.page.locator("#atividades-responsavel").select_option('Ana')
+        self.page.get_by_role('button', name='Concluir atividade: Providência 1', exact=True).click()
+        self.page.wait_for_function("!document.getElementById('atividades-lista').textContent.includes('Providência 1')")
+        falha[0] = False
+        self.page.locator("#atividades-responsavel").select_option('')
+        self.page.locator("#atividades-atualizar").click()
+        self.page.wait_for_function("document.getElementById('atividades-status').textContent.includes('Revisados 3')")
+        self.assertEqual(self.page.locator("#atividades-lista article").count(), 2)
+        self.assertFalse(self.errors)
+
+    def test_auditoria_layout_atividades_e_enderecos_desktop_mobile(self):
+        self.connect()
+        pasta = Path(__file__).parent / 'output' / 'playwright' / 'auditoria-gtd'
+        pasta.mkdir(parents=True, exist_ok=True)
+        self.context.route('**/casos/caso-1/atividades', lambda rota: rota.fulfill(json={'atividades': [
+            {'id': 1, 'titulo': 'Conferir intimação e registrar a providência necessária no processo ' + 'X' * 90, 'tipo': 'prazo', 'status': 'pendente', 'data': '2026-10-30'}]}))
+        self.page.evaluate("selecionarAba(abas.find(a => a.painel.id === 'aba-atividades'))")
+        self.page.locator('#atividades-lista article').wait_for()
+        for largura in (1440, 390, 320):
+            self.page.set_viewport_size({'width': largura, 'height': 900})
+            self.page.wait_for_timeout(150)
+            self.assertEqual(self.page.evaluate('document.documentElement.scrollWidth'), largura)
+            self.page.screenshot(path=str(pasta / f'atividades-{largura}.png'), full_page=True)
+        self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-contatos')); await abrirContato('cliente-1'); }")
+        self.page.evaluate("gruposContato.enderecos.definirValores([{rua:'Rua de teste', numero:'123', cidade:'São Paulo'}, {rua:'Outro endereço', numero:'456'}])")
+        for largura in (1440, 390):
+            self.page.set_viewport_size({'width': largura, 'height': 900})
+            self.page.wait_for_timeout(150)
+            self.assertEqual(self.page.evaluate('document.documentElement.scrollWidth'), largura)
+            self.page.locator('#contato-enderecos-lista').screenshot(path=str(pasta / f'enderecos-{largura}.png'))
+        self.assertFalse(self.errors)
+
+    def test_auditoria_publicacao_atividade_falha_persistencia_e_origem(self):
+        self.open_publicacoes_oab()
+        self.pub_oab_items[0]['caso_id'] = 'caso-1'
+        self.pub_oab_items[0]['dados'] = {'texto': 'Texto integral da publicação de teste'}
+        salvas = []
+        falha = [True]
+        def responder(rota):
+            if rota.request.method == 'POST':
+                if falha[0]:
+                    return rota.fulfill(status=500, json={'mensagem': 'Falha simulada'})
+                salvas.append({**rota.request.post_data_json, 'id': 42, 'status': 'pendente'})
+                return rota.fulfill(json=salvas[-1])
+            rota.fulfill(json={'atividades': salvas})
+        self.context.route('**/casos/caso-1/atividades', responder)
+        self.context.route('**/casos/caso-1/publicacoes', lambda rota: rota.fulfill(json={'publicacoes': self.pub_oab_items[:1]}))
+        self.page.evaluate('carregarPublicacoesOab()')
+        self.page.locator('.pub-oab-tabela').wait_for()
+        self.page.locator('.pub-oab-tabela .cds--menu-button__trigger').first.click()
+        self.page.get_by_role('menuitem', name='Criar Atividade', exact=True).click()
+        self.page.locator('#atividade-titulo').fill('Conferir intimação')
+        self.page.locator('#atividade-observacoes').fill('Verificar providência necessária')
+        self.page.locator("button[form='form-atividade'][type='submit']").click()
+        self.page.get_by_text('Falha simulada', exact=True).wait_for()
+        self.assertEqual(self.page.locator('#atividade-titulo').input_value(), 'Conferir intimação')
+        self.assertEqual(len(salvas), 0)
+        self.assertEqual(len(self.pub_oab_posts), 0)
+        falha[0] = False
+        self.page.locator("button[form='form-atividade'][type='submit']").click()
+        self.page.get_by_role('button', name='Ver publicação de origem', exact=True).wait_for()
+        self.assertIn('Publicação de origem (DJEN): pub-1', salvas[0]['observacoes'])
+        self.assertEqual(len(self.pub_oab_posts), 0)
+        self.page.reload()
+        self.page.wait_for_function("typeof abrirCaso === 'function'")
+        self.page.locator("#aba-acesso-botao").click()
+        self.open_case()
+        self.page.locator('#caso-subaba-atividades-botao').click()
+        self.page.get_by_role('button', name='Ver publicação de origem', exact=True).click()
+        self.page.get_by_text('Texto integral da publicação de teste', exact=True).wait_for()
+        self.assertFalse(self.errors)
+
+
+    def test_tema_persistencia_teclado_e_sincronizacao_entre_paginas(self):
+        self.page.get_by_role("switch", name="Tema", exact=True).wait_for()
+        self.assertEqual(self.page.locator("html").get_attribute("data-carbon-theme"), "white")
+        segunda = self.context.new_page()
+        segunda.goto(self.url)
+        segunda.get_by_role("switch", name="Tema", exact=True).wait_for()
+        self.page.get_by_role("switch", name="Tema", exact=True).focus()
+        self.page.keyboard.press("Space")
+        self.page.wait_for_function("document.documentElement.dataset.carbonTheme === 'g100'")
+        segunda.wait_for_function("document.documentElement.dataset.carbonTheme === 'g100'")
+        self.assertEqual(self.page.evaluate("getComputedStyle(document.body).backgroundColor"), "rgb(22, 22, 22)")
+        self.page.reload()
+        self.page.get_by_role("switch", name="Tema", exact=True).wait_for()
+        self.assertEqual(self.page.get_by_role("switch", name="Tema", exact=True).get_attribute("aria-checked"), "true")
+        self.page.locator("#tema-interface label").click()
+        self.page.wait_for_function("document.documentElement.dataset.carbonTheme === 'white'")
+        self.assertFalse(self.errors)
+
+    def test_tema_armazenamento_indisponivel_mantem_interface_funcional(self):
+        self.context.add_init_script("""(() => {
+          const ler = Storage.prototype.getItem, guardar = Storage.prototype.setItem;
+          Storage.prototype.getItem = function(k) { if(k === 'cnj_tema') throw new Error('bloqueado'); return ler.call(this,k); };
+          Storage.prototype.setItem = function(k,v) { if(k === 'cnj_tema') throw new Error('bloqueado'); return guardar.call(this,k,v); };
+        })()""")
+        self.page.reload()
+        self.page.locator("#tema-interface label").click()
+        self.page.wait_for_function("document.documentElement.dataset.carbonTheme === 'g100'")
+        self.assertIn("Não foi possível lembrar", self.page.locator("#theme-status").inner_text())
+        self.page.reload()
+        self.page.get_by_role("switch", name="Tema", exact=True).wait_for()
+        self.assertEqual(self.page.locator("html").get_attribute("data-carbon-theme"), "white")
+        self.assertFalse(self.errors)
+
+    def test_tema_cobre_paginas_publicas_admin_e_autorizacao(self):
+        import server
+        from unittest.mock import Mock
+        paginas = {
+            '/guia': (Path(__file__).parent / 'guia-do-usuario.html').read_text(encoding='utf-8'),
+            '/documentacao': (Path(__file__).parent / 'documentacao-funcionalidades.html').read_text(encoding='utf-8'),
+            '/cadastro': server._pagina_cadastro(),
+            '/termos': server._pagina_termos(),
+            '/oauth/authorize': server._pagina_autorizacao({}),
+            '/admin': server._pagina_admin(Mock(), None),
+        }
+        self.context.add_init_script("localStorage.setItem('cnj_tema', 'g100'); document.addEventListener('DOMContentLoaded', () => {window.temaInicial = document.documentElement.dataset.carbonTheme;});")
+        base = self.url.split('/static/')[0]
+        pasta = Path(__file__).parent / 'output' / 'playwright' / 'temas'
+        pasta.mkdir(parents=True, exist_ok=True)
+        for caminho, html in paginas.items():
+            self.context.route('**' + caminho, lambda rota, request, html=html: rota.fulfill(content_type='text/html', body=html))
+            self.page.goto(base + caminho)
+            self.page.get_by_role("switch", name="Tema", exact=True).wait_for()
+            with self.subTest(pagina=caminho):
+                self.assertEqual(self.page.evaluate('window.temaInicial'), 'g100')
+                self.assertEqual(self.page.evaluate('getComputedStyle(document.body).backgroundColor'), 'rgb(22, 22, 22)')
+                self.assertEqual(self.page.get_by_role("switch", name="Tema", exact=True).get_attribute('aria-checked'), 'true')
+                if caminho in ('/cadastro', '/admin', '/guia'):
+                    self.page.screenshot(path=str(pasta / (caminho.strip('/') + '-g100.png')))
+        self.assertFalse(self.errors)
+
+    def test_tema_shell_responsivo_tabela_e_formulario_escuros(self):
+        pasta = Path(__file__).parent / 'output' / 'playwright' / 'temas'
+        pasta.mkdir(parents=True, exist_ok=True)
+        self.open_publicacoes_oab()
+        self.page.locator("#tema-interface label").click()
+        self.page.wait_for_function("document.documentElement.dataset.carbonTheme === 'g100'")
+        self.assertEqual(self.page.locator('cds-table').evaluate("e => getComputedStyle(e).getPropertyValue('--cds-background').trim()"), '#161616')
+        for largura in (1440, 768, 390, 320):
+            self.page.set_viewport_size({'width': largura, 'height': 960})
+            self.page.wait_for_timeout(150)
+            self.assertEqual(self.page.evaluate('document.documentElement.scrollWidth'), largura)
+            for seletor in ('cds-toggle#tema-interface', '#aba-acesso-botao'):
+                rect = self.page.locator(seletor).bounding_box()
+                self.assertGreaterEqual(rect['x'], 0)
+                self.assertLessEqual(rect['x'] + rect['width'], largura + 1)
+            if largura in (1440, 390): self.page.screenshot(path=str(pasta / f'publicacoes-g100-{largura}.png'))
+        self.page.set_viewport_size({'width':1440,'height':960})
+        self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-contatos')); await abrirContato('cliente-1'); }")
+        self.assertEqual(self.page.locator('#contato-nome').evaluate('e => getComputedStyle(e).color'), 'rgb(244, 244, 244)')
+        self.page.screenshot(path=str(pasta / 'cliente-g100.png'))
+        self.page.locator("#tema-interface label").click()
+        self.page.screenshot(path=str(pasta / 'cliente-white.png'))
         self.assertFalse(self.errors)
 
 

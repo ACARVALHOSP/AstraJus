@@ -200,6 +200,19 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 hora TEXT,
                 status TEXT NOT NULL DEFAULT 'pendente',
                 observacoes TEXT,
+                responsavel TEXT,
+                criado_em TEXT NOT NULL
+            );
+
+            -- Subtarefas de uma atividade (lista única de verificação por atividade, sem
+            -- agrupamento em múltiplas checklists - a demanda é "progresso da tarefa", não
+            -- organizar várias listas dentro da mesma atividade).
+            CREATE TABLE IF NOT EXISTS atividade_checklist_itens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                atividade_id INTEGER NOT NULL REFERENCES caso_atividades(id) ON DELETE CASCADE,
+                texto TEXT NOT NULL,
+                concluido INTEGER NOT NULL DEFAULT 0,
+                ordem INTEGER NOT NULL,
                 criado_em TEXT NOT NULL
             );
 
@@ -248,6 +261,7 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
             CREATE INDEX IF NOT EXISTS idx_caso_eventos_caso ON caso_eventos (caso_id);
             CREATE INDEX IF NOT EXISTS idx_publicacoes_status ON publicacoes_capturadas (status);
             CREATE INDEX IF NOT EXISTS idx_caso_atividades_caso ON caso_atividades (caso_id);
+            CREATE INDEX IF NOT EXISTS idx_checklist_atividade ON atividade_checklist_itens (atividade_id);
             CREATE INDEX IF NOT EXISTS idx_caso_vinculos_vinculado ON caso_vinculos (caso_vinculado_id);
 
             -- Módulo Financeiro - Lançamentos (fase 1: só o tipo Honorário é criado pela tela;
@@ -286,6 +300,7 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
         if "orgao_julgador" not in {c[1] for c in conexao.execute("PRAGMA table_info(caso_processo_capa)")}:
             conexao.execute("ALTER TABLE caso_processo_capa ADD COLUMN orgao_julgador TEXT")
         _migrar_colunas_casos(conexao)
+        _migrar_colunas_caso_atividades(conexao)
         _migrar_colunas_clientes(conexao)
         _migrar_colunas_lancamentos(conexao)
         _migrar_remover_calendar_evento_id(conexao)
@@ -409,6 +424,15 @@ def _migrar_colunas_lancamentos(conexao: sqlite3.Connection) -> None:
             conexao.execute("ALTER TABLE lancamentos_financeiros ADD COLUMN direcao TEXT NOT NULL DEFAULT 'RECEITA'")
         if "pago" not in colunas:
             conexao.execute("ALTER TABLE lancamentos_financeiros ADD COLUMN pago INTEGER NOT NULL DEFAULT 0")
+
+
+def _migrar_colunas_caso_atividades(conexao: sqlite3.Connection) -> None:
+    """Bancos criados antes do campo `responsavel` existir em `caso_atividades` precisam do
+    ALTER TABLE manual - CREATE TABLE IF NOT EXISTS não adiciona coluna em tabela já existente."""
+    colunas = {linha[1] for linha in conexao.execute("PRAGMA table_info(caso_atividades)")}
+    if "responsavel" not in colunas:
+        with conexao:
+            conexao.execute("ALTER TABLE caso_atividades ADD COLUMN responsavel TEXT")
 
 
 def _migrar_colunas_casos(conexao: sqlite3.Connection) -> None:
@@ -1115,10 +1139,12 @@ class RegistroClientesCasos:
             )
             return cursor.rowcount > 0
 
+    _COLUNAS_ATIVIDADE = "id, caso_id, tipo, titulo, data, hora, status, observacoes, responsavel, criado_em"
+
     def listar_atividades(self, caso_id: str) -> list[dict]:
         with _abrir(self.caminho) as conexao:
             cursor = conexao.execute(
-                "SELECT id, caso_id, tipo, titulo, data, hora, status, observacoes, criado_em "
+                f"SELECT {self._COLUNAS_ATIVIDADE} "
                 "FROM caso_atividades WHERE caso_id = ? ORDER BY data ASC, criado_em ASC",
                 (caso_id,),
             )
@@ -1127,31 +1153,30 @@ class RegistroClientesCasos:
     def criar_atividade(
         self, caso_id: str, tipo: str, titulo: str,
         data: str | None, hora: str | None, observacoes: str | None, agora,
+        responsavel: str | None = None,
     ) -> dict:
         criado_em = agora().isoformat()
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             cursor = conexao.execute(
-                "INSERT INTO caso_atividades (caso_id, tipo, titulo, data, hora, status, observacoes, criado_em) "
-                "VALUES (?, ?, ?, ?, ?, 'pendente', ?, ?) RETURNING id",
-                (caso_id, tipo, titulo, data or None, hora or None, observacoes or None, criado_em),
+                "INSERT INTO caso_atividades (caso_id, tipo, titulo, data, hora, status, observacoes, responsavel, criado_em) "
+                "VALUES (?, ?, ?, ?, ?, 'pendente', ?, ?, ?) RETURNING id",
+                (caso_id, tipo, titulo, data or None, hora or None, observacoes or None, responsavel or None, criado_em),
             )
             aid = cursor.fetchone()[0]
         with _abrir(self.caminho) as conexao:
             linha = conexao.execute(
-                "SELECT id, caso_id, tipo, titulo, data, hora, status, observacoes, criado_em "
-                "FROM caso_atividades WHERE id = ?", (aid,)
+                f"SELECT {self._COLUNAS_ATIVIDADE} FROM caso_atividades WHERE id = ?", (aid,)
             ).fetchone()
         return _linha_atividade(linha)
 
     def atualizar_atividade(
         self, caso_id: str, aid: int, titulo: str | None = None,
         tipo: str | None = None, data: str | None = None, hora: str | None = None,
-        status: str | None = None, observacoes: str | None = None,
+        status: str | None = None, observacoes: str | None = None, responsavel: str | None = None,
     ) -> dict | None:
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             linha = conexao.execute(
-                "SELECT id, caso_id, tipo, titulo, data, hora, status, observacoes, criado_em "
-                "FROM caso_atividades WHERE id = ? AND caso_id = ?", (aid, caso_id)
+                f"SELECT {self._COLUNAS_ATIVIDADE} FROM caso_atividades WHERE id = ? AND caso_id = ?", (aid, caso_id)
             ).fetchone()
             if linha is None:
                 return None
@@ -1162,15 +1187,16 @@ class RegistroClientesCasos:
             nova_hora = hora if hora is not None else atual["hora"]
             novo_status = status if status is not None else atual["status"]
             novas_obs = observacoes if observacoes is not None else atual["observacoes"]
+            novo_responsavel = responsavel if responsavel is not None else atual["responsavel"]
             conexao.execute(
-                "UPDATE caso_atividades SET titulo=?, tipo=?, data=?, hora=?, status=?, observacoes=? "
+                "UPDATE caso_atividades SET titulo=?, tipo=?, data=?, hora=?, status=?, observacoes=?, responsavel=? "
                 "WHERE id=? AND caso_id=?",
-                (novo_titulo, novo_tipo, nova_data or None, nova_hora or None, novo_status, novas_obs or None, aid, caso_id),
+                (novo_titulo, novo_tipo, nova_data or None, nova_hora or None, novo_status, novas_obs or None,
+                 novo_responsavel or None, aid, caso_id),
             )
         with _abrir(self.caminho) as conexao:
             linha = conexao.execute(
-                "SELECT id, caso_id, tipo, titulo, data, hora, status, observacoes, criado_em "
-                "FROM caso_atividades WHERE id = ?", (aid,)
+                f"SELECT {self._COLUNAS_ATIVIDADE} FROM caso_atividades WHERE id = ?", (aid,)
             ).fetchone()
         return _linha_atividade(linha)
 
@@ -1232,6 +1258,78 @@ class RegistroClientesCasos:
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             cursor = conexao.execute(
                 "DELETE FROM caso_atividades WHERE id = ? AND caso_id = ?", (aid, caso_id)
+            )
+            return cursor.rowcount > 0
+
+    # Checklist (subtarefas) de uma atividade
+
+    _COLUNAS_CHECKLIST_ITEM = "id, atividade_id, texto, concluido, ordem, criado_em"
+
+    def _atividade_do_caso(self, conexao, caso_id: str, aid: int) -> bool:
+        linha = conexao.execute(
+            "SELECT 1 FROM caso_atividades WHERE id = ? AND caso_id = ?", (aid, caso_id)
+        ).fetchone()
+        return linha is not None
+
+    def listar_checklist(self, caso_id: str, aid: int) -> list[dict] | None:
+        with _abrir(self.caminho) as conexao:
+            if not self._atividade_do_caso(conexao, caso_id, aid):
+                return None
+            cursor = conexao.execute(
+                f"SELECT {self._COLUNAS_CHECKLIST_ITEM} FROM atividade_checklist_itens "
+                "WHERE atividade_id = ? ORDER BY ordem ASC, id ASC", (aid,),
+            )
+            return [_linha_checklist_item(linha) for linha in cursor.fetchall()]
+
+    def criar_item_checklist(self, caso_id: str, aid: int, texto: str, agora) -> dict | None:
+        criado_em = agora().isoformat()
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            if not self._atividade_do_caso(conexao, caso_id, aid):
+                return None
+            proxima_ordem = conexao.execute(
+                "SELECT COALESCE(MAX(ordem) + 1, 0) FROM atividade_checklist_itens WHERE atividade_id = ?", (aid,),
+            ).fetchone()[0]
+            cursor = conexao.execute(
+                "INSERT INTO atividade_checklist_itens (atividade_id, texto, concluido, ordem, criado_em) "
+                "VALUES (?, ?, 0, ?, ?) RETURNING id",
+                (aid, texto, proxima_ordem, criado_em),
+            )
+            item_id = cursor.fetchone()[0]
+            linha = conexao.execute(
+                f"SELECT {self._COLUNAS_CHECKLIST_ITEM} FROM atividade_checklist_itens WHERE id = ?", (item_id,),
+            ).fetchone()
+        return _linha_checklist_item(linha)
+
+    def atualizar_item_checklist(
+        self, caso_id: str, aid: int, item_id: int, texto: str | None = None, concluido: bool | None = None,
+    ) -> dict | None:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            if not self._atividade_do_caso(conexao, caso_id, aid):
+                return None
+            linha = conexao.execute(
+                f"SELECT {self._COLUNAS_CHECKLIST_ITEM} FROM atividade_checklist_itens "
+                "WHERE id = ? AND atividade_id = ?", (item_id, aid),
+            ).fetchone()
+            if linha is None:
+                return None
+            atual = _linha_checklist_item(linha)
+            novo_texto = texto if texto is not None else atual["texto"]
+            novo_concluido = concluido if concluido is not None else atual["concluido"]
+            conexao.execute(
+                "UPDATE atividade_checklist_itens SET texto = ?, concluido = ? WHERE id = ?",
+                (novo_texto, int(novo_concluido), item_id),
+            )
+            linha = conexao.execute(
+                f"SELECT {self._COLUNAS_CHECKLIST_ITEM} FROM atividade_checklist_itens WHERE id = ?", (item_id,),
+            ).fetchone()
+        return _linha_checklist_item(linha)
+
+    def excluir_item_checklist(self, caso_id: str, aid: int, item_id: int) -> bool:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            if not self._atividade_do_caso(conexao, caso_id, aid):
+                return False
+            cursor = conexao.execute(
+                "DELETE FROM atividade_checklist_itens WHERE id = ? AND atividade_id = ?", (item_id, aid),
             )
             return cursor.rowcount > 0
 
@@ -1473,10 +1571,19 @@ def _linha_caso(linha) -> dict:
 
 
 def _linha_atividade(linha) -> dict:
-    id_, caso_id, tipo, titulo, data, hora, status, observacoes, criado_em = linha
+    id_, caso_id, tipo, titulo, data, hora, status, observacoes, responsavel, criado_em = linha
     return {
         "id": id_, "caso_id": caso_id, "tipo": tipo, "titulo": titulo,
-        "data": data, "hora": hora, "status": status, "observacoes": observacoes, "criado_em": criado_em,
+        "data": data, "hora": hora, "status": status, "observacoes": observacoes,
+        "responsavel": responsavel, "criado_em": criado_em,
+    }
+
+
+def _linha_checklist_item(linha) -> dict:
+    id_, atividade_id, texto, concluido, ordem, criado_em = linha
+    return {
+        "id": id_, "atividade_id": atividade_id, "texto": texto,
+        "concluido": bool(concluido), "ordem": ordem, "criado_em": criado_em,
     }
 
 

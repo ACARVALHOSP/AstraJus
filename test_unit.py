@@ -1478,6 +1478,30 @@ class PainelWebTest(_RegistroTemporario):
     def test_script_do_painel_so_aceita_get(self):
         self.assertEqual(_chamar_asgi(self.mw, "POST", "/static/app.js", [], b"")[0], 401)
 
+    def test_tema_assets_publicos_sem_cache(self):
+        for caminho, tipo in (("/static/theme.js", b"javascript"),
+                              ("/static/theme.css", b"text/css"),
+                              ("/static/carbon/theme-components.min.js", b"javascript")):
+            with self.subTest(caminho=caminho):
+                status, corpo, cab = _chamar_asgi(self.mw, "GET", caminho)
+                self.assertEqual(status, 200)
+                self.assertTrue(corpo)
+                self.assertIn(tipo, cab[b"content-type"])
+                self.assertEqual(cab[b"cache-control"], b"no-store")
+                self.assertEqual(_chamar_asgi(self.mw, "POST", caminho, [], b"")[0], 401)
+
+    def test_search_carbon_assets_publicos_sem_cache(self):
+        for caminho, tipo in (("/static/search-fields.js", b"javascript"),
+                              ("/static/search-fields.css", b"text/css"),
+                              ("/static/carbon/search-components.min.js", b"javascript")):
+            with self.subTest(caminho=caminho):
+                status, corpo, cab = _chamar_asgi(self.mw, "GET", caminho)
+                self.assertEqual(status, 200)
+                self.assertTrue(corpo)
+                self.assertIn(tipo, cab[b"content-type"])
+                self.assertEqual(cab[b"cache-control"], b"no-store")
+                self.assertEqual(_chamar_asgi(self.mw, "POST", caminho, [], b"")[0], 401)
+
 
 class GuiaUsuarioTest(_RegistroTemporario):
     """Guia público em /guia e links para ele nas páginas de cadastro."""
@@ -2305,6 +2329,103 @@ class CapaProcessoHttpTest(unittest.TestCase):
 
 
 
+class AtividadeResponsavelTest(unittest.TestCase):
+    """Responsável/delegação de atividade (db.py): CRUD grava e atualiza o campo."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp()) / "teste.db"
+        self.gestao = db.RegistroClientesCasos(self.tmp)
+        self.agora = lambda: datetime(2026, 1, 1)
+        cliente = self.gestao.criar_cliente("Cliente Teste", None, None, self.agora)
+        self.caso = self.gestao.criar_caso(cliente["id"], "Caso Teste", None, [], self.agora)
+
+    def test_criar_atividade_grava_responsavel(self):
+        atv = self.gestao.criar_atividade(
+            self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora, responsavel="bia@teste.com",
+        )
+        self.assertEqual(atv["responsavel"], "bia@teste.com")
+
+    def test_criar_atividade_sem_responsavel_fica_none(self):
+        atv = self.gestao.criar_atividade(self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora)
+        self.assertIsNone(atv["responsavel"])
+
+    def test_atualizar_atividade_muda_responsavel(self):
+        atv = self.gestao.criar_atividade(self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora)
+        atualizada = self.gestao.atualizar_atividade(self.caso["id"], atv["id"], responsavel="bia@teste.com")
+        self.assertEqual(atualizada["responsavel"], "bia@teste.com")
+
+    def test_atualizar_sem_tocar_responsavel_preserva_valor(self):
+        atv = self.gestao.criar_atividade(
+            self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora, responsavel="bia@teste.com",
+        )
+        atualizada = self.gestao.atualizar_atividade(self.caso["id"], atv["id"], titulo="Peticionar (urgente)")
+        self.assertEqual(atualizada["responsavel"], "bia@teste.com")
+
+
+class AtividadeDelegacaoHttpTest(_RegistroTemporario):
+    """PATCH /casos/<id>/atividades/<aid>: valida o responsável e avisa por e-mail quem foi delegado."""
+
+    def setUp(self):
+        super().setUp()
+        self.tmp = Path(tempfile.mkdtemp()) / "teste.db"
+        self.gestao = db.RegistroClientesCasos(self.tmp)
+        self.agora = lambda: datetime(2026, 1, 1)
+        cliente = self.gestao.criar_cliente("Cliente Teste", None, None, self.agora)
+        self.caso = self.gestao.criar_caso(cliente["id"], "Caso Teste", None, [], self.agora)
+        self.bia = "bia@teste.com"
+        self._criar(self.bia)
+        cfg = server.ConfiguracaoSMTP("smtp.teste", 587, "u", "s", "noreply@teste")
+        cadastro = server.CadastroPublico(self.registro, cfg, server.LimitadorUso(0, 0),
+                                          server.LimitadorUso(0, 0), enviar=lambda d, t: None)
+        self.mw = server._AutenticacaoBearer(app=None, registro=self.registro, cadastro=cadastro, gestao=self.gestao)
+
+    def _patch(self, aid, corpo, usuario="ana"):
+        enviados = []
+
+        async def send(mensagem):
+            enviados.append(mensagem)
+
+        async def receive():
+            return {"type": "http.request", "body": json.dumps(corpo).encode("utf-8"), "more_body": False}
+
+        scope = {"method": "PATCH", "usuario": usuario}
+        _rodar(self.mw._atividades_do_caso(scope, receive, send, self.caso["id"], aid))
+        inicio = next(m for m in enviados if m["type"] == "http.response.start")
+        corpo_bytes = b"".join(m.get("body", b"") for m in enviados if m["type"] == "http.response.body")
+        return inicio["status"], json.loads(corpo_bytes or b"{}")
+
+    def test_delegar_para_usuario_valido_avisa_por_email(self):
+        atv = self.gestao.criar_atividade(self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora)
+        with mock.patch.object(server, "_enviar_aviso_atividade_delegada") as envio:
+            status, resultado = self._patch(atv["id"], {"responsavel": self.bia})
+        self.assertEqual(status, 200)
+        self.assertEqual(resultado["responsavel"], self.bia)
+        envio.assert_called_once()
+        self.assertEqual(envio.call_args[0][1], self.bia)
+
+    def test_delegar_para_usuario_invalido_e_recusado(self):
+        atv = self.gestao.criar_atividade(self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora)
+        status, resultado = self._patch(atv["id"], {"responsavel": "fantasma@teste.com"})
+        self.assertEqual(status, 400)
+        self.assertTrue(resultado["erro"])
+
+    def test_nao_avisa_quando_responsavel_nao_muda(self):
+        atv = self.gestao.criar_atividade(
+            self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora, responsavel=self.bia,
+        )
+        with mock.patch.object(server, "_enviar_aviso_atividade_delegada") as envio:
+            status, _ = self._patch(atv["id"], {"titulo": "Peticionar (urgente)"})
+        self.assertEqual(status, 200)
+        envio.assert_not_called()
+
+    def test_nao_avisa_quando_delegado_para_si_mesmo(self):
+        atv = self.gestao.criar_atividade(self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora)
+        with mock.patch.object(server, "_enviar_aviso_atividade_delegada") as envio:
+            status, _ = self._patch(atv["id"], {"responsavel": "ana"}, usuario="ana")
+        self.assertEqual(status, 200)
+        envio.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -2545,3 +2666,177 @@ class CapaMonitorarHttpTest(unittest.TestCase):
         _rodar(self.mw._capa_do_processo(scope, receive, send, self.caso["id"], self.numero, "monitorar"))
         inicio = next(m for m in enviados if m["type"] == "http.response.start")
         self.assertEqual(inicio["status"], 405)
+
+
+class ChecklistAtividadeTest(unittest.TestCase):
+    """Checklist (subtarefas) de uma atividade (db.py): CRUD + progresso."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp()) / "teste.db"
+        self.gestao = db.RegistroClientesCasos(self.tmp)
+        self.agora = lambda: datetime(2026, 1, 1)
+        cliente = self.gestao.criar_cliente("Cliente Teste", None, None, self.agora)
+        self.caso = self.gestao.criar_caso(cliente["id"], "Caso Teste", None, [], self.agora)
+        self.atividade = self.gestao.criar_atividade(
+            self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora,
+        )
+
+    def test_criar_item_e_listar(self):
+        item = self.gestao.criar_item_checklist(self.caso["id"], self.atividade["id"], "Juntar documentos", self.agora)
+        self.assertEqual(item["texto"], "Juntar documentos")
+        self.assertFalse(item["concluido"])
+        self.assertEqual(self.gestao.listar_checklist(self.caso["id"], self.atividade["id"]), [item])
+
+    def test_itens_mantem_ordem_de_criacao(self):
+        self.gestao.criar_item_checklist(self.caso["id"], self.atividade["id"], "Primeiro", self.agora)
+        self.gestao.criar_item_checklist(self.caso["id"], self.atividade["id"], "Segundo", self.agora)
+        itens = self.gestao.listar_checklist(self.caso["id"], self.atividade["id"])
+        self.assertEqual([i["texto"] for i in itens], ["Primeiro", "Segundo"])
+
+    def test_atualizar_marca_concluido(self):
+        item = self.gestao.criar_item_checklist(self.caso["id"], self.atividade["id"], "Item", self.agora)
+        atualizado = self.gestao.atualizar_item_checklist(self.caso["id"], self.atividade["id"], item["id"], concluido=True)
+        self.assertTrue(atualizado["concluido"])
+        self.assertEqual(atualizado["texto"], "Item")
+
+    def test_excluir_item(self):
+        item = self.gestao.criar_item_checklist(self.caso["id"], self.atividade["id"], "Item", self.agora)
+        self.assertTrue(self.gestao.excluir_item_checklist(self.caso["id"], self.atividade["id"], item["id"]))
+        self.assertEqual(self.gestao.listar_checklist(self.caso["id"], self.atividade["id"]), [])
+
+    def test_excluir_atividade_remove_itens_em_cascata(self):
+        self.gestao.criar_item_checklist(self.caso["id"], self.atividade["id"], "Item", self.agora)
+        self.gestao.excluir_atividade(self.caso["id"], self.atividade["id"])
+        with db._abrir(self.tmp) as conexao:
+            restantes = conexao.execute("SELECT COUNT(*) FROM atividade_checklist_itens").fetchone()[0]
+        self.assertEqual(restantes, 0)
+
+    def test_operacoes_em_atividade_de_outro_caso_falham(self):
+        outro_cliente = self.gestao.criar_cliente("Outro Cliente", None, None, self.agora)
+        outro_caso = self.gestao.criar_caso(outro_cliente["id"], "Outro Caso", None, [], self.agora)
+        self.assertIsNone(self.gestao.listar_checklist(outro_caso["id"], self.atividade["id"]))
+        self.assertIsNone(self.gestao.criar_item_checklist(outro_caso["id"], self.atividade["id"], "x", self.agora))
+
+
+class ChecklistAtividadeHttpTest(unittest.TestCase):
+    """GET/POST /casos/<id>/atividades/<aid>/checklist, PATCH/DELETE .../checklist/<item_id>."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp()) / "teste.db"
+        self.gestao = db.RegistroClientesCasos(self.tmp)
+        self.agora = lambda: datetime(2026, 1, 1)
+        cliente = self.gestao.criar_cliente("Cliente Teste", None, None, self.agora)
+        self.caso = self.gestao.criar_caso(cliente["id"], "Caso Teste", None, [], self.agora)
+        self.atividade = self.gestao.criar_atividade(
+            self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora,
+        )
+        self.mw = server._AutenticacaoBearer(app=None, registro=None, gestao=self.gestao)
+
+    def _chamar(self, metodo, item_id, corpo=None):
+        enviados = []
+
+        async def send(mensagem):
+            enviados.append(mensagem)
+
+        async def receive():
+            return {"type": "http.request", "body": json.dumps(corpo or {}).encode("utf-8"), "more_body": False}
+
+        scope = {"method": metodo}
+        _rodar(self.mw._checklist_da_atividade(scope, receive, send, self.caso["id"], self.atividade["id"], item_id))
+        inicio = next(m for m in enviados if m["type"] == "http.response.start")
+        corpo_bytes = b"".join(m.get("body", b"") for m in enviados if m["type"] == "http.response.body")
+        return inicio["status"], json.loads(corpo_bytes or b"{}")
+
+    def test_post_sem_texto_e_erro(self):
+        status, resultado = self._chamar("POST", None, {})
+        self.assertEqual(status, 400)
+        self.assertTrue(resultado["erro"])
+
+    def test_post_cria_item_e_get_lista(self):
+        status, item = self._chamar("POST", None, {"texto": "Juntar documentos"})
+        self.assertEqual(status, 201)
+        status, resultado = self._chamar("GET", None)
+        self.assertEqual(status, 200)
+        self.assertEqual(resultado["itens"], [item])
+
+    def test_patch_marca_concluido(self):
+        _, item = self._chamar("POST", None, {"texto": "Item"})
+        status, atualizado = self._chamar("PATCH", item["id"], {"concluido": True})
+        self.assertEqual(status, 200)
+        self.assertTrue(atualizado["concluido"])
+
+    def test_patch_item_inexistente_e_404(self):
+        status, resultado = self._chamar("PATCH", 999, {"concluido": True})
+        self.assertEqual(status, 404)
+
+    def test_delete_remove_item(self):
+        _, item = self._chamar("POST", None, {"texto": "Item"})
+        status, resultado = self._chamar("DELETE", item["id"])
+        self.assertEqual(status, 200)
+        self.assertTrue(resultado["excluido"])
+
+    def test_get_atividade_inexistente_e_404(self):
+        mw = self.mw
+        enviados = []
+
+        async def send(mensagem):
+            enviados.append(mensagem)
+
+        async def receive():
+            return {"type": "http.request", "body": b"{}", "more_body": False}
+
+        scope = {"method": "GET"}
+        _rodar(mw._checklist_da_atividade(scope, receive, send, self.caso["id"], 999, None))
+        inicio = next(m for m in enviados if m["type"] == "http.response.start")
+        self.assertEqual(inicio["status"], 404)
+
+
+class ChecklistRoteamentoTest(_RegistroTemporario):
+    """Garante que /casos/<id>/atividades/<aid>/checklist... é roteado para o handler certo,
+    sem atrapalhar o roteamento já existente de /casos/<id>/atividades/<aid>."""
+
+    def setUp(self):
+        super().setUp()
+        self.tmp = Path(tempfile.mkdtemp()) / "teste.db"
+        self.gestao = db.RegistroClientesCasos(self.tmp)
+        self.agora = lambda: datetime(2026, 1, 1)
+        cliente = self.gestao.criar_cliente("Cliente Teste", None, None, self.agora)
+        self.caso = self.gestao.criar_caso(cliente["id"], "Caso Teste", None, [], self.agora)
+        self.atividade = self.gestao.criar_atividade(
+            self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora,
+        )
+        self.mw = server._AutenticacaoBearer(app=None, registro=self.registro, gestao=self.gestao)
+
+    def _chamar(self, metodo, caminho, corpo=None):
+        enviados = []
+
+        async def send(mensagem):
+            enviados.append(mensagem)
+
+        async def receive():
+            return {"type": "http.request", "body": json.dumps(corpo or {}).encode("utf-8"), "more_body": False}
+
+        headers = [(b"authorization", f"Bearer {self.token_ana}".encode())]
+        scope = {"type": "http", "method": metodo, "path": caminho, "headers": headers}
+        _rodar(self.mw(scope, receive, send))
+        inicio = next(m for m in enviados if m["type"] == "http.response.start")
+        corpo_bytes = b"".join(m.get("body", b"") for m in enviados if m["type"] == "http.response.body")
+        return inicio["status"], json.loads(corpo_bytes or b"{}")
+
+    def test_rota_checklist_da_atividade(self):
+        status, resultado = self._chamar("GET", f"/casos/{self.caso['id']}/atividades/{self.atividade['id']}/checklist")
+        self.assertEqual(status, 200)
+        self.assertEqual(resultado["itens"], [])
+
+    def test_rota_atividade_sem_checklist_continua_funcionando(self):
+        status, resultado = self._chamar(
+            "PATCH", f"/casos/{self.caso['id']}/atividades/{self.atividade['id']}", {"titulo": "Peticionar (revisado)"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(resultado["id"], self.atividade["id"])
+        self.assertEqual(resultado["titulo"], "Peticionar (revisado)")
+
+    def test_rota_lista_de_atividades_continua_funcionando(self):
+        status, resultado = self._chamar("GET", f"/casos/{self.caso['id']}/atividades")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(resultado["atividades"]), 1)

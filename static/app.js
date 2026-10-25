@@ -276,6 +276,15 @@ function notificacao(tipo, titulo, subtitulo) {
 function mostrarErro(container, mensagem) {
   limpar(container);
   container.appendChild(notificacao("error", "Não foi possível concluir", mensagem));
+  const recuperar = {
+    "lista-contatos": carregarContatos,
+    "lista-casos": carregarCasosPagina,
+    "lista-lancamentos": carregarLancamentos,
+    "lista-pagamentos": carregarPagamentos,
+    "lista-publicacoes-oab": carregarPublicacoesOab,
+    "resultado-monitoramentos": carregarMonitoramentos,
+  }[container.id];
+  if (recuperar) container.appendChild(el("button", { type: "button", class: "cds--btn cds--btn--tertiary cds--btn--sm", texto: "Tentar novamente", onclick: recuperar }));
 }
 
 function mostrarSucesso(container, mensagem) {
@@ -302,7 +311,7 @@ function mostrarToast(tipo, titulo, mensagem, duracao = 5000) {
   fechar.addEventListener("click", () => ntf.remove());
   ntf.querySelector(".cds--inline-notification__details").after(fechar);
   container.appendChild(ntf);
-  setTimeout(() => { if (ntf.parentNode) ntf.remove(); }, duracao);
+  if (duracao > 0) setTimeout(() => { if (ntf.parentNode) ntf.remove(); }, duracao);
 }
 
 function mostrarEspera(container, botao, titulo) {
@@ -514,9 +523,11 @@ function _lerLista(chave) {
 function _salvarLista(chave, lista) {
   try {
     localStorage.setItem(chave, JSON.stringify(lista));
+    return true;
   } catch {
-    // localStorage indisponível (modo privado, cota esgotada etc.): a utilidade só deixa de
-    // persistir entre sessões, o restante do painel continua funcionando.
+    mostrarToast("warning", "Não foi possível guardar neste navegador",
+      "O histórico ou favorito não foi alterado. Libere o armazenamento do navegador e tente novamente.", 0);
+    return false;
   }
 }
 
@@ -550,7 +561,7 @@ function alternarFavorito(tribunal, numero) {
   const index = lista.findIndex((f) => _chaveFavorito(f.tribunal, f.numero) === chave);
   if (index === -1) lista.unshift({ tribunal, numero });
   else lista.splice(index, 1);
-  _salvarLista(CHAVE_FAVORITOS, lista);
+  if (!_salvarLista(CHAVE_FAVORITOS, lista)) return index !== -1;
   renderizarListaRapida();
   return index === -1; // true = acabou de favoritar
 }
@@ -570,7 +581,7 @@ function alternarCasoFavorito(casoId) {
   const index = lista.indexOf(casoId);
   if (index === -1) lista.unshift(casoId);
   else lista.splice(index, 1);
-  _salvarLista(CHAVE_FAVORITOS_CASOS, lista);
+  if (!_salvarLista(CHAVE_FAVORITOS_CASOS, lista)) return index !== -1;
   return index === -1; // true = acabou de favoritar
 }
 
@@ -687,6 +698,7 @@ const abas = [
   { botao: document.getElementById("aba-jurimetria-botao"), painel: document.getElementById("aba-jurimetria") },
   { botao: document.getElementById("aba-contatos-botao"), painel: document.getElementById("aba-contatos") },
   { botao: document.getElementById("aba-casos-botao"), painel: document.getElementById("aba-casos") },
+  { botao: document.getElementById("aba-atividades-botao"), painel: document.getElementById("aba-atividades") },
   { botao: document.getElementById("aba-publicacoes-oab-botao"), painel: document.getElementById("aba-publicacoes-oab") },
   { botao: document.getElementById("aba-integracoes-botao"), painel: document.getElementById("aba-integracoes") },
   { botao: document.getElementById("aba-financeiro-botao"), painel: document.getElementById("aba-financeiro") },
@@ -709,11 +721,16 @@ async function selecionarAba(alvo, { registrarHistorico = true } = {}) {
   // Expande o grupo do item ativo caso esteja colapsado
   const submenu = alvo.botao.closest(".cds--side-nav__item")?.querySelector(".cds--side-nav__submenu");
   if (submenu) submenu.setAttribute("aria-expanded", "true");
-  alvo.botao.focus();
+  if (_mqMobile.matches) {
+    _sideNavFechar();
+    alvo.painel.tabIndex = -1;
+    alvo.painel.focus();
+  } else alvo.botao.focus();
   if (alvo.painel.id === "aba-historico") { renderizarListaRapida(); renderizarCasosFavoritos(); }
   if (alvo.painel.id === "aba-monitoramentos") carregarMonitoramentos();
   if (alvo.painel.id === "aba-contatos") { voltarParaContatos(); carregarContatos(); }
   if (alvo.painel.id === "aba-casos") carregarCasosPagina();
+  if (alvo.painel.id === "aba-atividades") carregarAtividadesAbertas();
   if (alvo.painel.id === "aba-publicacoes-oab") carregarPublicacoesOab();
   if (alvo.painel.id === "aba-integracoes") carregarStatusIntegracoes();
   if (alvo.painel.id === "aba-financeiro") carregarLancamentos();
@@ -1721,7 +1738,13 @@ async function carregarMonitoramentos() {
 async function carregarStatusIntegracoes() {
   const seloGoogle = document.getElementById("integracao-google-status");
   const seloAsaas = document.getElementById("integracao-asaas-status");
-  if (!cliente) return;
+  const resultado = document.getElementById("integracoes-resultado");
+  limpar(resultado);
+  if (!cliente) {
+    for (const selo of [seloGoogle, seloAsaas]) selo.textContent = "Acesso necessário";
+    mostrarAviso(resultado, "Conecte-se na aba Acesso para verificar a configuração dos serviços.");
+    return;
+  }
   for (const selo of [seloGoogle, seloAsaas]) {
     if (!selo) continue;
     selo.textContent = "Verificando…";
@@ -1729,25 +1752,35 @@ async function carregarStatusIntegracoes() {
   }
   try {
     const resposta = await fetch("/integracoes/status", { headers: { Authorization: `Bearer ${cliente.token}` } });
+    if (!resposta.ok) throw new ErroMCP(resposta.status, resposta.status === 401
+      ? "Acesso expirado. Conecte-se novamente na aba Acesso."
+      : `Falha ao verificar os serviços (HTTP ${resposta.status}). Tente novamente.`);
     const dados = await resposta.json();
+    if (typeof dados.google !== "boolean" || typeof dados.asaas !== "boolean") throw new Error("Resposta de configuração inválida. Tente novamente.");
     for (const [selo, conectado] of [[seloGoogle, dados.google], [seloAsaas, dados.asaas]]) {
       if (!selo) continue;
       if (conectado) {
-        selo.textContent = "Conectado";
+        selo.textContent = "Configurado";
         selo.className = "cds--tag cds--tag--green cds--tag--sm";
       } else {
         selo.textContent = "Não configurado";
         selo.className = "cds--tag cds--tag--gray cds--tag--sm";
       }
     }
-  } catch {
+  } catch (erro) {
+    mostrarErro(resultado, erro instanceof SyntaxError
+      ? "O servidor retornou uma resposta inválida. Tente novamente."
+      : erro instanceof TypeError ? "Não foi possível conectar. Confira sua conexão e tente novamente."
+      : erro.message || "Não foi possível verificar. Confira sua conexão e tente novamente.");
     for (const selo of [seloGoogle, seloAsaas]) {
       if (!selo) continue;
-      selo.textContent = "Não foi possível verificar";
+      selo.textContent = erro.status === 401 ? "Acesso necessário" : "Falha na verificação";
       selo.className = "cds--tag cds--tag--gray cds--tag--sm";
     }
   }
 }
+
+document.getElementById("integracoes-atualizar").addEventListener("click", carregarStatusIntegracoes);
 
 // --- Jurimetria: seletores de árvore (Vara/Classe/Assunto) e autocomplete (Magistrado) --------
 //
@@ -2192,24 +2225,47 @@ function confirmarAcao(mensagem, opcoes = {}) {
 }
 
 // ComboButton das linhas de Publicações por OAB: fecha o menu aberto ao clicar fora ou Esc.
-function _fecharTodosComboMenusOab() {
+function _fecharTodosComboMenusOab(restaurarFoco = false) {
   document.querySelectorAll(".pub-oab-combo-menu:not([hidden])").forEach((menu) => {
+    const tinhaFoco = menu.contains(document.activeElement);
+    if (menu.matches(":popover-open")) menu.hidePopover();
     menu.hidden = true;
     menu.classList.remove("cds--menu--open", "cds--menu--shown");
     const trigger = menu.closest(".pub-oab-combo")?.querySelector(".cds--menu-button__trigger");
-    if (trigger) trigger.setAttribute("aria-expanded", "false");
+    if (trigger) {
+      trigger.setAttribute("aria-expanded", "false");
+      if (restaurarFoco && tinhaFoco) trigger.focus();
+    }
   });
 }
+function _posicionarMenuPubOab(menu) {
+  const trigger = menu.closest(".pub-oab-combo")?.querySelector(".cds--menu-button__trigger");
+  if (!trigger) return;
+  const ancora = trigger.getBoundingClientRect();
+  const tamanho = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(ancora.right - tamanho.width, window.innerWidth - tamanho.width - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(window.innerHeight - tamanho.height - 8,
+    ancora.bottom + tamanho.height <= window.innerHeight - 8 ? ancora.bottom : ancora.top - tamanho.height))}px`;
+}
+window.addEventListener("resize", () => _fecharTodosComboMenusOab(true));
+document.addEventListener("scroll", (ev) => {
+  if (!ev.target.closest?.(".pub-oab-combo-menu")) {
+    document.querySelectorAll(".pub-oab-combo-menu:popover-open").forEach(_posicionarMenuPubOab);
+  }
+}, true);
 document.addEventListener("click", (ev) => {
   if (!ev.target.closest(".pub-oab-combo")) _fecharTodosComboMenusOab();
 });
 document.addEventListener("keydown", (ev) => {
-  if (ev.key === "Escape") {
-    _fecharTodosComboMenusOab();
+  if (ev.key === "Escape" && !ev.defaultPrevented) {
+    const destino = !_painelBusca.hidden ? _btnBuscaToggle : !_painelNotificacoes.hidden ? _btnNotificacoesToggle : null;
+
+    _fecharTodosComboMenusOab(true);
     // Painéis do header (notificações e busca). As funções são declaradas no fim do arquivo
     // (function declarations são hoisted, então já existem quando este listener dispara).
     _fecharPainelNotificacoes();
     _fecharPainelBusca();
+    destino?.focus();
   }
 });
 
@@ -2455,6 +2511,10 @@ function _resumoEventoCaso(evento) {
     if (c.status === "cancelled") return "Evento da agenda foi cancelado";
     return `Evento da agenda mudou: ${c.titulo || "Prazo"} agora em ${formatarDataSimples(c.data)}`;
   }
+  if (evento.tipo === "movimento_processual") {
+    const ultimo = c.ultimo?.nome ? ` (último: ${c.ultimo.nome})` : "";
+    return `${c.quantidade || 1} movimento(s) novo(s) no processo${ultimo}`;
+  }
   return evento.tipo;
 }
 
@@ -2625,13 +2685,24 @@ function tabelaCasos(casos, aoExcluir) {
 
 function cartoesCasos(casos, aoExcluir) {
   const nomeCliente = (id) => (_cache.clientes.find((c) => c.id === id) || {}).nome || id;
+  const formatarTitulo = (titulo) => {
+    const texto = String(titulo || "sem título").trim().toLocaleLowerCase("pt-BR");
+    return texto.replace(/(^|[\s/–—-])(\p{L})/gu, (_trecho, separador, letra) =>
+      `${separador}${letra.toLocaleUpperCase("pt-BR")}`
+    );
+  };
   const ordenados = [...casos].sort((a, b) => (b.ultima_movimentacao || "").localeCompare(a.ultima_movimentacao || ""));
-  const grade = el("div", { class: "grade-casos" });
+  const grade = el("div", { class: "cds--grid grade-casos" });
+  const linha = el("div", { class: "cds--row grade-casos-linha" });
+  grade.appendChild(linha);
   for (const caso of ordenados) {
-    const card = el("article", { class: "cds--tile" });
+    const tituloCartao = formatarTitulo(caso.titulo);
+    const card = el("cds-card", { class: "processo-card", density: "productive", "aria-label": tituloCartao });
+    const cabecalho = el("cds-card-header");
+    const corpo = el("cds-card-body");
 
-    const tituloLinha = el("div", { class: "caso-titulo-linha" }, [
-      el("span", { texto: caso.titulo || "(sem título)" }),
+    const tituloLinha = el("cds-card-title", {}, [
+      el("span", { texto: tituloCartao }),
     ]);
     if (caso.monitorado) {
       tituloLinha.appendChild(el("span", { class: "cds--tag cds--tag--green cds--tag--sm", texto: "Monitorado" }));
@@ -2639,10 +2710,10 @@ function cartoesCasos(casos, aoExcluir) {
     if (caso.desfecho && _ROTULO_DESFECHO_CASO[caso.desfecho]) {
       tituloLinha.appendChild(el("span", { class: "cds--tag cds--tag--purple cds--tag--sm", texto: _ROTULO_DESFECHO_CASO[caso.desfecho] }));
     }
-    card.appendChild(tituloLinha);
+    cabecalho.appendChild(tituloLinha);
 
     const nomesClientes = [caso.cliente_id, ...(caso.clientes_adicionais || [])].map(nomeCliente).filter(Boolean);
-    card.appendChild(el("p", { class: "campo-ajuda", texto: nomesClientes.join(", ") || "Sem cliente vinculado" }));
+    corpo.appendChild(el("p", { class: "campo-ajuda", texto: nomesClientes.join(", ") || "Sem cliente vinculado" }));
 
     const containerAcao = el("div", { style: "display:flex; flex-wrap:wrap; gap:4px" });
     const pedacosAcao = (caso.acao || "").split(" - ").map((pedaco) => pedaco.trim()).filter(Boolean);
@@ -2654,21 +2725,29 @@ function cartoesCasos(casos, aoExcluir) {
       });
     }
     if (caso.foro) containerAcao.appendChild(el("span", { class: "cds--tag cds--tag--gray cds--tag--sm", texto: caso.foro }));
-    card.appendChild(containerAcao);
+    corpo.appendChild(containerAcao);
 
-    card.appendChild(el("p", { class: "campo-ajuda", texto: `Últ. mov.: ${formatarDataSimples(caso.ultima_movimentacao)}` }));
+    corpo.appendChild(el("p", { class: "campo-ajuda", texto: `Últ. mov.: ${formatarDataSimples(caso.ultima_movimentacao)}` }));
 
-    const botaoAbrirCaso = el("button", {
-      class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Abrir",
-    });
+    const criarAcao = (nome, rotulo) => {
+      const botao = el("cds-icon-button", { kind: "ghost", size: "sm", label: rotulo });
+      const criarSvg = (item) => _elSvg(document, item.elem, item.attrs || {}, (item.content || []).map(criarSvg));
+      const icone = criarSvg(window.cnjProcessoIcones[nome]);
+      icone.setAttribute("slot", "icon");
+      icone.setAttribute("aria-hidden", "true");
+      botao.append(icone, el("span", { slot: "tooltip-content", texto: rotulo }));
+      return botao;
+    };
+    const botaoAbrirCaso = criarAcao("editar", "Editar");
     botaoAbrirCaso.addEventListener("click", () => abrirCaso(caso.id));
-    const botaoExcluirCaso = el("button", {
-      class: "cds--btn cds--btn--danger--tertiary cds--btn--sm", type: "button", texto: "Excluir",
-    });
+    const botaoExcluirCaso = criarAcao("excluir", "Excluir");
     botaoExcluirCaso.addEventListener("click", () => excluirCaso(caso.id, caso.titulo, botaoExcluirCaso, aoExcluir));
-    card.appendChild(el("div", { style: "display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:auto" }, [botaoAbrirCaso, botaoExcluirCaso]));
-
-    grade.appendChild(card);
+    cabecalho.appendChild(el("cds-card-actions", {}, [
+      el("cds-card-action", { label: "Editar" }, [botaoAbrirCaso]),
+      el("cds-card-action", { label: "Excluir" }, [botaoExcluirCaso]),
+    ]));
+    card.append(cabecalho, corpo);
+    linha.appendChild(el("div", { class: "cds--col-sm-4 cds--col-md-4 cds--col-lg-4 processo-card-coluna" }, [card]));
   }
   return grade;
 }
@@ -3134,6 +3213,7 @@ async function carregarCasosPagina() {
   const listaCasosEl = document.getElementById("lista-casos");
   if (!exigirCliente(listaCasosEl)) return;
   limpar(listaCasosEl);
+  listaCasosEl.appendChild(el("p", { class: "app-espera", role: "status", texto: "Carregando processos…" }));
   carregarPendentes();
   try {
     const [{ clientes }, { casos }] = await Promise.all([_buscarJson("/clientes"), _buscarJson("/casos")]);
@@ -3252,6 +3332,31 @@ const _TIPOS_TELEFONE = [["", "Tipo"], ["celular", "Celular"], ["residencial", "
 const _TIPOS_EMAIL = [["", "Tipo"], ["pessoal", "Pessoal"], ["comercial", "Comercial"], ["outro", "Outro"]];
 const _TIPOS_ENDERECO = [["", "Tipo"], ["residencial", "Residencial"], ["comercial", "Comercial"], ["cobranca", "Cobrança"], ["outro", "Outro"]];
 
+let _sequenciaCampoRepetivel = 0;
+function identificarGrupoRepetivel(grupo, nome, rotulos) {
+  const identificador = ++_sequenciaCampoRepetivel;
+  grupo.setAttribute("role", "group");
+  const titulo = el("p", { id: `grupo-repetivel-${identificador}`, class: "campo-ajuda grupo-repetivel-titulo", texto: nome });
+  grupo.prepend(titulo);
+  grupo.setAttribute("aria-labelledby", titulo.id);
+  [...grupo.querySelectorAll("input, select")].forEach((campo, i) => {
+    campo.id = `campo-repetivel-${identificador}-${i}`;
+    const item = el("div", { class: "cds--form-item campo-repetivel" });
+    campo.before(item);
+    item.append(el("label", { class: "cds--label", for: campo.id, texto: rotulos[i] }), campo);
+  });
+  const remover = grupo.querySelector("button");
+  if (remover) remover.setAttribute("aria-label", `Remover ${nome.toLowerCase()}`);
+  queueMicrotask(() => {
+    [...(grupo.parentElement?.children || [])].forEach((item, i) => {
+      const tituloItem = item.querySelector(".grupo-repetivel-titulo");
+      if (!tituloItem) return;
+      tituloItem.textContent = `${nome.replace(/ \d+$/, "")} ${i + 1}`;
+      item.querySelector("button")?.setAttribute("aria-label", `Remover ${tituloItem.textContent.toLowerCase()}`);
+    });
+  });
+}
+
 // Grupo repetível de telefones: tipo + telefone + operadora + remover.
 function _criarGrupoTelefones(prefixo) {
   const lista = document.getElementById(`${prefixo}-telefones-lista`);
@@ -3269,6 +3374,7 @@ function _criarGrupoTelefones(prefixo) {
     linha.appendChild(inputTelefone);
     linha.appendChild(inputOperadora);
     linha.appendChild(_criarBotaoRemoverLinha(() => { linha.remove(); if (!lista.children.length) adicionarLinha(); }));
+    identificarGrupoRepetivel(linha, `Telefone ${lista.children.length + 1}`, ["Tipo", "Telefone", "Operadora"]);
     lista.appendChild(linha);
   }
 
@@ -3302,6 +3408,7 @@ function _criarGrupoEmails(prefixo) {
     linha.appendChild(selectTipo);
     linha.appendChild(inputEmail);
     linha.appendChild(_criarBotaoRemoverLinha(() => { linha.remove(); if (!lista.children.length) adicionarLinha(); }));
+    identificarGrupoRepetivel(linha, `E-mail ${lista.children.length + 1}`, ["Tipo", "E-mail"]);
     lista.appendChild(linha);
   }
 
@@ -3333,6 +3440,7 @@ function _criarGrupoSites(prefixo) {
     inputSite.value = valor.site || "";
     linha.appendChild(inputSite);
     linha.appendChild(_criarBotaoRemoverLinha(() => { linha.remove(); if (!lista.children.length) adicionarLinha(); }));
+    identificarGrupoRepetivel(linha, `Site ${lista.children.length + 1}`, ["Site"]);
     lista.appendChild(linha);
   }
 
@@ -3452,6 +3560,8 @@ function _criarGrupoEnderecos(prefixo) {
     card.appendChild(topo);
     card.appendChild(grade);
     card.appendChild(statusCep);
+    statusCep.setAttribute("role", "status");
+    identificarGrupoRepetivel(card, `Endereço ${lista.children.length + 1}`, ["Tipo", "CEP", "Rua", "Número", "Bairro", "Complemento", "Cidade", "Estado", "País"]);
     lista.appendChild(card);
   }
 
@@ -3562,6 +3672,8 @@ registrarSalvamento(formCaso, async (evento) => {
     responsavel: document.getElementById("caso-responsavel").value.trim(),
     acao: document.getElementById("caso-acao").value.trim(),
     foro: document.getElementById("caso-foro").value.trim(),
+    pasta: document.getElementById("caso-pasta").value.trim(),
+    acesso: document.getElementById("caso-acesso").value,
     numeros_processo: numeros,
   };
   const pararEspera = mostrarEspera(resultadoCaso, botao, "Cadastrando processo");
@@ -3987,7 +4099,9 @@ const _TAG_COR_STATUS_PUB_OAB = { nao_tratada: "warm-gray", tratada: "green", ar
 
 function _badgeStatusPubOab(status) {
   const cor = _TAG_COR_STATUS_PUB_OAB[status] || "gray";
-  return el("span", { class: `cds--tag cds--tag--${cor} cds--tag--sm`, texto: _ROTULO_STATUS_PUB_OAB[status] || status });
+  return el("cds-tag", { class: "pub-oab-status", type: cor, size: "sm" }, [
+    el("span", { class: "pub-oab-status-texto", texto: _ROTULO_STATUS_PUB_OAB[status] || status }),
+  ]);
 }
 
 async function _irParaConsultaProcesso(numeroProcesso) {
@@ -4003,11 +4117,48 @@ async function _irParaConsultaProcesso(numeroProcesso) {
 }
 
 const _publicacoesOabSelecionadas = new Set();
+let _pubOabCarregando = false;
+let _pubOabAtualizando = false;
+let _pubOabPagina = 1;
+let _pubOabTamanho = 5;
+let _pubOabRequisicao = 0;
+const _pubOabExpandidas = new Set();
+
+function _sincronizarSelecaoPubOab() {
+  const container = document.getElementById("lista-publicacoes-oab");
+  const linhas = [...container.querySelectorAll("input[data-publicacao-hash]")];
+  for (const campo of linhas) {
+    campo.checked = _publicacoesOabSelecionadas.has(campo.dataset.publicacaoHash);
+    campo.disabled = _pubOabAtualizando;
+    const linha = campo.closest("cds-table-row");
+    linha.classList.toggle("pub-oab-linha--selecionada", campo.checked);
+    linha.selected = campo.checked;
+  }
+  const todos = container.querySelector("input[data-publicacoes-todas]");
+  if (todos) {
+    const selecionadas = linhas.filter((campo) => campo.checked).length;
+    todos.checked = linhas.length > 0 && selecionadas === linhas.length;
+    todos.indeterminate = selecionadas > 0 && selecionadas < linhas.length;
+    todos.disabled = _pubOabAtualizando;
+  }
+  _atualizarBotoesLotePubOab();
+}
 
 function _atualizarBotoesLotePubOab() {
-  const tem = _publicacoesOabSelecionadas.size > 0;
-  document.getElementById("pub-oab-marcar-tratada").disabled = !tem;
-  document.getElementById("pub-oab-arquivar").disabled = !tem;
+  const quantidade = _publicacoesOabSelecionadas.size;
+  const tem = !_pubOabCarregando && !_pubOabAtualizando && quantidade > 0;
+  for (const botao of document.querySelectorAll("[data-status-lote]")) botao.disabled = !tem;
+  const toolbar = document.querySelector(".pub-oab-tabela-toolbar");
+  if (toolbar) toolbar.hidden = quantidade > 0;
+  for (const controle of document.querySelectorAll(".pub-oab-paginacao button, .pub-oab-paginacao select, [data-cancelar-lote]")) {
+    controle.disabled = _pubOabAtualizando || _pubOabCarregando || controle.dataset.limite === "true";
+  }
+  const barra = document.getElementById("pub-oab-batch");
+  if (barra) {
+    barra.hidden = quantidade === 0;
+    barra.classList.toggle("cds--batch-actions--active", quantidade > 0);
+    document.getElementById("pub-oab-selecionadas").textContent = `${quantidade} ${quantidade === 1 ? "Selecionada" : "Selecionadas"}`;
+  }
 }
 
 function _statusGeralPubOab(mensagem, erro) {
@@ -4018,41 +4169,227 @@ function _statusGeralPubOab(mensagem, erro) {
 }
 
 async function _aplicarStatusPubOab(hashes, status) {
+  if (!hashes.length || _pubOabAtualizando || _pubOabCarregando) return;
+  _pubOabAtualizando = true;
+  _sincronizarSelecaoPubOab();
   try {
-    await _enviarJson("/publicacoes-oab/status", { hashes, status });
-    _statusGeralPubOab(`${hashes.length} publicação(ões) marcada(s) como "${_ROTULO_STATUS_PUB_OAB[status]}".`);
-    _publicacoesOabSelecionadas.clear();
-    carregarPublicacoesOab();
+    const resultado = await _enviarJson("/publicacoes-oab/status", { hashes, status });
+    const atualizados = resultado.hashes_atualizados || (resultado.atualizadas === hashes.length ? hashes : []);
+    const falhas = resultado.hashes_falharam || hashes.filter((h) => !atualizados.includes(h));
+    for (const hash of atualizados) _publicacoesOabSelecionadas.delete(hash);
+    if (falhas.length) {
+      mostrarToast("error", "Atualização parcial", `${atualizados.length} atualizadas; ${falhas.length} não atualizadas. Revise a seleção e tente novamente.`);
+    } else {
+      mostrarToast("success", "Status atualizado",
+        `${atualizados.length} ${atualizados.length === 1 ? "publicação marcada" : "publicações marcadas"} como “${_ROTULO_STATUS_PUB_OAB[status]}”.`);
+    }
+    await carregarPublicacoesOab();
   } catch (erro) {
-    _statusGeralPubOab(erro.message, true);
+    mostrarToast("error", "Não foi possível atualizar o status", erro.message);
+  } finally {
+    _pubOabAtualizando = false;
+    _sincronizarSelecaoPubOab();
   }
 }
 
 let _pubOabContadorLinha = 0;
 
-function linhaPublicacaoOab(p) {
+// Colunas com chaves estáveis: preferências não dependem da ordem de exibição.
+function _tituloPubOab(valor) {
+  return String(valor ?? "").toLocaleLowerCase("pt-BR").replace(/(^|[^\p{L}\p{N}])(\p{L})/gu,
+    (_, separador, letra) => separador + letra.toLocaleUpperCase("pt-BR"));
+}
+
+function _valorPubOab(valor, literal = false) {
+  if (valor === null || valor === undefined || valor === "") return "—";
+  if (Array.isArray(valor)) return valor.map((v) => _valorPubOab(v, literal)).join(" · ") || "—";
+  if (typeof valor === "object") return Object.entries(valor).map(([k, v]) => `${_tituloPubOab(k.replace(/_/g, " "))}: ${_valorPubOab(v, literal)}`).join("; ");
+  if (typeof valor === "boolean") return valor ? "Sim" : "Não";
+  return literal ? String(valor) : _tituloPubOab(valor);
+}
+
+const _COLUNAS_FIXAS_PUB_OAB = new Set(["processo", "tribunal", "nome"]);
+
+function _nomeProcessoPubOab(p) {
+  const partes = p.dados?.destinatarios || [];
+  const nomes = (polo) => [...new Set(partes.filter((d) => String(d.polo || "").toUpperCase() === polo).map((d) => d.nome).filter(Boolean))].map(_tituloPubOab).join(" / ");
+  return `${nomes("A") || "Parte Ativa Não Informada"} X ${nomes("P") || "Parte Passiva Não Informada"}`;
+}
+
+function _publicacaoCompletaPubOab(p, id) {
+  const d = p.dados || {};
+  const informacoes = [
+    ["Processo", formatarNumeroCNJ(d.numeroprocessocommascara || p.numero_processo || "")],
+    ["Nome Do Processo", _nomeProcessoPubOab(p)],
+    ["Partes", (d.destinatarios || []).map((parte) => `${parte.nome || "—"} (${parte.polo || "Polo Não Informado"})`).join("; ")],
+    ["Tribunal", (d.siglaTribunal || "").toUpperCase()], ["Órgão", d.nomeOrgao],
+    ["Divulgado", formatarDataSimples(d.data_disponibilizacao)],
+    ["Tipo", d.tipoComunicacao], ["Documento", d.tipoDocumento], ["Classe", d.nomeClasse],
+    ["Advogados", (d.destinatarioadvogados || []).map((a) => `${a.nome || "—"} · OAB ${a.numero_oab || "—"}/${a.uf_oab || "—"}`).join("; ")],
+  ];
+  return el("article", { id, class: "pub-oab-publicacao-completa", "aria-label": "Publicação Completa" }, [
+    el("header", { class: "pub-oab-publicacao-cabecalho" }, informacoes.filter(([, valor]) => valor).map(([rotulo, valor]) => el("p", {}, [el("strong", { texto: `${rotulo}: ${valor}` })]))),
+    el("div", { class: "pub-oab-publicacao-texto", texto: d.texto || "Texto Não Informado" }),
+  ]);
+}
+
+function _normalizarConsultaPubOab(valor) {
+  return String(valor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+async function _abrirFluxoInlinePubOab(tr, p, colunas, tipo, origem) {
+  const anterior = [...tr.parentElement.querySelectorAll(".pub-oab-inline-row")].find((linha) => linha.dataset.fluxoPublicacao === p.hash);
+  if (anterior) anterior.remove();
+  const id = `pub-oab-fluxo-${++_pubOabContadorLinha}`;
+  const busca = el("input", { id: `${id}-busca`, type: "search", class: "cds--text-input", autocomplete: "off",
+    placeholder: tipo === "cadastro" ? "Nome Do Cliente" : "Número, Parte Ou Cliente" });
+  const resultados = el("div", { class: "pub-oab-resultados-busca", "aria-label": "Resultados Da Consulta" });
+  const escolhido = el("div", { class: "pub-oab-confirmacao", hidden: "hidden" });
+  const status = el("p", { id: `${id}-status`, class: "campo-ajuda", role: "status", "aria-live": "polite", texto: "Carregando…" });
+  busca.setAttribute("aria-describedby", status.id);
+  const confirmar = el("button", { type: "submit", class: "cds--btn cds--btn--primary cds--btn--sm", texto: tipo === "cadastro" ? "Confirmar Cadastro" : "Confirmar Vínculo", disabled: "disabled" });
+  const cancelar = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Cancelar" });
+  const responsavel = el("select", { id: `${id}-responsavel`, class: "cds--select-input", required: "required" }, [el("option", { value: "", texto: "Selecione O Responsável" })]);
+  const form = el("form", { class: "pub-oab-inline-form", "aria-label": tipo === "cadastro" ? "Cadastrar Processo" : "Vincular A Processo Existente" }, [
+    el("h3", { texto: tipo === "cadastro" ? "Cadastrar Processo" : "Vincular A Processo Existente" }),
+    el("p", { class: "campo-ajuda", texto: `${formatarNumeroCNJ(p.numero_processo || "")} · ${_nomeProcessoPubOab(p)}` }),
+    el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: busca.id, texto: tipo === "cadastro" ? "Cliente" : "Consultar Processo" }), busca]),
+    resultados, escolhido,
+    ...(tipo === "cadastro" ? [el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: responsavel.id, texto: "Responsável" }), responsavel])] : []),
+    status, el("div", { class: "pub-oab-inline-acoes" }, [confirmar, cancelar]),
+  ]);
+  const linha = el("cds-table-expanded-row", { class: "pub-oab-inline-row", expanded: "", colspan: String(colunas.length + 3), "data-fluxo-publicacao": p.hash }, [form]);
+  const expansao = tr.nextElementSibling;
+  if (expansao?.matches(".pub-oab-expansao")) expansao.after(linha);
+  else tr.after(linha);
+  tr.closest("cds-table")?._pubOabAplicarColunas?.();
+  cancelar.addEventListener("click", () => { linha.remove(); origem.focus(); });
+  // O conteúdo só fica disponível para foco após o primeiro render do Web Component.
+  await linha.updateComplete;
+  if (!linha.isConnected) return;
+  busca.focus();
+  let selecionado = null, clientes = [], pronto = false, requisicao = 0, temporizador;
+  const escolher = (item, descricao) => {
+    selecionado = item;
+    limpar(escolhido);
+    escolhido.append(el("strong", { texto: tipo === "cadastro" ? "Cliente Selecionado" : "Confirmar Processo Selecionado" }), el("p", { texto: descricao }));
+    escolhido.hidden = false;
+    confirmar.disabled = false;
+    limpar(resultados);
+    status.textContent = "Confira Os Dados E Confirme Abaixo.";
+  };
+  const exibir = (itens) => {
+    limpar(resultados);
+    if (!itens.length) { status.textContent = "Nenhum Resultado. Altere Os Termos Da Consulta."; return; }
+    for (const item of itens.slice(0, 20)) {
+      const cliente = clientes.find((c) => c.id === item.cliente_id);
+      const descricao = tipo === "cadastro" ? item.nome : [item.titulo, item.autor, item.reu, ...(item.processos || []).map(formatarNumeroCNJ), cliente?.nome || item.nome_cliente].filter(Boolean).join(" · ");
+      const botao = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: descricao });
+      botao.addEventListener("click", () => escolher(item, descricao));
+      resultados.appendChild(botao);
+    }
+    status.textContent = `${Math.min(itens.length, 20)} Resultado(s). Selecione Um Para Confirmar.`;
+  };
+  busca.addEventListener("input", () => {
+    selecionado = null; confirmar.disabled = true; escolhido.hidden = true; limpar(resultados);
+    clearTimeout(temporizador); const numeroRequisicao = ++requisicao;
+    if (!pronto) return;
+    const termo = busca.value.trim();
+    if (!termo) { status.textContent = "Informe Um Termo Para Consultar."; return; }
+    if (tipo === "cadastro") { exibir(clientes.filter((c) => _normalizarConsultaPubOab(c.nome).includes(_normalizarConsultaPubOab(termo)))); return; }
+    status.textContent = "Consultando Processos…";
+    temporizador = setTimeout(async () => {
+      try {
+        const dados = await _buscarJson(`/casos?q=${encodeURIComponent(termo)}`);
+        if (numeroRequisicao === requisicao && linha.isConnected) exibir(dados.casos || []);
+      } catch (erro) { if (numeroRequisicao === requisicao && linha.isConnected) status.textContent = erro.message; }
+    }, 200);
+  });
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    if (!selecionado || confirmar.disabled) return;
+    confirmar.disabled = true; cancelar.disabled = true; busca.disabled = true; responsavel.disabled = true;
+    status.textContent = tipo === "cadastro" ? "Cadastrando Processo…" : "Vinculando Publicação…";
+    try {
+      if (tipo === "cadastro") await _enviarJson(`/publicacoes-oab/${encodeURIComponent(p.hash)}/criar-caso`, { cliente_id: selecionado.id, responsavel: responsavel.value });
+      else await _enviarJson(`/casos/${encodeURIComponent(selecionado.id)}/publicacoes`, { hash: p.hash, numero_processo: p.numero_processo || null, dados: p.dados || null });
+      mostrarToast("success", tipo === "cadastro" ? "Processo Cadastrado" : "Publicação Vinculada", tipo === "cadastro" ? "Dados Capturados Preenchidos E Publicação Vinculada." : "Vínculo Confirmado.");
+      await carregarPublicacoesOab();
+    } catch (erro) {
+      status.textContent = erro.message;
+      confirmar.disabled = false; cancelar.disabled = false; busca.disabled = false; responsavel.disabled = false;
+    }
+  });
+  try {
+    const dadosClientes = await _buscarJson("/clientes"); clientes = dadosClientes.clientes || [];
+    if (tipo === "cadastro") {
+      const dados = await _buscarJson("/responsaveis");
+      for (const nome of dados.responsaveis || []) responsavel.appendChild(el("option", { value: nome, texto: nome }));
+    }
+    pronto = true;
+    status.textContent = "Informe Um Termo Para Consultar.";
+    if (busca.value) busca.dispatchEvent(new Event("input"));
+  } catch (erro) {
+    status.textContent = `Não Foi Possível Carregar As Opções: ${erro.message}`;
+    const repetir = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Tentar Novamente" });
+    repetir.addEventListener("click", () => _abrirFluxoInlinePubOab(tr, p, colunas, tipo, origem));
+    resultados.appendChild(repetir);
+  }
+}
+
+function _colunasPubOab(publicacoes = [], camposDjen = []) {
+  const colunas = [
+    ["divulgado", "Divulgado", (p) => formatarDataSimples(p.dados?.data_disponibilizacao), true],
+    ["capturado", "Capturado", (p) => formatarData(p.criado_em), true],
+    ["tipo", "Tipo", (p) => p.dados?.tipoComunicacao, true],
+    ["processo", "Processo", () => "", true],
+    ["tribunal", "Tribunal", (p) => (p.dados?.siglaTribunal || "").toUpperCase(), true, true],
+    ["orgao", "Órgão", (p) => p.dados?.nomeOrgao, false],
+    ["nome", "Nome Do Processo", _nomeProcessoPubOab, true],
+    ["referencia", "Nome De Referência", (p) => p.nome_pesquisado, true],
+    ["status", "Status", (p) => _ROTULO_STATUS_PUB_OAB[p.status] || p.status, true],
+    ["documento", "Tipo De Documento", (p) => p.dados?.tipoDocumento, false],
+    ["classe", "Classe", (p) => p.dados?.nomeClasse, false],
+    ["destinatarios", "Destinatários", (p) => p.dados?.destinatarios, false],
+    ["polos", "Polos Dos Destinatários", (p) => (p.dados?.destinatarios || []).map((d) => d.polo), false],
+    ["advogados", "Advogados", (p) => (p.dados?.destinatarioadvogados || []).map((d) => d.nome), false],
+    ["oab", "Número Da OAB", (p) => (p.dados?.destinatarioadvogados || []).map((d) => d.numero_oab), false, true],
+    ["uf", "UF Da OAB", (p) => (p.dados?.destinatarioadvogados || []).map((d) => d.uf_oab), false],
+    ["dados_advogados", "Dados Dos Advogados", (p) => p.dados?.destinatarioadvogados, false],
+    ["texto", "Texto", (p) => p.dados?.texto, false, true],
+    ["hash", "Hash", (p) => p.dados?.hash || p.hash, false, true],
+    ["link", "Link", (p) => p.dados?.link, false, true],
+  ].map(([id, rotulo, valor, padrao, literal = false]) => ({ id, rotulo, valor, padrao, literal }));
+  const conhecidos = new Set(["data_disponibilizacao", "siglaTribunal", "nomeOrgao", "tipoComunicacao", "tipoDocumento", "nomeClasse", "numeroprocessocommascara", "destinatarios", "destinatarioadvogados", "texto", "hash", "link"]);
+  const extras = new Set([...camposDjen, ...publicacoes.flatMap((p) => Object.keys(p.dados || {}))].filter((k) => !conhecidos.has(k)));
+  for (const chave of [...extras].sort()) {
+    colunas.push({ id: `djen:${chave}`, rotulo: _tituloPubOab(chave.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ")),
+      valor: (p) => p.dados?.[chave], padrao: false, literal: /(^id$|hash|url|link|numero)/i.test(chave) });
+  }
+  const ordem = { tribunal: 0, processo: 1, nome: 2 };
+  return colunas.map((c) => ({ ...c, padrao: _COLUNAS_FIXAS_PUB_OAB.has(c.id) }))
+    .sort((a, b) => (ordem[a.id] ?? 3) - (ordem[b.id] ?? 3));
+}
+
+function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
   const d = p.dados || {};
   const linhas = [];
-  const tr = el("tr", {});
+  const tr = el("cds-table-row", { class: "pub-oab-linha", "data-publicacao": p.hash, size: "md" });
   const idTexto = `pub-oab-texto-${++_pubOabContadorLinha}`;
   const identificacao = d.numeroprocessocommascara || p.numero_processo || p.nome_pesquisado || "publicação";
 
-  const checkbox = el("input", { type: "checkbox", "aria-label": `Selecionar publicação: ${identificacao}` });
+  const checkbox = el("input", { type: "checkbox", "data-publicacao-hash": p.hash, "aria-label": `Selecionar publicação: ${identificacao}` });
   checkbox.checked = _publicacoesOabSelecionadas.has(p.hash);
   checkbox.addEventListener("change", () => {
     if (checkbox.checked) _publicacoesOabSelecionadas.add(p.hash);
     else _publicacoesOabSelecionadas.delete(p.hash);
-    _atualizarBotoesLotePubOab();
+    _sincronizarSelecaoPubOab();
   });
-  tr.appendChild(el("td", { "data-label": "Selecionar" }, [checkbox]));
+  tr.appendChild(el("cds-table-cell", { "data-label": "Selecionar", class: "pub-oab-controle" }, [checkbox]));
 
-  tr.appendChild(el("td", { "data-label": "Divulgado em" }, [
-    el("div", { texto: formatarDataSimples(d.data_disponibilizacao) }),
-    el("div", { class: "campo-ajuda", texto: `Capturado em ${formatarData(p.criado_em)}` }),
-    el("div", { class: "campo-ajuda", texto: d.tipoComunicacao || d.tipoDocumento || "-" }),
-  ]));
-
-  const celProcesso = el("td", { "data-label": "Processo" });
+  const celExpansao = el("cds-table-cell", { "data-label": "Expandir", class: "pub-oab-controle" });
+  tr.appendChild(celExpansao);
+  const celProcesso = el("cds-table-cell", { "data-label": "Processo" });
   if (p.numero_processo) {
     celProcesso.appendChild(el("div", { texto: formatarNumeroCNJ(d.numeroprocessocommascara || p.numero_processo) }));
   } else {
@@ -4064,156 +4401,191 @@ function linhaPublicacaoOab(p) {
     });
     celProcesso.appendChild(linkBusca);
   }
-  if (d.texto) {
-    const trTexto = el("tr", {});
-    trTexto.hidden = true;
-    trTexto.appendChild(el("td", { colspan: "8" }, [el("div", { id: idTexto, class: "pub-oab-texto-expandido", texto: d.texto })]));
-    const botaoExpandir = el("button", {
-      class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Ler mais",
-      "aria-expanded": "false", "aria-controls": idTexto,
-    });
-    botaoExpandir.addEventListener("click", () => {
-      trTexto.hidden = !trTexto.hidden;
-      botaoExpandir.textContent = trTexto.hidden ? "Ler mais" : "Ler menos";
-      botaoExpandir.setAttribute("aria-expanded", trTexto.hidden ? "false" : "true");
-    });
-    celProcesso.appendChild(botaoExpandir);
-    linhas.push(tr, trTexto);
-  } else {
-    linhas.push(tr);
+  const trTexto = el("cds-table-expanded-row", { class: "pub-oab-expansao", expanded: "", colspan: String(colunas.length + 3) }, [_publicacaoCompletaPubOab(p, idTexto)]);
+  trTexto.hidden = !_pubOabExpandidas.has(p.hash);
+  tr.expanded = !trTexto.hidden;
+  trTexto.expanded = !trTexto.hidden;
+  const botaoExpandir = el("button", {
+    class: "pub-oab-expandir", type: "button", texto: trTexto.hidden ? "›" : "⌄",
+    "aria-label": `Expandir publicação: ${identificacao}`,
+    "aria-expanded": String(!trTexto.hidden), "aria-controls": idTexto,
+  });
+  botaoExpandir.addEventListener("click", () => {
+    trTexto.hidden = !trTexto.hidden;
+    tr.expanded = !trTexto.hidden;
+    trTexto.expanded = !trTexto.hidden;
+    if (trTexto.hidden) _pubOabExpandidas.delete(p.hash); else _pubOabExpandidas.add(p.hash);
+    botaoExpandir.textContent = trTexto.hidden ? "›" : "⌄";
+    botaoExpandir.setAttribute("aria-expanded", String(!trTexto.hidden));
+    botaoExpandir.setAttribute("aria-label", `${trTexto.hidden ? "Expandir" : "Recolher"} publicação: ${identificacao}`);
+  });
+  celExpansao.appendChild(botaoExpandir);
+  linhas.push(tr, trTexto);
+  for (const coluna of colunas) {
+    let celula;
+    if (coluna.id === "processo") celula = celProcesso;
+    else if (coluna.id === "status") {
+      const badge = _badgeStatusPubOab(p.status);
+      badge.querySelector(".pub-oab-status-texto").textContent = _tituloPubOab(badge.textContent);
+      celula = el("cds-table-cell", {}, [badge]);
+    } else {
+      const valor = _valorPubOab(coluna.valor(p), coluna.literal);
+      celula = el("cds-table-cell", {}, [el("span", { class: "pub-oab-celula-valor", texto: valor, title: valor })]);
+    }
+    if (coluna.id === "nome") {
+      const nome = _nomeProcessoPubOab(p);
+      limpar(celula);
+      const nomeEl = el("span", { class: "pub-oab-nome-processo", texto: nome, title: nome, tabindex: "0" });
+      const tooltip = el("span", { id: `${idTexto}-nome`, class: "pub-oab-tooltip-nome", role: "tooltip", popover: "manual", texto: nome });
+      nomeEl.setAttribute("aria-describedby", tooltip.id);
+      const mostrar = () => {
+        if (!tooltip.isConnected || tooltip.matches(":popover-open")) return;
+        tooltip.showPopover();
+        const r = nomeEl.getBoundingClientRect(), t = tooltip.getBoundingClientRect();
+        tooltip.style.left = `${Math.max(8, Math.min(r.left, innerWidth - t.width - 8))}px`;
+        tooltip.style.top = `${Math.max(8, Math.min(r.bottom + 4, innerHeight - t.height - 8))}px`;
+      };
+      const fechar = () => { if (tooltip.matches(":popover-open")) tooltip.hidePopover(); };
+      nomeEl.addEventListener("mouseenter", mostrar);
+      nomeEl.addEventListener("focus", mostrar);
+      nomeEl.addEventListener("mouseleave", () => { if (document.activeElement !== nomeEl) fechar(); });
+      nomeEl.addEventListener("blur", fechar);
+      nomeEl.addEventListener("keydown", (e) => { if (e.key === "Escape") fechar(); });
+      celula.append(nomeEl, tooltip);
+    }
+    celula.setAttribute("data-coluna", coluna.id);
+    celula.setAttribute("data-label", coluna.rotulo);
+    tr.appendChild(celula);
   }
-  tr.appendChild(celProcesso);
 
-  tr.appendChild(el("td", { "data-label": "Diário" }, [
-    el("div", { texto: d.siglaTribunal || "-" }),
-    el("div", { class: "campo-ajuda", texto: d.nomeOrgao || "" }),
-  ]));
-  const nomesPartes = (d.destinatarios || []).map((dest) => dest.nome).filter(Boolean);
-  const celPartes = el("td", { "data-label": "Partes", texto: nomesPartes.length ? nomesPartes.join(", ") : "-" });
-  if (nomesPartes.length) celPartes.title = nomesPartes.join(", ");
-  tr.appendChild(celPartes);
-  tr.appendChild(el("td", { "data-label": "Nome de referência", texto: p.nome_pesquisado || "-" }));
-  tr.appendChild(el("td", { "data-label": "Status" }, [_badgeStatusPubOab(p.status)]));
-
-  const celAcoes = el("td", { "data-label": "Ações" });
+  const celAcoes = el("cds-table-cell", { "data-label": "Ações" });
   const acoesLinha = el("div", { class: "pub-oab-acoes-linha" });
 
   if (d.link) {
     acoesLinha.appendChild(
-      el("a", {
-        class: "cds--btn cds--btn--primary cds--btn--sm", href: d.link, target: "_blank", rel: "noopener",
-        texto: "Abrir", title: "Abrir publicação no DJEN", "aria-label": "Abrir publicação no DJEN",
-      })
+      el("cds-icon-button", {
+        class: "pub-oab-abrir", href: d.link, target: "_blank", rel: "noopener noreferrer",
+        kind: "ghost", size: "md", align: "left", "link-role": "link",
+      }, [
+        el("span", { class: "pub-oab-abrir-rotulo", texto: "Abrir publicação no DJEN (nova aba)" }),
+        _elSvg(document, "svg", { slot: "icon", width: "16", height: "16", viewBox: "0 0 16 16", "aria-hidden": "true", focusable: "false", fill: "currentColor" }, [
+          _elSvg(document, "path", { d: "M13,14H3c-0.6,0-1-0.4-1-1V3c0-0.6,0.4-1,1-1h5v1H3v10h10V8h1v5C14,13.6,13.6,14,13,14z" }),
+          _elSvg(document, "polygon", { points: "10,1 10,2 13.3,2 9,6.3 9.7,7 14,2.7 14,6 15,6 15,1" }),
+        ]),
+        el("span", { slot: "tooltip-content", texto: "Abrir publicação no DJEN (nova aba)" }),
+      ])
     );
   }
 
-  // ComboButton Carbon: ação primária "Cadastrar processo" + menu com "Marcar como tratada" e "Arquivar".
-  const comboContainer = el("div", { class: "cds--combo-button__container cds--combo-button__container--sm pub-oab-combo" });
-  const primaryWrap = el("div", { class: "cds--combo-button__primary-action" });
-  const podeAdcCaso = p.status !== "tratada" && Boolean(p.numero_processo);
-  if (podeAdcCaso) {
-    anexarBotaoCadastrarCaso(primaryWrap, p.numero_processo, () => {
-      _statusGeralPubOab("Processo cadastrado a partir da publicação.");
-      carregarPublicacoesOab();
-    }, {
-      rotulo: "Cadastrar processo",
-      tituloModal: "Cadastrar cliente e processo",
-      nomeSugerido: p.nome_pesquisado || "",
-      tituloSugerido: d.nomeClasse || d.tipoComunicacao || "",
-      hashPublicacao: p.hash || null,
-      dadosPublicacao: d,
-      tribunal: (d.siglaTribunal || "").toLowerCase() || null,
-      classeBotao: "cds--btn cds--btn--primary cds--btn--sm",
-    });
-  } else {
-    primaryWrap.appendChild(el("button", {
-      class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Cadastrar processo", disabled: "disabled",
-      title: p.status === "tratada" ? "Já está tratada" : "Sem número de processo identificado",
-    }));
-  }
-  comboContainer.appendChild(primaryWrap);
+  // Ações compactas: link direto e Overflow Menu Carbon.
+  const comboContainer = el("div", { class: "pub-oab-combo" });
+  const podeAdcCaso = !p.caso_id && p.status !== "tratada" && Boolean(p.numero_processo);
 
   const iconeChevron = _elSvg(document, "svg", { width: "16", height: "16", viewBox: "0 0 16 16", "aria-hidden": "true" }, [
-    _elSvg(document, "path", { d: "M8 11 3 6l.7-.7L8 9.6l4.3-4.3.7.7z", fill: "currentColor" }),
+    _elSvg(document, "path", { d: "M9 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm0 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm0 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z", fill: "currentColor" }),
   ]);
   const botaoTrigger = el("button", {
-    class: "cds--btn cds--btn--primary cds--btn--sm cds--combo-button__trigger cds--menu-button__trigger",
-    type: "button", "aria-haspopup": "true", "aria-expanded": "false", "aria-label": "Mais ações",
+    class: "cds--btn cds--btn--ghost cds--btn--sm cds--btn--icon-only cds--menu-button__trigger pub-oab-overflow",
+    type: "button", "aria-haspopup": "true", "aria-expanded": "false", "aria-label": `Mais ações da publicação: ${identificacao}`, "aria-controls": `${idTexto}-menu`,
   }, [iconeChevron]);
   comboContainer.appendChild(botaoTrigger);
 
-  const menu = el("ul", { class: "cds--menu pub-oab-combo-menu", role: "menu" });
+  const menu = el("ul", { id: `${idTexto}-menu`, class: "cds--menu pub-oab-combo-menu", popover: "manual", role: "menu", "aria-label": `Ações da publicação: ${identificacao}` });
   menu.hidden = true;
+  const itemCadastro = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1",
+    "aria-disabled": String(!podeAdcCaso) }, [el("div", { class: "cds--menu-item__label", texto: "Cadastrar Processo" })]);
+  if (!podeAdcCaso) {
+    itemCadastro.appendChild(el("div", { class: "pub-oab-menu-motivo", texto: p.status === "tratada" ? "Publicação Já Tratada" : "Número Do Processo Não Informado" }));
+  }
+  itemCadastro.addEventListener("click", () => {
+    if (!podeAdcCaso) return;
+    _fecharTodosComboMenusOab(true);
+    _abrirFluxoInlinePubOab(tr, p, colunas, "cadastro", botaoTrigger);
+  });
+  if (!p.caso_id) menu.appendChild(itemCadastro);
+  else {
+    const abrir = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1" }, [el("div", { class: "cds--menu-item__label", texto: "Abrir Processo" })]);
+    abrir.addEventListener("click", async () => {
+      _fecharTodosComboMenusOab(true);
+      if (await selecionarAba(abas.find((a) => a.painel.id === "aba-casos"))) await abrirCaso(p.caso_id);
+    });
+    menu.appendChild(abrir);
+    const atividade = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1" }, [el("div", { class: "cds--menu-item__label", texto: "Criar atividade" })]);
+    atividade.addEventListener("click", async () => {
+      _fecharTodosComboMenusOab(true);
+      if (!(await selecionarAba(abas.find((a) => a.painel.id === "aba-casos")))) return;
+      if (!(await abrirCaso(p.caso_id))) return;
+      _selecionarSubabaCaso("atividades");
+      _abrirModalAtividade(p.caso_id, null, p.hash);
+    });
+    menu.appendChild(atividade);
+
+  }
 
   // Vincular a caso existente: abre mini-form inline logo abaixo da linha.
-  const itemVincular = el("li", { class: "cds--menu-item", role: "menuitem" }, [
+  const itemVincular = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1" }, [
     el("div", { class: "cds--menu-item__label", texto: "Vincular a processo existente" }),
   ]);
-  let _trVincularForm = null;
   itemVincular.addEventListener("click", () => {
-    _fecharTodosComboMenusOab();
-    if (_trVincularForm) { _trVincularForm.remove(); _trVincularForm = null; return; }
-    const status = el("p", { class: "campo-ajuda", style: "margin:0.25rem 0 0" });
-    const selectCasoVincular = el("select", { class: "cds--select-input" });
-    selectCasoVincular.appendChild(el("option", { value: "", texto: "— selecione o processo —" }));
-    (_cache.casos || []).forEach((c) => {
-      selectCasoVincular.appendChild(el("option", { value: String(c.id), texto: c.titulo || "(sem título)" }));
-    });
-    const btnConfirmar = el("button", { class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Vincular" });
-    const btnCancelar = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Cancelar" });
-    const miniForm = el("div", { class: "mini-form-caso" }, [
-      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", texto: "Vincular ao processo" }), selectCasoVincular]),
-      el("div", { style: "display:flex;gap:0.5rem;flex-wrap:wrap" }, [btnConfirmar, btnCancelar]),
-      status,
-    ]);
-    btnCancelar.addEventListener("click", () => { if (_trVincularForm) { _trVincularForm.remove(); _trVincularForm = null; } });
-    btnConfirmar.addEventListener("click", async () => {
-      const casoId = selectCasoVincular.value;
-      if (!casoId) { status.textContent = "Selecione um processo."; return; }
-      btnConfirmar.disabled = true;
-      try {
-        await _enviarJson(`/casos/${casoId}/publicacoes`, {
-          hash: p.hash,
-          numero_processo: p.numero_processo || null,
-          dados: p.dados || null,
-        });
-        if (_trVincularForm) { _trVincularForm.remove(); _trVincularForm = null; }
-        mostrarToast("success", "Vinculada", "Publicação vinculada ao processo.");
-        carregarPublicacoesOab();
-      } catch (err) {
-        status.textContent = err.message;
-        btnConfirmar.disabled = false;
-      }
-    });
-    _trVincularForm = el("tr", {});
-    _trVincularForm.appendChild(el("td", { colspan: "8" }, [miniForm]));
-    tr.after(_trVincularForm);
+    _fecharTodosComboMenusOab(true);
+    _abrirFluxoInlinePubOab(tr, p, colunas, "vinculo", botaoTrigger);
   });
-  menu.appendChild(itemVincular);
+  if (!p.caso_id) menu.appendChild(itemVincular);
 
   if (p.status !== "tratada") {
-    const itemTratada = el("li", { class: "cds--menu-item", role: "menuitem" }, [
+    const itemTratada = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1" }, [
       el("div", { class: "cds--menu-item__label", texto: "Marcar como tratada" }),
     ]);
-    itemTratada.addEventListener("click", () => { _fecharTodosComboMenusOab(); _aplicarStatusPubOab([p.hash], "tratada"); });
+    itemTratada.addEventListener("click", () => { _fecharTodosComboMenusOab(true); _aplicarStatusPubOab([p.hash], "tratada"); });
     menu.appendChild(itemTratada);
   }
   if (p.status !== "arquivada") {
-    const itemArquivar = el("li", { class: "cds--menu-item", role: "menuitem" }, [
+    const itemArquivar = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1" }, [
       el("div", { class: "cds--menu-item__label", texto: "Arquivar" }),
     ]);
-    itemArquivar.addEventListener("click", () => { _fecharTodosComboMenusOab(); _aplicarStatusPubOab([p.hash], "arquivada"); });
+    itemArquivar.addEventListener("click", () => { _fecharTodosComboMenusOab(true); _aplicarStatusPubOab([p.hash], "arquivada"); });
     menu.appendChild(itemArquivar);
   }
   botaoTrigger.addEventListener("click", (ev) => {
     ev.stopPropagation();
     const abrindo = menu.hidden;
-    _fecharTodosComboMenusOab();
+    _fecharTodosComboMenusOab(true);
     if (abrindo) {
       menu.hidden = false;
       menu.classList.add("cds--menu--open", "cds--menu--shown");
       botaoTrigger.setAttribute("aria-expanded", "true");
+      menu.showPopover();
+      _posicionarMenuPubOab(menu);
+      menu.querySelector('[role="menuitem"]:not([aria-disabled="true"])')?.focus();
     }
+  });
+  botaoTrigger.addEventListener("keydown", (ev) => {
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      if (menu.hidden) botaoTrigger.click();
+      const itens = menu.querySelectorAll('[role="menuitem"]:not([aria-disabled="true"])');
+      itens[ev.key === "ArrowUp" ? itens.length - 1 : 0]?.focus();
+    }
+  });
+  menu.addEventListener("keydown", (ev) => {
+    const itens = [...menu.querySelectorAll('[role="menuitem"]:not([aria-disabled="true"])')];
+    const indice = itens.indexOf(document.activeElement);
+    if (["ArrowDown", "ArrowUp", "Home", "End"].includes(ev.key)) {
+      ev.preventDefault();
+      const proximo = ev.key === "Home" ? 0 : ev.key === "End" ? itens.length - 1
+        : (indice + (ev.key === "ArrowDown" ? 1 : -1) + itens.length) % itens.length;
+      itens[proximo]?.focus();
+    } else if (ev.key === "Enter" || ev.key === " ") {
+      ev.preventDefault();
+      itens[indice]?.click();
+    } else if (ev.key === "Escape") {
+      ev.preventDefault();
+      ev.stopPropagation();
+      _fecharTodosComboMenusOab(true);
+    }
+  });
+  comboContainer.addEventListener("focusout", (ev) => {
+    if (!comboContainer.contains(ev.relatedTarget)) _fecharTodosComboMenusOab();
   });
   comboContainer.appendChild(menu);
   acoesLinha.appendChild(comboContainer);
@@ -4221,130 +4593,205 @@ function linhaPublicacaoOab(p) {
   celAcoes.appendChild(acoesLinha);
   tr.appendChild(celAcoes);
 
+  for (const linha of linhas) _capitalizarTextosPubOab(linha);
   return linhas;
 }
 
-function criarTabelaPublicacoesOab(tabela, quantidade) {
-  const chave = "cnj_pub_oab_colunas_ocultas";
-  const opcionais = [[1, "Divulgado em"], [3, "Diário"], [4, "Partes"], [5, "Nome de referência"], [6, "Status"]];
-  let ocultas = [];
-  try {
-    const valor = JSON.parse(localStorage.getItem(chave) || "[]");
-    if (Array.isArray(valor)) ocultas = valor.filter((indice) => opcionais.some(([i]) => i === indice));
-  } catch { /* usa todas as colunas quando o armazenamento não está disponível */ }
-  const aplicar = () => {
-    for (const linha of tabela.rows) {
-      if (linha.cells.length === 8) {
-        for (const [indice] of opcionais) linha.cells[indice].hidden = ocultas.includes(indice);
-      } else if (linha.cells.length === 1) linha.cells[0].colSpan = 8 - ocultas.length;
-    }
-    tabela.classList.toggle("pub-oab-tabela--reduzida", ocultas.length >= 2);
-  };
-  const seletor = el("details", { class: "pub-oab-colunas" });
-  const resumo = el("summary", { texto: "Colunas" });
-  const campos = el("fieldset", {}, [el("legend", { texto: "Colunas visíveis" })]);
-  for (const [indice, rotulo] of opcionais) {
-    const input = el("input", { type: "checkbox" });
-    input.checked = !ocultas.includes(indice);
-    input.addEventListener("change", () => {
-      ocultas = input.checked ? ocultas.filter((i) => i !== indice) : [...ocultas, indice];
-      aplicar();
-      try { localStorage.setItem(chave, JSON.stringify(ocultas)); } catch { /* preferência da sessão */ }
-    });
-    campos.appendChild(el("label", { class: "pub-oab-coluna-opcao" }, [input, document.createTextNode(rotulo)]));
+function _capitalizarTextosPubOab(raiz) {
+  const walker = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const no = walker.currentNode;
+    if (!no.parentElement?.closest('.pub-oab-publicacao-completa, .pub-oab-abrir, [data-coluna="texto"], [data-coluna="tribunal"], [data-coluna="hash"], [data-coluna="link"], [data-coluna="oab"], [data-coluna^="djen:"]')) no.textContent = _tituloPubOab(no.textContent);
   }
-  campos.appendChild(el("p", { class: "campo-ajuda", texto: "Seleção, processo e ações ficam sempre visíveis." }));
+}
+
+function criarTabelaPublicacoesOab(tabela, quantidade, colunas) {
+  const chave = "cnj_pub_oab_colunas_visiveis_v2";
+  const opcionais = colunas;
+  let visiveis = colunas.filter((c) => c.padrao).map((c) => c.id);
+  try {
+    const valor = JSON.parse(localStorage.getItem(chave) || "null");
+    if (Array.isArray(valor)) {
+      const validas = [...new Set(valor.filter((id) => colunas.some((c) => c.id === id)))];
+      if (!valor.length || validas.length) visiveis = validas;
+    }
+  } catch { /* usa as colunas padrão */ }
+  const aplicar = () => {
+    const quantidadeVisivel = 3 + colunas.filter((c) => _COLUNAS_FIXAS_PUB_OAB.has(c.id) || visiveis.includes(c.id)).length;
+    for (const linha of tabela.querySelectorAll("cds-table-header-row, cds-table-row, cds-table-expanded-row")) {
+      for (const celula of linha.querySelectorAll("[data-coluna]")) celula.hidden = !_COLUNAS_FIXAS_PUB_OAB.has(celula.dataset.coluna) && !visiveis.includes(celula.dataset.coluna);
+      if (linha.matches("cds-table-expanded-row")) linha.colSpan = quantidadeVisivel;
+    }
+    tabela.headerCount = quantidadeVisivel;
+    tabela.classList.toggle("pub-oab-tabela--reduzida", quantidadeVisivel <= 6);
+  };
+  tabela._pubOabAplicarColunas = aplicar;
+  const seletor = el("cds-toggletip", { id: "pub-oab-colunas-toggletip", class: "pub-oab-colunas", alignment: "bottom-right", "button-label": "Colunas" });
+  const resumo = el("span", { slot: "trigger", class: "pub-oab-colunas-trigger", texto: "Colunas" });
+  const campos = el("fieldset", { slot: "body-text", class: "pub-oab-colunas-campos" }, [el("legend", { texto: "Colunas visíveis" })]);
+  let atualizacaoColunas = null;
+  for (const coluna of opcionais) {
+    const id = `pub-oab-coluna-${encodeURIComponent(coluna.id)}`;
+    const input = el("input", { id, type: "checkbox" });
+    input.checked = _COLUNAS_FIXAS_PUB_OAB.has(coluna.id) || visiveis.includes(coluna.id);
+    input.disabled = _COLUNAS_FIXAS_PUB_OAB.has(coluna.id);
+    input.addEventListener("change", () => {
+      visiveis = input.checked ? [...visiveis, coluna.id] : visiveis.filter((id) => id !== coluna.id);
+      // O clique no rótulo ainda está ativando o controle nativo neste ponto.
+      // Só altere o layout da tabela depois que essa ativação terminar.
+      if (atualizacaoColunas !== null) cancelAnimationFrame(atualizacaoColunas);
+      atualizacaoColunas = requestAnimationFrame(() => {
+        atualizacaoColunas = null;
+        if (tabela.isConnected) aplicar();
+      });
+      try { localStorage.setItem(chave, JSON.stringify(visiveis)); } catch { /* preferência da sessão */ }
+    });
+    const rotulo = el("label", { for: id, texto: coluna.rotulo });
+    if (_COLUNAS_FIXAS_PUB_OAB.has(coluna.id)) rotulo.appendChild(el("small", { class: "pub-oab-coluna-fixa", texto: "Sempre visível" }));
+    // Mantém a ativação nativa do label sem mover o foco antes do checkbox.
+    rotulo.addEventListener("pointerdown", (evento) => evento.preventDefault());
+    campos.appendChild(el("div", { class: "pub-oab-coluna-opcao" }, [input, rotulo]));
+  }
+  campos.appendChild(el("p", { class: "campo-ajuda", texto: "Seleção, Processo, Tribunal, Nome Do Processo E Ações Ficam Sempre Visíveis." }));
   seletor.append(resumo, campos);
   seletor.addEventListener("keydown", (evento) => {
-    if (evento.key === "Escape") { evento.preventDefault(); seletor.open = false; resumo.focus(); }
+    if (evento.key === "Escape") { evento.preventDefault(); seletor.open = false; seletor.focus(); }
   });
-  seletor.addEventListener("focusout", (evento) => {
-    if (!seletor.contains(evento.relatedTarget)) seletor.open = false;
+  document.addEventListener("click", function fecharColunas(evento) {
+    if (!seletor.isConnected) { document.removeEventListener("click", fecharColunas); return; }
+    if (!evento.composedPath().includes(seletor)) seletor.open = false;
   });
+  const criarAcaoLote = (id, rotulo, status) => {
+    const botao = el("button", { id, type: "button", class: "cds--btn cds--btn--primary cds--btn--sm", "data-status-lote": status, texto: rotulo, disabled: "disabled" });
+    botao.addEventListener("click", () => _aplicarStatusPubOab([..._publicacoesOabSelecionadas], status));
+    return botao;
+  };
+  const cancelar = el("button", { type: "button", class: "cds--btn cds--btn--primary cds--btn--sm", texto: "Cancelar Seleção", "data-cancelar-lote": "" });
+  cancelar.addEventListener("click", () => {
+    _publicacoesOabSelecionadas.clear();
+    _sincronizarSelecaoPubOab();
+    tabela.querySelector("input[data-publicacoes-todas]")?.focus();
+  });
+
+  const lote = el("div", { id: "pub-oab-batch", class: "cds--batch-actions pub-oab-batch", role: "region", "aria-label": "Ações Das Publicações Selecionadas" }, [
+    el("span", { id: "pub-oab-selecionadas", role: "status", "aria-live": "polite" }),
+    criarAcaoLote("pub-oab-marcar-tratada", "Marcar Como Tratada", "tratada"),
+    criarAcaoLote("pub-oab-arquivar", "Arquivar", "arquivada"), cancelar,
+  ]);
+  lote.hidden = _publicacoesOabSelecionadas.size === 0;
   const barra = el("div", { class: "pub-oab-tabela-toolbar" }, [
     el("strong", { texto: "Publicações" }),
-    el("span", { class: "pub-oab-tabela-contagem", texto: `${quantidade} ${quantidade === 1 ? "publicação" : "publicações"}` }),
+    el("span", { class: "pub-oab-tabela-contagem", texto: `${quantidade} ${quantidade === 1 ? "Publicação" : "Publicações"}` }),
     seletor,
   ]);
   aplicar();
-  return el("div", { class: "pub-oab-grade" }, [barra,
+  tabela.updateComplete?.then(aplicar);
+  _capitalizarTextosPubOab(barra);
+  return el("div", { class: "pub-oab-grade" }, [barra, lote,
     el("div", { class: "tabela-responsiva-wrap pub-oab-rolagem", tabindex: "0", role: "region", "aria-label": "Tabela de publicações; role horizontalmente para ver todas as colunas" }, [tabela]),
+  ]);
+}
+
+function _paginacaoPubOab(total) {
+  const paginas = Math.max(1, Math.ceil(total / _pubOabTamanho));
+  const seletor = el("select", { id: "pub-oab-tamanho", class: "pub-oab-pagina-tamanho" }, [5, 10, 20].map((n) => el("option", { value: String(n), texto: String(n) })));
+  seletor.value = String(_pubOabTamanho);
+  seletor.addEventListener("change", () => {
+    _pubOabTamanho = Number(seletor.value); _pubOabPagina = 1;
+    _publicacoesOabSelecionadas.clear(); carregarPublicacoesOab();
+  });
+  const mover = (delta, nome) => {
+    const limite = total === 0 || (delta < 0 ? _pubOabPagina === 1 : _pubOabPagina >= paginas);
+    const botao = el("button", { type: "button", class: "pub-oab-pagina-botao", "aria-label": nome,
+      "data-limite": String(limite), texto: delta < 0 ? "‹" : "›" });
+    botao.disabled = limite;
+    botao.addEventListener("click", async () => {
+      _pubOabPagina += delta; _fecharTodosComboMenusOab();
+      await carregarPublicacoesOab();
+      document.querySelector(`.pub-oab-pagina-botao[aria-label="${nome}"]:not(:disabled)`)?.focus();
+    });
+    return botao;
+  };
+  return el("nav", { class: "pub-oab-paginacao", "aria-label": "Paginação de publicações" }, [
+    el("div", { class: "pub-oab-paginacao-grupo" }, [el("label", { for: seletor.id, texto: "Itens por página:" }), seletor]),
+    el("div", { class: "pub-oab-paginacao-grupo" }, [
+      el("span", { role: "status", "aria-live": "polite", texto: `${total ? (_pubOabPagina - 1) * _pubOabTamanho + 1 : 0}–${Math.min(_pubOabPagina * _pubOabTamanho, total)} de ${total} itens` }),
+      el("span", { texto: `Página ${_pubOabPagina} de ${paginas}` }), mover(-1, "Página anterior"), mover(1, "Próxima página"),
+    ]),
   ]);
 }
 
 async function carregarPublicacoesOab() {
   const container = document.getElementById("lista-publicacoes-oab");
   if (!exigirCliente(container)) return;
-  limpar(container);
-  container.appendChild(el("p", { class: "app-espera" }, ["Carregando publicações…"]));
+  const requisicao = ++_pubOabRequisicao;
+  _pubOabCarregando = true;
+  _atualizarBotoesLotePubOab();
+  container.setAttribute("aria-busy", "true");
   const filtroStatus = document.getElementById("pub-oab-filtro-status").value;
   try {
-    const url = filtroStatus ? `/publicacoes-oab?status=${encodeURIComponent(filtroStatus)}` : "/publicacoes-oab";
-    const { publicacoes, total } = await _buscarJson(url);
+    const query = new URLSearchParams({ pagina: String(_pubOabPagina), tamanho: String(_pubOabTamanho) });
+    if (filtroStatus) query.set("status", filtroStatus);
+    const dados = await _buscarJson(`/publicacoes-oab?${query}`);
+    if (requisicao !== _pubOabRequisicao) return;
+    const publicacoes = dados.publicacoes || [], total = dados.total ?? publicacoes.length;
+    _pubOabPagina = dados.pagina || Math.min(_pubOabPagina, Math.max(1, Math.ceil(total / _pubOabTamanho)));
+    if (dados.hashes_disponiveis) {
+      const disponiveis = new Set(dados.hashes_disponiveis);
+      for (const hash of _publicacoesOabSelecionadas) if (!disponiveis.has(hash)) _publicacoesOabSelecionadas.delete(hash);
+      for (const hash of _pubOabExpandidas) if (!disponiveis.has(hash)) _pubOabExpandidas.delete(hash);
+    }
+    _fecharTodosComboMenusOab();
     limpar(container);
     container.appendChild(el("div", { id: "pub-oab-status-geral" }));
-    container.appendChild(el("p", { class: "campo-ajuda", texto: `Lista carregada em ${new Date().toLocaleString("pt-BR")}. Esse horário não indica a última captura no DJEN.` }));
-    if (!(publicacoes || []).length) {
-      container.appendChild(notificacao(
-        "info", filtroStatus ? "Nenhuma publicação com este status" : "Nenhuma publicação capturada",
-        filtroStatus
-          ? 'Selecione Todos no filtro de status para ver as demais publicações.'
-          : 'Use a captura manual acima para adicionar publicações à lista. Para criar um monitoramento por OAB, abra Consultar publicações, informe a OAB, consulte e clique em Criar monitoramento por e-mail.'
-      ));
+    if (!publicacoes.length) {
+      container.appendChild(notificacao("info", filtroStatus ? "Nenhuma publicação com este status" : "Nenhuma publicação encontrada",
+        filtroStatus ? "Selecione Todos no filtro de status para ver as demais publicações." : "Use a captura manual para adicionar publicações à lista."));
+      container.appendChild(_paginacaoPubOab(total));
       return;
     }
-    _atualizarBotoesLotePubOab();
-
-    const checkboxTodos = el("input", { type: "checkbox", "aria-label": "Selecionar todas as publicações exibidas" });
-    checkboxTodos.checked = publicacoes.length > 0 && publicacoes.every((p) => _publicacoesOabSelecionadas.has(p.hash));
+    const checkboxTodos = el("input", { type: "checkbox", "data-publicacoes-todas": "", "aria-label": "Selecionar publicações desta página" });
     checkboxTodos.addEventListener("change", () => {
       for (const p of publicacoes) {
-        if (checkboxTodos.checked) _publicacoesOabSelecionadas.add(p.hash);
-        else _publicacoesOabSelecionadas.delete(p.hash);
+        if (checkboxTodos.checked) _publicacoesOabSelecionadas.add(p.hash); else _publicacoesOabSelecionadas.delete(p.hash);
       }
-      carregarPublicacoesOab();
+      _sincronizarSelecaoPubOab();
     });
-
-    const thead = el("thead", {}, [
-      el("tr", {}, [
-        el("th", {}, [checkboxTodos]),
-        el("th", { texto: "Divulgado em" }),
-        el("th", { texto: "Processo" }),
-        el("th", { texto: "Diário" }),
-        el("th", { texto: "Partes" }),
-        el("th", { texto: "Nome de referência" }),
-        el("th", { texto: "Status" }),
-        el("th", { texto: "Ações" }),
-      ]),
-    ]);
-    const tbody = el("tbody", {});
-    for (const p of publicacoes) {
-      for (const linha of linhaPublicacaoOab(p)) tbody.appendChild(linha);
-    }
-    const resumo = total > publicacoes.length
-      ? `Exibindo as ${publicacoes.length} publicações mais recentes de ${total}. Use o filtro de status para refinar a lista.`
-      : `Exibindo ${publicacoes.length} ${publicacoes.length === 1 ? "publicação" : "publicações"}.`;
-    container.appendChild(el("p", { class: "campo-ajuda", texto: resumo }));
-    for (const cabecalho of thead.querySelectorAll("th")) cabecalho.scope = "col";
-    container.appendChild(criarTabelaPublicacoesOab(el("table", { class: "tabela-responsiva pub-oab-tabela", "aria-label": "Publicações monitoradas" }, [thead, tbody]), publicacoes.length));
+    const colunas = _colunasPubOab(publicacoes, dados.campos_djen || []);
+    const thead = el("cds-table-head", {}, [el("cds-table-header-row", { size: "md" }, [
+      el("cds-table-header-cell", { class: "pub-oab-controle" }, [checkboxTodos]),
+      el("cds-table-header-cell", { class: "pub-oab-controle", "aria-label": "Expandir publicação" }),
+      ...colunas.map((c) => el("cds-table-header-cell", { texto: c.rotulo, "data-coluna": c.id })),
+      el("cds-table-header-cell", { texto: "Ações" }),
+    ])]);
+    const tbody = el("cds-table-body", {});
+    for (const p of publicacoes) for (const linha of linhaPublicacaoOab(p, colunas)) tbody.appendChild(linha);
+    const tabela = el("cds-table", { class: "pub-oab-tabela", size: "md", locale: "pt-BR", "aria-label": "Publicações monitoradas" }, [thead, tbody]);
+    container.appendChild(criarTabelaPublicacoesOab(tabela, total, colunas));
+    container.querySelector(".pub-oab-grade").appendChild(_paginacaoPubOab(total));
+    _sincronizarSelecaoPubOab();
   } catch (erro) {
-    limpar(container);
-    mostrarErro(container, erro.message);
+    if (requisicao !== _pubOabRequisicao) return;
+    _statusGeralPubOab(erro.message, true);
+    if (!container.querySelector("#pub-oab-status-geral")) mostrarErro(container, erro.message);
+    const repetir = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Tentar novamente" });
+    repetir.addEventListener("click", () => { repetir.remove(); carregarPublicacoesOab(); });
+    container.appendChild(repetir);
+  } finally {
+    if (requisicao === _pubOabRequisicao) {
+      _pubOabCarregando = false; container.setAttribute("aria-busy", "false"); _sincronizarSelecaoPubOab();
+    }
   }
 }
 
 document.getElementById("pub-oab-filtro-status").addEventListener("change", () => {
+  _pubOabPagina = 1;
+  _pubOabExpandidas.clear();
   _publicacoesOabSelecionadas.clear();
+  _atualizarBotoesLotePubOab();
   carregarPublicacoesOab();
 });
 document.getElementById("pub-oab-atualizar").addEventListener("click", carregarPublicacoesOab);
-document.getElementById("pub-oab-marcar-tratada").addEventListener("click", () => {
-  _aplicarStatusPubOab(Array.from(_publicacoesOabSelecionadas), "tratada");
-});
-document.getElementById("pub-oab-arquivar").addEventListener("click", () => {
-  _aplicarStatusPubOab(Array.from(_publicacoesOabSelecionadas), "arquivada");
-});
-
 document.getElementById("form-pub-oab-manual").addEventListener("submit", async (evento) => {
   evento.preventDefault();
   const status = document.getElementById("pub-oab-manual-status");
@@ -4433,7 +4880,8 @@ function _selecionarSubabaCaso(nome) {
 }
 
 async function abrirCaso(casoId) {
-  if (!(await permitirSaidaEdicao())) return;
+  if (!(await permitirSaidaEdicao())) return false;
+  limpar(document.getElementById("atividade-origem"));
   document.getElementById("caso-vista-lista").hidden = true;
   document.getElementById("caso-vista-detalhe").hidden = false;
   _selecionarSubabaCaso("cadastro");
@@ -4457,14 +4905,18 @@ async function abrirCaso(casoId) {
       mostrarAviso(document.getElementById("resultado-caso-editar"), "Não foi possível carregar os responsáveis. Reabra o processo para tentar novamente.");
     }
     responsavel.value = caso.responsavel || "";
+    document.getElementById("editar-caso-pasta").value = caso.pasta || "";
+    document.getElementById("editar-caso-acesso").value = caso.acesso || "equipe";
     document.getElementById("form-caso-editar").dataset.casoId = casoId;
     marcarFormularioSalvo(document.getElementById("form-caso-editar"), true);
     limpar(document.getElementById("lista-movimentacoes"));
     await _carregarCapaProcessos(casoId);
     await _carregarAtividades(casoId);
+    return true;
   } catch (erro) {
     document.getElementById("caso-detalhe-titulo").textContent = "Erro ao carregar";
     mostrarErro(document.getElementById("resultado-caso-editar"), erro.message);
+    return false;
   }
 }
 
@@ -4512,7 +4964,10 @@ function _renderizarAtividades(casoId, atividades) {
     if (atv.data) partesMeta.push(formatarDataSimples(atv.data));
     if (atv.hora) partesMeta.push(atv.hora);
     corpo.appendChild(el("p", { class: "atividade-meta", texto: partesMeta.join(" · ") }));
+    if (atv.responsavel) corpo.appendChild(el("p", { class: "atividade-meta", texto: `Responsável: ${atv.responsavel}` }));
     if (atv.observacoes) corpo.appendChild(el("p", { class: "atividade-meta", texto: atv.observacoes }));
+    const origem = origemPublicacaoAtividade(atv.observacoes);
+    if (origem) corpo.appendChild(el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Ver publicação de origem", onclick: () => mostrarOrigemAtividade(casoId, origem) }));
     item.appendChild(corpo);
 
     const acoes = el("div", { class: "atividade-acoes" });
@@ -4535,7 +4990,30 @@ function _renderizarAtividades(casoId, atividades) {
   }
 }
 
-function _abrirModalAtividade(casoId, atividade = null) {
+const _MARCADOR_ORIGEM_ATIVIDADE = /^Publicação de origem \(DJEN\): (.+)$/m;
+function origemPublicacaoAtividade(observacoes) {
+  return String(observacoes || "").match(_MARCADOR_ORIGEM_ATIVIDADE)?.[1] || "";
+}
+async function mostrarOrigemAtividade(casoId, hash) {
+  const destino = document.getElementById("atividade-origem");
+  limpar(destino);
+  destino.appendChild(el("p", { role: "status", texto: "Carregando publicação de origem…" }));
+  try {
+    const { publicacoes } = await _buscarJson(`/casos/${casoId}/publicacoes`);
+    const origem = (publicacoes || []).find((p) => p.hash === hash);
+    limpar(destino);
+    if (!origem) destino.appendChild(notificacao("warning", "Publicação de origem indisponível", `Referência DJEN: ${hash}. Ela pode ter sido desvinculada deste processo.`));
+    else destino.appendChild(_publicacaoCompletaPubOab(origem, "publicacao-origem-atividade"));
+  } catch (erro) {
+    mostrarErro(destino, erro.message);
+    destino.appendChild(el("button", { type: "button", class: "cds--btn cds--btn--tertiary cds--btn--sm", texto: "Tentar novamente", onclick: () => mostrarOrigemAtividade(casoId, hash) }));
+  }
+  destino.tabIndex = -1;
+  destino.focus();
+}
+
+async function _abrirModalAtividade(casoId, atividade = null, publicacaoHash = "") {
+  document.getElementById("form-atividade").dataset.publicacaoHash = publicacaoHash || origemPublicacaoAtividade(atividade?.observacoes);
   document.getElementById("atividade-id").value = atividade ? atividade.id : "";
   document.getElementById("atividade-tipo").value = atividade ? atividade.tipo : "tarefa";
   document.getElementById("atividade-titulo").value = atividade ? atividade.titulo : "";
@@ -4545,12 +5023,98 @@ function _abrirModalAtividade(casoId, atividade = null) {
     document.getElementById("atividade-data").value = atividade ? (atividade.data || "") : "";
   }
   document.getElementById("atividade-hora").value = atividade ? (atividade.hora || "") : "";
-  document.getElementById("atividade-observacoes").value = atividade ? (atividade.observacoes || "") : "";
+  const responsavel = document.getElementById("atividade-responsavel");
+  limpar(responsavel);
+  responsavel.appendChild(el("option", { value: "", texto: "Eu mesmo" }));
+  try {
+    const { responsaveis } = await _buscarJson("/responsaveis");
+    for (const nome of [...new Set([...(responsaveis || []), atividade?.responsavel].filter(Boolean))]) {
+      responsavel.appendChild(el("option", { value: nome, texto: nome }));
+    }
+  } catch { /* lista de responsáveis é só uma comodidade; segue sem ela se a busca falhar */ }
+  responsavel.value = atividade?.responsavel || "";
+  document.getElementById("atividade-observacoes").value = String(atividade?.observacoes || "").replace(_MARCADOR_ORIGEM_ATIVIDADE, "").trim();
+  const origem = document.getElementById("atividade-publicacao-origem");
+  origem.textContent = document.getElementById("form-atividade").dataset.publicacaoHash
+    ? `Origem: publicação DJEN ${document.getElementById("form-atividade").dataset.publicacaoHash}. Criar a atividade não altera o status da publicação.` : "";
   document.getElementById("modal-atividade-titulo").textContent = atividade ? "Editar atividade" : "Nova atividade";
   document.getElementById("form-atividade").dataset.casoId = casoId;
   limpar(document.getElementById("resultado-atividade"));
+  const checklistWrapper = document.getElementById("atividade-checklist-wrapper");
+  checklistWrapper.hidden = !atividade;
+  checklistWrapper.dataset.casoId = casoId;
+  checklistWrapper.dataset.aid = atividade ? atividade.id : "";
+  if (atividade) await _carregarChecklistAtividade(casoId, atividade.id);
   abrirModal("modal-atividade");
 }
+
+async function _carregarChecklistAtividade(casoId, aid) {
+  try {
+    const { itens } = await _buscarJson(`/casos/${casoId}/atividades/${aid}/checklist`);
+    _renderizarChecklistAtividade(itens || []);
+  } catch (erro) {
+    mostrarToast("error", "Erro ao carregar checklist", erro.message);
+  }
+}
+
+function _renderizarChecklistAtividade(itens) {
+  const lista = document.getElementById("atividade-checklist-lista");
+  limpar(lista);
+  const wrapper = document.getElementById("atividade-checklist-wrapper");
+  const { casoId, aid } = wrapper.dataset;
+  const concluidos = itens.filter((i) => i.concluido).length;
+  document.getElementById("atividade-checklist-progresso").textContent =
+    itens.length ? `${concluidos} de ${itens.length} concluído(s)` : "Nenhum item ainda";
+  for (const item of itens) {
+    const linha = el("div", { class: "atividade-item" });
+    const check = el("input", { type: "checkbox", class: "atividade-check", "aria-label": "Concluído" });
+    check.checked = item.concluido;
+    check.addEventListener("change", async () => {
+      try {
+        await _enviarJson(`/casos/${casoId}/atividades/${aid}/checklist/${item.id}`, { concluido: check.checked }, "PATCH");
+        await _carregarChecklistAtividade(casoId, aid);
+      } catch (erro) {
+        check.checked = !check.checked;
+        mostrarToast("error", "Erro", erro.message);
+      }
+    });
+    linha.appendChild(check);
+    const corpo = el("div", { class: "atividade-corpo" });
+    corpo.appendChild(el("p", { class: `atividade-titulo${item.concluido ? " concluida" : ""}`, texto: item.texto }));
+    linha.appendChild(corpo);
+    const btnExcluir = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "✕" });
+    btnExcluir.setAttribute("aria-label", "Excluir item");
+    btnExcluir.addEventListener("click", async () => {
+      try {
+        await _enviarJson(`/casos/${casoId}/atividades/${aid}/checklist/${item.id}`, {}, "DELETE");
+        await _carregarChecklistAtividade(casoId, aid);
+      } catch (erro) { mostrarToast("error", "Erro", erro.message); }
+    });
+    const acoes = el("div", { class: "atividade-acoes" });
+    acoes.appendChild(btnExcluir);
+    linha.appendChild(acoes);
+    lista.appendChild(linha);
+  }
+}
+
+document.getElementById("atividade-checklist-adicionar-botao").addEventListener("click", async () => {
+  const wrapper = document.getElementById("atividade-checklist-wrapper");
+  const { casoId, aid } = wrapper.dataset;
+  const campo = document.getElementById("atividade-checklist-novo");
+  const texto = campo.value.trim();
+  if (!texto) return;
+  try {
+    await _enviarJson(`/casos/${casoId}/atividades/${aid}/checklist`, { texto });
+    campo.value = "";
+    await _carregarChecklistAtividade(casoId, aid);
+  } catch (erro) { mostrarToast("error", "Erro", erro.message); }
+});
+document.getElementById("atividade-checklist-novo").addEventListener("keydown", (evento) => {
+  if (evento.key === "Enter") {
+    evento.preventDefault();
+    document.getElementById("atividade-checklist-adicionar-botao").click();
+  }
+});
 
 // Chave = J (segmento, 1 dígito) + TT (código do tribunal, 2 dígitos), posições 13-15 do CNJ sem máscara.
 const _tribunalMap = {
@@ -4797,11 +5361,34 @@ function _cardCapaProcesso(casoId, numero, capa) {
     }
   });
 
+  const btnMonitorar = el(
+    "button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button" },
+    [document.createTextNode(capa.monitorando ? "Parar monitoramento" : "Monitorar automaticamente")],
+  );
+  btnMonitorar.addEventListener("click", async () => {
+    btnMonitorar.disabled = true;
+    const monitorando = capa.monitorando;
+    try {
+      await _enviarJson(
+        `/casos/${casoId}/processos/${numero}/capa/monitorar`, {},
+        monitorando ? "DELETE" : "POST",
+      );
+      capa.monitorando = !monitorando;
+      btnMonitorar.textContent = capa.monitorando ? "Parar monitoramento" : "Monitorar automaticamente";
+      mostrarToast("success", capa.monitorando ? "Monitoramento ativado" : "Monitoramento removido",
+        `Processo ${formatarNumeroCNJ(numero)}.`);
+    } catch (erro) {
+      mostrarToast("error", "Erro", erro.message);
+    } finally {
+      btnMonitorar.disabled = false;
+    }
+  });
+
   return el("div", { class: "capa-card" }, [
     el("h4", {}, [document.createTextNode(formatarNumeroCNJ(numero))]),
     blocoAuto,
     el("div", { class: "capa-card-campos" }, inputs),
-    btnSalvar,
+    el("div", { class: "capa-card-acoes" }, [btnSalvar, btnMonitorar]),
   ]);
 }
 
@@ -5049,7 +5636,11 @@ registrarSalvamento(document.getElementById("form-caso-editar"), async (evento) 
   if (!casoId) return;
   const botao = evento.target.querySelector("button[type=submit]");
   const resultado = document.getElementById("resultado-caso-editar");
-  const corpo = {responsavel: document.getElementById("editar-caso-responsavel").value.trim()};
+  const corpo = {
+    responsavel: document.getElementById("editar-caso-responsavel").value.trim(),
+    pasta: document.getElementById("editar-caso-pasta").value.trim(),
+    acesso: document.getElementById("editar-caso-acesso").value,
+  };
   const pararEspera = mostrarEspera(resultado, botao, "Salvando");
   try {
     const atualizado = await _enviarJson(`/casos/${casoId}`, corpo, "PATCH");
@@ -5099,8 +5690,11 @@ registrarSalvamento(document.getElementById("form-atividade"), async (evento) =>
     titulo: document.getElementById("atividade-titulo").value.trim(),
     data: document.getElementById("atividade-data").value || null,
     hora: document.getElementById("atividade-hora").value || null,
+    responsavel: document.getElementById("atividade-responsavel").value || null,
     observacoes: document.getElementById("atividade-observacoes").value.trim() || null,
   };
+  const origem = evento.target.dataset.publicacaoHash;
+  if (origem) corpo.observacoes = [corpo.observacoes, `Publicação de origem (DJEN): ${origem.replace(/[\r\n]/g, "")}`].filter(Boolean).join("\n");
   if (!corpo.titulo) { mostrarErro(resultado, "Informe o título."); return; }
   const pararEspera = mostrarEspera(resultado, botao, "Salvando");
   try {
@@ -5112,6 +5706,8 @@ registrarSalvamento(document.getElementById("form-atividade"), async (evento) =>
     marcarFormularioSalvo(document.getElementById("form-atividade"));
     fecharModal("modal-atividade");
     await _carregarAtividades(casoId);
+    _selecionarSubabaCaso("atividades");
+    mostrarToast("success", "Atividade salva", origem ? "A publicação mantém o status anterior. Use Ver publicação de origem para conferir a referência." : "");
   } catch (erro) {
     mostrarErro(resultado, erro.message);
   } finally {
@@ -5217,17 +5813,112 @@ registrarSalvamento(document.getElementById("form-honorario"), async (evento) =>
     _visualizacaoCasos = visualizacao;
     for (const outro of switcher.querySelectorAll("button")) {
       outro.classList.remove("cds--content-switcher--selected");
-      outro.setAttribute("aria-selected", "false");
+      outro.setAttribute("aria-pressed", "false");
     }
     const ativo = visualizacao === "cards" ? botaoCards : botaoTabela;
     ativo.classList.add("cds--content-switcher--selected");
-    ativo.setAttribute("aria-selected", "true");
+    ativo.setAttribute("aria-pressed", "true");
     _renderizarTabelaCasosPagina();
   }
 
   botaoTabela.addEventListener("click", () => selecionar("tabela"));
   botaoCards.addEventListener("click", () => selecionar("cards"));
+  switcher.addEventListener("keydown", (ev) => {
+    const botoes = [botaoTabela, botaoCards];
+    let alvo;
+    if (ev.key === "ArrowRight" || ev.key === "ArrowLeft") alvo = botoes[1 - botoes.indexOf(document.activeElement)];
+    else if (ev.key === "Home") alvo = botaoTabela;
+    else if (ev.key === "End") alvo = botaoCards;
+    if (alvo) { ev.preventDefault(); alvo.click(); alvo.focus(); }
+  });
 })();
+
+// Revisão transversal usando as mesmas permissões e endpoints do detalhe.
+let _atividadesAbertas = [];
+let _geracaoAtividades = 0;
+async function carregarAtividadesAbertas() {
+  const lista = document.getElementById("atividades-lista");
+  const status = document.getElementById("atividades-status");
+  const geracao = ++_geracaoAtividades;
+  _atividadesAbertas = [];
+  limpar(lista); limpar(status);
+  if (!exigirCliente(status)) return;
+  const atualizar = document.getElementById("atividades-atualizar");
+  atualizar.disabled = true;
+  status.appendChild(el("p", { role: "status", texto: "Carregando atividades dos processos…" }));
+  try {
+    const { casos } = await _buscarJson("/casos");
+    if (!Array.isArray(casos)) throw new Error("Resposta de processos inválida.");
+    const resultados = [];
+    const falhas = [];
+    let indice = 0;
+    // Limita concorrência para não disparar uma requisição por processo de uma vez.
+    await Promise.all(Array.from({ length: Math.min(4, casos.length) }, async () => {
+      while (indice < casos.length && geracao === _geracaoAtividades) {
+        const caso = casos[indice++];
+        try {
+          const dados = await _buscarJson(`/casos/${caso.id}/atividades`);
+          if (!Array.isArray(dados.atividades)) throw new Error("Resposta de atividades inválida.");
+          resultados.push(...dados.atividades.filter((a) => a.status !== "concluida").map((atividade) => ({ caso, atividade })));
+        } catch { falhas.push(caso.titulo || "Processo sem título"); }
+      }
+    }));
+    if (geracao !== _geracaoAtividades) return;
+    _atividadesAbertas = resultados;
+    const responsavel = document.getElementById("atividades-responsavel");
+    const anterior = responsavel.value;
+    limpar(responsavel);
+    responsavel.appendChild(el("option", { value: "", texto: "Todos" }));
+    for (const nome of [...new Set(casos.map((c) => c.responsavel || "Sem responsável"))].sort()) responsavel.appendChild(el("option", { value: nome, texto: nome }));
+    if ([...responsavel.options].some((o) => o.value === anterior)) responsavel.value = anterior;
+    limpar(status);
+    if (falhas.length) {
+      status.appendChild(notificacao("warning", "Lista incompleta", `Não foi possível carregar ${falhas.length} processo(s): ${falhas.join(", ")}. Use Atualizar atividades para tentar novamente.`));
+    } else status.appendChild(el("p", { class: "campo-ajuda", role: "status", texto: `Revisados ${casos.length} processos. Atualizado às ${new Date().toLocaleTimeString("pt-BR")}.` }));
+    renderizarAtividadesAbertas();
+  } catch (erro) {
+    if (geracao === _geracaoAtividades) mostrarErro(status, `${erro.message} Use Atualizar atividades para tentar novamente.`);
+  } finally {
+    if (geracao === _geracaoAtividades) atualizar.disabled = false;
+  }
+}
+function renderizarAtividadesAbertas() {
+  const lista = document.getElementById("atividades-lista");
+  limpar(lista);
+  const responsavel = document.getElementById("atividades-responsavel").value;
+  const tipo = document.getElementById("atividades-tipo").value;
+  const itens = _atividadesAbertas.filter(({ caso, atividade }) => (!responsavel || (caso.responsavel || "Sem responsável") === responsavel) && (!tipo || atividade.tipo === tipo));
+  if (!itens.length) {
+    lista.appendChild(notificacao("info", "Nenhuma atividade aberta nos processos carregados com estes filtros"));
+    return;
+  }
+  for (const { caso, atividade } of itens) {
+    const item = el("article", { class: "atividade-item" });
+    const corpo = el("div", { class: "atividade-corpo" }, [
+      el("h3", { class: "atividade-titulo", texto: atividade.titulo }),
+      el("p", { class: "atividade-meta", texto: `${caso.titulo || "Processo sem título"} · Responsável pelo processo: ${caso.responsavel || "Não definido"}` }),
+      el("p", { class: "atividade-meta", texto: `${_ROTULO_TIPO_ATIVIDADE[atividade.tipo] || atividade.tipo} · ${atividade.data ? formatarDataSimples(atividade.data) : "Sem data"}${atividade.hora ? " · " + atividade.hora : ""}` }),
+    ]);
+    const abrir = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Abrir processo", onclick: async () => {
+      if (!(await selecionarAba(abas.find((a) => a.painel.id === "aba-casos")))) return;
+      if (await abrirCaso(caso.id)) _selecionarSubabaCaso("atividades");
+    } });
+    const concluir = el("button", { type: "button", class: "cds--btn cds--btn--tertiary cds--btn--sm", texto: "Concluir atividade", "aria-label": `Concluir atividade: ${atividade.titulo}`, onclick: async () => {
+      concluir.disabled = true;
+      try {
+        await _enviarJson(`/casos/${caso.id}/atividades/${atividade.id}`, { status: "concluida" }, "PATCH");
+        _atividadesAbertas = _atividadesAbertas.filter((a) => !(a.caso.id === caso.id && a.atividade.id === atividade.id));
+        renderizarAtividadesAbertas();
+        document.getElementById("atividades-atualizar").focus();
+        mostrarToast("success", "Atividade concluída", atividade.titulo);
+      } catch (erro) { mostrarToast("error", "Não foi possível concluir a atividade", erro.message); concluir.disabled = false; }
+    } });
+    item.append(corpo, el("div", { class: "atividade-acoes" }, [abrir, concluir]));
+    lista.appendChild(item);
+  }
+}
+document.getElementById("atividades-atualizar").addEventListener("click", carregarAtividadesAbertas);
+for (const id of ["atividades-responsavel", "atividades-tipo"]) document.getElementById(id).addEventListener("change", renderizarAtividadesAbertas);
 
 // --- Header: hambúrguer / side-nav rail ----------------------------------------------------
 const _mqMobile = window.matchMedia("(max-width: 768px)");
@@ -5261,6 +5952,11 @@ _btnMenuToggle.addEventListener("click", () => {
   }
 });
 _sideNavOverlay.addEventListener("click", _sideNavFechar);
+_sideNav.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && _mqMobile.matches) {
+    ev.preventDefault(); _sideNavFechar(); _btnMenuToggle.focus();
+  }
+});
 _mqMobile.addEventListener("change", _sideNavInicializar);
 _sideNavInicializar();
 
@@ -5297,15 +5993,42 @@ _btnNotificacoesToggle.addEventListener("click", () => {
   }
 });
 document.addEventListener("click", (ev) => {
-  if (!_painelNotificacoes.hidden && !ev.target.closest("#header-notificacoes-painel") && !ev.target.closest("#btn-notificacoes-toggle")) {
+  const caminho = ev.composedPath();
+  if (!_painelNotificacoes.hidden && !caminho.includes(_painelNotificacoes) && !caminho.includes(_btnNotificacoesToggle)) {
     _fecharPainelNotificacoes();
   }
-  if (!_painelBusca.hidden && !ev.target.closest("#header-busca-painel") && !ev.target.closest("#btn-busca-toggle")) {
+  if (!_painelBusca.hidden && !caminho.includes(_painelBusca) && !caminho.includes(_btnBuscaToggle)) {
     _fecharPainelBusca();
   }
 });
 
 // --- Header: busca global (cliente, processo, número de processo) ------------------------------
+let _consultaGlobalCarregando = false;
+let _consultaGlobalFalhas = [];
+let _consultaGlobalGeracao = 0;
+async function carregarConsultaGlobal() {
+  const geracao = ++_consultaGlobalGeracao;
+  _consultaGlobalCarregando = true;
+  _consultaGlobalFalhas = [];
+  atualizarConsultaGlobal();
+  const fontes = [["clientes", "/clientes", "Clientes"], ["casos", "/casos", "Processos"]];
+  const respostas = await Promise.allSettled(fontes.map(async ([chave, url]) => {
+    const dados = await _buscarJson(url);
+    if (!Array.isArray(dados[chave])) throw new Error("Resposta inválida");
+    return dados[chave];
+  }));
+  if (geracao !== _consultaGlobalGeracao) return;
+  respostas.forEach((resposta, i) => {
+    const [chave, , nome] = fontes[i];
+    if (resposta.status === "fulfilled") _cache[chave] = resposta.value;
+    else { _cache[chave] = []; _consultaGlobalFalhas.push(nome); }
+  });
+  _consultaGlobalCarregando = false;
+  atualizarConsultaGlobal();
+}
+function atualizarConsultaGlobal() {
+  _renderizarResultadosBusca(_buscaGlobalResultados(_inputBusca.value));
+}
 _btnBuscaToggle.addEventListener("click", async () => {
   const abrindo = _painelBusca.hidden;
   _fecharPainelNotificacoes();
@@ -5313,14 +6036,7 @@ _btnBuscaToggle.addEventListener("click", async () => {
   _painelBusca.hidden = false;
   _btnBuscaToggle.setAttribute("aria-expanded", "true");
   _inputBusca.focus();
-  if (!_cache.clientes.length || !_cache.casos.length) {
-    limpar(document.getElementById("header-busca-resultados"));
-    try {
-      const [{ clientes }, { casos }] = await Promise.all([_buscarJson("/clientes"), _buscarJson("/casos")]);
-      _cache.clientes = clientes || [];
-      _cache.casos = casos || [];
-    } catch (_) { /* busca fica limitada ao que já estava em cache */ }
-  }
+  await carregarConsultaGlobal();
 });
 
 function _buscaGlobalResultados(termo) {
@@ -5340,17 +6056,30 @@ function _buscaGlobalResultados(termo) {
       resultados.push({ tipo: "caso", id: c.id, rotulo: c.titulo || "(sem título)", sub: processoBate ? "Processo · " + (c.processos || []).find((p) => p.replace(/\D/g, "").includes(tDigitos)) : "Processo" });
     }
   }
-  return resultados.slice(0, 20);
+  return resultados;
 }
 
 function _renderizarResultadosBusca(resultados) {
   const container = document.getElementById("header-busca-resultados");
   limpar(container);
-  if (!resultados.length) {
-    container.appendChild(el("p", { class: "campo-ajuda", texto: "Nenhum resultado." }));
+  if (_consultaGlobalCarregando) {
+    container.appendChild(el("p", { class: "campo-ajuda", role: "status", texto: "Carregando clientes e processos…" }));
     return;
   }
-  for (const r of resultados) {
+  if (_consultaGlobalFalhas.length) {
+    container.appendChild(notificacao("warning", "Consulta incompleta", `Não foi possível carregar: ${_consultaGlobalFalhas.join(", ")}. Conecte-se na aba Acesso se necessário e tente novamente.`));
+    container.appendChild(el("button", { type: "button", class: "cds--btn cds--btn--tertiary cds--btn--sm", texto: "Tentar novamente", onclick: carregarConsultaGlobal }));
+  }
+  if (!_inputBusca.value.trim()) {
+    container.appendChild(el("p", { class: "campo-ajuda", texto: "Digite um nome, título ou número de processo." }));
+    return;
+  }
+  if (!resultados.length) {
+    container.appendChild(el("p", { class: "campo-ajuda", texto: _consultaGlobalFalhas.length ? "Nenhuma correspondência nas fontes disponíveis." : "Nenhum resultado." }));
+    return;
+  }
+  if (resultados.length > 20) container.appendChild(el("p", { class: "campo-ajuda", texto: `Mostrando 20 de ${resultados.length} resultados. Refine o termo para localizar o registro.` }));
+  for (const r of resultados.slice(0, 20)) {
     const botao = el("button", {
       class: "header-busca-resultado-item", type: "button",
       texto: `${r.rotulo} — ${r.sub}`,

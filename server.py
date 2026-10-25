@@ -1977,6 +1977,33 @@ def _enviar_aviso_expiracao(cfg: ConfiguracaoSMTP, destino: str, criterio: dict,
             servidor.send_message(mensagem)
 
 
+def _enviar_aviso_atividade_delegada(cfg: ConfiguracaoSMTP, destino: str, atividade: dict) -> None:
+    """E-mail avisando que uma atividade (tarefa/evento/prazo) foi delegada para este usuário."""
+    url_base = os.environ.get("CNJ_MCP_URL_PUBLICA", "").strip().rstrip("/")
+    link = f"{url_base}/app" if url_base else "/app"
+
+    mensagem = EmailMessage()
+    mensagem["Subject"] = f"cnj-processual: nova atividade delegada - {atividade.get('titulo', '')}"
+    mensagem["From"] = cfg.remetente
+    mensagem["To"] = destino
+    partes = ["Olá,", "", f"Uma atividade foi delegada para você: {atividade.get('titulo', '')}"]
+    if atividade.get("data"):
+        partes.append(f"Data: {atividade['data']}" + (f" {atividade['hora']}" if atividade.get("hora") else ""))
+    partes += ["", f"Veja os detalhes em: {link}"]
+    mensagem.set_content("\n".join(partes))
+
+    contexto = ssl.create_default_context()
+    if cfg.porta == 465:
+        with smtplib.SMTP_SSL(cfg.host, cfg.porta, context=contexto, timeout=30) as servidor:
+            servidor.login(cfg.usuario, cfg.senha)
+            servidor.send_message(mensagem)
+    else:
+        with smtplib.SMTP(cfg.host, cfg.porta, timeout=30) as servidor:
+            servidor.starttls(context=contexto)
+            servidor.login(cfg.usuario, cfg.senha)
+            servidor.send_message(mensagem)
+
+
 def _atualizar_apos_aviso(dados: dict, id_monitoramento: str, hashes: list[str], expira_em: str):
     if id_monitoramento not in dados:
         return False
@@ -2827,7 +2854,8 @@ def _pagina_autorizacao(params: dict, erro: str | None = None) -> str:
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>cnj-processual · autorizar acesso</title>
-<style>{_ESTILO_PAGINAS}</style></head><body>
+<link rel="stylesheet" href="/static/carbon/styles.min.css">
+<style>{_ESTILO_PAGINAS}</style>{_RECURSOS_TEMA}</head><body>
 <h1>Autorizar o Claude a usar o cnj-processual</h1>
 <p>Cole o token que você recebeu por e-mail. Ele não fica salvo nesta página.</p>
 {aviso}
@@ -3218,6 +3246,16 @@ class _AutenticacaoBearer:
             else:
                 await _responder(send, 404, b"Nao encontrado")
             return
+        if caminho in ("/static/search-fields.js", "/static/search-fields.css", "/static/carbon/search-components.min.js",
+                       "/static/theme.js", "/static/theme.css", "/static/carbon/theme-components.min.js") and scope.get("method") == "GET":
+            arquivo = Path(__file__).resolve().parent / caminho.lstrip("/")
+            tipo = "text/css; charset=utf-8" if caminho.endswith(".css") else "application/javascript; charset=utf-8"
+            if arquivo.is_file():
+                await _responder(send, 200, arquivo.read_bytes(), tipo=tipo,
+                                 cabecalhos_extra=[(b"cache-control", b"no-store")])
+            else:
+                await _responder(send, 404, b"Nao encontrado")
+            return
         if caminho == "/static/app.js" and scope.get("method") == "GET":
             # script externo do painel web (cliente MCP em JavaScript puro). Sem cache: o arquivo
             # muda a cada deploy e não tem ETag/Last-Modified - sem "no-store" o navegador pode
@@ -3371,6 +3409,15 @@ class _AutenticacaoBearer:
             partes = caminho[len("/casos/"):].split("/atividades")
             caso_id = partes[0].rstrip("/")
             rest = partes[1].strip("/") if len(partes) > 1 else ""
+            if "/checklist" in rest:
+                aid_parte, _, resto_item = rest.partition("/checklist")
+                if not aid_parte.isdigit():
+                    await _responder(send, 404, b"Nao encontrado")
+                    return
+                resto_item = resto_item.strip("/")
+                item_id = int(resto_item) if resto_item.isdigit() else None
+                await self._checklist_da_atividade(scope, receive, send, caso_id, int(aid_parte), item_id)
+                return
             aid = int(rest) if rest.isdigit() else None
             await self._atividades_do_caso(scope, receive, send, caso_id, aid)
             return
@@ -4079,6 +4126,10 @@ class _AutenticacaoBearer:
                 if not titulo:
                     await _json(send, 400, _erro("Informe o título da atividade."))
                     return
+                responsavel = (dados.get("responsavel") or "").strip() or scope.get("usuario")
+                if responsavel and self.registro is not None and responsavel not in self.registro.ativos():
+                    await _json(send, 400, _erro("Responsável inválido."))
+                    return
                 atividade = self.gestao.criar_atividade(
                     caso_id,
                     tipo=dados.get("tipo") or "tarefa",
@@ -4086,8 +4137,11 @@ class _AutenticacaoBearer:
                     data=dados.get("data"),
                     hora=dados.get("hora"),
                     observacoes=dados.get("observacoes"),
+                    responsavel=responsavel,
                     agora=lambda: datetime.now(timezone.utc),
                 )
+                if responsavel and responsavel != scope.get("usuario"):
+                    await self._avisar_atividade_delegada(responsavel, atividade)
                 await _json(send, 201, atividade)
                 return
             await _responder(send, 405, b"Metodo nao permitido")
@@ -4099,13 +4153,27 @@ class _AutenticacaoBearer:
             except (ValueError, UnicodeDecodeError):
                 await _json(send, 400, _erro("JSON inválido."))
                 return
+            muda_responsavel = "responsavel" in dados
+            responsavel_antigo = None
+            if muda_responsavel:
+                novo_responsavel = (dados.get("responsavel") or "").strip() or None
+                if novo_responsavel and self.registro is not None and novo_responsavel not in self.registro.ativos():
+                    await _json(send, 400, _erro("Responsável inválido."))
+                    return
+                dados["responsavel"] = novo_responsavel
+                atual = next((a for a in self.gestao.listar_atividades(caso_id) if a["id"] == aid), None)
+                responsavel_antigo = atual["responsavel"] if atual else None
             atividade = self.gestao.atualizar_atividade(caso_id, aid, **{
                 k: v for k, v in dados.items()
-                if k in ("titulo", "tipo", "data", "hora", "status", "observacoes")
+                if k in ("titulo", "tipo", "data", "hora", "status", "observacoes", "responsavel")
             })
             if atividade is None:
                 await _json(send, 404, _erro("Atividade não encontrada."))
                 return
+            novo_responsavel = atividade.get("responsavel")
+            if (muda_responsavel and novo_responsavel and novo_responsavel != responsavel_antigo
+                    and novo_responsavel != scope.get("usuario")):
+                await self._avisar_atividade_delegada(novo_responsavel, atividade)
             await _json(send, 200, atividade)
             return
         if metodo == "DELETE":
@@ -4113,6 +4181,69 @@ class _AutenticacaoBearer:
             await _json(send, 200 if excluiu else 404, {"excluido": excluiu})
             return
         await _responder(send, 405, b"Metodo nao permitido")
+
+    async def _checklist_da_atividade(self, scope, receive, send, caso_id: str, aid: int, item_id: int | None):
+        """GET/POST /casos/<id>/atividades/<aid>/checklist,
+        PATCH/DELETE /casos/<id>/atividades/<aid>/checklist/<item_id>"""
+        metodo = scope.get("method")
+        if item_id is None:
+            if metodo == "GET":
+                itens = self.gestao.listar_checklist(caso_id, aid)
+                if itens is None:
+                    await _json(send, 404, _erro("Atividade não encontrada."))
+                    return
+                await _json(send, 200, {"itens": itens})
+                return
+            if metodo == "POST":
+                corpo = await _ler_corpo(receive)
+                try:
+                    dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+                except (ValueError, UnicodeDecodeError):
+                    await _json(send, 400, _erro("JSON inválido."))
+                    return
+                texto = (dados.get("texto") or "").strip()
+                if not texto:
+                    await _json(send, 400, _erro("Informe o texto do item."))
+                    return
+                item = self.gestao.criar_item_checklist(caso_id, aid, texto, agora=lambda: datetime.now(timezone.utc))
+                if item is None:
+                    await _json(send, 404, _erro("Atividade não encontrada."))
+                    return
+                await _json(send, 201, item)
+                return
+            await _responder(send, 405, b"Metodo nao permitido")
+            return
+        if metodo == "PATCH":
+            corpo = await _ler_corpo(receive)
+            try:
+                dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+            except (ValueError, UnicodeDecodeError):
+                await _json(send, 400, _erro("JSON inválido."))
+                return
+            item = self.gestao.atualizar_item_checklist(
+                caso_id, aid, item_id,
+                texto=dados.get("texto"), concluido=dados.get("concluido"),
+            )
+            if item is None:
+                await _json(send, 404, _erro("Item não encontrado."))
+                return
+            await _json(send, 200, item)
+            return
+        if metodo == "DELETE":
+            excluiu = self.gestao.excluir_item_checklist(caso_id, aid, item_id)
+            await _json(send, 200 if excluiu else 404, {"excluido": excluiu})
+            return
+        await _responder(send, 405, b"Metodo nao permitido")
+
+    async def _avisar_atividade_delegada(self, responsavel: str, atividade: dict) -> None:
+        """Dispara e-mail de aviso de delegação, se houver SMTP configurado (modo hospedado).
+        Falha de envio não derruba a requisição - só fica no log, como no job de monitoramento."""
+        if self.cadastro is None or "@" not in responsavel:
+            return
+        try:
+            await asyncio.to_thread(_enviar_aviso_atividade_delegada, self.cadastro.cfg, responsavel, atividade)
+        except Exception:
+            log.exception("Falha ao enviar aviso de atividade delegada para %s", _rotulo_usuario(responsavel))
 
     _CAMPOS_CAPA_MANUAIS = (
         "area_direito", "magistrado", "tipo_justica", "cidade", "uf", "valor_causa", "fase", "status_processo",
@@ -4562,6 +4693,9 @@ async def _responder(send, status: int, corpo: bytes, tipo: str = "text/plain; c
     await send({"type": "http.response.body", "body": corpo})
 
 
+_RECURSOS_TEMA = '<script src="/static/theme.js"></script>\n<link rel="stylesheet" href="/static/theme.css">\n<script src="/static/carbon/theme-components.min.js" defer></script>'
+
+
 _ESTILO_PAGINAS = """
 body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
 table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
@@ -4817,7 +4951,8 @@ def _pagina_termos(mensagem: str | None = None, erro: bool = False) -> str:
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Termos de uso · cnj-processual</title>
-<style>{_ESTILO_CADASTRO}</style></head><body>
+<link rel="stylesheet" href="/static/carbon/styles.min.css">
+<style>{_ESTILO_CADASTRO}</style>{_RECURSOS_TEMA}</head><body>
 <main class="cartao">
 <p class="marca">cnj-processual · versão {_escapar(TERMOS_VERSAO)}</p>
 <h1>Termos de uso</h1>
@@ -4855,7 +4990,8 @@ def _pagina_cadastro(mensagem: str | None = None, erro: bool = False, site_key: 
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pedir token de acesso · cnj-processual</title>
-<style>{_ESTILO_CADASTRO}</style></head><body>
+<link rel="stylesheet" href="/static/carbon/styles.min.css">
+<style>{_ESTILO_CADASTRO}</style>{_RECURSOS_TEMA}</head><body>
 <main class="cartao">
 <p class="marca">cnj-processual</p>
 <h1>Pedir seu token de acesso</h1>
@@ -4996,8 +5132,8 @@ def _pagina_admin(registro: RegistroUsuarios, mensagem: str | None, token_novo: 
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Administração · cnj-processual</title>
 <link rel="stylesheet" href="/static/carbon/styles.min.css">
-<style>{_ESTILO_ADMIN_LAYOUT}</style></head>
-<body class="cds--g10">
+<style>{_ESTILO_ADMIN_LAYOUT}</style>{_RECURSOS_TEMA}</head>
+<body>
 <main class="admin-pagina">
 <header class="admin-cabecalho">
 <p class="cds--label">cnj-processual · administração</p>

@@ -2,6 +2,7 @@
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
@@ -52,7 +53,7 @@ class ProcessosTest(unittest.TestCase):
     def test_migracao_preserva_dados_e_e_idempotente(self):
         original = self.criar([self.n1])['id']
         # Reconstrói banco legado, anterior à restrição de cardinalidade.
-        with db.conectar(self.path) as conn:
+        with closing(db.conectar(self.path)) as conn, conn:
             conn.execute('DROP INDEX idx_processo_unico_por_cadastro')
             conn.execute('INSERT INTO caso_processos VALUES (?, ?)', (original, self.n2))
             conn.execute('INSERT INTO caso_processo_capa (caso_id,numero_processo,tribunal) VALUES (?,?,?)', (original, self.n2, 'TJSP'))
@@ -66,7 +67,7 @@ class ProcessosTest(unittest.TestCase):
         self.assertEqual(novo['processos'], [self.n2])
         self.assertEqual(self.gestao.obter_caso(original)['processos'], [self.n1])
         self.assertEqual(self.gestao.obter_capa_processo(novo['id'], self.n2)['tribunal'], 'TJSP')
-        with db.conectar(self.path) as conn:
+        with closing(db.conectar(self.path)) as conn, conn:
             self.assertEqual(conn.execute("SELECT caso_id FROM publicacoes_capturadas WHERE hash='pub'").fetchone()[0], novo['id'])
             self.assertEqual(conn.execute("SELECT caso_id FROM caso_eventos WHERE numero_processo=?", (self.n2,)).fetchone()[0], novo['id'])
             self.assertEqual(conn.execute("SELECT caso_id FROM caso_eventos WHERE numero_processo IS NULL").fetchone()[0], original)
