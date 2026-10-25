@@ -1363,6 +1363,8 @@ function abrirDemonstrativoPdf({ dataBase, dias, tipo, municipio, dia1, vencimen
   janela.focus();
 }
 
+let _sequenciaPainelPrazo = 0;
+
 function painelCalculoPrazo(item) {
   const dataBase = (item.data_disponibilizacao || "").slice(0, 10);
   const tribunal = (item.siglaTribunal || "").toLowerCase() || "tjsp";
@@ -1373,13 +1375,15 @@ function painelCalculoPrazo(item) {
     return painel;
   }
 
-  const campoDias = el("input", { class: "cds--text-input", type: "number", min: "1", value: "15" });
+  const prefixo = `prazo-${++_sequenciaPainelPrazo}`;
+  const campoDias = el("input", { id: `${prefixo}-dias`, class: "cds--text-input", type: "number", min: "1", value: "15" });
   const campoTipo = el(
     "select",
-    { class: "cds--select-input" },
+    { id: `${prefixo}-tipo`, class: "cds--select-input" },
     TIPOS_CONTAGEM_PRAZO.map((t) => el("option", { value: t.valor, texto: t.rotulo }))
   );
   const campoMunicipio = el("input", {
+    id: `${prefixo}-municipio`,
     class: "cds--text-input",
     type: "text",
     value: localStorage.getItem(CHAVE_PRAZO_MUNICIPIO) || "São Paulo",
@@ -1393,9 +1397,9 @@ function painelCalculoPrazo(item) {
   );
   painel.appendChild(
     el("div", { class: "prazo-painel-grade" }, [
-      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", texto: "Dias" }), campoDias]),
-      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", texto: "Contagem a partir de" }), campoTipo]),
-      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", texto: "Município/comarca" }), campoMunicipio]),
+      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: campoDias.id, texto: "Dias" }), campoDias]),
+      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: campoTipo.id, texto: "Contagem a partir de" }), campoTipo]),
+      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: campoMunicipio.id, texto: "Município/comarca" }), campoMunicipio]),
     ])
   );
   painel.appendChild(botaoCalcular);
