@@ -455,6 +455,9 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 .jurimetria-botoes { display: flex; flex-wrap: wrap; gap: 0.75rem; }
 .jurimetria-resumo-titulo { margin: 0 0 0.75rem; }
 
+.contato-financeiro-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-block: 1rem 1.5rem; }
+.contato-financeiro-resumo dt { color: var(--cds-text-secondary); font-size: var(--fonte-ajuda); }
+.contato-financeiro-resumo dd { margin: 0.25rem 0 0; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .jurimetria-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 0.75rem; }
 .jurimetria-resumo .cds--tile { text-align: center; padding: 0.75rem; }
 .jurimetria-resumo .valor { font-size: var(--fonte-destaque); font-weight: 600; display: block; }
@@ -1380,6 +1383,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="sub-tabs" role="tablist" aria-label="Detalhes do contato">
 <button class="sub-tab-link" id="contato-subaba-cadastro-botao" role="tab" aria-selected="true" aria-controls="contato-subaba-cadastro" type="button">Cadastro</button>
 <button class="sub-tab-link" id="contato-subaba-processos-botao" role="tab" aria-selected="false" aria-controls="contato-subaba-processos" type="button">Processos vinculados</button>
+<button class="sub-tab-link" id="contato-subaba-financeiro-botao" role="tab" aria-selected="false" aria-controls="contato-subaba-financeiro" tabindex="-1" type="button">Financeiro</button>
 </div>
 
 <section id="contato-subaba-cadastro" role="tabpanel" aria-labelledby="contato-subaba-cadastro-botao">
@@ -1507,6 +1511,11 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 
 <section id="contato-subaba-processos" role="tabpanel" aria-labelledby="contato-subaba-processos-botao" hidden>
 <div id="contato-processos-vinculados" class="app-resultado"></div>
+</section>
+<section id="contato-subaba-financeiro" role="tabpanel" aria-labelledby="contato-subaba-financeiro-botao" hidden>
+<div class="secao-cabecalho"><h3>Financeiro do cliente</h3><button class="cds--btn cds--btn--tertiary cds--btn--sm" id="contato-financeiro-atualizar" type="button">Atualizar financeiro</button></div>
+<p class="campo-ajuda">Lançamentos vinculados diretamente a este cliente. Os totais incluem todos os vencimentos. Para cadastrar ou alterar valores e pagamentos, acesse Lançamentos.</p>
+<div id="contato-financeiro" class="app-resultado" aria-live="polite"></div>
 </section>
 </div>
 

@@ -136,6 +136,48 @@ class InterfaceTest(unittest.TestCase):
         self.page.locator("#lista-publicacoes-oab cds-table").wait_for()
         self.page.wait_for_function("['cds-table', 'cds-toggletip', 'cds-tag', 'cds-icon-button'].every(n => customElements.get(n))")
 
+    def test_financeiro_contato_totais_isolamento_e_estados(self):
+        itens = [
+            {"cliente_id": "cliente-1", "caso_id": "caso-1", "descricao": "Honorários recebidos", "valor": 100.10, "direcao": "RECEITA", "pago": True, "vencimento": "2026-10-01"},
+            {"cliente_id": "cliente-1", "descricao": "Honorários pendentes", "valor": 50.20, "direcao": "RECEITA", "pago": False},
+            {"cliente_id": "cliente-1", "descricao": "Custas pagas", "valor": 30.05, "direcao": "DESPESA", "pago": True},
+            {"cliente_id": "cliente-1", "descricao": "Custas pendentes", "valor": 10.15, "direcao": "DESPESA", "pago": False},
+            {"cliente_id": "outro", "caso_id": "caso-1", "descricao": "Não exibir", "valor": 9999, "direcao": "RECEITA", "pago": True},
+        ]
+        falhar = False
+        def responder(route):
+            if falhar:
+                return route.fulfill(status=500, json={"mensagem": "Falha simulada"})
+            route.fulfill(json={"lancamentos": itens})
+        self.context.route("**/lancamentos", responder)
+        self.connect()
+        self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-contatos')); await abrirContato('cliente-1'); }")
+        self.page.locator("#contato-subaba-financeiro-botao").click()
+        painel = self.page.locator("#contato-financeiro")
+        painel.locator("tbody tr").first.wait_for()
+        self.assertEqual(painel.locator("tbody tr").count(), 4)
+        self.assertNotIn("Não exibir", painel.inner_text())
+        self.assertEqual(painel.locator("dd").all_text_contents(), ["R$\u00a0150,30", "R$\u00a040,20", "R$\u00a0100,10", "R$\u00a030,05", "R$\u00a050,20", "R$\u00a010,15", "R$\u00a070,05"])
+        pasta = Path("output/financeiro-cliente")
+        pasta.mkdir(parents=True, exist_ok=True)
+        for tema in ("white", "g100"):
+            self.page.evaluate("tema => { document.documentElement.classList.remove('cds--white', 'cds--g100'); document.documentElement.classList.add('cds--' + tema); document.documentElement.dataset.carbonTheme = tema; }", tema)
+            for largura in (1440, 390):
+                self.page.set_viewport_size({"width": largura, "height": 1000})
+                self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
+                self.page.screenshot(path=str(pasta / f"{tema}-{largura}.png"), full_page=True)
+        falhar = True
+        self.page.locator("#contato-financeiro-atualizar").click()
+        self.page.wait_for_function("document.getElementById('contato-financeiro').textContent.includes('Não foi possível')")
+        falhar = False
+        itens.clear()
+        self.page.locator("#contato-financeiro-atualizar").click()
+        self.page.wait_for_function("document.getElementById('contato-financeiro').textContent.includes('Nenhum lançamento')")
+        self.assertEqual(painel.locator("table").count(), 0)
+        self.page.evaluate("abrirNovoContato()")
+        self.assertTrue(self.page.locator("#contato-subaba-financeiro-botao").is_hidden())
+        self.assertFalse(self.errors)
+
     def test_publicacoes_colunas_djen_separadas_capitalizacao_e_persistencia(self):
         self.open_publicacoes_oab()
         self.pub_oab_items[0]["criado_em"] = "2026-10-23T12:00:00Z"

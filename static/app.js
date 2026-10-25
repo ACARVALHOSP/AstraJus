@@ -2401,6 +2401,7 @@ function _construirBarraAZ() {
 function _definirModoCadastroContato(modo) {
   const ehNovo = modo === "novo";
   document.getElementById("contato-subaba-processos-botao").hidden = ehNovo;
+  document.getElementById("contato-subaba-financeiro-botao").hidden = ehNovo;
   document.getElementById("contato-excluir").hidden = ehNovo;
   document.getElementById("contato-salvar-botao").textContent = ehNovo ? "Cadastrar cliente" : "Salvar alterações";
 }
@@ -2463,13 +2464,70 @@ async function voltarParaContatos() {
 }
 
 function _selecionarSubabaContato(nome) {
-  const ativarCadastro = nome === "cadastro";
-  document.getElementById("contato-subaba-cadastro-botao").setAttribute("aria-selected", String(ativarCadastro));
-  document.getElementById("contato-subaba-processos-botao").setAttribute("aria-selected", String(!ativarCadastro));
-  document.getElementById("contato-subaba-cadastro").hidden = !ativarCadastro;
-  document.getElementById("contato-subaba-processos").hidden = ativarCadastro;
-  document.getElementById("contato-subaba-cadastro-botao").tabIndex = ativarCadastro ? 0 : -1;
-  document.getElementById("contato-subaba-processos-botao").tabIndex = ativarCadastro ? -1 : 0;
+  for (const aba of ["cadastro", "processos", "financeiro"]) {
+    const ativa = aba === nome;
+    const botao = document.getElementById(`contato-subaba-${aba}-botao`);
+    botao.setAttribute("aria-selected", String(ativa));
+    botao.tabIndex = ativa ? 0 : -1;
+    document.getElementById(`contato-subaba-${aba}`).hidden = !ativa;
+  }
+  if (nome === "financeiro") carregarFinanceiroContato();
+}
+
+let _financeiroContatoRequisicao = 0;
+
+async function carregarFinanceiroContato() {
+  const container = document.getElementById("contato-financeiro");
+  const clienteId = document.getElementById("form-contato-cadastro").dataset.clienteId;
+  const requisicao = ++_financeiroContatoRequisicao;
+  limpar(container);
+  if (!clienteId) return;
+  container.appendChild(el("p", { class: "app-espera", texto: "Carregando financeiro…" }));
+  const atual = () => requisicao === _financeiroContatoRequisicao
+    && document.getElementById("form-contato-cadastro").dataset.clienteId === clienteId;
+  try {
+    const [{ lancamentos }, { casos }] = await Promise.all([_buscarJson("/lancamentos"), _buscarJson("/casos")]);
+    if (!atual()) return;
+    limpar(container);
+    const itens = (lancamentos || []).filter((item) => item.cliente_id === clienteId);
+    if (!itens.length) {
+      container.appendChild(notificacao("info", "Nenhum lançamento financeiro para este cliente"));
+      return;
+    }
+    const totais = { receitas: 0, despesas: 0, recebido: 0, pago: 0 };
+    for (const item of itens) {
+      const valor = Math.round(Number(item.valor) * 100);
+      const despesa = item.direcao === "DESPESA";
+      totais[despesa ? "despesas" : "receitas"] += valor;
+      if (item.pago) totais[despesa ? "pago" : "recebido"] += valor;
+    }
+    const resumo = el("dl", { class: "contato-financeiro-resumo" });
+    for (const [rotulo, valor] of [
+      ["Receitas totais", totais.receitas], ["Despesas totais", totais.despesas],
+      ["Recebido", totais.recebido], ["Pago", totais.pago],
+      ["A receber", totais.receitas - totais.recebido], ["A pagar", totais.despesas - totais.pago],
+      ["Saldo realizado", totais.recebido - totais.pago],
+    ]) resumo.appendChild(el("div", {}, [el("dt", { texto: rotulo }), el("dd", { texto: formatarMoeda(valor / 100) })]));
+    container.appendChild(resumo);
+    const colunas = ["Vencimento", "Descrição", "Processo", "Tipo", "Situação", "Valor"];
+    const cabecalho = el("thead", {}, [el("tr", {}, colunas.map((texto) => el("th", { scope: "col", texto })))]);
+    const corpo = el("tbody");
+    const processos = new Map((casos || []).map((caso) => [caso.id, caso.titulo || "Processo sem título"]));
+    itens.sort((a, b) => (a.vencimento || "").localeCompare(b.vencimento || ""));
+    for (const item of itens) {
+      const despesa = item.direcao === "DESPESA";
+      const situacao = item.pago ? (despesa ? "Pago" : "Recebido") : (despesa ? "A pagar" : "A receber");
+      const valores = [formatarDataSimples(item.vencimento), item.descricao || "—",
+        processos.get(item.caso_id) || "—", despesa ? "Despesa" : "Receita", situacao, formatarMoeda(item.valor)];
+      corpo.appendChild(el("tr", {}, valores.map((texto, i) => el("td", { "data-label": colunas[i], texto }))));
+    }
+    container.appendChild(el("p", { class: "campo-ajuda", texto: `${itens.length} lançamento(s) deste cliente` }));
+    container.appendChild(el("div", { class: "tabela-responsiva-wrap" }, [el("table", { class: "tabela-responsiva", "aria-label": "Lançamentos do cliente" }, [cabecalho, corpo])]));
+  } catch (erro) {
+    if (!atual()) return;
+    limpar(container);
+    mostrarErro(container, `Não foi possível carregar o financeiro. Use Atualizar financeiro para tentar novamente. ${erro.message}`);
+  }
 }
 
 function _renderizarCasosVinculadosNoContainer(container, clienteId) {
@@ -3772,6 +3830,8 @@ document.getElementById("casos-busca").addEventListener("input", function () {
 document.getElementById("contato-voltar").addEventListener("click", voltarParaContatos);
 document.getElementById("contato-subaba-cadastro-botao").addEventListener("click", () => _selecionarSubabaContato("cadastro"));
 document.getElementById("contato-subaba-processos-botao").addEventListener("click", () => _selecionarSubabaContato("processos"));
+document.getElementById("contato-subaba-financeiro-botao").addEventListener("click", () => _selecionarSubabaContato("financeiro"));
+document.getElementById("contato-financeiro-atualizar").addEventListener("click", carregarFinanceiroContato);
 document.getElementById("contatos-busca").addEventListener("input", (evento) => {
   _contatosFiltroBusca = evento.target.value;
   if (!_contatosFiltroBusca && _contatosFiltroLetra !== "TODOS") {
