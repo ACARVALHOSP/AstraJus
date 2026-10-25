@@ -437,15 +437,21 @@ html.app-motion-teclado :is(.header-busca-painel, .header-notificacoes-painel, .
   max-width: none;
   padding: 0;
 }
-.processo-card {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  background: var(--cds-layer);
-}
-.processo-card cds-card-title { overflow-wrap: anywhere; }
-.processo-card cds-card-body { display: flex; flex-direction: column; gap: var(--cds-spacing-03, 0.5rem); }
-.processo-card cds-card-body p { margin: 0; }
+.processo-card { position: absolute; inset: 0; overflow: auto; background: var(--cds-layer); padding: var(--cds-spacing-05, 1rem); }
+.processo-card-cabecalho { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: start; gap: .5rem; }
+.processo-card h3 { margin: 0; min-width: 0; }
+.processo-card-titulo { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; width: 100%; padding: 0; border: 0; background: none; color: var(--cds-text-primary); text-align: start; font: inherit; font-size: 1rem; font-weight: 600; line-height: 1.4; cursor: pointer; }
+.processo-card-titulo:focus-visible { outline: 2px solid var(--cds-focus); outline-offset: -2px; }
+.processo-card-acoes { display: flex; gap: .125rem; }
+.processo-card-estados { display: flex; flex-wrap: wrap; gap: .25rem; margin-block: .5rem; min-height: 1.5rem; }
+.processo-card-estados .cds--tag { margin: 0; }
+.processo-card-dados { display: grid; gap: .5rem; margin: 0; }
+.processo-card-dados dt { color: var(--cds-text-secondary); font-size: .75rem; }
+.processo-card-dados dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .875rem; }
+.processo-card-identificador { font-size: .75rem; overflow-wrap: anywhere; margin-block: .5rem 0; }
+#casos-vista-switcher { align-items: stretch; block-size: 2.5rem; }
+#casos-vista-switcher .cds--content-switcher-popover__wrapper { display: flex; block-size: 100%; }
+#casos-vista-switcher .cds--content-switcher-btn { block-size: 100%; margin: 0; }
 
 .seletor-arvore {
   border: 1px solid var(--cds-border-subtle, #c6c6c6); border-radius: 4px;
@@ -1629,13 +1635,14 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <h2 class="lista-rapida-titulo" style="margin-top: var(--cds-spacing-06, 1.5rem)">Processos cadastrados</h2>
 <div class="contatos-barra" style="margin-top: var(--cds-spacing-03, 0.5rem)">
 <div class="cds--form-item contatos-busca-campo" style="margin: 0;max-width:360px">
-<input class="cds--text-input" type="search" id="casos-busca" placeholder="Filtrar por título, cliente, ação, processo…" aria-label="Buscar processos" autocomplete="off">
+<input class="cds--text-input" type="search" id="casos-busca" placeholder="Filtrar processos" aria-label="Filtrar processos" aria-describedby="casos-busca-ajuda" autocomplete="off">
 </div>
 <div class="cds--content-switcher cds--content-switcher--light cds--content-switcher--icon-only" id="casos-vista-switcher" role="group" aria-label="Visualização da lista de processos">
 <span class="cds--content-switcher-popover__wrapper"><button class="cds--content-switcher-btn" type="button" id="casos-vista-cards-botao" aria-pressed="false" aria-label="Visualização em grade" title="Visualização em grade"><svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true" focusable="false"><path d="M12,4H6A2,2,0,0,0,4,6v6a2,2,0,0,0,2,2h6a2,2,0,0,0,2-2V6A2,2,0,0,0,12,4Zm0,8H6V6h6Z"></path><path d="M26,4H20a2,2,0,0,0-2,2v6a2,2,0,0,0,2,2h6a2,2,0,0,0,2-2V6A2,2,0,0,0,26,4Zm0,8H20V6h6Z"></path><path d="M12,18H6a2,2,0,0,0-2,2v6a2,2,0,0,0,2,2h6a2,2,0,0,0,2-2V20A2,2,0,0,0,12,18Zm0,8H6V20h6Z"></path><path d="M26,18H20a2,2,0,0,0-2,2v6a2,2,0,0,0,2,2h6a2,2,0,0,0,2-2V20A2,2,0,0,0,26,18Zm0,8H20V20h6Z"></path></svg></button></span>
 <span class="cds--content-switcher-popover__wrapper"><button class="cds--content-switcher-btn cds--content-switcher--selected" type="button" id="casos-vista-tabela-botao" aria-pressed="true" aria-label="Visualização em lista" title="Visualização em lista"><svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true" focusable="false"><path d="M10 6H28V8H10z"></path><path d="M10 24H28V26H10z"></path><path d="M10 15H28V17H10z"></path><path d="M4 15H6V17H4z"></path><path d="M4 6H6V8H4z"></path><path d="M4 24H6V26H4z"></path></svg></button></span>
 </div>
 </div>
+<p id="casos-busca-ajuda" class="campo-ajuda">Filtre por título, cliente, classe/ação, órgão julgador, responsável ou número do processo.</p>
 <div id="lista-casos" class="app-resultado"></div>
 </div><!-- #caso-vista-lista -->
 

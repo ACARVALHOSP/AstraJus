@@ -2751,12 +2751,12 @@ function linhaCaso(caso, aoExcluir) {
   const containerAcao = el("div", { style: "display:flex; flex-wrap:wrap; gap:4px" });
   const pedacosAcao = (caso.acao || "").split(" - ").map((pedaco) => pedaco.trim()).filter(Boolean);
   if (pedacosAcao.length === 0) {
-    containerAcao.appendChild(el("span", { class: "cds--tag cds--tag--blue cds--tag--sm", texto: "-" }));
+    containerAcao.appendChild(el("span", { class: "campo-ajuda", texto: "Classe não informada" }));
   } else {
     pedacosAcao.forEach((pedaco, indice) => {
       containerAcao.appendChild(el("span", {
         class: indice === 0 ? "cds--tag cds--tag--blue cds--tag--sm" : "cds--tag cds--tag--teal cds--tag--sm",
-        texto: pedaco,
+        texto: formatarClasseProcesso(pedaco),
       }));
     });
   }
@@ -2811,71 +2811,46 @@ function tabelaCasos(casos, aoExcluir) {
   return el("div", { class: "tabela-responsiva-wrap" }, [el("table", { class: "tabela-responsiva tabela-casos" }, [thead, tbody])]);
 }
 
+// Rótulos de classe/rito não são nomes próprios. Não altera os dados salvos.
+function formatarClasseProcesso(valor) {
+  const siglas = new Set(["CNJ", "STF", "STJ", "TST", "TRT", "TRF", "TJ", "OAB", "INSS", "FGTS", "ICMS", "IPI", "IPTU", "ISS", "IRPF", "IRPJ", "CPC", "CPP", "CLT", "CDC", "ECA", "CTN", "JEC", "JEFAZ"]);
+  return String(valor || "").split(" - ").map(parte => {
+    const texto = parte.trim().toLocaleLowerCase("pt-BR").replace(/\p{L}+/gu, palavra => siglas.has(palavra.toLocaleUpperCase("pt-BR")) ? palavra.toLocaleUpperCase("pt-BR") : palavra);
+    return texto.replace(/^\p{L}/u, letra => letra.toLocaleUpperCase("pt-BR"));
+  }).filter(Boolean).join(" · ");
+}
+
 function cartoesCasos(casos, aoExcluir) {
-  const nomeCliente = (id) => (_cache.clientes.find((c) => c.id === id) || {}).nome || id;
-  const formatarTitulo = (titulo) => {
-    const texto = String(titulo || "sem título").trim().toLocaleLowerCase("pt-BR");
-    return texto.replace(/(^|[\s/–—-])(\p{L})/gu, (_trecho, separador, letra) =>
-      `${separador}${letra.toLocaleUpperCase("pt-BR")}`
-    );
-  };
-  const ordenados = [...casos].sort((a, b) => (b.ultima_movimentacao || "").localeCompare(a.ultima_movimentacao || ""));
+  const nomeCliente = id => (_cache.clientes.find(c => c.id === id) || {}).nome || id;
   const grade = el("div", { class: "cds--grid grade-casos" });
   const linha = el("div", { class: "cds--row grade-casos-linha" });
-  grade.appendChild(linha);
-  for (const caso of ordenados) {
-    const tituloCartao = formatarTitulo(caso.titulo);
-    const card = el("cds-card", { class: "processo-card", density: "productive", "aria-label": tituloCartao });
-    const cabecalho = el("cds-card-header");
-    const corpo = el("cds-card-body");
-
-    const tituloLinha = el("cds-card-title", {}, [
-      el("span", { texto: caso.titulo ? formatarNomeExibicao(tituloCartao) : tituloCartao }),
-    ]);
-    if (caso.monitorado) {
-      tituloLinha.appendChild(el("span", { class: "cds--tag cds--tag--green cds--tag--sm", texto: "Monitorado" }));
+  grade.append(linha);
+  for (const caso of [...casos].sort((a,b) => (b.ultima_movimentacao || "").localeCompare(a.ultima_movimentacao || ""))) {
+    const titulo = caso.titulo?.trim() ? formatarNomeExibicao(caso.titulo) : "Processo sem título";
+    const card = el("article", { class: "processo-card", "aria-label": titulo });
+    const abrir = el("button", { type: "button", class: "processo-card-titulo", texto: titulo, title: titulo, "aria-label": `Abrir processo: ${titulo}` });
+    abrir.addEventListener("click", () => abrirCaso(caso.id));
+    const acoes = el("div", { class: "processo-card-acoes" });
+    for (const [icone, rotulo, acao] of [["editar", "Editar", () => abrirCaso(caso.id)], ["excluir", "Excluir", botao => excluirCaso(caso.id, caso.titulo, botao, aoExcluir)]]) {
+      const botao = el("cds-icon-button", { kind: "ghost", size: "sm", label: `${rotulo}: ${titulo}` });
+      const criarSvg = item => _elSvg(document, item.elem, item.attrs || {}, (item.content || []).map(criarSvg));
+      const svg = criarSvg(window.cnjProcessoIcones[icone]); svg.setAttribute("slot", "icon"); svg.setAttribute("aria-hidden", "true");
+      botao.append(svg, el("span", { slot: "tooltip-content", texto: rotulo }));
+      botao.addEventListener("click", () => acao(botao)); acoes.append(botao);
     }
-    if (caso.desfecho && _ROTULO_DESFECHO_CASO[caso.desfecho]) {
-      tituloLinha.appendChild(el("span", { class: "cds--tag cds--tag--purple cds--tag--sm", texto: _ROTULO_DESFECHO_CASO[caso.desfecho] }));
+    card.append(el("div", { class: "processo-card-cabecalho" }, [el("h3", {}, [abrir]), acoes]));
+    const estados = el("div", { class: "processo-card-estados" });
+    if (caso.monitorado) estados.append(el("span", { class: "cds--tag cds--tag--green cds--tag--sm", texto: "Monitorado" }));
+    if (_ROTULO_DESFECHO_CASO[caso.desfecho]) estados.append(el("span", { class: "cds--tag cds--tag--purple cds--tag--sm", texto: _ROTULO_DESFECHO_CASO[caso.desfecho] }));
+    card.append(estados);
+    const nomes = [caso.cliente_id, ...(caso.clientes_adicionais || [])].map(nomeCliente).filter(Boolean).map(formatarNomeExibicao);
+    const dados = el("dl", { class: "processo-card-dados" });
+    for (const [rotulo, valor] of [["Cliente", nomes.join(", ") || "Sem cliente vinculado"], ["Classe / rito", formatarClasseProcesso(caso.acao) || "Classe não informada"], ["Órgão julgador", caso.foro || "Não informado"], ["Última movimentação", formatarDataSimples(caso.ultima_movimentacao)]]) {
+      dados.append(el("div", {}, [el("dt", { texto: rotulo }), el("dd", { texto: valor, title: valor })]));
     }
-    cabecalho.appendChild(tituloLinha);
-
-    const nomesClientes = [caso.cliente_id, ...(caso.clientes_adicionais || [])].map(nomeCliente).filter(Boolean);
-    corpo.appendChild(el("p", { class: "campo-ajuda", texto: nomesClientes.map(formatarNomeExibicao).join(", ") || "Sem cliente vinculado" }));
-
-    const containerAcao = el("div", { style: "display:flex; flex-wrap:wrap; gap:4px" });
-    const pedacosAcao = (caso.acao || "").split(" - ").map((pedaco) => pedaco.trim()).filter(Boolean);
-    if (pedacosAcao.length === 0) {
-      containerAcao.appendChild(el("span", { class: "cds--tag cds--tag--blue cds--tag--sm", texto: "-" }));
-    } else {
-      pedacosAcao.forEach((pedaco) => {
-        containerAcao.appendChild(el("span", { class: "cds--tag cds--tag--blue cds--tag--sm", texto: pedaco }));
-      });
-    }
-    if (caso.foro) containerAcao.appendChild(el("span", { class: "cds--tag cds--tag--gray cds--tag--sm", texto: caso.foro }));
-    corpo.appendChild(containerAcao);
-
-    corpo.appendChild(el("p", { class: "campo-ajuda", texto: `Últ. mov.: ${formatarDataSimples(caso.ultima_movimentacao)}` }));
-
-    const criarAcao = (nome, rotulo) => {
-      const botao = el("cds-icon-button", { kind: "ghost", size: "sm", label: rotulo });
-      const criarSvg = (item) => _elSvg(document, item.elem, item.attrs || {}, (item.content || []).map(criarSvg));
-      const icone = criarSvg(window.cnjProcessoIcones[nome]);
-      icone.setAttribute("slot", "icon");
-      icone.setAttribute("aria-hidden", "true");
-      botao.append(icone, el("span", { slot: "tooltip-content", texto: rotulo }));
-      return botao;
-    };
-    const botaoAbrirCaso = criarAcao("editar", "Editar");
-    botaoAbrirCaso.addEventListener("click", () => abrirCaso(caso.id));
-    const botaoExcluirCaso = criarAcao("excluir", "Excluir");
-    botaoExcluirCaso.addEventListener("click", () => excluirCaso(caso.id, caso.titulo, botaoExcluirCaso, aoExcluir));
-    cabecalho.appendChild(el("cds-card-actions", {}, [
-      el("cds-card-action", { label: "Editar" }, [botaoAbrirCaso]),
-      el("cds-card-action", { label: "Excluir" }, [botaoExcluirCaso]),
-    ]));
-    card.append(cabecalho, corpo);
-    linha.appendChild(el("div", { class: "cds--col-sm-4 cds--col-md-4 cds--col-lg-4 processo-card-coluna" }, [card]));
+    card.append(dados);
+    if (!caso.titulo?.trim()) card.append(el("p", { class: "processo-card-identificador", texto: (caso.processos || []).map(formatarNumeroCNJ).join(" · ") || `Registro ${caso.numero || caso.id}`, title: caso.id }));
+    linha.append(el("div", { class: "cds--col-sm-4 cds--col-md-4 cds--col-lg-4 processo-card-coluna" }, [card]));
   }
   return grade;
 }
