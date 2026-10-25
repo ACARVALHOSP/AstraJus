@@ -622,7 +622,7 @@ async function renderizarCasosFavoritos() {
   for (const caso of casosFavoritos) {
     listaCasosFavoritos.appendChild(
       el("li", { class: "lista-rapida-item cds--tile" }, [
-        el("span", { texto: caso.titulo || "(sem título)" }),
+        el("span", { texto: caso.titulo ? formatarNomeExibicao(caso.titulo) : "(sem título)" }),
         el("div", {}, [
           el("button", {
             class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Abrir",
@@ -2298,7 +2298,7 @@ function linhaContato(c) {
   tr.appendChild(el("td", { "data-label": "Selecionar" }, [checkbox]));
   tr.appendChild(el("td", { "data-label": "Tipo" }, [_iconePessoa()]));
 
-  const botaoNome = el("button", { class: "contato-nome-link", type: "button", texto: c.nome });
+  const botaoNome = el("button", { class: "contato-nome-link", type: "button", texto: formatarNomeExibicao(c.nome) });
   botaoNome.addEventListener("click", () => abrirContato(c.id));
   tr.appendChild(el("td", { "data-label": "Nome" }, [botaoNome]));
 
@@ -2439,7 +2439,7 @@ async function abrirContato(clienteId) {
   limpar(resultadoContatoCadastro);
   try {
     const cliente_registro = await _buscarJson(`/clientes/${clienteId}`);
-    document.getElementById("contato-detalhe-nome").textContent = cliente_registro.nome || "(sem nome)";
+    document.getElementById("contato-detalhe-nome").textContent = cliente_registro.nome ? formatarNomeExibicao(cliente_registro.nome) : "(sem nome)";
     document.getElementById("contato-nome").value = cliente_registro.nome || "";
     document.getElementById("contato-cpf-cnpj").value = cliente_registro.cpf_cnpj || "";
     document.getElementById("contato-observacoes").value = cliente_registro.observacoes || "";
@@ -2613,7 +2613,7 @@ function linhaCaso(caso, aoExcluir) {
 
   const celTitulo = el("td", { "data-label": "Título" });
   const linhaTitulo = el("div", { class: "caso-titulo-linha" }, [
-    el("span", { texto: caso.titulo || "(sem título)" }),
+    el("span", { texto: caso.titulo ? formatarNomeExibicao(caso.titulo) : "(sem título)" }),
   ]);
   if (caso.monitorado) {
     linhaTitulo.appendChild(el("span", { class: "cds--tag cds--tag--green cds--tag--sm", texto: "Monitorado" }));
@@ -2668,7 +2668,7 @@ function linhaCaso(caso, aoExcluir) {
   celTitulo.appendChild(botaoTimeline);
   tr.appendChild(celTitulo);
 
-  const celCliente = el("td", { "data-label": "Cliente/Pasta" }, [el("div", { texto: nomesClientes.join(", ") })]);
+  const celCliente = el("td", { "data-label": "Cliente/Pasta" }, [el("div", { texto: nomesClientes.map(formatarNomeExibicao).join(", ") })]);
   if (caso.drive_pasta_id) {
     const linkDrive = el("a", {
       href: `https://drive.google.com/drive/folders/${caso.drive_pasta_id}`, target: "_blank", rel: "noopener",
@@ -2760,7 +2760,7 @@ function cartoesCasos(casos, aoExcluir) {
     const corpo = el("cds-card-body");
 
     const tituloLinha = el("cds-card-title", {}, [
-      el("span", { texto: tituloCartao }),
+      el("span", { texto: caso.titulo ? formatarNomeExibicao(tituloCartao) : tituloCartao }),
     ]);
     if (caso.monitorado) {
       tituloLinha.appendChild(el("span", { class: "cds--tag cds--tag--green cds--tag--sm", texto: "Monitorado" }));
@@ -2771,7 +2771,7 @@ function cartoesCasos(casos, aoExcluir) {
     cabecalho.appendChild(tituloLinha);
 
     const nomesClientes = [caso.cliente_id, ...(caso.clientes_adicionais || [])].map(nomeCliente).filter(Boolean);
-    corpo.appendChild(el("p", { class: "campo-ajuda", texto: nomesClientes.join(", ") || "Sem cliente vinculado" }));
+    corpo.appendChild(el("p", { class: "campo-ajuda", texto: nomesClientes.map(formatarNomeExibicao).join(", ") || "Sem cliente vinculado" }));
 
     const containerAcao = el("div", { style: "display:flex; flex-wrap:wrap; gap:4px" });
     const pedacosAcao = (caso.acao || "").split(" - ").map((pedaco) => pedaco.trim()).filter(Boolean);
@@ -2860,9 +2860,9 @@ function _renderizarLancamentos(lancamentos) {
       el("td", { "data-label": "Vencimento", texto: formatarDataSimples(lanc.vencimento) }),
       el("td", { "data-label": "Valor", texto: formatarMoeda(lanc.valor) }),
       el("td", { "data-label": "Descrição", texto: lanc.descricao + (lanc.recorrente ? " (mensal)" : "") }),
-      el("td", { "data-label": "Cliente", texto: nomeCliente(lanc.cliente_id) }),
-      el("td", { "data-label": "Processo", texto: tituloCaso(lanc.caso_id) }),
-      el("td", { "data-label": "Responsável", texto: lanc.responsavel }),
+      el("td", { "data-label": "Cliente", texto: formatarNomeExibicao(nomeCliente(lanc.cliente_id)) }),
+      el("td", { "data-label": "Processo", texto: formatarNomeExibicao(tituloCaso(lanc.caso_id)) }),
+      el("td", { "data-label": "Responsável", texto: formatarNomeExibicao(lanc.responsavel) }),
     ]);
 
     const rotuloDirecao = lanc.direcao === "DESPESA" ? "A pagar" : "A receber";
@@ -3194,12 +3194,12 @@ async function _abrirModalHonorario() {
   const selectCaso = document.getElementById("honorario-caso");
   limpar(selectCaso);
   selectCaso.appendChild(el("option", { value: "", texto: "— selecione o processo —" }));
-  for (const c of _cache.casos) selectCaso.appendChild(el("option", { value: c.id, texto: c.titulo || "(sem título)" }));
+  for (const c of _cache.casos) selectCaso.appendChild(el("option", { value: c.id, texto: c.titulo ? formatarNomeExibicao(c.titulo) : "(sem título)" }));
 
   const selectCliente = document.getElementById("honorario-cliente");
   limpar(selectCliente);
   selectCliente.appendChild(el("option", { value: "", texto: "— selecione o cliente —" }));
-  for (const c of _cache.clientes) selectCliente.appendChild(el("option", { value: c.id, texto: c.nome }));
+  for (const c of _cache.clientes) selectCliente.appendChild(el("option", { value: c.id, texto: formatarNomeExibicao(c.nome) }));
 
   abrirModal("modal-honorario");
 }
@@ -3394,7 +3394,7 @@ let _sequenciaCampoRepetivel = 0;
 function identificarGrupoRepetivel(grupo, nome, rotulos) {
   const identificador = ++_sequenciaCampoRepetivel;
   grupo.setAttribute("role", "group");
-  const titulo = el("p", { id: `grupo-repetivel-${identificador}`, class: "campo-ajuda grupo-repetivel-titulo", texto: nome });
+  const titulo = el("p", { id: `grupo-repetivel-${identificador}`, class: "campo-ajuda grupo-repetivel-titulo", texto: formatarNomeExibicao(nome) });
   grupo.prepend(titulo);
   grupo.setAttribute("aria-labelledby", titulo.id);
   [...grupo.querySelectorAll("input, select")].forEach((campo, i) => {
@@ -3573,7 +3573,7 @@ function _criarGrupoEnderecos(prefixo) {
     inputCidade.value = valor.cidade || "";
     inputEstado.value = valor.estado || "";
     inputPais.value = valor.pais || "Brasil";
-    const grade = el("div", { class: "endereco-grade" }, [
+    const grade = el("div", { class: "endereco-grade cds--css-grid" }, [
       inputRua, inputNumero, inputBairro, inputComplemento, inputCidade, inputEstado, inputPais,
     ]);
 
@@ -3793,7 +3793,7 @@ document.getElementById("casos-busca").addEventListener("input", function () {
     const filtrados = _cache.clientes.filter((c) => c.nome.toLowerCase().includes(termo.toLowerCase()));
     if (!filtrados.length) { lista.hidden = true; return; }
     filtrados.slice(0, 10).forEach((c) => {
-      const btn = el("button", { type: "button", texto: c.nome });
+      const btn = el("button", { type: "button", texto: formatarNomeExibicao(c.nome) });
       btn.addEventListener("mousedown", (ev) => {
         ev.preventDefault();
         busca.value = c.nome;
@@ -3869,7 +3869,7 @@ registrarSalvamento(formContatoCadastro, async (evento) => {
       : await _enviarJson(`/clientes/${clienteId}`, corpo, "PATCH");
     limpar(resultadoContatoCadastro);
     resultadoContatoCadastro.appendChild(notificacao("success", criando ? "Cliente cadastrado" : "Cliente atualizado"));
-    document.getElementById("contato-detalhe-nome").textContent = salvo.nome;
+    document.getElementById("contato-detalhe-nome").textContent = formatarNomeExibicao(salvo.nome);
     formContatoCadastro.dataset.clienteId = salvo.id;
     marcarFormularioSalvo(formContatoCadastro);
     if (criando) {
@@ -4217,7 +4217,7 @@ function _atualizarBotoesLotePubOab() {
   if (barra) {
     barra.hidden = quantidade === 0;
     barra.classList.toggle("cds--batch-actions--active", quantidade > 0);
-    document.getElementById("pub-oab-selecionadas").textContent = `${quantidade} ${quantidade === 1 ? "Selecionada" : "Selecionadas"}`;
+    document.getElementById("pub-oab-selecionadas").textContent = `${quantidade} ${quantidade === 1 ? "selecionada" : "selecionadas"}`;
   }
 }
 
@@ -4254,8 +4254,8 @@ async function _aplicarStatusPubOab(hashes, status) {
 
 let _pubOabContadorLinha = 0;
 
-// Colunas com chaves estáveis: preferências não dependem da ordem de exibição.
-function _tituloPubOab(valor) {
+// Formata somente dados de nomes na exibição, sem alterar o valor persistido.
+function formatarNomeExibicao(valor) {
   return String(valor ?? "").toLocaleLowerCase("pt-BR").replace(/(^|[^\p{L}\p{N}])(\p{L})/gu,
     (_, separador, letra) => separador + letra.toLocaleUpperCase("pt-BR"));
 }
@@ -4263,33 +4263,37 @@ function _tituloPubOab(valor) {
 function _valorPubOab(valor, literal = false) {
   if (valor === null || valor === undefined || valor === "") return "—";
   if (Array.isArray(valor)) return valor.map((v) => _valorPubOab(v, literal)).join(" · ") || "—";
-  if (typeof valor === "object") return Object.entries(valor).map(([k, v]) => `${_tituloPubOab(k.replace(/_/g, " "))}: ${_valorPubOab(v, literal)}`).join("; ");
+  if (typeof valor === "object") return Object.entries(valor).map(([k, v]) => {
+    const rotulo = ({ nome: "Nome", uf_oab: "UF da OAB", numero_oab: "Número da OAB" })[k] || _rotuloCampoDjen(k);
+    const preservar = literal || /(^|_)(uf|oab|id|hash|url|link|numero)(_|$)/i.test(k);
+    return `${rotulo}: ${k === "nome" ? formatarNomeExibicao(v) : _valorPubOab(v, preservar)}`;
+  }).join("; ");
   if (typeof valor === "boolean") return valor ? "Sim" : "Não";
-  return literal ? String(valor) : _tituloPubOab(valor);
+  return literal ? String(valor) : String(valor).charAt(0).toLocaleUpperCase("pt-BR") + String(valor).slice(1).toLocaleLowerCase("pt-BR");
 }
 
 const _COLUNAS_FIXAS_PUB_OAB = new Set(["processo", "tribunal", "nome"]);
 
 function _nomeProcessoPubOab(p) {
   const partes = p.dados?.destinatarios || [];
-  const nomes = (polo) => [...new Set(partes.filter((d) => String(d.polo || "").toUpperCase() === polo).map((d) => d.nome).filter(Boolean))].map(_tituloPubOab).join(" / ");
-  return `${nomes("A") || "Parte Ativa Não Informada"} X ${nomes("P") || "Parte Passiva Não Informada"}`;
+  const nomes = (polo) => [...new Set(partes.filter((d) => String(d.polo || "").toUpperCase() === polo).map((d) => d.nome).filter(Boolean))].map(formatarNomeExibicao).join(" / ");
+  return `${nomes("A") || "Parte ativa não informada"} X ${nomes("P") || "Parte passiva não informada"}`;
 }
 
 function _publicacaoCompletaPubOab(p, id) {
   const d = p.dados || {};
   const informacoes = [
     ["Processo", formatarNumeroCNJ(d.numeroprocessocommascara || p.numero_processo || "")],
-    ["Nome Do Processo", _nomeProcessoPubOab(p)],
-    ["Partes", (d.destinatarios || []).map((parte) => `${parte.nome || "—"} (${parte.polo || "Polo Não Informado"})`).join("; ")],
+    ["Nome do processo", _nomeProcessoPubOab(p)],
+    ["Partes", (d.destinatarios || []).map((parte) => `${parte.nome ? formatarNomeExibicao(parte.nome) : "—"} (${parte.polo || "Polo não informado"})`).join("; ")],
     ["Tribunal", (d.siglaTribunal || "").toUpperCase()], ["Órgão", d.nomeOrgao],
     ["Divulgado", formatarDataSimples(d.data_disponibilizacao)],
     ["Tipo", d.tipoComunicacao], ["Documento", d.tipoDocumento], ["Classe", d.nomeClasse],
-    ["Advogados", (d.destinatarioadvogados || []).map((a) => `${a.nome || "—"} · OAB ${a.numero_oab || "—"}/${a.uf_oab || "—"}`).join("; ")],
+    ["Advogados", (d.destinatarioadvogados || []).map((a) => `${a.nome ? formatarNomeExibicao(a.nome) : "—"} · OAB ${a.numero_oab || "—"}/${a.uf_oab || "—"}`).join("; ")],
   ];
-  return el("article", { id, class: "pub-oab-publicacao-completa", "aria-label": "Publicação Completa" }, [
+  return el("article", { id, class: "pub-oab-publicacao-completa", "aria-label": "Publicação completa" }, [
     el("header", { class: "pub-oab-publicacao-cabecalho" }, informacoes.filter(([, valor]) => valor).map(([rotulo, valor]) => el("p", {}, [el("strong", { texto: `${rotulo}: ${valor}` })]))),
-    el("div", { class: "pub-oab-publicacao-texto", texto: d.texto || "Texto Não Informado" }),
+    el("div", { class: "pub-oab-publicacao-texto", texto: d.texto || "Texto não informado" }),
   ]);
 }
 
@@ -4302,18 +4306,18 @@ async function _abrirFluxoInlinePubOab(tr, p, colunas, tipo, origem) {
   if (anterior) anterior.remove();
   const id = `pub-oab-fluxo-${++_pubOabContadorLinha}`;
   const busca = el("input", { id: `${id}-busca`, type: "search", class: "cds--text-input", autocomplete: "off",
-    placeholder: tipo === "cadastro" ? "Nome Do Cliente" : "Número, Parte Ou Cliente" });
-  const resultados = el("div", { class: "pub-oab-resultados-busca", "aria-label": "Resultados Da Consulta" });
+    placeholder: tipo === "cadastro" ? "Nome do cliente" : "Número, parte ou cliente" });
+  const resultados = el("div", { class: "pub-oab-resultados-busca", "aria-label": "Resultados da consulta" });
   const escolhido = el("div", { class: "pub-oab-confirmacao", hidden: "hidden" });
   const status = el("p", { id: `${id}-status`, class: "campo-ajuda", role: "status", "aria-live": "polite", texto: "Carregando…" });
   busca.setAttribute("aria-describedby", status.id);
-  const confirmar = el("button", { type: "submit", class: "cds--btn cds--btn--primary cds--btn--sm", texto: tipo === "cadastro" ? "Confirmar Cadastro" : "Confirmar Vínculo", disabled: "disabled" });
+  const confirmar = el("button", { type: "submit", class: "cds--btn cds--btn--primary cds--btn--sm", texto: tipo === "cadastro" ? "Confirmar cadastro" : "Confirmar vínculo", disabled: "disabled" });
   const cancelar = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Cancelar" });
-  const responsavel = el("select", { id: `${id}-responsavel`, class: "cds--select-input", required: "required" }, [el("option", { value: "", texto: "Selecione O Responsável" })]);
-  const form = el("form", { class: "pub-oab-inline-form", "aria-label": tipo === "cadastro" ? "Cadastrar Processo" : "Vincular A Processo Existente" }, [
-    el("h3", { texto: tipo === "cadastro" ? "Cadastrar Processo" : "Vincular A Processo Existente" }),
+  const responsavel = el("select", { id: `${id}-responsavel`, class: "cds--select-input", required: "required" }, [el("option", { value: "", texto: "Selecione O responsável" })]);
+  const form = el("form", { class: "pub-oab-inline-form", "aria-label": tipo === "cadastro" ? "Cadastrar processo" : "Vincular a processo existente" }, [
+    el("h3", { texto: tipo === "cadastro" ? "Cadastrar processo" : "Vincular a processo existente" }),
     el("p", { class: "campo-ajuda", texto: `${formatarNumeroCNJ(p.numero_processo || "")} · ${_nomeProcessoPubOab(p)}` }),
-    el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: busca.id, texto: tipo === "cadastro" ? "Cliente" : "Consultar Processo" }), busca]),
+    el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: busca.id, texto: tipo === "cadastro" ? "Cliente" : "Consultar processo" }), busca]),
     resultados, escolhido,
     ...(tipo === "cadastro" ? [el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: responsavel.id, texto: "Responsável" }), responsavel])] : []),
     status, el("div", { class: "pub-oab-inline-acoes" }, [confirmar, cancelar]),
@@ -4332,32 +4336,32 @@ async function _abrirFluxoInlinePubOab(tr, p, colunas, tipo, origem) {
   const escolher = (item, descricao) => {
     selecionado = item;
     limpar(escolhido);
-    escolhido.append(el("strong", { texto: tipo === "cadastro" ? "Cliente Selecionado" : "Confirmar Processo Selecionado" }), el("p", { texto: descricao }));
+    escolhido.append(el("strong", { texto: tipo === "cadastro" ? "Cliente selecionado" : "Confirmar processo selecionado" }), el("p", { texto: descricao }));
     escolhido.hidden = false;
     confirmar.disabled = false;
     limpar(resultados);
-    status.textContent = "Confira Os Dados E Confirme Abaixo.";
+    status.textContent = "Confira os dados e confirme abaixo.";
   };
   const exibir = (itens) => {
     limpar(resultados);
-    if (!itens.length) { status.textContent = "Nenhum Resultado. Altere Os Termos Da Consulta."; return; }
+    if (!itens.length) { status.textContent = "Nenhum resultado. Altere os termos da consulta."; return; }
     for (const item of itens.slice(0, 20)) {
       const cliente = clientes.find((c) => c.id === item.cliente_id);
-      const descricao = tipo === "cadastro" ? item.nome : [item.titulo, item.autor, item.reu, ...(item.processos || []).map(formatarNumeroCNJ), cliente?.nome || item.nome_cliente].filter(Boolean).join(" · ");
+      const descricao = tipo === "cadastro" ? formatarNomeExibicao(item.nome) : [item.titulo, item.autor, item.reu].map(formatarNomeExibicao).concat([ ...(item.processos || []).map(formatarNumeroCNJ), formatarNomeExibicao(cliente?.nome || item.nome_cliente)]).filter(Boolean).join(" · ");
       const botao = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: descricao });
       botao.addEventListener("click", () => escolher(item, descricao));
       resultados.appendChild(botao);
     }
-    status.textContent = `${Math.min(itens.length, 20)} Resultado(s). Selecione Um Para Confirmar.`;
+    status.textContent = `${Math.min(itens.length, 20)} resultado(s). Selecione um para confirmar.`;
   };
   busca.addEventListener("input", () => {
     selecionado = null; confirmar.disabled = true; escolhido.hidden = true; limpar(resultados);
     clearTimeout(temporizador); const numeroRequisicao = ++requisicao;
     if (!pronto) return;
     const termo = busca.value.trim();
-    if (!termo) { status.textContent = "Informe Um Termo Para Consultar."; return; }
+    if (!termo) { status.textContent = "Informe um termo para consultar."; return; }
     if (tipo === "cadastro") { exibir(clientes.filter((c) => _normalizarConsultaPubOab(c.nome).includes(_normalizarConsultaPubOab(termo)))); return; }
-    status.textContent = "Consultando Processos…";
+    status.textContent = "Consultando processos…";
     temporizador = setTimeout(async () => {
       try {
         const dados = await _buscarJson(`/casos?q=${encodeURIComponent(termo)}`);
@@ -4369,11 +4373,11 @@ async function _abrirFluxoInlinePubOab(tr, p, colunas, tipo, origem) {
     ev.preventDefault();
     if (!selecionado || confirmar.disabled) return;
     confirmar.disabled = true; cancelar.disabled = true; busca.disabled = true; responsavel.disabled = true;
-    status.textContent = tipo === "cadastro" ? "Cadastrando Processo…" : "Vinculando Publicação…";
+    status.textContent = tipo === "cadastro" ? "Cadastrando processo…" : "Vinculando publicação…";
     try {
       if (tipo === "cadastro") await _enviarJson(`/publicacoes-oab/${encodeURIComponent(p.hash)}/criar-caso`, { cliente_id: selecionado.id, responsavel: responsavel.value });
       else await _enviarJson(`/casos/${encodeURIComponent(selecionado.id)}/publicacoes`, { hash: p.hash, numero_processo: p.numero_processo || null, dados: p.dados || null });
-      mostrarToast("success", tipo === "cadastro" ? "Processo Cadastrado" : "Publicação Vinculada", tipo === "cadastro" ? "Dados Capturados Preenchidos E Publicação Vinculada." : "Vínculo Confirmado.");
+      mostrarToast("success", tipo === "cadastro" ? "Processo cadastrado" : "Publicação vinculada", tipo === "cadastro" ? "Dados capturados preenchidos E publicação vinculada." : "Vínculo confirmado.");
       await carregarPublicacoesOab();
     } catch (erro) {
       status.textContent = erro.message;
@@ -4384,38 +4388,43 @@ async function _abrirFluxoInlinePubOab(tr, p, colunas, tipo, origem) {
     const dadosClientes = await _buscarJson("/clientes"); clientes = dadosClientes.clientes || [];
     if (tipo === "cadastro") {
       const dados = await _buscarJson("/responsaveis");
-      for (const nome of dados.responsaveis || []) responsavel.appendChild(el("option", { value: nome, texto: nome }));
+      for (const nome of dados.responsaveis || []) responsavel.appendChild(el("option", { value: nome, texto: formatarNomeExibicao(nome) }));
     }
     pronto = true;
-    status.textContent = "Informe Um Termo Para Consultar.";
+    status.textContent = "Informe um termo para consultar.";
     if (busca.value) busca.dispatchEvent(new Event("input"));
   } catch (erro) {
     status.textContent = `Não Foi Possível Carregar As Opções: ${erro.message}`;
-    const repetir = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Tentar Novamente" });
+    const repetir = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Tentar novamente" });
     repetir.addEventListener("click", () => _abrirFluxoInlinePubOab(tr, p, colunas, tipo, origem));
     resultados.appendChild(repetir);
   }
 }
 
+function _rotuloCampoDjen(chave) {
+  const texto = chave.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ");
+  return texto.charAt(0).toLocaleUpperCase("pt-BR") + texto.slice(1);
+}
+
 function _colunasPubOab(publicacoes = [], camposDjen = []) {
   const colunas = [
-    ["divulgado", "Divulgado", (p) => formatarDataSimples(p.dados?.data_disponibilizacao), true],
-    ["capturado", "Capturado", (p) => formatarData(p.criado_em), true],
-    ["tipo", "Tipo", (p) => p.dados?.tipoComunicacao, true],
+    ["divulgado", "Divulgado", (p) => formatarDataSimples(p.dados?.data_disponibilizacao), false],
+    ["capturado", "Capturado", (p) => formatarData(p.criado_em), false],
+    ["tipo", "Tipo", (p) => p.dados?.tipoComunicacao, false],
     ["processo", "Processo", () => "", true],
     ["tribunal", "Tribunal", (p) => (p.dados?.siglaTribunal || "").toUpperCase(), true, true],
     ["orgao", "Órgão", (p) => p.dados?.nomeOrgao, false],
-    ["nome", "Nome Do Processo", _nomeProcessoPubOab, true],
-    ["referencia", "Nome De Referência", (p) => p.nome_pesquisado, true],
-    ["status", "Status", (p) => _ROTULO_STATUS_PUB_OAB[p.status] || p.status, true],
-    ["documento", "Tipo De Documento", (p) => p.dados?.tipoDocumento, false],
+    ["nome", "Nome do processo", _nomeProcessoPubOab, true, true],
+    ["referencia", "Nome de referência", (p) => formatarNomeExibicao(p.nome_pesquisado), false, true],
+    ["status", "Status", (p) => _ROTULO_STATUS_PUB_OAB[p.status] || p.status, false],
+    ["documento", "Tipo de documento", (p) => p.dados?.tipoDocumento, false],
     ["classe", "Classe", (p) => p.dados?.nomeClasse, false],
-    ["destinatarios", "Destinatários", (p) => p.dados?.destinatarios, false],
-    ["polos", "Polos Dos Destinatários", (p) => (p.dados?.destinatarios || []).map((d) => d.polo), false],
-    ["advogados", "Advogados", (p) => (p.dados?.destinatarioadvogados || []).map((d) => d.nome), false],
-    ["oab", "Número Da OAB", (p) => (p.dados?.destinatarioadvogados || []).map((d) => d.numero_oab), false, true],
-    ["uf", "UF Da OAB", (p) => (p.dados?.destinatarioadvogados || []).map((d) => d.uf_oab), false],
-    ["dados_advogados", "Dados Dos Advogados", (p) => p.dados?.destinatarioadvogados, false],
+    ["destinatarios", "Destinatários", (p) => (p.dados?.destinatarios || []).map((d) => formatarNomeExibicao(d.nome)), false, true],
+    ["polos", "Polos dos destinatários", (p) => (p.dados?.destinatarios || []).map((d) => d.polo), false],
+    ["advogados", "Advogados", (p) => (p.dados?.destinatarioadvogados || []).map((d) => formatarNomeExibicao(d.nome)), false, true],
+    ["oab", "Número da OAB", (p) => (p.dados?.destinatarioadvogados || []).map((d) => d.numero_oab), false, true],
+    ["uf", "UF da OAB", (p) => (p.dados?.destinatarioadvogados || []).map((d) => d.uf_oab), false, true],
+    ["dados_advogados", "Dados dos advogados", (p) => p.dados?.destinatarioadvogados, false],
     ["texto", "Texto", (p) => p.dados?.texto, false, true],
     ["hash", "Hash", (p) => p.dados?.hash || p.hash, false, true],
     ["link", "Link", (p) => p.dados?.link, false, true],
@@ -4423,7 +4432,7 @@ function _colunasPubOab(publicacoes = [], camposDjen = []) {
   const conhecidos = new Set(["data_disponibilizacao", "siglaTribunal", "nomeOrgao", "tipoComunicacao", "tipoDocumento", "nomeClasse", "numeroprocessocommascara", "destinatarios", "destinatarioadvogados", "texto", "hash", "link"]);
   const extras = new Set([...camposDjen, ...publicacoes.flatMap((p) => Object.keys(p.dados || {}))].filter((k) => !conhecidos.has(k)));
   for (const chave of [...extras].sort()) {
-    colunas.push({ id: `djen:${chave}`, rotulo: _tituloPubOab(chave.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ")),
+    colunas.push({ id: `djen:${chave}`, rotulo: _rotuloCampoDjen(chave),
       valor: (p) => p.dados?.[chave], padrao: false, literal: /(^id$|hash|url|link|numero)/i.test(chave) });
   }
   const ordem = { tribunal: 0, processo: 1, nome: 2 };
@@ -4486,7 +4495,7 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
     if (coluna.id === "processo") celula = celProcesso;
     else if (coluna.id === "status") {
       const badge = _badgeStatusPubOab(p.status);
-      badge.querySelector(".pub-oab-status-texto").textContent = _tituloPubOab(badge.textContent);
+      // O status mantém o rótulo de interface em capitalização de frase.
       celula = el("cds-table-cell", {}, [badge]);
     } else {
       const valor = _valorPubOab(coluna.valor(p), coluna.literal);
@@ -4496,7 +4505,7 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
       const nome = _nomeProcessoPubOab(p);
       limpar(celula);
       const nomeEl = el("span", { class: "pub-oab-nome-processo", texto: nome, title: nome, tabindex: "0" });
-      const tooltip = el("span", { id: `${idTexto}-nome`, class: "pub-oab-tooltip-nome", role: "tooltip", popover: "manual", texto: nome });
+      const tooltip = el("span", { id: `${idTexto}-nome`, class: "pub-oab-tooltip-nome", role: "tooltip", popover: "manual", texto: formatarNomeExibicao(nome) });
       nomeEl.setAttribute("aria-describedby", tooltip.id);
       const mostrar = () => {
         if (!tooltip.isConnected || tooltip.matches(":popover-open")) return;
@@ -4553,9 +4562,9 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
   const menu = el("ul", { id: `${idTexto}-menu`, class: "cds--menu pub-oab-combo-menu", popover: "manual", role: "menu", "aria-label": `Ações da publicação: ${identificacao}` });
   menu.hidden = true;
   const itemCadastro = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1",
-    "aria-disabled": String(!podeAdcCaso) }, [el("div", { class: "cds--menu-item__label", texto: "Cadastrar Processo" })]);
+    "aria-disabled": String(!podeAdcCaso) }, [el("div", { class: "cds--menu-item__label", texto: "Cadastrar processo" })]);
   if (!podeAdcCaso) {
-    itemCadastro.appendChild(el("div", { class: "pub-oab-menu-motivo", texto: p.status === "tratada" ? "Publicação Já Tratada" : "Número Do Processo Não Informado" }));
+    itemCadastro.appendChild(el("div", { class: "pub-oab-menu-motivo", texto: p.status === "tratada" ? "Publicação já tratada" : "Número do processo não informado" }));
   }
   itemCadastro.addEventListener("click", () => {
     if (!podeAdcCaso) return;
@@ -4564,7 +4573,7 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
   });
   if (!p.caso_id) menu.appendChild(itemCadastro);
   else {
-    const abrir = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1" }, [el("div", { class: "cds--menu-item__label", texto: "Abrir Processo" })]);
+    const abrir = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1" }, [el("div", { class: "cds--menu-item__label", texto: "Abrir processo" })]);
     abrir.addEventListener("click", async () => {
       _fecharTodosComboMenusOab(true);
       if (await selecionarAba(abas.find((a) => a.painel.id === "aba-casos"))) await abrirCaso(p.caso_id);
@@ -4653,17 +4662,9 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
   celAcoes.appendChild(acoesLinha);
   tr.appendChild(celAcoes);
 
-  for (const linha of linhas) _capitalizarTextosPubOab(linha);
   return linhas;
 }
 
-function _capitalizarTextosPubOab(raiz) {
-  const walker = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT);
-  while (walker.nextNode()) {
-    const no = walker.currentNode;
-    if (!no.parentElement?.closest('.pub-oab-publicacao-completa, .pub-oab-abrir, [data-coluna="texto"], [data-coluna="tribunal"], [data-coluna="hash"], [data-coluna="link"], [data-coluna="oab"], [data-coluna^="djen:"]')) no.textContent = _tituloPubOab(no.textContent);
-  }
-}
 
 function criarTabelaPublicacoesOab(tabela, quantidade, colunas) {
   const chave = "cnj_pub_oab_colunas_visiveis_v2";
@@ -4712,7 +4713,7 @@ function criarTabelaPublicacoesOab(tabela, quantidade, colunas) {
     rotulo.addEventListener("pointerdown", (evento) => evento.preventDefault());
     campos.appendChild(el("div", { class: "pub-oab-coluna-opcao" }, [input, rotulo]));
   }
-  campos.appendChild(el("p", { class: "campo-ajuda", texto: "Seleção, Processo, Tribunal, Nome Do Processo E Ações Ficam Sempre Visíveis." }));
+  campos.appendChild(el("p", { class: "campo-ajuda", texto: "Seleção, processo, tribunal, nome do processo e ações ficam sempre visíveis." }));
   seletor.append(resumo, campos);
   seletor.addEventListener("keydown", (evento) => {
     if (evento.key === "Escape") { evento.preventDefault(); seletor.open = false; seletor.focus(); }
@@ -4726,27 +4727,26 @@ function criarTabelaPublicacoesOab(tabela, quantidade, colunas) {
     botao.addEventListener("click", () => _aplicarStatusPubOab([..._publicacoesOabSelecionadas], status));
     return botao;
   };
-  const cancelar = el("button", { type: "button", class: "cds--btn cds--btn--primary cds--btn--sm", texto: "Cancelar Seleção", "data-cancelar-lote": "" });
+  const cancelar = el("button", { type: "button", class: "cds--btn cds--btn--primary cds--btn--sm", texto: "Cancelar seleção", "data-cancelar-lote": "" });
   cancelar.addEventListener("click", () => {
     _publicacoesOabSelecionadas.clear();
     _sincronizarSelecaoPubOab();
     tabela.querySelector("input[data-publicacoes-todas]")?.focus();
   });
 
-  const lote = el("div", { id: "pub-oab-batch", class: "cds--batch-actions pub-oab-batch", role: "region", "aria-label": "Ações Das Publicações Selecionadas" }, [
+  const lote = el("div", { id: "pub-oab-batch", class: "cds--batch-actions pub-oab-batch", role: "region", "aria-label": "Ações das publicações selecionadas" }, [
     el("span", { id: "pub-oab-selecionadas", role: "status", "aria-live": "polite" }),
-    criarAcaoLote("pub-oab-marcar-tratada", "Marcar Como Tratada", "tratada"),
+    criarAcaoLote("pub-oab-marcar-tratada", "Marcar como tratada", "tratada"),
     criarAcaoLote("pub-oab-arquivar", "Arquivar", "arquivada"), cancelar,
   ]);
   lote.hidden = _publicacoesOabSelecionadas.size === 0;
   const barra = el("div", { class: "pub-oab-tabela-toolbar" }, [
     el("strong", { texto: "Publicações" }),
-    el("span", { class: "pub-oab-tabela-contagem", texto: `${quantidade} ${quantidade === 1 ? "Publicação" : "Publicações"}` }),
+    el("span", { class: "pub-oab-tabela-contagem", texto: `${quantidade} ${quantidade === 1 ? "publicação" : "publicações"}` }),
     seletor,
   ]);
   aplicar();
   tabela.updateComplete?.then(aplicar);
-  _capitalizarTextosPubOab(barra);
   return el("div", { class: "pub-oab-grade" }, [barra, lote,
     el("div", { class: "tabela-responsiva-wrap pub-oab-rolagem", tabindex: "0", role: "region", "aria-label": "Tabela de publicações; role horizontalmente para ver todas as colunas" }, [tabela]),
   ]);
@@ -4773,7 +4773,7 @@ function _paginacaoPubOab(total) {
     return botao;
   };
   return el("nav", { class: "pub-oab-paginacao", "aria-label": "Paginação de publicações" }, [
-    el("div", { class: "pub-oab-paginacao-grupo" }, [el("label", { for: seletor.id, texto: "Itens por página:" }), seletor]),
+    el("div", { class: "pub-oab-paginacao-grupo" }, [el("label", { for: seletor.id, texto: "Itens por página" }), seletor]),
     el("div", { class: "pub-oab-paginacao-grupo" }, [
       el("span", { role: "status", "aria-live": "polite", texto: `${total ? (_pubOabPagina - 1) * _pubOabTamanho + 1 : 0}–${Math.min(_pubOabPagina * _pubOabTamanho, total)} de ${total} itens` }),
       el("span", { texto: `Página ${_pubOabPagina} de ${paginas}` }), mover(-1, "Página anterior"), mover(1, "Próxima página"),
@@ -4951,17 +4951,17 @@ async function abrirCaso(casoId) {
   try {
     const caso = await _buscarJson(`/casos/${casoId}`);
     _casoDetalheAtual = caso;
-    document.getElementById("caso-detalhe-titulo").textContent = caso.titulo || "(sem título)";
+    document.getElementById("caso-detalhe-titulo").textContent = caso.titulo ? formatarNomeExibicao(caso.titulo) : "(sem título)";
     const responsavel = document.getElementById("editar-caso-responsavel");
     limpar(responsavel);
     responsavel.appendChild(el("option", {value: "", texto: "Selecione um responsável"}));
     try {
       const dados = await _buscarJson("/responsaveis");
       for (const nome of [...new Set([...(dados.responsaveis || []), caso.responsavel].filter(Boolean))]) {
-        responsavel.appendChild(el("option", {value: nome, texto: nome}));
+        responsavel.appendChild(el("option", {value: nome, texto: formatarNomeExibicao(nome)}));
       }
     } catch (erro) {
-      if (caso.responsavel) responsavel.appendChild(el("option", {value: caso.responsavel, texto: caso.responsavel}));
+      if (caso.responsavel) responsavel.appendChild(el("option", {value: caso.responsavel, texto: formatarNomeExibicao(caso.responsavel)}));
       mostrarAviso(document.getElementById("resultado-caso-editar"), "Não foi possível carregar os responsáveis. Reabra o processo para tentar novamente.");
     }
     responsavel.value = caso.responsavel || "";
@@ -5018,13 +5018,13 @@ function _renderizarAtividades(casoId, atividades) {
     item.appendChild(check);
 
     const corpo = el("div", { class: "atividade-corpo" });
-    const titulo = el("p", { class: `atividade-titulo${atv.status === "concluida" ? " concluida" : ""}`, texto: atv.titulo });
+    const titulo = el("p", { class: `atividade-titulo${atv.status === "concluida" ? " concluida" : ""}`, texto: formatarNomeExibicao(atv.titulo) });
     corpo.appendChild(titulo);
     const partesMeta = [_ROTULO_TIPO_ATIVIDADE[atv.tipo] || atv.tipo];
     if (atv.data) partesMeta.push(formatarDataSimples(atv.data));
     if (atv.hora) partesMeta.push(atv.hora);
     corpo.appendChild(el("p", { class: "atividade-meta", texto: partesMeta.join(" · ") }));
-    if (atv.responsavel) corpo.appendChild(el("p", { class: "atividade-meta", texto: `Responsável: ${atv.responsavel}` }));
+    if (atv.responsavel) corpo.appendChild(el("p", { class: "atividade-meta", texto: `Responsável: ${formatarNomeExibicao(atv.responsavel)}` }));
     if (atv.observacoes) corpo.appendChild(el("p", { class: "atividade-meta", texto: atv.observacoes }));
     const origem = origemPublicacaoAtividade(atv.observacoes);
     if (origem) corpo.appendChild(el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Ver publicação de origem", onclick: () => mostrarOrigemAtividade(casoId, origem) }));
@@ -5089,7 +5089,7 @@ async function _abrirModalAtividade(casoId, atividade = null, publicacaoHash = "
   try {
     const { responsaveis } = await _buscarJson("/responsaveis");
     for (const nome of [...new Set([...(responsaveis || []), atividade?.responsavel].filter(Boolean))]) {
-      responsavel.appendChild(el("option", { value: nome, texto: nome }));
+      responsavel.appendChild(el("option", { value: nome, texto: formatarNomeExibicao(nome) }));
     }
   } catch { /* lista de responsáveis é só uma comodidade; segue sem ela se a busca falhar */ }
   responsavel.value = atividade?.responsavel || "";
@@ -5329,7 +5329,7 @@ async function _atualizarCapaProcessos(casoId) {
   const caso = await _buscarJson(`/casos/${casoId}`);
   if (_casoDetalheAtual?.id !== casoId) return;
   _casoDetalheAtual = caso;
-  document.getElementById("caso-detalhe-titulo").textContent = caso.titulo || "(sem título)";
+  document.getElementById("caso-detalhe-titulo").textContent = caso.titulo ? formatarNomeExibicao(caso.titulo) : "(sem título)";
   await _carregarCapaProcessos(casoId);
 }
 
@@ -5346,13 +5346,13 @@ function _dataDistribuicaoLegivel(valor) {
 }
 
 function _participantesCapa(capa) {
-  const nomes = (registros) => [...new Set(registros.map(p => (p.nome || "").trim()).filter(Boolean))].join("; ");
+  const nomes = (registros) => [...new Set(registros.map(p => formatarNomeExibicao((p.nome || "").trim())).filter(Boolean))].join("; ");
   const partes = capa.partes || [];
   const poloAtivo = p => /^(A|AT|ATIVO)$/i.test(p.polo || "");
   const poloPassivo = p => /^(P|PA|PASSIVO)$/i.test(p.polo || "");
   const advogados = [...new Set((capa.advogados || []).map(registro => {
     const advogado = registro.advogado || registro;
-    const nome = (advogado.nome || "").trim();
+    const nome = formatarNomeExibicao((advogado.nome || "").trim());
     if (!nome) return "";
     const oab = String(advogado.numero_oab || "").trim();
     const uf = String(advogado.uf_oab || "").trim().toUpperCase();
@@ -5372,7 +5372,7 @@ function _cardCapaProcesso(casoId, numero, capa) {
     ["Foro / Vara (órgão julgador)", capa.orgao_julgador],
     ["Tipo de justiça", capa.tipo_justica], ["Município", capa.cidade], ["UF", capa.uf],
     ["Assuntos", (capa.assuntos || []).join(", ")], ["Distribuição", _dataDistribuicaoLegivel(capa.data_distribuicao)],
-    ["Nível de sigilo", capa.nivel_sigilo], ["Nome do processo", capa.nome_processo],
+    ["Nível de sigilo", capa.nivel_sigilo], ["Nome do processo", capa.nome_processo ? formatarNomeExibicao(capa.nome_processo) : ""],
     ..._participantesCapa(capa),
   ].filter(([, valor]) => valor !== null && valor !== undefined && valor !== "");
 
@@ -5447,7 +5447,7 @@ function _cardCapaProcesso(casoId, numero, capa) {
   return el("div", { class: "capa-card" }, [
     el("h4", {}, [document.createTextNode(formatarNumeroCNJ(numero))]),
     blocoAuto,
-    el("div", { class: "capa-card-campos" }, inputs),
+    el("div", { class: "capa-card-campos cds--css-grid" }, inputs),
     el("div", { class: "capa-card-acoes" }, [btnSalvar, btnMonitorar]),
   ]);
 }
@@ -5708,7 +5708,7 @@ registrarSalvamento(document.getElementById("form-caso-editar"), async (evento) 
     resultado.appendChild(notificacao("success", "Processo atualizado"));
     marcarFormularioSalvo(evento.target);
     _casoDetalheAtual = atualizado;
-    document.getElementById("caso-detalhe-titulo").textContent = atualizado.titulo || "(sem título)";
+    document.getElementById("caso-detalhe-titulo").textContent = atualizado.titulo ? formatarNomeExibicao(atualizado.titulo) : "(sem título)";
     const indice = _cache.casos.findIndex((c) => c.id === casoId);
     if (indice !== -1) _cache.casos[indice] = { ..._cache.casos[indice], ...atualizado };
   } catch (erro) {
@@ -5929,7 +5929,7 @@ async function carregarAtividadesAbertas() {
     const anterior = responsavel.value;
     limpar(responsavel);
     responsavel.appendChild(el("option", { value: "", texto: "Todos" }));
-    for (const nome of [...new Set(casos.map((c) => c.responsavel || "Sem responsável"))].sort()) responsavel.appendChild(el("option", { value: nome, texto: nome }));
+    for (const nome of [...new Set(casos.map((c) => c.responsavel || "Sem responsável"))].sort()) responsavel.appendChild(el("option", { value: nome, texto: nome === "Sem responsável" ? nome : formatarNomeExibicao(nome) }));
     if ([...responsavel.options].some((o) => o.value === anterior)) responsavel.value = anterior;
     limpar(status);
     if (falhas.length) {
@@ -5955,8 +5955,8 @@ function renderizarAtividadesAbertas() {
   for (const { caso, atividade } of itens) {
     const item = el("article", { class: "atividade-item" });
     const corpo = el("div", { class: "atividade-corpo" }, [
-      el("h3", { class: "atividade-titulo", texto: atividade.titulo }),
-      el("p", { class: "atividade-meta", texto: `${caso.titulo || "Processo sem título"} · Responsável pelo processo: ${caso.responsavel || "Não definido"}` }),
+      el("h3", { class: "atividade-titulo", texto: formatarNomeExibicao(atividade.titulo) }),
+      el("p", { class: "atividade-meta", texto: `${caso.titulo ? formatarNomeExibicao(caso.titulo) : "Processo sem título"} · Responsável pelo processo: ${caso.responsavel ? formatarNomeExibicao(caso.responsavel) : "Não definido"}` }),
       el("p", { class: "atividade-meta", texto: `${_ROTULO_TIPO_ATIVIDADE[atividade.tipo] || atividade.tipo} · ${atividade.data ? formatarDataSimples(atividade.data) : "Sem data"}${atividade.hora ? " · " + atividade.hora : ""}` }),
     ]);
     const abrir = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Abrir processo", onclick: async () => {
@@ -6142,7 +6142,7 @@ function _renderizarResultadosBusca(resultados) {
   for (const r of resultados.slice(0, 20)) {
     const botao = el("button", {
       class: "header-busca-resultado-item", type: "button",
-      texto: `${r.rotulo} — ${r.sub}`,
+      texto: `${formatarNomeExibicao(r.rotulo)} — ${r.sub}`,
     });
     botao.addEventListener("click", async () => {
       _fecharPainelBusca();
