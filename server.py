@@ -2976,6 +2976,9 @@ def _criar_caso_validado(
         clientes_adicionais.append(cid)
 
 
+    acesso = (dados.get("acesso") or "").strip() or None
+    if acesso and acesso not in RegistroClientesCasos._ACESSOS_VALIDOS:
+        return None, _erro(f"Acesso inválido: use um entre {RegistroClientesCasos._ACESSOS_VALIDOS}.")
     caso = gestao.criar_caso(
         cliente_id=cliente_id,
         titulo=(dados.get("titulo") or "").strip() or None,
@@ -2985,6 +2988,8 @@ def _criar_caso_validado(
         clientes_adicionais=clientes_adicionais,
         acao=(dados.get("acao") or "").strip() or None,
         foro=(dados.get("foro") or "").strip() or None,
+        pasta=(dados.get("pasta") or "").strip() or None,
+        acesso=acesso,
     )
     if publicacoes is not None:
         for numero in numeros:
@@ -3061,6 +3066,84 @@ def _criar_caso_de_publicacao(gestao, publicacoes, publicacao, dados, usuario_pa
     return gestao.obter_caso(caso["id"]), None
 
 
+_TIPO_JUSTICA_POR_SEGMENTO = {
+    "1": "Supremo Tribunal Federal", "2": "Conselho Nacional de Justiça", "3": "Superior Tribunal de Justiça",
+    "4": "Justiça Federal", "5": "Justiça do Trabalho", "6": "Justiça Eleitoral",
+    "7": "Justiça Militar da União", "8": "Justiça Estadual", "9": "Justiça Militar Estadual",
+}
+
+
+async def _montar_capa_via_tribunal(numero: str, tribunal: str) -> tuple[dict | None, dict | None]:
+    """Consulta consultar_processo_unificado (DataJud + DJEN) e monta os campos de capa
+    correspondentes. Usado tanto pelo botão "Atualizar capa" (acao=atualizar) quanto pelo job
+    periódico de movimentos (Fase 1 do roadmap de buscas). Devolve (campos, None) ou
+    (None, erro)."""
+    resultado = await consultar_processo_unificado(tribunal=tribunal, numero_processo=numero)
+    if resultado.get("erro"):
+        return None, resultado
+    instancia = (resultado.get("instancias") or [{}])[0]
+    municipios = json.loads((Path(__file__).parent / "static" / "municipios.json").read_text(encoding="utf-8"))["data"]
+    codigo = str(instancia.get("codigoMunicipioIBGE") or "")
+    municipio = next((m for m in municipios if str(m["Codigo"]) == codigo), None)
+    localidade = {"cidade": municipio["Nome"], "uf": municipio["Uf"]} if municipio else {}
+    movimentos = [{**m, "numero": numero, "grau": i.get("grau_descricao") or i.get("grau")}
+                  for i in resultado.get("instancias") or [] for m in i.get("movimentos") or []]
+    nome_processo = None
+    if resultado.get("partes"):
+        autores = [p["nome"] for p in resultado["partes"] if p.get("polo") == "A"]
+        reus = [p["nome"] for p in resultado["partes"] if p.get("polo") == "P"]
+        if autores or reus:
+            nome_processo = " x ".join(filter(None, [" / ".join(autores), " / ".join(reus)]))
+    segmento = numero[13:14]
+    automaticos = {
+        "tipo_justica": _TIPO_JUSTICA_POR_SEGMENTO.get(segmento),
+        "orgao_julgador": instancia.get("orgaoJulgador"),
+    }
+    campos = {
+        **{k: v for k, v in automaticos.items() if v},
+        "tribunal": instancia.get("tribunal"), "classe": instancia.get("classe"),
+        "assuntos": instancia.get("assuntos"), "grau": instancia.get("grau"),
+        "data_distribuicao": instancia.get("dataAjuizamento"), "nivel_sigilo": instancia.get("nivel_sigilo"),
+        **({"nome_processo": nome_processo} if nome_processo else {}),
+        **localidade, "movimentos": movimentos, "partes": resultado.get("partes") or [],
+        "advogados": resultado.get("advogados") or [],
+    }
+    return campos, None
+
+
+def _movimentos_novos(antigos: list[dict] | None, novos: list[dict] | None) -> list[dict]:
+    """Movimentos presentes em `novos` que ainda não constavam em `antigos`, identificados por
+    (codigo, dataHora) - usado pelo job periódico para saber se vale a pena avisar/registrar."""
+    vistos = {(m.get("codigo"), m.get("dataHora")) for m in antigos or []}
+    return [m for m in novos or [] if (m.get("codigo"), m.get("dataHora")) not in vistos]
+
+
+async def _atualizar_movimentos_processos(gestao: "RegistroClientesCasos", agora=lambda: datetime.now(timezone.utc)) -> None:
+    """Job periódico (Fase 1 do roadmap de buscas): para cada processo cuja capa já foi
+    vinculada a um tribunal ao menos uma vez, consulta de novo o DataJud/DJEN e atualiza a capa
+    se houver movimento novo - sem isso, a capa só mudava com o clique manual em "Atualizar
+    capa". Não manda e-mail: o caso não tem um "dono" único no modelo atual (é a conta
+    institucional do escritório inteiro, ver google_integracao.py), só o Monitoramento tem
+    usuário - o movimento novo aparece na capa do processo e na linha do tempo do caso."""
+    for vinculo in gestao.capas_vinculadas():
+        caso_id, numero, tribunal = vinculo["caso_id"], vinculo["numero_processo"], vinculo["tribunal"]
+        try:
+            capa_atual = gestao.obter_capa_processo(caso_id, numero) or {}
+            campos, erro = await _montar_capa_via_tribunal(numero, tribunal.lower())
+            if erro:
+                log.warning("Atualização de movimentos: processo %s (%s): %s", numero, tribunal, erro.get("erro"))
+                continue
+            novos = _movimentos_novos(capa_atual.get("movimentos"), campos.get("movimentos"))
+            gestao.salvar_capa_processo(caso_id, numero, agora=agora, **campos)
+            if novos:
+                gestao.registrar_evento_no_caso(
+                    caso_id, numero, "movimento_processual",
+                    {"quantidade": len(novos), "ultimo": novos[-1]}, agora,
+                )
+        except Exception:
+            log.exception("Atualização de movimentos: falha ao processar processo %s", numero)
+
+
 class _AutenticacaoBearer:
     """Middleware ASGI.
 
@@ -3077,7 +3160,8 @@ class _AutenticacaoBearer:
                  gestao: "RegistroClientesCasos | None" = None,
                  registro_google: "RegistroIntegracaoGoogle | None" = None,
                  google_client_id: str | None = None, google_client_secret: str | None = None,
-                 publicacoes: "RegistroPublicacoesOAB | None" = None) -> None:
+                 publicacoes: "RegistroPublicacoesOAB | None" = None,
+                 registro_monitoramentos: "RegistroMonitoramentos | None" = None) -> None:
         self.app = app
         self.registro = registro
         self.limitador = limitador
@@ -3091,6 +3175,7 @@ class _AutenticacaoBearer:
         self.gestao = gestao
         self.registro_google = registro_google
         self.publicacoes = publicacoes
+        self.registro_monitoramentos = registro_monitoramentos
         self.google_client_id = google_client_id
         self.google_client_secret = google_client_secret
         # state do fluxo OAuth do Google em andamento: state -> prazo de validade (datetime).
@@ -3876,6 +3961,10 @@ class _AutenticacaoBearer:
                 except ValueError as erro:
                     await _json(send, 400, _erro(str(erro)))
                     return
+            acesso = dados.get("acesso")
+            if acesso and acesso not in RegistroClientesCasos._ACESSOS_VALIDOS:
+                await _json(send, 400, _erro(f"Acesso inválido: use um entre {RegistroClientesCasos._ACESSOS_VALIDOS}."))
+                return
             caso = self.gestao.atualizar_caso(
                 caso_id,
                 titulo=dados.get("titulo"),
@@ -3887,6 +3976,8 @@ class _AutenticacaoBearer:
                 advogados=dados.get("advogados"),
                 numeros_processo=numeros,
                 desfecho=dados.get("desfecho"),
+                pasta=dados.get("pasta"),
+                acesso=acesso,
             )
             if caso is None:
                 await _json(send, 404, _erro("Caso não encontrado."))
@@ -4038,13 +4129,24 @@ class _AutenticacaoBearer:
         "area_direito", "magistrado", "tipo_justica", "cidade", "uf", "valor_causa", "fase", "status_processo",
     )
 
+    def _processo_monitorando(self, scope, numero: str) -> bool:
+        if self.registro_monitoramentos is None:
+            return False
+        return any(
+            m.get("criterio", {}).get("numero_processo") == numero
+            for m in self.registro_monitoramentos.do_usuario(scope.get("usuario")).values()
+        )
+
     async def _capa_do_processo(
         self, scope, receive, send, caso_id: str, numero_processo: str, acao: str | None,
     ):
         """GET /casos/<id>/processos/<numero>/capa
         PATCH /casos/<id>/processos/<numero>/capa (campos manuais)
         POST /casos/<id>/processos/<numero>/capa/atualizar {tribunal} (auto-preenche via
-        consultar_processo_unificado: capa+movimentos do DataJud, partes/advogados do DJEN)"""
+        consultar_processo_unificado: capa+movimentos do DataJud, partes/advogados do DJEN)
+        POST/DELETE /casos/<id>/processos/<numero>/capa/monitorar (cria/remove um Monitoramento
+        do usuário autenticado para este número de processo - mesma infra de monitorar_publicacoes,
+        só que escopado a este processo específico, em vez de uma tool MCP separada)"""
         metodo = scope.get("method")
         if not caso_id or not numero_processo:
             await _responder(send, 404, b"Nao encontrado")
@@ -4065,42 +4167,53 @@ class _AutenticacaoBearer:
             if not tribunal:
                 await _json(send, 400, _erro("Informe o tribunal."))
                 return
-            resultado = await consultar_processo_unificado(tribunal=tribunal, numero_processo=numero)
-            if resultado.get("erro"):
-                await _json(send, 502, resultado)
+            campos, erro = await _montar_capa_via_tribunal(numero, tribunal)
+            if erro:
+                await _json(send, 502, erro)
                 return
-            instancia = (resultado.get("instancias") or [{}])[0]
-            municipios = json.loads((Path(__file__).parent / "static" / "municipios.json").read_text(encoding="utf-8"))["data"]
-            codigo = str(instancia.get("codigoMunicipioIBGE") or "")
-            municipio = next((m for m in municipios if str(m["Codigo"]) == codigo), None)
-            localidade = {"cidade": municipio["Nome"], "uf": municipio["Uf"]} if municipio else {}
-            movimentos = [{**m, "numero": numero, "grau": i.get("grau_descricao") or i.get("grau")}
-                          for i in resultado.get("instancias") or [] for m in i.get("movimentos") or []]
-            nome_processo = None
-            if resultado.get("partes"):
-                autores = [p["nome"] for p in resultado["partes"] if p.get("polo") == "A"]
-                reus = [p["nome"] for p in resultado["partes"] if p.get("polo") == "P"]
-                if autores or reus:
-                    nome_processo = " x ".join(filter(None, [" / ".join(autores), " / ".join(reus)]))
-            segmento = numero[13:14]
-            tipo_justica = {"1": "Supremo Tribunal Federal", "2": "Conselho Nacional de Justiça", "3": "Superior Tribunal de Justiça", "4": "Justiça Federal", "5": "Justiça do Trabalho", "6": "Justiça Eleitoral", "7": "Justiça Militar da União", "8": "Justiça Estadual", "9": "Justiça Militar Estadual"}.get(segmento)
-            automaticos = {"tipo_justica": tipo_justica, "orgao_julgador": instancia.get("orgaoJulgador")}
             capa = self.gestao.salvar_capa_processo(
-                caso_id, numero, agora=lambda: datetime.now(timezone.utc),
-                **{k: v for k, v in automaticos.items() if v},
-                tribunal=instancia.get("tribunal"), classe=instancia.get("classe"),
-                assuntos=instancia.get("assuntos"), grau=instancia.get("grau"),
-                data_distribuicao=instancia.get("dataAjuizamento"), nivel_sigilo=instancia.get("nivel_sigilo"),
-                **({"nome_processo": nome_processo} if nome_processo else {}),
-                **localidade, movimentos=movimentos, partes=resultado.get("partes") or [],
-                advogados=resultado.get("advogados") or [],
+                caso_id, numero, agora=lambda: datetime.now(timezone.utc), **campos,
             )
             caso = self.gestao.obter_caso(caso_id)
             if caso and (caso.get("processos") or [None])[0] == numero:
-                campos = {k: caso.get(k) for k in ("titulo", "responsavel", "acao", "foro", "autor", "reu", "advogados", "desfecho")}
-                campos.update({k: v for k, v in {"titulo": nome_processo, "acao": instancia.get("classe"), "foro": instancia.get("orgaoJulgador")}.items() if v})
-                self.gestao.atualizar_caso(caso_id, **campos)
-            await _json(send, 200, {**capa, "partes": resultado.get("partes") or [], "advogados": resultado.get("advogados") or []})
+                atualizaveis = {k: caso.get(k) for k in ("titulo", "responsavel", "acao", "foro", "autor", "reu", "advogados", "desfecho")}
+                atualizaveis.update({k: v for k, v in {
+                    "titulo": campos.get("nome_processo"), "acao": campos.get("classe"), "foro": campos.get("orgao_julgador"),
+                }.items() if v})
+                self.gestao.atualizar_caso(caso_id, **atualizaveis)
+            await _json(send, 200, {
+                **capa, "partes": campos.get("partes") or [], "advogados": campos.get("advogados") or [],
+                "monitorando": self._processo_monitorando(scope, numero),
+            })
+            return
+
+        if acao == "monitorar":
+            if self.registro_monitoramentos is None:
+                await _json(send, 503, _erro("Monitoramento não disponível neste servidor."))
+                return
+            usuario = scope.get("usuario")
+            if metodo == "POST":
+                resultado = _criar_monitoramento(
+                    self.registro_monitoramentos, usuario, numero, None, None, None,
+                    lambda: datetime.now(timezone.utc),
+                )
+                if resultado.get("erro"):
+                    await _json(send, 400, resultado)
+                    return
+                await _json(send, 201, resultado)
+                return
+            if metodo == "DELETE":
+                id_monitoramento = next(
+                    (i for i, m in self.registro_monitoramentos.do_usuario(usuario).items()
+                     if m.get("criterio", {}).get("numero_processo") == numero),
+                    None,
+                )
+                if id_monitoramento is None:
+                    await _json(send, 404, _erro("Este processo não está sendo monitorado."))
+                    return
+                await _json(send, 200, _remover_monitoramento(self.registro_monitoramentos, usuario, id_monitoramento))
+                return
+            await _responder(send, 405, b"Metodo nao permitido")
             return
 
         if acao:
@@ -4111,7 +4224,7 @@ class _AutenticacaoBearer:
             capa = self.gestao.obter_capa_processo(caso_id, numero) or {campo: None for campo in (
                 *self.gestao._CAMPOS_CAPA, "atualizado_em"
             )}
-            await _json(send, 200, capa)
+            await _json(send, 200, {**capa, "monitorando": self._processo_monitorando(scope, numero)})
             return
         if metodo == "PATCH":
             corpo = await _ler_corpo(receive)
@@ -5082,6 +5195,7 @@ def _montar_app_http(
     google_client_id: str | None,
     google_client_secret: str | None,
     publicacoes,
+    registro_monitoramentos=None,
 ):
     """Constrói e retorna o app ASGI completo (AutenticacaoBearer envolvendo o MCP)."""
     return _AutenticacaoBearer(
@@ -5099,6 +5213,7 @@ def _montar_app_http(
         google_client_id=google_client_id,
         google_client_secret=google_client_secret,
         publicacoes=publicacoes,
+        registro_monitoramentos=registro_monitoramentos,
     )
 
 
@@ -5140,6 +5255,13 @@ def _montar_agendador(
         args=[registro_monitoramentos, publicacoes, gestao],
     )
     log.info("Publicações por OAB: captura periódica a cada 24h.")
+    agendador.add_job(
+        _atualizar_movimentos_processos,
+        "interval",
+        hours=24,
+        args=[gestao],
+    )
+    log.info("Movimentos de processo: atualização periódica a cada 24h para processos já vinculados a um tribunal.")
     return agendador
 
 
@@ -5262,6 +5384,7 @@ def _principal() -> int:
         registro, limitador, admin_token, cadastro, oauth,
         captcha, site_captcha or None, falhas, gestao,
         registro_google, google_client_id, google_client_secret, publicacoes,
+        registro_monitoramentos=registro_monitoramentos,
     )
     log.info(
         "Servidor HTTP em http://%s:%d/mcp (%d usuário(s) ativo(s); cadastro %s; admin %s; monitoramento %s)",

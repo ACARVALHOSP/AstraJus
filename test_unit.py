@@ -2349,3 +2349,223 @@ class CasoPatchParcialTest(unittest.TestCase):
         self.assertEqual(campos["autor"], "Novo autor")
         for campo in ("titulo", "responsavel", "acao", "foro", "reu", "advogados", "desfecho"):
             self.assertEqual(campos[campo], gestao.obter_caso.return_value[campo])
+
+
+class CasoPastaAcessoTest(unittest.TestCase):
+    """Fase 4 do roadmap de buscas: pasta (organização livre) e acesso (equipe/público/privado)."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp()) / "teste.db"
+        self.gestao = db.RegistroClientesCasos(self.tmp)
+        self.agora = lambda: datetime(2026, 1, 1)
+        self.cliente = self.gestao.criar_cliente("Cliente Teste", None, None, self.agora)
+
+    def test_criar_caso_grava_pasta_e_acesso(self):
+        caso = self.gestao.criar_caso(
+            self.cliente["id"], "Caso", None, [], self.agora, pasta="Trabalhista 2026", acesso="privado",
+        )
+        self.assertEqual(caso["pasta"], "Trabalhista 2026")
+        self.assertEqual(caso["acesso"], "privado")
+
+    def test_acesso_padrao_e_equipe(self):
+        caso = self.gestao.criar_caso(self.cliente["id"], "Caso", None, [], self.agora)
+        self.assertEqual(caso["acesso"], "equipe")
+        self.assertIsNone(caso["pasta"])
+
+    def test_acesso_invalido_na_criacao_e_recusado(self):
+        with self.assertRaises(ValueError):
+            self.gestao.criar_caso(self.cliente["id"], "Caso", None, [], self.agora, acesso="admin")
+
+    def test_atualizar_caso_muda_pasta_e_acesso(self):
+        caso = self.gestao.criar_caso(self.cliente["id"], "Caso", None, [], self.agora)
+        atualizado = self.gestao.atualizar_caso(
+            caso["id"], "Caso", None, None, None, None, None, None,
+            pasta="Nova pasta", acesso="publico",
+        )
+        self.assertEqual(atualizado["pasta"], "Nova pasta")
+        self.assertEqual(atualizado["acesso"], "publico")
+
+    def test_acesso_invalido_na_atualizacao_e_recusado(self):
+        caso = self.gestao.criar_caso(self.cliente["id"], "Caso", None, [], self.agora)
+        with self.assertRaises(ValueError):
+            self.gestao.atualizar_caso(caso["id"], "Caso", None, None, None, None, None, None, acesso="admin")
+
+    def test_listar_casos_inclui_pasta_e_acesso(self):
+        self.gestao.criar_caso(self.cliente["id"], "Caso", None, [], self.agora, pasta="Civil", acesso="publico")
+        [caso] = self.gestao.listar_casos()
+        self.assertEqual(caso["pasta"], "Civil")
+        self.assertEqual(caso["acesso"], "publico")
+
+
+class CriarCasoValidadoPastaAcessoTest(unittest.TestCase):
+    """_criar_caso_validado (POST /casos): mesma validação de acesso, só que a partir do corpo HTTP."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp()) / "teste.db"
+        self.gestao = db.RegistroClientesCasos(self.tmp)
+        self.agora = lambda: datetime(2026, 1, 1)
+        self.cliente = self.gestao.criar_cliente("Cliente Teste", None, None, self.agora)
+
+    def test_criar_com_pasta_e_acesso(self):
+        caso, erro = server._criar_caso_validado(self.gestao, {
+            "cliente_id": self.cliente["id"], "pasta": "Civil", "acesso": "privado",
+        })
+        self.assertIsNone(erro)
+        self.assertEqual(caso["pasta"], "Civil")
+        self.assertEqual(caso["acesso"], "privado")
+
+    def test_acesso_invalido_e_recusado(self):
+        caso, erro = server._criar_caso_validado(self.gestao, {
+            "cliente_id": self.cliente["id"], "acesso": "admin",
+        })
+        self.assertIsNone(caso)
+        self.assertTrue(erro["erro"])
+
+
+class CapasVinculadasTest(unittest.TestCase):
+    """Fase 1 do roadmap de buscas: candidatos ao job de atualização automática de movimentos."""
+
+    def test_retorna_so_processos_com_tribunal_na_capa(self):
+        tmp = Path(tempfile.mkdtemp()) / "teste.db"
+        gestao = db.RegistroClientesCasos(tmp)
+        agora = lambda: datetime(2026, 1, 1)
+        cliente = gestao.criar_cliente("Cliente", None, None, agora)
+        caso = gestao.criar_caso(cliente["id"], "Caso", None, ["10063142720238260005"], agora)
+        outro_caso = gestao.criar_caso(cliente["id"], "Outro caso", None, ["20063142720238260006"], agora)
+        gestao.salvar_capa_processo(caso["id"], "10063142720238260005", agora, tribunal="TJSP")
+        self.assertEqual(gestao.capas_vinculadas(), [
+            {"caso_id": caso["id"], "numero_processo": "10063142720238260005", "tribunal": "TJSP"},
+        ])
+        self.assertIsNone(gestao.obter_capa_processo(outro_caso["id"], "20063142720238260006"))
+
+
+class AtualizarMovimentosProcessosTest(unittest.TestCase):
+    """Job periódico (Fase 1): atualiza a capa de processos já vinculados a um tribunal e
+    registra na linha do tempo do caso quando aparece movimento novo."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp()) / "teste.db"
+        self.gestao = db.RegistroClientesCasos(self.tmp)
+        self.agora = lambda: datetime(2026, 1, 1)
+        cliente = self.gestao.criar_cliente("Cliente Teste", None, None, self.agora)
+        self.numero = "10063142720238260005"
+        self.caso = self.gestao.criar_caso(cliente["id"], "Caso Teste", None, [self.numero], self.agora)
+
+    def test_sem_capa_vinculada_nao_consulta_nada(self):
+        with mock.patch.object(server, "consultar_processo_unificado") as mocked:
+            asyncio.run(server._atualizar_movimentos_processos(self.gestao, self.agora))
+        mocked.assert_not_called()
+
+    def test_movimento_novo_atualiza_capa_e_registra_evento(self):
+        self.gestao.salvar_capa_processo(
+            self.caso["id"], self.numero, self.agora, tribunal="TJSP",
+            movimentos=[{"codigo": "1", "nome": "Distribuição", "dataHora": "2023-01-01T00:00:00Z"}],
+        )
+        resultado_unificado = {
+            "instancias": [{"tribunal": "TJSP", "movimentos": [
+                {"codigo": "1", "nome": "Distribuição", "dataHora": "2023-01-01T00:00:00Z"},
+                {"codigo": "2", "nome": "Juntada", "dataHora": "2026-01-01T00:00:00Z"},
+            ]}],
+            "partes": [], "advogados": [],
+        }
+        with mock.patch.object(server, "consultar_processo_unificado", return_value=resultado_unificado):
+            asyncio.run(server._atualizar_movimentos_processos(self.gestao, self.agora))
+        capa = self.gestao.obter_capa_processo(self.caso["id"], self.numero)
+        self.assertEqual(len(capa["movimentos"]), 2)
+        eventos = self.gestao.eventos_do_caso(self.caso["id"])
+        self.assertEqual(len(eventos), 1)
+        self.assertEqual(eventos[0]["tipo"], "movimento_processual")
+        self.assertEqual(eventos[0]["conteudo"]["quantidade"], 1)
+
+    def test_sem_movimento_novo_nao_registra_evento(self):
+        movimentos = [{"codigo": "1", "nome": "Distribuição", "dataHora": "2023-01-01T00:00:00Z"}]
+        self.gestao.salvar_capa_processo(self.caso["id"], self.numero, self.agora, tribunal="TJSP", movimentos=movimentos)
+        resultado_unificado = {"instancias": [{"tribunal": "TJSP", "movimentos": movimentos}], "partes": [], "advogados": []}
+        with mock.patch.object(server, "consultar_processo_unificado", return_value=resultado_unificado):
+            asyncio.run(server._atualizar_movimentos_processos(self.gestao, self.agora))
+        self.assertEqual(self.gestao.eventos_do_caso(self.caso["id"]), [])
+
+    def test_erro_na_consulta_nao_interrompe_o_job(self):
+        self.gestao.salvar_capa_processo(self.caso["id"], self.numero, self.agora, tribunal="TJSP")
+        with mock.patch.object(server, "consultar_processo_unificado", return_value={"erro": True, "mensagem": "falhou"}):
+            asyncio.run(server._atualizar_movimentos_processos(self.gestao, self.agora))  # não deve levantar
+
+
+class CapaMonitorarHttpTest(unittest.TestCase):
+    """Fase 2 do roadmap de buscas: monitorar/desvincular um processo específico direto na
+    ficha, sem precisar da tool MCP monitorar_publicacoes."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp()) / "teste.db"
+        self.gestao = db.RegistroClientesCasos(self.tmp)
+        self.agora = lambda: datetime(2026, 1, 1)
+        cliente = self.gestao.criar_cliente("Cliente Teste", None, None, self.agora)
+        self.numero = "10063142720238260005"
+        self.caso = self.gestao.criar_caso(cliente["id"], "Caso Teste", None, [self.numero], self.agora)
+        self._dir = tempfile.TemporaryDirectory()
+        self.registro_monitoramentos = server.RegistroMonitoramentos(Path(self._dir.name) / "monitoramentos.json")
+        self.mw = server._AutenticacaoBearer(
+            app=None, registro=None, gestao=self.gestao, registro_monitoramentos=self.registro_monitoramentos,
+        )
+
+    def tearDown(self):
+        self._dir.cleanup()
+
+    def _chamar(self, metodo: str, acao: str | None, usuario: str = "ana@exemplo.com"):
+        enviados = []
+
+        async def send(mensagem):
+            enviados.append(mensagem)
+
+        async def receive():
+            return {"type": "http.request", "body": b"{}", "more_body": False}
+
+        scope = {"method": metodo, "usuario": usuario}
+        _rodar(self.mw._capa_do_processo(scope, receive, send, self.caso["id"], self.numero, acao))
+        inicio = next(m for m in enviados if m["type"] == "http.response.start")
+        corpo_bytes = b"".join(m.get("body", b"") for m in enviados if m["type"] == "http.response.body")
+        return inicio["status"], json.loads(corpo_bytes or b"{}")
+
+    def test_get_sem_monitoramento_mostra_monitorando_falso(self):
+        status, resultado = self._chamar("GET", None)
+        self.assertEqual(status, 200)
+        self.assertFalse(resultado["monitorando"])
+
+    def test_criar_monitoramento_e_refletido_no_get(self):
+        status, resultado = self._chamar("POST", "monitorar")
+        self.assertEqual(status, 201)
+        self.assertEqual(resultado["criterio"]["numero_processo"], self.numero)
+        status, resultado = self._chamar("GET", None)
+        self.assertEqual(status, 200)
+        self.assertTrue(resultado["monitorando"])
+
+    def test_desvincular_remove_monitoramento(self):
+        self._chamar("POST", "monitorar")
+        status, resultado = self._chamar("DELETE", "monitorar")
+        self.assertEqual(status, 200)
+        self.assertEqual(resultado, {"removido": True})
+        status, resultado = self._chamar("GET", None)
+        self.assertFalse(resultado["monitorando"])
+
+    def test_desvincular_sem_monitoramento_e_404(self):
+        status, resultado = self._chamar("DELETE", "monitorar")
+        self.assertEqual(status, 404)
+
+    def test_usuario_sem_email_e_recusado(self):
+        status, resultado = self._chamar("POST", "monitorar", usuario="ana")
+        self.assertEqual(status, 400)
+        self.assertEqual(self.registro_monitoramentos.carregar(), {})
+
+    def test_metodo_errado_e_recusado(self):
+        enviados = []
+
+        async def send(mensagem):
+            enviados.append(mensagem)
+
+        async def receive():
+            return {"type": "http.request", "body": b"{}", "more_body": False}
+
+        scope = {"method": "PATCH", "usuario": "ana@exemplo.com"}
+        _rodar(self.mw._capa_do_processo(scope, receive, send, self.caso["id"], self.numero, "monitorar"))
+        inicio = next(m for m in enviados if m["type"] == "http.response.start")
+        self.assertEqual(inicio["status"], 405)
