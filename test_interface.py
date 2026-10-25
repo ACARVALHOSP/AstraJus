@@ -102,6 +102,90 @@ class InterfaceTest(unittest.TestCase):
         self.connect()
         self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-casos')); await abrirCaso('caso-1'); }")
 
+    def open_painel_prazo(self, preparar):
+        self.connect()
+        self.page.evaluate("""() => {
+          window.consultasFeriados = [];
+          cliente.chamarTool = async (nome, parametros) => {
+            consultasFeriados.push({nome, parametros});
+            return {feriados: []};
+          };
+        }""")
+        self.page.evaluate(preparar)
+        self.page.evaluate("""() => {
+          const painel = painelCalculoPrazo({data_disponibilizacao:'2026-10-23', siglaTribunal:'TJSP'});
+          painel.hidden = false;
+          document.querySelector('.app-corpo').appendChild(painel);
+        }""")
+        return self.page.locator('.prazo-painel')
+
+    def test_prazo_storage_leitura_bloqueada_usa_padrao_e_calcula(self):
+        painel = self.open_painel_prazo("""() => {
+          const ler = Storage.prototype.getItem;
+          Storage.prototype.getItem = function(chave) {
+            if (chave === 'cnj_prazo_municipio') throw new DOMException('Bloqueado', 'SecurityError');
+            return ler.call(this, chave);
+          };
+        }""")
+        municipio = painel.get_by_label('Município/comarca', exact=True)
+        self.assertEqual(municipio.input_value(), 'São Paulo')
+        self.assertIn('Não foi possível ler', painel.locator('.prazo-preferencia-status').inner_text())
+        municipio.fill('Campinas')
+        painel.get_by_label('Dias', exact=True).fill('7')
+        painel.get_by_role('button', name='Calcular', exact=True).click()
+        self.page.wait_for_function("document.querySelector('.prazo-resultado').textContent.includes('Vencimento:')")
+        consultas = self.page.evaluate('consultasFeriados')
+        self.assertEqual(len(consultas), 2)
+        self.assertTrue(all(c['nome'] == 'buscar_feriados_forenses' and c['parametros']['municipio'] == 'Campinas' for c in consultas))
+        self.assertEqual(municipio.input_value(), 'Campinas')
+        self.assertEqual(painel.get_by_label('Dias', exact=True).input_value(), '7')
+        self.assertTrue(painel.get_by_role('button', name='Calcular', exact=True).is_enabled())
+        self.assertFalse(self.errors)
+
+    def test_prazo_storage_gravacao_bloqueada_calcula_e_recupera(self):
+        painel = self.open_painel_prazo("""() => {
+          localStorage.setItem('cnj_prazo_municipio', 'Santos');
+          window.gravarPrazoOriginal = Storage.prototype.setItem;
+          Storage.prototype.setItem = function(chave, valor) {
+            if (chave === 'cnj_prazo_municipio') throw new DOMException('Sem espaço', 'QuotaExceededError');
+            return gravarPrazoOriginal.call(this, chave, valor);
+          };
+        }""")
+        municipio = painel.get_by_label('Município/comarca', exact=True)
+        self.assertEqual(municipio.input_value(), 'Santos')
+        municipio.fill('Campinas')
+        painel.get_by_label('Dias', exact=True).fill('4')
+        calcular = painel.get_by_role('button', name='Calcular', exact=True)
+        calcular.click()
+        self.page.wait_for_function("document.querySelector('.prazo-resultado').textContent.includes('Vencimento:')")
+        self.assertIn('Não foi possível lembrar', painel.locator('.prazo-preferencia-status').inner_text())
+        self.assertEqual(self.page.evaluate("localStorage.getItem('cnj_prazo_municipio')"), 'Santos')
+        self.assertEqual(municipio.input_value(), 'Campinas')
+        self.assertIn('Campinas', painel.locator('.prazo-resultado').inner_text())
+        self.assertTrue(all(c['parametros']['municipio'] == 'Campinas' for c in self.page.evaluate('consultasFeriados')))
+        self.page.evaluate('() => { Storage.prototype.setItem = gravarPrazoOriginal; }')
+        calcular.click()
+        self.page.wait_for_function("localStorage.getItem('cnj_prazo_municipio') === 'Campinas'")
+        self.assertFalse(painel.locator('.prazo-preferencia-status').is_visible())
+        self.assertTrue(calcular.is_enabled())
+        self.assertFalse(self.errors)
+
+    def test_prazo_storage_indisponivel_nao_mascara_erro_de_calculo(self):
+        painel = self.open_painel_prazo("""() => {
+          Object.defineProperty(window, 'localStorage', {configurable:true, get() { throw new DOMException('Bloqueado', 'SecurityError'); }});
+          cliente.chamarTool = async () => { throw new Error('Falha simulada na consulta de feriados.'); };
+        }""")
+        municipio = painel.get_by_label('Município/comarca', exact=True)
+        municipio.fill('Campinas')
+        calcular = painel.get_by_role('button', name='Calcular', exact=True)
+        calcular.click()
+        self.page.wait_for_function("document.querySelector('.prazo-resultado').textContent.includes('Falha simulada')")
+        self.assertIn('Não foi possível lembrar', painel.locator('.prazo-preferencia-status').inner_text())
+        self.assertNotIn('Vencimento:', painel.locator('.prazo-resultado').inner_text())
+        self.assertEqual(municipio.input_value(), 'Campinas')
+        self.assertTrue(calcular.is_enabled())
+        self.assertFalse(self.errors)
+
     def test_prazo_rotulos_associados_e_foco_independente_entre_paineis(self):
         self.page.evaluate("""() => {
           for (let i = 0; i < 2; i++) {

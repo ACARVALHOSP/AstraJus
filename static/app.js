@@ -1376,6 +1376,15 @@ function painelCalculoPrazo(item) {
   }
 
   const prefixo = `prazo-${++_sequenciaPainelPrazo}`;
+  let municipioInicial = "São Paulo";
+  let avisoPreferencia = "";
+  try {
+    municipioInicial = localStorage.getItem(CHAVE_PRAZO_MUNICIPIO) || municipioInicial;
+  } catch {
+    avisoPreferencia = "Não foi possível ler a preferência de município neste navegador. São Paulo foi preenchido como padrão; confira o município antes de calcular.";
+  }
+  const preferenciaEl = el("p", { id: `${prefixo}-preferencia`, class: "campo-ajuda prazo-preferencia-status", role: "status", texto: avisoPreferencia });
+  preferenciaEl.hidden = !avisoPreferencia;
   const campoDias = el("input", { id: `${prefixo}-dias`, class: "cds--text-input", type: "number", min: "1", value: "15" });
   const campoTipo = el(
     "select",
@@ -1386,7 +1395,8 @@ function painelCalculoPrazo(item) {
     id: `${prefixo}-municipio`,
     class: "cds--text-input",
     type: "text",
-    value: localStorage.getItem(CHAVE_PRAZO_MUNICIPIO) || "São Paulo",
+    value: municipioInicial,
+    "aria-describedby": preferenciaEl.id,
   });
   const botaoCalcular = el("button", { class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Calcular" });
   const resultadoEl = el("div", { class: "prazo-resultado" });
@@ -1402,6 +1412,7 @@ function painelCalculoPrazo(item) {
       el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: campoMunicipio.id, texto: "Município/comarca" }), campoMunicipio]),
     ])
   );
+  painel.appendChild(preferenciaEl);
   painel.appendChild(botaoCalcular);
   painel.appendChild(resultadoEl);
 
@@ -1413,7 +1424,14 @@ function painelCalculoPrazo(item) {
       return;
     }
     const municipio = campoMunicipio.value.trim() || "São Paulo";
-    localStorage.setItem(CHAVE_PRAZO_MUNICIPIO, municipio);
+    try {
+      localStorage.setItem(CHAVE_PRAZO_MUNICIPIO, municipio);
+      preferenciaEl.textContent = "";
+      preferenciaEl.hidden = true;
+    } catch {
+      preferenciaEl.textContent = "Não foi possível lembrar o município neste navegador. O cálculo continuará com o município informado.";
+      preferenciaEl.hidden = false;
+    }
     const textoOriginal = botaoCalcular.textContent;
     botaoCalcular.disabled = true;
     botaoCalcular.textContent = "Calculando…";
