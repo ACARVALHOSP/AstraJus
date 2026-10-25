@@ -8,6 +8,18 @@ Escopo: tabelas de gestão do `/app`; primeira aplicação em Publicações OAB.
 
 Por solicitação posterior, o perfil Publicações OAB passa a usar Web Components Carbon: `cds-table` com `size="md"` (40 px), `cds-toggletip` com checkboxes para selecionar colunas, `cds-icon-button` com ícone Launch para abrir a publicação e `cds-tag` com texto de 10 px para o status. Essa revisão substitui as medidas XS e a apresentação de status deste perfil. Seleção, expansão, paginação e confirmação inline continuam seguindo os contratos abaixo. O padrão XS permanece disponível como referência para outras tabelas.
 
+### Revisão DT01 a DT05 — 25/10/2026
+
+Mockup aprovado pelo usuário para implementação, PR e merge. No perfil OAB, os contratos abaixo passam a prevalecer sobre as regras gerais anteriores quando houver conflito:
+
+- Expansão vem antes da seleção, no cabeçalho e nas linhas.
+- Toolbar e barra de lote usam mínimo de 48 px. Linhas/cabeçalho permanecem M/40 px; paginação mantém o perfil compacto. No toque, as linhas podem crescer para 44 px e a barra pode quebrar controles no móvel.
+- Seleção em lote fecha menus e desabilita ações individuais; formulário inline aberto preserva seus valores, mas fica suspenso até cancelar/desmarcar a seleção. Envio inline em andamento impede seleção e operações em lote concorrentes.
+- Cabeçalhos extensos usam até duas linhas e reticências, com tooltip completo por hover/foco e fechamento por Escape.
+- Uma ou duas ações contextuais executáveis aparecem como ícones inline; três ou mais usam overflow. O link externo de leitura é preservado e também fica bloqueado durante o lote.
+
+Detalhes e validação em `.scratch/dt01-dt05/spec.md`. Esta revisão não padroniza as demais tabelas legadas (DT06).
+
 ## Objetivo e estado
 
 Definir um contrato de layout e interação para reutilizar tabelas densas no mesmo projeto. O padrão combina seleção múltipla, expansão de linha, paginação, ações em lote, menu de três pontos e seletor de colunas.
@@ -43,7 +55,7 @@ Estados visuais obrigatórios: normal, hover, selecionado, foco visível, desabi
 
 ## Colunas e adaptação a outras tabelas
 
-Ordem horizontal: seleção → expansão → campos de dados → menu de ações. Controles não entram no seletor de campos.
+Ordem horizontal no perfil OAB revisado: expansão → seleção → campos de dados → ações contextuais. Controles não entram no seletor de campos.
 
 Cada tabela declara um catálogo de colunas com chave estável, rótulo, origem do dado, formatador, largura, visibilidade inicial, obrigatoriedade e possibilidade de ordenação. Chaves não dependem do texto do rótulo.
 
@@ -55,7 +67,7 @@ Não adicionar consulta, filtros, ordenação ou exportação sem necessidade da
 
 ## Seleção e tratamento em lote
 
-- Checkbox na primeira coluna seleciona o registro sem expandir a linha nem abrir ações.
+- Checkbox na coluna de seleção (depois da expansão no perfil OAB) seleciona o registro sem expandir a linha nem abrir ações.
 - Checkbox do cabeçalho seleciona somente a página atual. Usa estado intermediário quando parte da página está selecionada e nome acessível “Selecionar publicações desta página”, adaptado à entidade.
 - A seleção usa IDs estáveis, nunca índices da página. Navegar entre páginas preserva os IDs selecionados e a contagem total.
 - Alterar filtros, contexto da tabela ou tamanho da página limpa a seleção. Atualização de dados remove IDs que deixaram de existir ou não são mais acessíveis.

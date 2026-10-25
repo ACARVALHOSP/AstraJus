@@ -643,7 +643,7 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 /* Contrato tabela Carbon M (Web Components): .scratch/tabela-carbon-xs/spec.md.
    Tokens locais mapeiam a escala Carbon (03=8, 05=16, 06=24 px). */
 .pub-oab-grade { --pub-space-03: var(--cds-spacing-03, 0.5rem); --pub-space-05: var(--cds-spacing-05, 1rem); --pub-row-height: 2.5rem; font-size: 0.75rem; }
-.pub-oab-grade .pub-oab-tabela-toolbar { min-block-size: 2rem; padding: 0 var(--pub-space-03); gap: var(--pub-space-05); font-size: inherit; }
+.pub-oab-grade .pub-oab-tabela-toolbar { min-block-size: 3rem; padding: 0 var(--pub-space-03); gap: var(--pub-space-05); font-size: inherit; }
 
 .pub-oab-coluna-fixa { margin-inline-start: auto; color: var(--cds-text-secondary); font-size: inherit; white-space: nowrap; }
 .pub-oab-grade .pub-oab-colunas label { gap: var(--pub-space-03); }
@@ -671,8 +671,8 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 .pub-oab-grade [data-coluna="tribunal"] .pub-oab-celula-valor { inline-size: auto; }
 .pub-oab-status { --cds-label-01-font-size: 0.625rem; font-size: 0.625rem; }
 .pub-oab-status-texto { font-size: 0.625rem; }
-.pub-oab-grade .pub-oab-batch { gap: var(--pub-space-03); padding: 0 var(--pub-space-03); min-block-size: var(--pub-row-height); }
-.pub-oab-grade .pub-oab-batch button { min-block-size: var(--pub-row-height); padding-block: 0; }
+.pub-oab-grade .pub-oab-batch { gap: var(--pub-space-03); padding: 0 var(--pub-space-03); min-block-size: 3rem; }
+.pub-oab-grade .pub-oab-batch button { min-block-size: 3rem; padding-block: 0; }
 .pub-oab-paginacao { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--pub-space-03, 0.5rem); min-block-size: 2.5rem; background: var(--cds-layer); border-block-end: 1px solid var(--cds-border-subtle); font-size: 0.75rem; padding-inline-start: var(--pub-space-05, 1rem); }
 .pub-oab-paginacao-grupo { display: flex; align-items: center; flex-wrap: wrap; gap: var(--pub-space-03, 0.5rem); }
 .pub-oab-pagina-tamanho { block-size: 2.5rem; padding: 0 var(--cds-spacing-04, 0.75rem); border: 0; border-inline-start: 1px solid var(--cds-border-subtle); background: var(--cds-layer); color: var(--cds-text-primary); font: inherit; }
@@ -698,6 +698,14 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 .pub-oab-grade cds-table { display: block; min-inline-size: 46rem; font-size: 0.75rem; }
 .pub-oab-grade cds-table-header-cell, .pub-oab-grade cds-table-cell { box-sizing: border-box; block-size: var(--pub-row-height); padding: 0 var(--pub-space-03); vertical-align: middle; white-space: nowrap; }
 .pub-oab-grade cds-table-header-cell { font-weight: 600; }
+.pub-oab-cabecalho { display: block; max-inline-size: 14rem; white-space: normal; line-height: 1rem; cursor: help; }
+.pub-oab-cabecalho-texto { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; max-block-size: 2rem; overflow: hidden; overflow-wrap: anywhere; }
+.pub-oab-cabecalho:focus-visible { outline: 2px solid var(--cds-focus); outline-offset: 2px; }
+.pub-oab-grade cds-table-header-cell[data-coluna] { white-space: normal; }
+.pub-oab-grade cds-table-cell[data-label="Ações"], .pub-oab-grade cds-table-header-cell:last-child { min-inline-size: 7.5rem; }
+.pub-oab-inline-suspensao { padding: var(--pub-space-05); }
+.pub-oab-inline-row--suspensa form { opacity: 0.6; }
+.pub-oab-motivo-indisponivel { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .pub-oab-grade cds-table-header-cell[hidden], .pub-oab-grade cds-table-cell[hidden], .pub-oab-grade cds-table-expanded-row[hidden] { display: none !important; }
 .pub-oab-grade cds-table-cell[data-coluna="nome"] { min-inline-size: 14rem; }
 .pub-oab-grade cds-table-cell[data-coluna="tribunal"] { inline-size: 4.375rem; }
