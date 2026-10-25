@@ -102,6 +102,38 @@ class InterfaceTest(unittest.TestCase):
         self.connect()
         self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-casos')); await abrirCaso('caso-1'); }")
 
+    def test_prazo_rotulos_associados_e_foco_independente_entre_paineis(self):
+        self.page.evaluate("""() => {
+          for (let i = 0; i < 2; i++) {
+            const painel = painelCalculoPrazo({data_disponibilizacao:'2026-10-23', siglaTribunal:'TJSP'});
+            painel.hidden = false;
+            document.querySelector('.app-corpo').appendChild(painel);
+          }
+        }""")
+        paineis = self.page.locator('.prazo-painel')
+        self.assertEqual(paineis.count(), 2)
+        ids = paineis.locator('input, select').evaluate_all("campos => campos.map(c => c.id)")
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertTrue(all(ids))
+        for i in range(2):
+            painel = paineis.nth(i)
+            self.assertEqual(painel.get_by_role('spinbutton', name='Dias', exact=True).count(), 1)
+            self.assertEqual(painel.get_by_role('combobox', name='Contagem a partir de', exact=True).count(), 1)
+            self.assertEqual(painel.get_by_role('textbox', name='Município/comarca', exact=True).count(), 1)
+            for rotulo in painel.locator('label').all():
+                rotulo.click()
+                self.assertTrue(rotulo.evaluate("label => document.activeElement === document.getElementById(label.htmlFor)"))
+            dias = painel.get_by_label('Dias', exact=True)
+            dias.focus()
+            dias.press('Tab')
+            self.assertTrue(painel.get_by_label('Contagem a partir de', exact=True).evaluate("el => el === document.activeElement"))
+            self.page.keyboard.press('Tab')
+            self.assertTrue(painel.get_by_label('Município/comarca', exact=True).evaluate("el => el === document.activeElement"))
+        paineis.nth(1).get_by_label('Dias', exact=True).fill('7')
+        self.assertEqual(paineis.nth(0).get_by_label('Dias', exact=True).input_value(), '15')
+        self.assertEqual(paineis.nth(1).get_by_label('Dias', exact=True).input_value(), '7')
+        self.assertFalse(self.errors)
+
     def test_grid_tokens_nomes_e_capitalizacao_de_interface(self):
         self.case["titulo"] = "AÇÃO DE MARIA DA SILVA"
         self.contact["nome"] = "MARIA DA SILVA"
