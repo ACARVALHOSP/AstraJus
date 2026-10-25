@@ -14,9 +14,12 @@
   --fonte-destaque: 1.125rem;  /* números/valores em destaque */
   --fonte-titulo: var(--cds-heading-04-font-size, 1.75rem);     /* heading-04: título da página */
   /* Tokens de motion do Carbon (productive) para popovers/menus do app. */
+  --cds-duration-fast-01: 70ms;
   --cds-duration-fast-02: 110ms;
   --cds-duration-moderate-01: 150ms;
   --cds-ease-entrance: cubic-bezier(0, 0, .38, .9);
+  --cds-ease-standard: cubic-bezier(.2, 0, .38, .9);
+  --cds-ease-exit: cubic-bezier(.2, 0, 1, .9);
 }
 body { margin: 0; min-height: 100dvh; caret-color: var(--cds-interactive, #0f62fe); }
 
@@ -87,7 +90,7 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
     background: var(--cds-layer, #f4f4f4);
     box-shadow: 2px 2px 6px rgba(0,0,0,.15);
     border-radius: 0 4px 4px 0;
-    transition: opacity 0.11s;
+    transition: opacity var(--cds-duration-fast-02) var(--cds-ease-entrance);
     z-index: 8100;
   }
   .cds--side-nav--rail:not(.cds--side-nav--expanded) .cds--side-nav__item:hover > .cds--side-nav__menu,
@@ -246,7 +249,7 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 .pub-oab-ajuda .cds--accordion__item { display: block; }
 .pub-oab-ajuda summary { list-style: none; }
 .pub-oab-ajuda summary::-webkit-details-marker { display: none; }
-.pub-oab-ajuda .cds--accordion__arrow { transform: rotate(-90deg); }
+.pub-oab-ajuda .cds--accordion__arrow { transform: rotate(-90deg); transition: transform var(--cds-duration-moderate-01) var(--cds-ease-standard); }
 .pub-oab-ajuda details[open] > summary .cds--accordion__arrow { transform: rotate(0); }
 .pub-oab-ajuda .cds--accordion__content { padding: var(--cds-spacing-03, 0.5rem) var(--cds-spacing-05, 1rem) var(--cds-spacing-06, 1.5rem); }
 .pub-oab-ajuda .cds--accordion__content p { max-inline-size: 75ch; margin: 0; }
@@ -372,7 +375,21 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 @media (prefers-reduced-motion: reduce) {
   .espera-spinner { animation: none; border-top-color: var(--cds-border-subtle, #c6c6c6); }
   .header-busca-painel, .header-notificacoes-painel, .cliente-sugestoes, .pub-oab-combo-menu.cds--menu {
-    transition-property: opacity;
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+
+/* O rail mantém o movimento Carbon; teclado e redução não esperam transições. */
+html.app-motion-teclado :is(.header-busca-painel, .header-notificacoes-painel, .cliente-sugestoes, .pub-oab-combo-menu, .cds--side-nav, .cds--side-nav__overlay, .cds--side-nav__menu, .cds--side-nav__submenu-chevron > svg, .pub-oab-ajuda .cds--accordion__arrow) {
+  transition: none !important;
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.cds--side-nav, .cds--side-nav__overlay, .cds--side-nav__menu, .cds--side-nav__submenu-chevron > svg, .pub-oab-ajuda .cds--accordion__arrow) {
+    transition: none !important;
+    animation: none !important;
   }
 }
 
