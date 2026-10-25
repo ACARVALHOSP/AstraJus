@@ -297,6 +297,38 @@ function mostrarAviso(container, mensagem) {
   container.appendChild(notificacao("warning", "Atenção", mensagem));
 }
 
+// Movimento próprio: estado final imediato com teclado ou preferência reduzida.
+const _motionReduzido = matchMedia("(prefers-reduced-motion: reduce)");
+const _motionAtivos = new Set();
+let _motionTeclado = false;
+function _concluirMotion() { for (const animacao of [..._motionAtivos]) animacao.finish(); }
+document.addEventListener("keydown", () => {
+  _motionTeclado = true;
+  document.documentElement.classList.add("app-motion-teclado");
+  _concluirMotion();
+}, true);
+document.addEventListener("pointerdown", () => {
+  _motionTeclado = false;
+  document.documentElement.classList.remove("app-motion-teclado");
+}, true);
+_motionReduzido.addEventListener("change", () => { if (_motionReduzido.matches) _concluirMotion(); });
+function _animarOpacidade(alvo, inicio, fim, token, curva) {
+  if (_motionReduzido.matches || _motionTeclado || !alvo.animate) return null;
+  const estilo = getComputedStyle(document.documentElement);
+  const animacao = alvo.animate([{ opacity: inicio }, { opacity: fim }], {
+    duration: parseFloat(estilo.getPropertyValue(token)), easing: estilo.getPropertyValue(curva).trim(),
+  });
+  _motionAtivos.add(animacao);
+  const concluir = () => _motionAtivos.delete(animacao);
+  animacao.addEventListener("finish", concluir, { once: true });
+  animacao.addEventListener("cancel", concluir, { once: true });
+  return animacao;
+}
+function _animarTooltip(alvo, evento) {
+  if (evento?.type !== "mouseenter" || !matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+  _animarOpacidade(alvo, 0, 1, "--cds-duration-fast-01", "--cds-ease-entrance");
+}
+
 function mostrarToast(tipo, titulo, mensagem, duracao = 5000) {
   const container = document.getElementById("toast-global");
   if (!container) { console.error(mensagem || titulo); return; }
@@ -308,10 +340,26 @@ function mostrarToast(tipo, titulo, mensagem, duracao = 5000) {
   fechar.className = "cds--inline-notification__close-button";
   fechar.innerHTML = "✕";
   fechar.style.cssText = "border:none;background:transparent;cursor:pointer;padding:0.5rem;font-size:1rem;line-height:1;opacity:.7";
-  fechar.addEventListener("click", () => ntf.remove());
+  let temporizador;
+  const remover = () => {
+    clearTimeout(temporizador);
+    for (const animacao of ntf.getAnimations()) animacao.cancel();
+    ntf.remove();
+  };
+  fechar.addEventListener("click", remover);
   ntf.querySelector(".cds--inline-notification__details").after(fechar);
+  const animavel = tipo !== "error" && container.childElementCount === 0;
+  // Rajadas interrompem também a entrada do aviso anterior.
+  if (container.childElementCount) for (const aviso of container.children) for (const animacao of aviso.getAnimations()) animacao.finish();
   container.appendChild(ntf);
-  if (duracao > 0) setTimeout(() => { if (ntf.parentNode) ntf.remove(); }, duracao);
+  if (animavel) _animarOpacidade(ntf, 0, 1, "--cds-duration-moderate-01", "--cds-ease-entrance");
+  if (duracao > 0) temporizador = setTimeout(() => {
+    if (!ntf.isConnected) return;
+    const saida = animavel && container.childElementCount === 1
+      ? _animarOpacidade(ntf, 1, 0, "--cds-duration-fast-02", "--cds-ease-exit") : null;
+    if (!saida) remover();
+    else { saida.addEventListener("finish", remover, { once: true }); saida.addEventListener("cancel", remover, { once: true }); }
+  }, duracao);
 }
 
 function mostrarEspera(container, botao, titulo) {
@@ -4561,9 +4609,10 @@ function _cabecalhoPublicacaoOab(coluna) {
   const alvo = el("span", { class: "pub-oab-cabecalho", tabindex: "0", "aria-describedby": id }, [texto]);
   const tooltip = el("span", { id, class: "pub-oab-tooltip-nome", role: "tooltip", popover: "manual", texto: coluna.rotulo });
   const fechar = () => { if (tooltip.matches(":popover-open")) tooltip.hidePopover(); };
-  const mostrar = () => {
+  const mostrar = (evento) => {
     if (!tooltip.isConnected || tooltip.matches(":popover-open")) return;
     tooltip.showPopover();
+    _animarTooltip(tooltip, evento);
     const r = alvo.getBoundingClientRect(), t = tooltip.getBoundingClientRect();
     tooltip.style.left = Math.max(8, Math.min(r.left, innerWidth - t.width - 8)) + "px";
     tooltip.style.top = Math.max(8, Math.min(r.bottom + 4, innerHeight - t.height - 8)) + "px";
@@ -4645,9 +4694,10 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
       const nomeEl = el("span", { class: "pub-oab-nome-processo", texto: nome, title: nome, tabindex: "0" });
       const tooltip = el("span", { id: `${idTexto}-nome`, class: "pub-oab-tooltip-nome", role: "tooltip", popover: "manual", texto: formatarNomeExibicao(nome) });
       nomeEl.setAttribute("aria-describedby", tooltip.id);
-      const mostrar = () => {
+      const mostrar = (evento) => {
         if (!tooltip.isConnected || tooltip.matches(":popover-open")) return;
         tooltip.showPopover();
+        _animarTooltip(tooltip, evento);
         const r = nomeEl.getBoundingClientRect(), t = tooltip.getBoundingClientRect();
         tooltip.style.left = `${Math.max(8, Math.min(r.left, innerWidth - t.width - 8))}px`;
         tooltip.style.top = `${Math.max(8, Math.min(r.bottom + 4, innerHeight - t.height - 8))}px`;
