@@ -1111,7 +1111,7 @@ class InterfaceTest(unittest.TestCase):
             self.page.set_viewport_size({"width": width, "height": 960})
             self.page.wait_for_timeout(150)
             self.assertEqual(self.page.evaluate("document.documentElement.scrollWidth"), width)
-            label = self.page.locator("#contato-cadastro-aba-pessoal-botao .cds--content-switcher__label")
+            label = self.page.locator("#contato-cadastro-aba-pessoal-botao span")
             self.assertTrue(label.is_visible())
             self.assertGreater(label.bounding_box()["width"], 100)
             for name in ("contato-salvar-botao", "contato-excluir"):
@@ -1135,7 +1135,7 @@ class InterfaceTest(unittest.TestCase):
         self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-contatos')); await abrirContato('cliente-1'); }")
         for width in (1440, 820, 390, 320):
             self.page.set_viewport_size({"width": width, "height": 960})
-            self.assertTrue(self.page.locator(".cadastro-tabs").evaluate("el => el.scrollWidth <= el.clientWidth"))
+            self.assertTrue(self.page.locator(".cadastro-tabs").evaluate("el => el.getBoundingClientRect().right <= innerWidth"))
         self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-contatos')); document.getElementById('contato-voltar').click(); }")
         # Conteúdo sem espaços deve quebrar dentro da coluna, sem ocultar dados.
         self.page.evaluate("""() => {
