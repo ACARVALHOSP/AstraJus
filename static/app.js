@@ -2511,6 +2511,10 @@ function _resumoEventoCaso(evento) {
     if (c.status === "cancelled") return "Evento da agenda foi cancelado";
     return `Evento da agenda mudou: ${c.titulo || "Prazo"} agora em ${formatarDataSimples(c.data)}`;
   }
+  if (evento.tipo === "movimento_processual") {
+    const ultimo = c.ultimo?.nome ? ` (último: ${c.ultimo.nome})` : "";
+    return `${c.quantidade || 1} movimento(s) novo(s) no processo${ultimo}`;
+  }
   return evento.tipo;
 }
 
@@ -3668,6 +3672,8 @@ registrarSalvamento(formCaso, async (evento) => {
     responsavel: document.getElementById("caso-responsavel").value.trim(),
     acao: document.getElementById("caso-acao").value.trim(),
     foro: document.getElementById("caso-foro").value.trim(),
+    pasta: document.getElementById("caso-pasta").value.trim(),
+    acesso: document.getElementById("caso-acesso").value,
     numeros_processo: numeros,
   };
   const pararEspera = mostrarEspera(resultadoCaso, botao, "Cadastrando processo");
@@ -4899,6 +4905,8 @@ async function abrirCaso(casoId) {
       mostrarAviso(document.getElementById("resultado-caso-editar"), "Não foi possível carregar os responsáveis. Reabra o processo para tentar novamente.");
     }
     responsavel.value = caso.responsavel || "";
+    document.getElementById("editar-caso-pasta").value = caso.pasta || "";
+    document.getElementById("editar-caso-acesso").value = caso.acesso || "equipe";
     document.getElementById("form-caso-editar").dataset.casoId = casoId;
     marcarFormularioSalvo(document.getElementById("form-caso-editar"), true);
     limpar(document.getElementById("lista-movimentacoes"));
@@ -5269,11 +5277,34 @@ function _cardCapaProcesso(casoId, numero, capa) {
     }
   });
 
+  const btnMonitorar = el(
+    "button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button" },
+    [document.createTextNode(capa.monitorando ? "Parar monitoramento" : "Monitorar automaticamente")],
+  );
+  btnMonitorar.addEventListener("click", async () => {
+    btnMonitorar.disabled = true;
+    const monitorando = capa.monitorando;
+    try {
+      await _enviarJson(
+        `/casos/${casoId}/processos/${numero}/capa/monitorar`, {},
+        monitorando ? "DELETE" : "POST",
+      );
+      capa.monitorando = !monitorando;
+      btnMonitorar.textContent = capa.monitorando ? "Parar monitoramento" : "Monitorar automaticamente";
+      mostrarToast("success", capa.monitorando ? "Monitoramento ativado" : "Monitoramento removido",
+        `Processo ${formatarNumeroCNJ(numero)}.`);
+    } catch (erro) {
+      mostrarToast("error", "Erro", erro.message);
+    } finally {
+      btnMonitorar.disabled = false;
+    }
+  });
+
   return el("div", { class: "capa-card" }, [
     el("h4", {}, [document.createTextNode(formatarNumeroCNJ(numero))]),
     blocoAuto,
     el("div", { class: "capa-card-campos" }, inputs),
-    btnSalvar,
+    el("div", { class: "capa-card-acoes" }, [btnSalvar, btnMonitorar]),
   ]);
 }
 
@@ -5521,7 +5552,11 @@ registrarSalvamento(document.getElementById("form-caso-editar"), async (evento) 
   if (!casoId) return;
   const botao = evento.target.querySelector("button[type=submit]");
   const resultado = document.getElementById("resultado-caso-editar");
-  const corpo = {responsavel: document.getElementById("editar-caso-responsavel").value.trim()};
+  const corpo = {
+    responsavel: document.getElementById("editar-caso-responsavel").value.trim(),
+    pasta: document.getElementById("editar-caso-pasta").value.trim(),
+    acesso: document.getElementById("editar-caso-acesso").value,
+  };
   const pararEspera = mostrarEspera(resultado, botao, "Salvando");
   try {
     const atualizado = await _enviarJson(`/casos/${casoId}`, corpo, "PATCH");
