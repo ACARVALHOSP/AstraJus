@@ -209,6 +209,15 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 }
 .cadastro-tabs .cds--content-switcher__label { white-space: normal; overflow: visible; text-overflow: clip; }
 .cds--content-switcher { min-inline-size: 0; }
+
+/* Tabs de navegação do cadastro: preserva IDs, campos e painéis existentes. */
+.contato-cadastro-tabs { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 0; border-bottom: 1px solid var(--cds-border-subtle); }
+.contato-cadastro-tab { flex: 0 0 auto; border: 0; border-bottom: 2px solid transparent; background: transparent; padding: var(--cds-spacing-05, 1rem); min-block-size: 3rem; color: var(--cds-text-secondary); font: inherit; cursor: pointer; white-space: nowrap; }
+.contato-cadastro-tab[aria-selected="true"] { border-bottom-color: var(--cds-interactive); color: var(--cds-text-primary); font-weight: 600; }
+.contato-cadastro-tab:hover { background: var(--cds-layer-hover); }
+.contato-cadastro-tab:focus-visible { outline: 2px solid var(--cds-focus); outline-offset: -2px; }
+#casos-vista-switcher .cds--content-switcher-btn { inline-size: 3rem; min-inline-size: 3rem; justify-content: center; }
+
 .cadastro-painel { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(var(--app-grid-colunas), minmax(0, 1fr)); gap: var(--cds-spacing-05, 1rem); }
 .cadastro-painel[hidden] { display: none; }
 .lista-repetivel { display: flex; flex-direction: column; gap: var(--cds-spacing-03, 0.5rem); margin-top: var(--cds-spacing-03, 0.5rem); }
@@ -1463,10 +1472,10 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 
 <section id="contato-subaba-cadastro" role="tabpanel" aria-labelledby="contato-subaba-cadastro-botao">
-<div class="cds--content-switcher cadastro-tabs" role="tablist" id="contato-cadastro-switcher" aria-label="Seções do cadastro">
-<button class="cds--content-switcher-btn cds--content-switcher--selected" role="tab" type="button" id="contato-cadastro-aba-pessoal-botao" aria-controls="contato-cadastro-painel-pessoal" aria-selected="true"><span class="cds--content-switcher__label">Informações pessoais</span></button>
-<button class="cds--content-switcher-btn" role="tab" type="button" id="contato-cadastro-aba-documentacao-botao" aria-controls="contato-cadastro-painel-documentacao" aria-selected="false"><span class="cds--content-switcher__label">Documentação</span></button>
-<button class="cds--content-switcher-btn" role="tab" type="button" id="contato-cadastro-aba-complementar-botao" aria-controls="contato-cadastro-painel-complementar" aria-selected="false"><span class="cds--content-switcher__label">Informações complementares</span></button>
+<div class="cadastro-tabs contato-cadastro-tabs" role="tablist" id="contato-cadastro-switcher" aria-label="Seções do cadastro">
+<button class="contato-cadastro-tab" role="tab" type="button" id="contato-cadastro-aba-pessoal-botao" aria-controls="contato-cadastro-painel-pessoal" aria-selected="true"><span>Informações pessoais</span></button>
+<button class="contato-cadastro-tab" role="tab" type="button" id="contato-cadastro-aba-documentacao-botao" aria-controls="contato-cadastro-painel-documentacao" aria-selected="false"><span>Documentação</span></button>
+<button class="contato-cadastro-tab" role="tab" type="button" id="contato-cadastro-aba-complementar-botao" aria-controls="contato-cadastro-painel-complementar" aria-selected="false"><span>Informações complementares</span></button>
 </div>
 <form id="form-contato-cadastro" class="app-formulario cds--css-grid">
 
@@ -1622,9 +1631,9 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="cds--form-item contatos-busca-campo" style="margin: 0;max-width:360px">
 <input class="cds--text-input" type="search" id="casos-busca" placeholder="Filtrar por título, cliente, ação, processo…" aria-label="Buscar processos" autocomplete="off">
 </div>
-<div class="cds--content-switcher cds--content-switcher--light" id="casos-vista-switcher" role="group" aria-label="Visualização da lista de processos">
-<button class="cds--content-switcher-btn cds--content-switcher--selected" type="button" id="casos-vista-tabela-botao" aria-pressed="true"><span class="cds--content-switcher__label">Tabela</span></button>
-<button class="cds--content-switcher-btn" type="button" id="casos-vista-cards-botao" aria-pressed="false"><span class="cds--content-switcher__label">Cards</span></button>
+<div class="cds--content-switcher cds--content-switcher--light cds--content-switcher--icon-only" id="casos-vista-switcher" role="group" aria-label="Visualização da lista de processos">
+<span class="cds--content-switcher-popover__wrapper"><button class="cds--content-switcher-btn" type="button" id="casos-vista-cards-botao" aria-pressed="false" aria-label="Visualização em grade" title="Visualização em grade"><svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true" focusable="false"><path d="M12,4H6A2,2,0,0,0,4,6v6a2,2,0,0,0,2,2h6a2,2,0,0,0,2-2V6A2,2,0,0,0,12,4Zm0,8H6V6h6Z"></path><path d="M26,4H20a2,2,0,0,0-2,2v6a2,2,0,0,0,2,2h6a2,2,0,0,0,2-2V6A2,2,0,0,0,26,4Zm0,8H20V6h6Z"></path><path d="M12,18H6a2,2,0,0,0-2,2v6a2,2,0,0,0,2,2h6a2,2,0,0,0,2-2V20A2,2,0,0,0,12,18Zm0,8H6V20h6Z"></path><path d="M26,18H20a2,2,0,0,0-2,2v6a2,2,0,0,0,2,2h6a2,2,0,0,0,2-2V20A2,2,0,0,0,26,18Zm0,8H20V20h6Z"></path></svg></button></span>
+<span class="cds--content-switcher-popover__wrapper"><button class="cds--content-switcher-btn cds--content-switcher--selected" type="button" id="casos-vista-tabela-botao" aria-pressed="true" aria-label="Visualização em lista" title="Visualização em lista"><svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true" focusable="false"><path d="M10 6H28V8H10z"></path><path d="M10 24H28V26H10z"></path><path d="M10 15H28V17H10z"></path><path d="M4 15H6V17H4z"></path><path d="M4 6H6V8H4z"></path><path d="M4 24H6V26H4z"></path></svg></button></span>
 </div>
 </div>
 <div id="lista-casos" class="app-resultado"></div>

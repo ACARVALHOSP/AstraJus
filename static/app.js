@@ -3395,7 +3395,7 @@ function _selecionarAbaCadastro(prefixo, nome) {
     const ativa = aba.nome === nome;
     const botao = document.getElementById(`${prefixo}-cadastro-aba-${aba.sufixo}-botao`);
     const painel = document.getElementById(`${prefixo}-cadastro-painel-${aba.sufixo}`);
-    botao.classList.toggle("cds--content-switcher--selected", ativa);
+    if (!botao.classList.contains("contato-cadastro-tab")) botao.classList.toggle("cds--content-switcher--selected", ativa);
     botao.setAttribute("aria-selected", String(ativa));
     botao.tabIndex = ativa ? 0 : -1;
     painel.hidden = !ativa;
@@ -6064,11 +6064,11 @@ registrarSalvamento(document.getElementById("form-honorario"), async (evento) =>
   botaoTabela.addEventListener("click", () => selecionar("tabela"));
   botaoCards.addEventListener("click", () => selecionar("cards"));
   switcher.addEventListener("keydown", (ev) => {
-    const botoes = [botaoTabela, botaoCards];
+    const botoes = [botaoCards, botaoTabela];
     let alvo;
     if (ev.key === "ArrowRight" || ev.key === "ArrowLeft") alvo = botoes[1 - botoes.indexOf(document.activeElement)];
-    else if (ev.key === "Home") alvo = botaoTabela;
-    else if (ev.key === "End") alvo = botaoCards;
+    else if (ev.key === "Home") alvo = botaoCards;
+    else if (ev.key === "End") alvo = botaoTabela;
     if (alvo) { ev.preventDefault(); alvo.click(); alvo.focus(); }
   });
 })();
