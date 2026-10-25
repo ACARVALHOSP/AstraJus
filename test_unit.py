@@ -2329,6 +2329,103 @@ class CapaProcessoHttpTest(unittest.TestCase):
 
 
 
+class AtividadeResponsavelTest(unittest.TestCase):
+    """Responsável/delegação de atividade (db.py): CRUD grava e atualiza o campo."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp()) / "teste.db"
+        self.gestao = db.RegistroClientesCasos(self.tmp)
+        self.agora = lambda: datetime(2026, 1, 1)
+        cliente = self.gestao.criar_cliente("Cliente Teste", None, None, self.agora)
+        self.caso = self.gestao.criar_caso(cliente["id"], "Caso Teste", None, [], self.agora)
+
+    def test_criar_atividade_grava_responsavel(self):
+        atv = self.gestao.criar_atividade(
+            self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora, responsavel="bia@teste.com",
+        )
+        self.assertEqual(atv["responsavel"], "bia@teste.com")
+
+    def test_criar_atividade_sem_responsavel_fica_none(self):
+        atv = self.gestao.criar_atividade(self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora)
+        self.assertIsNone(atv["responsavel"])
+
+    def test_atualizar_atividade_muda_responsavel(self):
+        atv = self.gestao.criar_atividade(self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora)
+        atualizada = self.gestao.atualizar_atividade(self.caso["id"], atv["id"], responsavel="bia@teste.com")
+        self.assertEqual(atualizada["responsavel"], "bia@teste.com")
+
+    def test_atualizar_sem_tocar_responsavel_preserva_valor(self):
+        atv = self.gestao.criar_atividade(
+            self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora, responsavel="bia@teste.com",
+        )
+        atualizada = self.gestao.atualizar_atividade(self.caso["id"], atv["id"], titulo="Peticionar (urgente)")
+        self.assertEqual(atualizada["responsavel"], "bia@teste.com")
+
+
+class AtividadeDelegacaoHttpTest(_RegistroTemporario):
+    """PATCH /casos/<id>/atividades/<aid>: valida o responsável e avisa por e-mail quem foi delegado."""
+
+    def setUp(self):
+        super().setUp()
+        self.tmp = Path(tempfile.mkdtemp()) / "teste.db"
+        self.gestao = db.RegistroClientesCasos(self.tmp)
+        self.agora = lambda: datetime(2026, 1, 1)
+        cliente = self.gestao.criar_cliente("Cliente Teste", None, None, self.agora)
+        self.caso = self.gestao.criar_caso(cliente["id"], "Caso Teste", None, [], self.agora)
+        self.bia = "bia@teste.com"
+        self._criar(self.bia)
+        cfg = server.ConfiguracaoSMTP("smtp.teste", 587, "u", "s", "noreply@teste")
+        cadastro = server.CadastroPublico(self.registro, cfg, server.LimitadorUso(0, 0),
+                                          server.LimitadorUso(0, 0), enviar=lambda d, t: None)
+        self.mw = server._AutenticacaoBearer(app=None, registro=self.registro, cadastro=cadastro, gestao=self.gestao)
+
+    def _patch(self, aid, corpo, usuario="ana"):
+        enviados = []
+
+        async def send(mensagem):
+            enviados.append(mensagem)
+
+        async def receive():
+            return {"type": "http.request", "body": json.dumps(corpo).encode("utf-8"), "more_body": False}
+
+        scope = {"method": "PATCH", "usuario": usuario}
+        _rodar(self.mw._atividades_do_caso(scope, receive, send, self.caso["id"], aid))
+        inicio = next(m for m in enviados if m["type"] == "http.response.start")
+        corpo_bytes = b"".join(m.get("body", b"") for m in enviados if m["type"] == "http.response.body")
+        return inicio["status"], json.loads(corpo_bytes or b"{}")
+
+    def test_delegar_para_usuario_valido_avisa_por_email(self):
+        atv = self.gestao.criar_atividade(self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora)
+        with mock.patch.object(server, "_enviar_aviso_atividade_delegada") as envio:
+            status, resultado = self._patch(atv["id"], {"responsavel": self.bia})
+        self.assertEqual(status, 200)
+        self.assertEqual(resultado["responsavel"], self.bia)
+        envio.assert_called_once()
+        self.assertEqual(envio.call_args[0][1], self.bia)
+
+    def test_delegar_para_usuario_invalido_e_recusado(self):
+        atv = self.gestao.criar_atividade(self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora)
+        status, resultado = self._patch(atv["id"], {"responsavel": "fantasma@teste.com"})
+        self.assertEqual(status, 400)
+        self.assertTrue(resultado["erro"])
+
+    def test_nao_avisa_quando_responsavel_nao_muda(self):
+        atv = self.gestao.criar_atividade(
+            self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora, responsavel=self.bia,
+        )
+        with mock.patch.object(server, "_enviar_aviso_atividade_delegada") as envio:
+            status, _ = self._patch(atv["id"], {"titulo": "Peticionar (urgente)"})
+        self.assertEqual(status, 200)
+        envio.assert_not_called()
+
+    def test_nao_avisa_quando_delegado_para_si_mesmo(self):
+        atv = self.gestao.criar_atividade(self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora)
+        with mock.patch.object(server, "_enviar_aviso_atividade_delegada") as envio:
+            status, _ = self._patch(atv["id"], {"responsavel": "ana"}, usuario="ana")
+        self.assertEqual(status, 200)
+        envio.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
 

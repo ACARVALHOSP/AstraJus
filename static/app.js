@@ -4964,6 +4964,7 @@ function _renderizarAtividades(casoId, atividades) {
     if (atv.data) partesMeta.push(formatarDataSimples(atv.data));
     if (atv.hora) partesMeta.push(atv.hora);
     corpo.appendChild(el("p", { class: "atividade-meta", texto: partesMeta.join(" · ") }));
+    if (atv.responsavel) corpo.appendChild(el("p", { class: "atividade-meta", texto: `Responsável: ${atv.responsavel}` }));
     if (atv.observacoes) corpo.appendChild(el("p", { class: "atividade-meta", texto: atv.observacoes }));
     const origem = origemPublicacaoAtividade(atv.observacoes);
     if (origem) corpo.appendChild(el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Ver publicação de origem", onclick: () => mostrarOrigemAtividade(casoId, origem) }));
@@ -5011,7 +5012,7 @@ async function mostrarOrigemAtividade(casoId, hash) {
   destino.focus();
 }
 
-function _abrirModalAtividade(casoId, atividade = null, publicacaoHash = "") {
+async function _abrirModalAtividade(casoId, atividade = null, publicacaoHash = "") {
   document.getElementById("form-atividade").dataset.publicacaoHash = publicacaoHash || origemPublicacaoAtividade(atividade?.observacoes);
   document.getElementById("atividade-id").value = atividade ? atividade.id : "";
   document.getElementById("atividade-tipo").value = atividade ? atividade.tipo : "tarefa";
@@ -5022,6 +5023,16 @@ function _abrirModalAtividade(casoId, atividade = null, publicacaoHash = "") {
     document.getElementById("atividade-data").value = atividade ? (atividade.data || "") : "";
   }
   document.getElementById("atividade-hora").value = atividade ? (atividade.hora || "") : "";
+  const responsavel = document.getElementById("atividade-responsavel");
+  limpar(responsavel);
+  responsavel.appendChild(el("option", { value: "", texto: "Eu mesmo" }));
+  try {
+    const { responsaveis } = await _buscarJson("/responsaveis");
+    for (const nome of [...new Set([...(responsaveis || []), atividade?.responsavel].filter(Boolean))]) {
+      responsavel.appendChild(el("option", { value: nome, texto: nome }));
+    }
+  } catch { /* lista de responsáveis é só uma comodidade; segue sem ela se a busca falhar */ }
+  responsavel.value = atividade?.responsavel || "";
   document.getElementById("atividade-observacoes").value = String(atividade?.observacoes || "").replace(_MARCADOR_ORIGEM_ATIVIDADE, "").trim();
   const origem = document.getElementById("atividade-publicacao-origem");
   origem.textContent = document.getElementById("form-atividade").dataset.publicacaoHash
@@ -5606,6 +5617,7 @@ registrarSalvamento(document.getElementById("form-atividade"), async (evento) =>
     titulo: document.getElementById("atividade-titulo").value.trim(),
     data: document.getElementById("atividade-data").value || null,
     hora: document.getElementById("atividade-hora").value || null,
+    responsavel: document.getElementById("atividade-responsavel").value || null,
     observacoes: document.getElementById("atividade-observacoes").value.trim() || null,
   };
   const origem = evento.target.dataset.publicacaoHash;
