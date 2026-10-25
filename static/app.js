@@ -4402,8 +4402,15 @@ async function _abrirFluxoInlinePubOab(tr, p, colunas, tipo, origem) {
 }
 
 function _rotuloCampoDjen(chave) {
-  const texto = chave.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ");
-  return texto.charAt(0).toLocaleUpperCase("pt-BR") + texto.slice(1);
+  // Rótulo de interface: nunca usar o formatador de nomes ou transformar o dado.
+  const siglas = new Set(["oab", "uf", "id", "cnj", "djen", "url", "api", "cpf", "cnpj"]);
+  const palavras = chave
+    .replace(/(\p{Lu})(\p{Lu}\p{Ll})/gu, "$1 $2")
+    .replace(/(\p{Ll}|\p{N})(\p{Lu})/gu, "$1 $2")
+    .replace(/_/g, " ").trim().toLocaleLowerCase("pt-BR").split(/\s+/);
+  return palavras.map((palavra, indice) => siglas.has(palavra)
+    ? palavra.toLocaleUpperCase("pt-BR")
+    : indice === 0 ? palavra.charAt(0).toLocaleUpperCase("pt-BR") + palavra.slice(1) : palavra).join(" ");
 }
 
 function _colunasPubOab(publicacoes = [], camposDjen = []) {
