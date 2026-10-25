@@ -155,6 +155,30 @@ class InterfaceTest(unittest.TestCase):
                     self.page.screenshot(path=str(destino / f"publicacoes-{tema}-{largura}.png"), full_page=True)
         self.assertFalse(self.errors)
 
+    def test_rotulos_djen_separados_dos_nomes_e_preferencias_preservadas(self):
+        self.open_publicacoes_oab()
+        self.pub_oab_items[0]["dados"] = {"dataDaCaptura": "2026-10-25", "URLDocumento": "https://example.test/AbC"}
+        self.page.evaluate("carregarPublicacoesOab()")
+        self.page.locator('.pub-oab-tabela').wait_for()
+        self.assertEqual(self.page.evaluate("_rotuloCampoDjen('dataDaCaptura')"), "Data da captura")
+        self.assertEqual(self.page.evaluate("_rotuloCampoDjen('URLDocumento')"), "URL documento")
+        self.assertEqual(self.page.evaluate("_rotuloCampoDjen('numeroOAB')"), "Numero OAB")
+        self.assertEqual(self.page.evaluate("formatarNomeExibicao('MARIA DA SILVA')"), "Maria Da Silva")
+        self.page.locator('.pub-oab-colunas button').click()
+        self.assertTrue(self.page.locator('.pub-oab-colunas').get_by_label('Data da captura', exact=True).is_visible())
+        self.assertTrue(self.page.locator('.pub-oab-colunas').get_by_label('URL documento', exact=True).is_visible())
+        self.page.locator('.pub-oab-colunas button').press('Escape')
+        chave = 'cnj_pub_oab_colunas_visiveis_v2'
+        preferencia = '["capturado","djen:dataDaCaptura","campo-antigo"]'
+        self.page.evaluate("([chave, valor]) => localStorage.setItem(chave, valor)", [chave, preferencia])
+        self.page.evaluate("carregarPublicacoesOab()")
+        self.page.locator('cds-table-header-cell[data-coluna="capturado"]:visible').wait_for()
+        self.assertTrue(self.page.locator('cds-table-header-cell[data-coluna="djen:dataDaCaptura"]').is_visible())
+        self.assertEqual(self.page.locator('.pub-oab-linha').first.locator('[data-coluna]:not([hidden])').count(), 5)
+        self.assertEqual(self.page.evaluate("chave => localStorage.getItem(chave)", chave), preferencia)
+        self.assertEqual(self.page.locator('.pub-oab-linha').first.locator('[data-coluna="djen:dataDaCaptura"]').text_content(), "2026-10-25")
+        self.assertFalse(self.errors)
+
     def choose(self, value):
         self.page.locator(f"#modal-edicao-pendente [data-escolha-edicao={value}]").click()
 
