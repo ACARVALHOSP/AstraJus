@@ -200,6 +200,7 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 hora TEXT,
                 status TEXT NOT NULL DEFAULT 'pendente',
                 observacoes TEXT,
+                responsavel TEXT,
                 criado_em TEXT NOT NULL
             );
 
@@ -286,6 +287,7 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
         if "orgao_julgador" not in {c[1] for c in conexao.execute("PRAGMA table_info(caso_processo_capa)")}:
             conexao.execute("ALTER TABLE caso_processo_capa ADD COLUMN orgao_julgador TEXT")
         _migrar_colunas_casos(conexao)
+        _migrar_colunas_caso_atividades(conexao)
         _migrar_colunas_clientes(conexao)
         _migrar_colunas_lancamentos(conexao)
         _migrar_remover_calendar_evento_id(conexao)
@@ -409,6 +411,15 @@ def _migrar_colunas_lancamentos(conexao: sqlite3.Connection) -> None:
             conexao.execute("ALTER TABLE lancamentos_financeiros ADD COLUMN direcao TEXT NOT NULL DEFAULT 'RECEITA'")
         if "pago" not in colunas:
             conexao.execute("ALTER TABLE lancamentos_financeiros ADD COLUMN pago INTEGER NOT NULL DEFAULT 0")
+
+
+def _migrar_colunas_caso_atividades(conexao: sqlite3.Connection) -> None:
+    """Bancos criados antes do campo `responsavel` existir em `caso_atividades` precisam do
+    ALTER TABLE manual - CREATE TABLE IF NOT EXISTS não adiciona coluna em tabela já existente."""
+    colunas = {linha[1] for linha in conexao.execute("PRAGMA table_info(caso_atividades)")}
+    if "responsavel" not in colunas:
+        with conexao:
+            conexao.execute("ALTER TABLE caso_atividades ADD COLUMN responsavel TEXT")
 
 
 def _migrar_colunas_casos(conexao: sqlite3.Connection) -> None:
@@ -1115,10 +1126,12 @@ class RegistroClientesCasos:
             )
             return cursor.rowcount > 0
 
+    _COLUNAS_ATIVIDADE = "id, caso_id, tipo, titulo, data, hora, status, observacoes, responsavel, criado_em"
+
     def listar_atividades(self, caso_id: str) -> list[dict]:
         with _abrir(self.caminho) as conexao:
             cursor = conexao.execute(
-                "SELECT id, caso_id, tipo, titulo, data, hora, status, observacoes, criado_em "
+                f"SELECT {self._COLUNAS_ATIVIDADE} "
                 "FROM caso_atividades WHERE caso_id = ? ORDER BY data ASC, criado_em ASC",
                 (caso_id,),
             )
@@ -1127,31 +1140,30 @@ class RegistroClientesCasos:
     def criar_atividade(
         self, caso_id: str, tipo: str, titulo: str,
         data: str | None, hora: str | None, observacoes: str | None, agora,
+        responsavel: str | None = None,
     ) -> dict:
         criado_em = agora().isoformat()
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             cursor = conexao.execute(
-                "INSERT INTO caso_atividades (caso_id, tipo, titulo, data, hora, status, observacoes, criado_em) "
-                "VALUES (?, ?, ?, ?, ?, 'pendente', ?, ?) RETURNING id",
-                (caso_id, tipo, titulo, data or None, hora or None, observacoes or None, criado_em),
+                "INSERT INTO caso_atividades (caso_id, tipo, titulo, data, hora, status, observacoes, responsavel, criado_em) "
+                "VALUES (?, ?, ?, ?, ?, 'pendente', ?, ?, ?) RETURNING id",
+                (caso_id, tipo, titulo, data or None, hora or None, observacoes or None, responsavel or None, criado_em),
             )
             aid = cursor.fetchone()[0]
         with _abrir(self.caminho) as conexao:
             linha = conexao.execute(
-                "SELECT id, caso_id, tipo, titulo, data, hora, status, observacoes, criado_em "
-                "FROM caso_atividades WHERE id = ?", (aid,)
+                f"SELECT {self._COLUNAS_ATIVIDADE} FROM caso_atividades WHERE id = ?", (aid,)
             ).fetchone()
         return _linha_atividade(linha)
 
     def atualizar_atividade(
         self, caso_id: str, aid: int, titulo: str | None = None,
         tipo: str | None = None, data: str | None = None, hora: str | None = None,
-        status: str | None = None, observacoes: str | None = None,
+        status: str | None = None, observacoes: str | None = None, responsavel: str | None = None,
     ) -> dict | None:
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             linha = conexao.execute(
-                "SELECT id, caso_id, tipo, titulo, data, hora, status, observacoes, criado_em "
-                "FROM caso_atividades WHERE id = ? AND caso_id = ?", (aid, caso_id)
+                f"SELECT {self._COLUNAS_ATIVIDADE} FROM caso_atividades WHERE id = ? AND caso_id = ?", (aid, caso_id)
             ).fetchone()
             if linha is None:
                 return None
@@ -1162,15 +1174,16 @@ class RegistroClientesCasos:
             nova_hora = hora if hora is not None else atual["hora"]
             novo_status = status if status is not None else atual["status"]
             novas_obs = observacoes if observacoes is not None else atual["observacoes"]
+            novo_responsavel = responsavel if responsavel is not None else atual["responsavel"]
             conexao.execute(
-                "UPDATE caso_atividades SET titulo=?, tipo=?, data=?, hora=?, status=?, observacoes=? "
+                "UPDATE caso_atividades SET titulo=?, tipo=?, data=?, hora=?, status=?, observacoes=?, responsavel=? "
                 "WHERE id=? AND caso_id=?",
-                (novo_titulo, novo_tipo, nova_data or None, nova_hora or None, novo_status, novas_obs or None, aid, caso_id),
+                (novo_titulo, novo_tipo, nova_data or None, nova_hora or None, novo_status, novas_obs or None,
+                 novo_responsavel or None, aid, caso_id),
             )
         with _abrir(self.caminho) as conexao:
             linha = conexao.execute(
-                "SELECT id, caso_id, tipo, titulo, data, hora, status, observacoes, criado_em "
-                "FROM caso_atividades WHERE id = ?", (aid,)
+                f"SELECT {self._COLUNAS_ATIVIDADE} FROM caso_atividades WHERE id = ?", (aid,)
             ).fetchone()
         return _linha_atividade(linha)
 
@@ -1473,10 +1486,11 @@ def _linha_caso(linha) -> dict:
 
 
 def _linha_atividade(linha) -> dict:
-    id_, caso_id, tipo, titulo, data, hora, status, observacoes, criado_em = linha
+    id_, caso_id, tipo, titulo, data, hora, status, observacoes, responsavel, criado_em = linha
     return {
         "id": id_, "caso_id": caso_id, "tipo": tipo, "titulo": titulo,
-        "data": data, "hora": hora, "status": status, "observacoes": observacoes, "criado_em": criado_em,
+        "data": data, "hora": hora, "status": status, "observacoes": observacoes,
+        "responsavel": responsavel, "criado_em": criado_em,
     }
 
 
