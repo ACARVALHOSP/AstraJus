@@ -3409,6 +3409,15 @@ class _AutenticacaoBearer:
             partes = caminho[len("/casos/"):].split("/atividades")
             caso_id = partes[0].rstrip("/")
             rest = partes[1].strip("/") if len(partes) > 1 else ""
+            if "/checklist" in rest:
+                aid_parte, _, resto_item = rest.partition("/checklist")
+                if not aid_parte.isdigit():
+                    await _responder(send, 404, b"Nao encontrado")
+                    return
+                resto_item = resto_item.strip("/")
+                item_id = int(resto_item) if resto_item.isdigit() else None
+                await self._checklist_da_atividade(scope, receive, send, caso_id, int(aid_parte), item_id)
+                return
             aid = int(rest) if rest.isdigit() else None
             await self._atividades_do_caso(scope, receive, send, caso_id, aid)
             return
@@ -4169,6 +4178,59 @@ class _AutenticacaoBearer:
             return
         if metodo == "DELETE":
             excluiu = self.gestao.excluir_atividade(caso_id, aid)
+            await _json(send, 200 if excluiu else 404, {"excluido": excluiu})
+            return
+        await _responder(send, 405, b"Metodo nao permitido")
+
+    async def _checklist_da_atividade(self, scope, receive, send, caso_id: str, aid: int, item_id: int | None):
+        """GET/POST /casos/<id>/atividades/<aid>/checklist,
+        PATCH/DELETE /casos/<id>/atividades/<aid>/checklist/<item_id>"""
+        metodo = scope.get("method")
+        if item_id is None:
+            if metodo == "GET":
+                itens = self.gestao.listar_checklist(caso_id, aid)
+                if itens is None:
+                    await _json(send, 404, _erro("Atividade não encontrada."))
+                    return
+                await _json(send, 200, {"itens": itens})
+                return
+            if metodo == "POST":
+                corpo = await _ler_corpo(receive)
+                try:
+                    dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+                except (ValueError, UnicodeDecodeError):
+                    await _json(send, 400, _erro("JSON inválido."))
+                    return
+                texto = (dados.get("texto") or "").strip()
+                if not texto:
+                    await _json(send, 400, _erro("Informe o texto do item."))
+                    return
+                item = self.gestao.criar_item_checklist(caso_id, aid, texto, agora=lambda: datetime.now(timezone.utc))
+                if item is None:
+                    await _json(send, 404, _erro("Atividade não encontrada."))
+                    return
+                await _json(send, 201, item)
+                return
+            await _responder(send, 405, b"Metodo nao permitido")
+            return
+        if metodo == "PATCH":
+            corpo = await _ler_corpo(receive)
+            try:
+                dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+            except (ValueError, UnicodeDecodeError):
+                await _json(send, 400, _erro("JSON inválido."))
+                return
+            item = self.gestao.atualizar_item_checklist(
+                caso_id, aid, item_id,
+                texto=dados.get("texto"), concluido=dados.get("concluido"),
+            )
+            if item is None:
+                await _json(send, 404, _erro("Item não encontrado."))
+                return
+            await _json(send, 200, item)
+            return
+        if metodo == "DELETE":
+            excluiu = self.gestao.excluir_item_checklist(caso_id, aid, item_id)
             await _json(send, 200 if excluiu else 404, {"excluido": excluiu})
             return
         await _responder(send, 405, b"Metodo nao permitido")

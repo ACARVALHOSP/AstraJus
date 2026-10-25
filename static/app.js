@@ -5040,8 +5040,81 @@ async function _abrirModalAtividade(casoId, atividade = null, publicacaoHash = "
   document.getElementById("modal-atividade-titulo").textContent = atividade ? "Editar atividade" : "Nova atividade";
   document.getElementById("form-atividade").dataset.casoId = casoId;
   limpar(document.getElementById("resultado-atividade"));
+  const checklistWrapper = document.getElementById("atividade-checklist-wrapper");
+  checklistWrapper.hidden = !atividade;
+  checklistWrapper.dataset.casoId = casoId;
+  checklistWrapper.dataset.aid = atividade ? atividade.id : "";
+  if (atividade) await _carregarChecklistAtividade(casoId, atividade.id);
   abrirModal("modal-atividade");
 }
+
+async function _carregarChecklistAtividade(casoId, aid) {
+  try {
+    const { itens } = await _buscarJson(`/casos/${casoId}/atividades/${aid}/checklist`);
+    _renderizarChecklistAtividade(itens || []);
+  } catch (erro) {
+    mostrarToast("error", "Erro ao carregar checklist", erro.message);
+  }
+}
+
+function _renderizarChecklistAtividade(itens) {
+  const lista = document.getElementById("atividade-checklist-lista");
+  limpar(lista);
+  const wrapper = document.getElementById("atividade-checklist-wrapper");
+  const { casoId, aid } = wrapper.dataset;
+  const concluidos = itens.filter((i) => i.concluido).length;
+  document.getElementById("atividade-checklist-progresso").textContent =
+    itens.length ? `${concluidos} de ${itens.length} concluído(s)` : "Nenhum item ainda";
+  for (const item of itens) {
+    const linha = el("div", { class: "atividade-item" });
+    const check = el("input", { type: "checkbox", class: "atividade-check", "aria-label": "Concluído" });
+    check.checked = item.concluido;
+    check.addEventListener("change", async () => {
+      try {
+        await _enviarJson(`/casos/${casoId}/atividades/${aid}/checklist/${item.id}`, { concluido: check.checked }, "PATCH");
+        await _carregarChecklistAtividade(casoId, aid);
+      } catch (erro) {
+        check.checked = !check.checked;
+        mostrarToast("error", "Erro", erro.message);
+      }
+    });
+    linha.appendChild(check);
+    const corpo = el("div", { class: "atividade-corpo" });
+    corpo.appendChild(el("p", { class: `atividade-titulo${item.concluido ? " concluida" : ""}`, texto: item.texto }));
+    linha.appendChild(corpo);
+    const btnExcluir = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "✕" });
+    btnExcluir.setAttribute("aria-label", "Excluir item");
+    btnExcluir.addEventListener("click", async () => {
+      try {
+        await _enviarJson(`/casos/${casoId}/atividades/${aid}/checklist/${item.id}`, {}, "DELETE");
+        await _carregarChecklistAtividade(casoId, aid);
+      } catch (erro) { mostrarToast("error", "Erro", erro.message); }
+    });
+    const acoes = el("div", { class: "atividade-acoes" });
+    acoes.appendChild(btnExcluir);
+    linha.appendChild(acoes);
+    lista.appendChild(linha);
+  }
+}
+
+document.getElementById("atividade-checklist-adicionar-botao").addEventListener("click", async () => {
+  const wrapper = document.getElementById("atividade-checklist-wrapper");
+  const { casoId, aid } = wrapper.dataset;
+  const campo = document.getElementById("atividade-checklist-novo");
+  const texto = campo.value.trim();
+  if (!texto) return;
+  try {
+    await _enviarJson(`/casos/${casoId}/atividades/${aid}/checklist`, { texto });
+    campo.value = "";
+    await _carregarChecklistAtividade(casoId, aid);
+  } catch (erro) { mostrarToast("error", "Erro", erro.message); }
+});
+document.getElementById("atividade-checklist-novo").addEventListener("keydown", (evento) => {
+  if (evento.key === "Enter") {
+    evento.preventDefault();
+    document.getElementById("atividade-checklist-adicionar-botao").click();
+  }
+});
 
 // Chave = J (segmento, 1 dígito) + TT (código do tribunal, 2 dígitos), posições 13-15 do CNJ sem máscara.
 const _tribunalMap = {

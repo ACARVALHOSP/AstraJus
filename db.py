@@ -204,6 +204,18 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 criado_em TEXT NOT NULL
             );
 
+            -- Subtarefas de uma atividade (lista única de verificação por atividade, sem
+            -- agrupamento em múltiplas checklists - a demanda é "progresso da tarefa", não
+            -- organizar várias listas dentro da mesma atividade).
+            CREATE TABLE IF NOT EXISTS atividade_checklist_itens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                atividade_id INTEGER NOT NULL REFERENCES caso_atividades(id) ON DELETE CASCADE,
+                texto TEXT NOT NULL,
+                concluido INTEGER NOT NULL DEFAULT 0,
+                ordem INTEGER NOT NULL,
+                criado_em TEXT NOT NULL
+            );
+
             -- Vínculos entre casos: recurso, apenso, execução de sentença, etc.
             -- A relação é simétrica: uma linha (A, B, tipo) é visível de ambos os lados.
             CREATE TABLE IF NOT EXISTS caso_vinculos (
@@ -249,6 +261,7 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
             CREATE INDEX IF NOT EXISTS idx_caso_eventos_caso ON caso_eventos (caso_id);
             CREATE INDEX IF NOT EXISTS idx_publicacoes_status ON publicacoes_capturadas (status);
             CREATE INDEX IF NOT EXISTS idx_caso_atividades_caso ON caso_atividades (caso_id);
+            CREATE INDEX IF NOT EXISTS idx_checklist_atividade ON atividade_checklist_itens (atividade_id);
             CREATE INDEX IF NOT EXISTS idx_caso_vinculos_vinculado ON caso_vinculos (caso_vinculado_id);
 
             -- Módulo Financeiro - Lançamentos (fase 1: só o tipo Honorário é criado pela tela;
@@ -1248,6 +1261,78 @@ class RegistroClientesCasos:
             )
             return cursor.rowcount > 0
 
+    # Checklist (subtarefas) de uma atividade
+
+    _COLUNAS_CHECKLIST_ITEM = "id, atividade_id, texto, concluido, ordem, criado_em"
+
+    def _atividade_do_caso(self, conexao, caso_id: str, aid: int) -> bool:
+        linha = conexao.execute(
+            "SELECT 1 FROM caso_atividades WHERE id = ? AND caso_id = ?", (aid, caso_id)
+        ).fetchone()
+        return linha is not None
+
+    def listar_checklist(self, caso_id: str, aid: int) -> list[dict] | None:
+        with _abrir(self.caminho) as conexao:
+            if not self._atividade_do_caso(conexao, caso_id, aid):
+                return None
+            cursor = conexao.execute(
+                f"SELECT {self._COLUNAS_CHECKLIST_ITEM} FROM atividade_checklist_itens "
+                "WHERE atividade_id = ? ORDER BY ordem ASC, id ASC", (aid,),
+            )
+            return [_linha_checklist_item(linha) for linha in cursor.fetchall()]
+
+    def criar_item_checklist(self, caso_id: str, aid: int, texto: str, agora) -> dict | None:
+        criado_em = agora().isoformat()
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            if not self._atividade_do_caso(conexao, caso_id, aid):
+                return None
+            proxima_ordem = conexao.execute(
+                "SELECT COALESCE(MAX(ordem) + 1, 0) FROM atividade_checklist_itens WHERE atividade_id = ?", (aid,),
+            ).fetchone()[0]
+            cursor = conexao.execute(
+                "INSERT INTO atividade_checklist_itens (atividade_id, texto, concluido, ordem, criado_em) "
+                "VALUES (?, ?, 0, ?, ?) RETURNING id",
+                (aid, texto, proxima_ordem, criado_em),
+            )
+            item_id = cursor.fetchone()[0]
+            linha = conexao.execute(
+                f"SELECT {self._COLUNAS_CHECKLIST_ITEM} FROM atividade_checklist_itens WHERE id = ?", (item_id,),
+            ).fetchone()
+        return _linha_checklist_item(linha)
+
+    def atualizar_item_checklist(
+        self, caso_id: str, aid: int, item_id: int, texto: str | None = None, concluido: bool | None = None,
+    ) -> dict | None:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            if not self._atividade_do_caso(conexao, caso_id, aid):
+                return None
+            linha = conexao.execute(
+                f"SELECT {self._COLUNAS_CHECKLIST_ITEM} FROM atividade_checklist_itens "
+                "WHERE id = ? AND atividade_id = ?", (item_id, aid),
+            ).fetchone()
+            if linha is None:
+                return None
+            atual = _linha_checklist_item(linha)
+            novo_texto = texto if texto is not None else atual["texto"]
+            novo_concluido = concluido if concluido is not None else atual["concluido"]
+            conexao.execute(
+                "UPDATE atividade_checklist_itens SET texto = ?, concluido = ? WHERE id = ?",
+                (novo_texto, int(novo_concluido), item_id),
+            )
+            linha = conexao.execute(
+                f"SELECT {self._COLUNAS_CHECKLIST_ITEM} FROM atividade_checklist_itens WHERE id = ?", (item_id,),
+            ).fetchone()
+        return _linha_checklist_item(linha)
+
+    def excluir_item_checklist(self, caso_id: str, aid: int, item_id: int) -> bool:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            if not self._atividade_do_caso(conexao, caso_id, aid):
+                return False
+            cursor = conexao.execute(
+                "DELETE FROM atividade_checklist_itens WHERE id = ? AND atividade_id = ?", (item_id, aid),
+            )
+            return cursor.rowcount > 0
+
     def casos_do_processo(self, numero_processo: str) -> list[str]:
         """IDs dos casos que incluem esse número de processo (0, 1 ou mais)."""
         with _abrir(self.caminho) as conexao:
@@ -1491,6 +1576,14 @@ def _linha_atividade(linha) -> dict:
         "id": id_, "caso_id": caso_id, "tipo": tipo, "titulo": titulo,
         "data": data, "hora": hora, "status": status, "observacoes": observacoes,
         "responsavel": responsavel, "criado_em": criado_em,
+    }
+
+
+def _linha_checklist_item(linha) -> dict:
+    id_, atividade_id, texto, concluido, ordem, criado_em = linha
+    return {
+        "id": id_, "atividade_id": atividade_id, "texto": texto,
+        "concluido": bool(concluido), "ordem": ordem, "criado_em": criado_em,
     }
 
 
