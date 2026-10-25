@@ -484,6 +484,8 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 .atividade-titulo.concluida { text-decoration: line-through; color: var(--cds-text-secondary, #525252); }
 .atividade-meta { font-size: var(--fonte-ajuda); color: var(--cds-text-secondary, #525252); margin: 0; }
 .atividade-acoes { display: flex; gap: 0.5rem; flex-shrink: 0; }
+.atividade-checklist-adicionar { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+.atividade-checklist-adicionar input { flex: 1; }
 /* Date Picker - range: classes usadas pelo markup do componente que não existem no styles.min.css vendorizado. */
 .cds--date-picker__input-wrapper { position: relative; }
 .cds--date-picker__separator { align-self: center; padding: 0 0.25rem; color: var(--cds-text-secondary, #525252); }
@@ -1853,6 +1855,15 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 <div id="resultado-atividade" class="app-resultado"></div>
 </form>
+<div class="cds--form-item" id="atividade-checklist-wrapper" hidden>
+<label class="cds--label">Checklist</label>
+<p id="atividade-checklist-progresso" class="campo-ajuda"></p>
+<div id="atividade-checklist-lista"></div>
+<div class="atividade-checklist-adicionar">
+<input class="cds--text-input" type="text" id="atividade-checklist-novo" placeholder="Novo item" autocomplete="off">
+<button class="cds--btn cds--btn--secondary cds--btn--sm" type="button" id="atividade-checklist-adicionar-botao">Adicionar</button>
+</div>
+</div>
 </div>
 <div class="fluxo-pagina-footer">
 <button class="cds--btn cds--btn--secondary" type="button" data-fechar-modal="modal-atividade">Cancelar</button>
