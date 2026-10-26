@@ -3,7 +3,7 @@
 .linha-repetivel > .app-choice, .endereco-card-topo > .app-choice { flex: 0 1 12rem; }
 cds-radio-button-group.app-choice { padding-block: 0.5rem; }
 .cadastro-painel > .cds--form-item:has(> cds-radio-button-group.app-choice) { grid-column: 1 / -1; }
-.app-progresso-global { position: fixed; inset-block-start: 3rem; inset-inline: 0; z-index: 11000; padding: 0.75rem 1rem; background: var(--cds-background, #fff); color: var(--cds-text-primary, #161616); border-block-end: 1px solid var(--cds-border-subtle, #e0e0e0); }
+.app-progresso-global { inline-size: 100%; max-inline-size: 30rem; box-sizing: border-box; margin-block: var(--cds-spacing-05, 1rem); padding: var(--cds-spacing-04, 0.75rem) var(--cds-spacing-05, 1rem); background: var(--cds-background, #fff); color: var(--cds-text-primary, #161616); border: 1px solid var(--cds-border-subtle, #e0e0e0); }
 .app-progresso-global[hidden] { display: none; }
 .app-modal-footer > button { flex: 1; max-inline-size: none; }
 .app-modal cds-modal-body form { display: grid; gap: 1rem; }
