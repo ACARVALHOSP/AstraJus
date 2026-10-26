@@ -2226,7 +2226,11 @@ function abrirModal(id) {
   if (secao.matches("cds-modal.app-modal")) secao.open = true;
   else if (anterior && !anterior.matches("cds-modal.app-modal")) anterior.after(secao);
   else document.getElementById("conteudo").prepend(secao);
-  secoesAbertas.push({ secao, origem });
+  const fundo = secao.id === "modal-honorario" ? [...document.body.children]
+    .filter((item) => !item.matches("cds-modal, script, style, link") && item.id !== "toast-global")
+    .map((item) => ({ item, inert: item.inert })) : [];
+  for (const { item } of fundo) item.inert = true;
+  secoesAbertas.push({ secao, origem, fundo });
   if (secao.matches("cds-modal.app-modal")) {
     secao.style.zIndex = String(9000 + secoesAbertas.length);
     if (anterior) anterior.inert = true;
@@ -2245,6 +2249,8 @@ async function fecharModal(id) {
   const entrada = indice >= 0 ? secoesAbertas.splice(indice, 1)[0] : null;
   secao.classList.remove("is-visible");
   if (secao.matches("cds-modal.app-modal")) secao.open = false;
+  for (const { item, inert } of entrada?.fundo || []) item.inert = inert;
+  if (id === "modal-honorario") document.getElementById("honorario-vencimento")._flatpickr?.close();
   secao.style.zIndex = "";
   secao.inert = false;
   const anterior = secoesAbertas.at(-1)?.secao;
@@ -6063,6 +6069,7 @@ _inicializarDatePickerRange("pub-oab-manual-data-inicio", "pub-oab-manual-data-f
   const el = document.getElementById("honorario-vencimento");
   if (!el || typeof window.flatpickr !== "function") return;
   window.flatpickr(el, {
+    appendTo: document.querySelector("#modal-honorario cds-modal-body"),
     altInput: false,
     allowInput: true,
     locale: window.flatpickr.l10ns && window.flatpickr.l10ns.pt,
