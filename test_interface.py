@@ -3,6 +3,7 @@
 Requer Playwright e Chromium instalados. APIs são interceptadas; nenhum token real é usado.
 """
 import os
+import re
 import shutil
 from pathlib import Path
 from functools import partial
@@ -97,6 +98,55 @@ class InterfaceTest(unittest.TestCase):
         self.page.locator("#form-token button[type=submit]").click()
         self.page.wait_for_function("document.getElementById('status-conexao').textContent === 'Conectado'")
         self.assertFalse(self.errors)
+
+    def test_dropdowns_de_duas_opcoes_usam_radios_e_preservam_valor(self):
+        self.connect()
+        self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-contatos')); await abrirNovoContato(); }")
+        self.select_value(self.page.locator("#contato-tipo-pessoa"), "juridica")
+        self.assertTrue(self.page.locator('cds-radio-button-group[data-select-id="contato-tipo-pessoa"]').is_visible())
+        self.assertEqual(self.page.locator("#contato-cpf-cnpj-label").text_content(), "CNPJ")
+
+    def test_nova_atividade_modal_e_confirmacao_sobreposta(self):
+        self.open_case()
+        self.page.evaluate("() => _abrirModalAtividade('caso-1')")
+        modal = self.page.locator("#modal-atividade")
+        self.assertEqual(modal.evaluate("el => el.tagName"), "CDS-MODAL")
+        self.page.locator("#atividade-titulo").fill("Atividade de teste")
+        modal.get_by_role("button", name="Cancelar", exact=True).click()
+        confirmacao = self.page.locator("#modal-edicao-pendente")
+        self.page.wait_for_selector("#modal-edicao-pendente.is-visible")
+        self.assertTrue(modal.evaluate("el => el.inert"))
+        self.assertGreater(int(confirmacao.evaluate("el => el.style.zIndex")), int(modal.evaluate("el => el.style.zIndex")))
+        self.choose("continuar")
+        self.assertFalse(modal.evaluate("el => el.inert"))
+        self.assertEqual(self.page.locator("#atividade-titulo").input_value(), "Atividade de teste")
+        modal.get_by_role("button", name="Cancelar", exact=True).click()
+        self.choose("descartar")
+        self.assertFalse(modal.evaluate("el => el.open"))
+
+    def test_progresso_indeterminado_aguarda_todas_operacoes(self):
+        self.connect()
+        self.page.evaluate("() => { window.fimA = cnjUI.iniciar('Consulta A'); window.fimB = cnjUI.iniciar('Consulta B'); }")
+        progress = self.page.locator(".app-progresso-global cds-progress-bar")
+        self.assertFalse(progress.evaluate("el => el.value != null"))
+        self.page.evaluate("() => window.fimA()")
+        self.assertEqual(progress.evaluate("el => el.status"), "active")
+        self.page.evaluate("() => window.fimB(true)")
+        self.assertEqual(progress.evaluate("el => el.status"), "error")
+        self.assertFalse(self.page.locator(".espera-spinner, cds-loading, cds-inline-loading").count())
+
+    def select_value(self, native, value):
+        """Escolhe no controle Carbon e confere o valor legado usado pelos handlers."""
+        if native.input_value() == value:
+            return
+        label = native.evaluate("(el, value) => [...el.options].find(o => o.value === value).textContent", value)
+        host = native.locator("xpath=preceding-sibling::*[1]")
+        if host.evaluate("el => el.tagName") == "CDS-RADIO-BUTTON-GROUP":
+            host.get_by_role("radio", name=label, exact=True).check()
+        else:
+            host.get_by_role("combobox").click()
+            host.locator("cds-dropdown-item").filter(has_text=re.compile("^" + re.escape(label) + "$" )).click()
+        self.assertEqual(native.input_value(), value)
 
     def open_case(self):
         self.connect()
@@ -677,11 +727,11 @@ class InterfaceTest(unittest.TestCase):
         self.open_publicacoes_oab()
         self.page.locator("input[data-publicacao-hash]").first.check()
         self.assertTrue(self.page.locator("#pub-oab-arquivar").is_enabled())
-        self.page.locator("#pub-oab-filtro-status").select_option("arquivada")
+        self.select_value(self.page.locator("#pub-oab-filtro-status"), "arquivada")
         self.page.get_by_text("Nenhuma publicação com este status", exact=True).wait_for()
         self.assertEqual(self.page.locator("#pub-oab-arquivar").count(), 0)
         self.assertEqual(self.page.locator("#pub-oab-marcar-tratada").count(), 0)
-        self.page.locator("#pub-oab-filtro-status").select_option("")
+        self.select_value(self.page.locator("#pub-oab-filtro-status"), "")
         self.page.locator("#lista-publicacoes-oab cds-table").wait_for()
         self.assertEqual(self.page.locator("input[data-publicacao-hash]:checked").count(), 0)
 
@@ -788,7 +838,7 @@ class InterfaceTest(unittest.TestCase):
         form = self.page.get_by_role("form", name="Cadastrar processo", exact=True)
         form.locator("cds-search input").fill("Cliente")
         form.get_by_role("button", name="Cliente De Teste", exact=True).click()
-        form.get_by_label("Responsável", exact=True).select_option("Ana")
+        self.select_value(form.locator('select[id$="-responsavel"]'), "Ana")
         self.page.set_viewport_size({"width": 390, "height": 900})
         self.assertTrue(form.evaluate("el => el.getBoundingClientRect().width <= innerWidth && el.scrollWidth <= el.clientWidth"))
         self.assertEqual(self.pub_oab_posts, [])
@@ -949,7 +999,7 @@ class InterfaceTest(unittest.TestCase):
         self.connect()
         self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-casos')); }")
         self.page.locator("#btn-novo-caso").click()
-        self.assertEqual(self.page.locator('[aria-modal="true"], [role="dialog"], [role="alertdialog"]').count(), 0)
+        self.assertEqual(self.page.locator('#modal-novo-caso [role="dialog"], #modal-novo-caso [role="alertdialog"]').count(), 0)
         self.assertEqual(self.page.locator("#modal-novo-caso").evaluate("el => getComputedStyle(el).position"), "static")
         self.page.locator("#btn-novo-caso").focus()
         self.assertEqual(self.page.evaluate("document.activeElement.id"), "btn-novo-caso")
@@ -960,10 +1010,10 @@ class InterfaceTest(unittest.TestCase):
         self.assertEqual(self.page.evaluate("document.activeElement.id"), "btn-novo-caso")
         self.assertFalse(self.page.locator("main").evaluate("el => el.closest('[inert]') !== null"))
 
-    def test_todos_fluxos_sao_secoes_no_documento(self):
+    def test_demais_fluxos_continuam_secoes_no_documento(self):
         self.connect()
         ids = self.page.locator(".fluxo-pagina").evaluate_all("els => els.map(el => el.id)")
-        self.assertEqual(len(ids), 8)
+        self.assertEqual(len(ids), 5)
         for width in (1440, 390):
             self.page.set_viewport_size({"width": width, "height": 960})
             for ident in ids:
@@ -982,7 +1032,7 @@ class InterfaceTest(unittest.TestCase):
 
     def test_saida_caso_continuar_descartar_e_salvar_responsavel(self):
         self.open_case()
-        self.page.locator("#editar-caso-responsavel").select_option("Título pendente")
+        self.select_value(self.page.locator("#editar-caso-responsavel"), "Título pendente")
         self.page.locator("#caso-voltar").click()
         self.choose("continuar")
         self.assertTrue(self.page.locator("#caso-vista-detalhe").is_visible())
@@ -992,7 +1042,7 @@ class InterfaceTest(unittest.TestCase):
         self.page.wait_for_function("!document.getElementById('caso-vista-lista').hidden")
         self.assertEqual(self.page.locator("#editar-caso-responsavel").input_value(), "Ana")
         self.page.evaluate("abrirCaso('caso-1')")
-        self.page.locator("#editar-caso-responsavel").select_option("Título salvo")
+        self.select_value(self.page.locator("#editar-caso-responsavel"), "Título salvo")
         self.page.locator("#caso-voltar").click()
         self.choose("salvar")
         self.page.wait_for_function("!document.getElementById('caso-vista-lista').hidden")
@@ -1001,7 +1051,7 @@ class InterfaceTest(unittest.TestCase):
 
     def test_falha_ao_salvar_preserva_edicao_e_bloqueia_saida(self):
         self.open_case()
-        self.page.locator("#editar-caso-responsavel").select_option("Não perder")
+        self.select_value(self.page.locator("#editar-caso-responsavel"), "Não perder")
         self.fail_save = True
         self.page.locator("#caso-voltar").click()
         self.choose("salvar")
@@ -1042,7 +1092,7 @@ class InterfaceTest(unittest.TestCase):
 
     def test_navegacao_entre_secoes_nao_descarta_edicao_ao_cancelar(self):
         self.open_case()
-        self.page.locator("#editar-caso-responsavel").select_option("Título pendente")
+        self.select_value(self.page.locator("#editar-caso-responsavel"), "Título pendente")
         self.page.locator("#aba-contatos-botao").click()
         self.choose("continuar")
         self.page.locator("#modal-edicao-pendente").wait_for(state="hidden")
@@ -1076,7 +1126,7 @@ class InterfaceTest(unittest.TestCase):
 
     def test_cancelar_mudanca_da_url_preserva_secao_e_edicao(self):
         self.open_case()
-        self.page.locator("#editar-caso-responsavel").select_option("Título pendente")
+        self.select_value(self.page.locator("#editar-caso-responsavel"), "Título pendente")
         self.page.evaluate("location.hash = '#aba-contatos'")
         self.choose("continuar")
         self.page.wait_for_function("location.hash === '#aba-casos'")
@@ -1179,14 +1229,14 @@ class InterfaceTest(unittest.TestCase):
         self.page.keyboard.press("ArrowRight")
         self.assertEqual(self.page.locator("#caso-subaba-atividades-botao").evaluate("el => getComputedStyle(el).outlineStyle"), "solid")
         self.page.locator("#caso-subaba-cadastro-botao").click()
-        self.page.locator("#editar-caso-responsavel").select_option("Título pendente")
+        self.select_value(self.page.locator("#editar-caso-responsavel"), "Título pendente")
         self.page.locator("#caso-voltar").click()
         self.page.wait_for_selector("#modal-edicao-pendente.is-visible")
         for width in (1440, 768, 390, 320):
             self.page.set_viewport_size({"width": width, "height": 960})
             self.page.wait_for_timeout(300)  # Aguarda a transição de entrada/reposicionamento do Carbon.
-            container = self.page.locator("#modal-edicao-pendente .fluxo-pagina-container").bounding_box()
-            for item in self.page.locator("#modal-edicao-pendente .fluxo-pagina-footer button").all():
+            container = self.page.locator("#modal-edicao-pendente cds-modal-footer").bounding_box()
+            for item in self.page.locator("#modal-edicao-pendente cds-modal-footer button").all():
                 rect = item.bounding_box()
                 self.assertGreaterEqual(rect["x"], container["x"])
                 self.assertLessEqual(rect["x"] + rect["width"], container["x"] + container["width"] + 1)
@@ -1319,14 +1369,14 @@ class InterfaceTest(unittest.TestCase):
         self.page.get_by_text("Lista incompleta", exact=True).wait_for()
         self.assertEqual(self.page.locator("#atividades-lista article").count(), 2)
         self.assertNotIn("Já concluída", self.page.locator("#atividades-lista").inner_text())
-        self.page.locator("#atividades-tipo").select_option('prazo')
+        self.select_value(self.page.locator("#atividades-tipo"), 'prazo')
         self.assertEqual(self.page.locator("#atividades-lista article").count(), 1)
-        self.page.locator("#atividades-tipo").select_option('')
-        self.page.locator("#atividades-responsavel").select_option('Ana')
+        self.select_value(self.page.locator("#atividades-tipo"), '')
+        self.select_value(self.page.locator("#atividades-responsavel"), 'Ana')
         self.page.get_by_role('button', name='Concluir atividade: Providência 1', exact=True).click()
         self.page.wait_for_function("!document.getElementById('atividades-lista').textContent.includes('Providência 1')")
         falha[0] = False
-        self.page.locator("#atividades-responsavel").select_option('')
+        self.select_value(self.page.locator("#atividades-responsavel"), '')
         self.page.locator("#atividades-atualizar").click()
         self.page.wait_for_function("document.getElementById('atividades-status').textContent.includes('Revisados 3')")
         self.assertEqual(self.page.locator("#atividades-lista article").count(), 2)

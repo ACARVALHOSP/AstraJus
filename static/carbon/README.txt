@@ -33,3 +33,9 @@ Build: use as mesmas dependências indicadas acima e execute node static/carbon/
 CARBON_BUILD_MODULES permite reutilizar um diretório node_modules de build fora da árvore.
 Licenças: LICENSE-theme-components.txt e theme-components.min.js.LEGAL.txt.
 As variáveis white/g100 estão no CSS Carbon já distribuído; não há CDN em execução.
+
+Dropdown, RadioButton, Modal e ProgressBar: @carbon/web-components 2.66.0.
+Bundle local: ui-controls.min.js; fontes: ui-controls.entry.js.
+Build com os mesmos pacotes acima: node static/carbon/build-ui-controls.cjs
+CARBON_BUILD_MODULES permite indicar uma pasta node_modules alternativa.
+Licenças: LICENSE-ui-controls.txt e ui-controls.min.js.LEGAL.txt.

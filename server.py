@@ -2865,6 +2865,7 @@ def _pagina_autorizacao(params: dict, erro: str | None = None) -> str:
 <button type="submit">Autorizar</button>
 </form>
 <p>Ainda não tem token? Peça em <a href="/cadastro">/cadastro</a>.</p>
+{_RECURSOS_CONTROLES}
 </body></html>"""
 
 
@@ -3247,6 +3248,7 @@ class _AutenticacaoBearer:
                 await _responder(send, 404, b"Nao encontrado")
             return
         if caminho in ("/static/search-fields.js", "/static/search-fields.css", "/static/carbon/search-components.min.js",
+                       "/static/ui-controls.js", "/static/ui-controls.css", "/static/carbon/ui-controls.min.js",
                        "/static/theme.js", "/static/theme.css", "/static/carbon/theme-components.min.js") and scope.get("method") == "GET":
             arquivo = Path(__file__).resolve().parent / caminho.lstrip("/")
             tipo = "text/css; charset=utf-8" if caminho.endswith(".css") else "application/javascript; charset=utf-8"
@@ -4693,6 +4695,8 @@ async def _responder(send, status: int, corpo: bytes, tipo: str = "text/plain; c
     await send({"type": "http.response.body", "body": corpo})
 
 
+_RECURSOS_CONTROLES = '<link rel="stylesheet" href="/static/ui-controls.css">\n<script src="/static/carbon/ui-controls.min.js" defer></script>\n<script src="/static/ui-controls.js" defer></script>'
+
 _RECURSOS_TEMA = '<script src="/static/theme.js"></script>\n<link rel="stylesheet" href="/static/theme.css">\n<script src="/static/carbon/theme-components.min.js" defer></script>'
 
 
@@ -4970,6 +4974,7 @@ def _pagina_termos(mensagem: str | None = None, erro: bool = False) -> str:
 <p class="rodape">A versão aceita fica registrada junto ao seu e-mail.</p>
 <a class="voltar" href="/guia">Guia do usuário: como usar o serviço</a>
 </main>
+{_RECURSOS_CONTROLES}
 </body></html>"""
 
 
@@ -5007,13 +5012,14 @@ Ele não será mostrado novamente. Se perder, peça um novo, e o anterior deixa 
 <span id="ajuda-email" class="ajuda">Use o e-mail que você vai cadastrar no seu cliente MCP.</span>
 {captcha}
 <button type="submit">Enviar token por e-mail</button>
-<div class="enviando-barra" aria-hidden="true"></div>
+
 </form>
 <a class="voltar" href="/cadastro">Voltar aos termos de uso</a>
 <a class="voltar" href="/guia">Guia do usuário: como usar o serviço</a>
 <p class="rodape">Já tem token e perdeu o acesso? Peça um novo: o token anterior deixa de valer.</p>
 </main>
 <script src="/static/cadastro.js" defer></script>
+{_RECURSOS_CONTROLES}
 </body></html>"""
 
 
@@ -5176,6 +5182,7 @@ def _pagina_admin(registro: RegistroUsuarios, mensagem: str | None, token_novo: 
 
 {bloco_google}
 </main>
+{_RECURSOS_CONTROLES}
 </body></html>"""
 
 
