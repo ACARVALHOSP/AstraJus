@@ -127,13 +127,31 @@ class InterfaceTest(unittest.TestCase):
     def test_progresso_indeterminado_aguarda_todas_operacoes(self):
         self.connect()
         self.page.evaluate("() => { window.fimA = cnjUI.iniciar('Consulta A'); window.fimB = cnjUI.iniciar('Consulta B'); }")
-        progress = self.page.locator(".app-progresso-global cds-progress-bar")
+        progress = self.page.locator(".app-progresso-global cds-progress-bar").last
         self.assertFalse(progress.evaluate("el => el.value != null"))
         self.page.evaluate("() => window.fimA()")
         self.assertEqual(progress.evaluate("el => el.status"), "active")
         self.page.evaluate("() => window.fimB(true)")
         self.assertEqual(progress.evaluate("el => el.status"), "error")
         self.assertFalse(self.page.locator(".espera-spinner, cds-loading, cds-inline-loading").count())
+
+    def test_progresso_falha_retornada_e_relacoes_acessiveis(self):
+        self.connect()
+        self.page.evaluate("""async () => {
+          const regiao = document.createElement('section');
+          regiao.id = 'regiao-teste-progresso';
+          regiao.setAttribute('aria-describedby', 'ajuda-original');
+          document.body.append(regiao);
+          await cnjUI.executar(async () => ({ok:false, mensagem:'Falha de rede'}), 'Consultando CEP', regiao);
+        }""")
+        barra = self.page.locator('.app-progresso-global cds-progress-bar').last
+        self.assertEqual(barra.get_attribute('status'), 'error')
+        self.assertTrue(barra.get_by_role('progressbar', name='Consultando CEP', exact=True).is_visible())
+        self.assertIn('Falha de rede', barra.get_by_role('status').inner_text())
+        self.assertNotIn('Loading', barra.inner_text())
+        self.assertFalse(self.page.locator('#regiao-teste-progresso').get_attribute('aria-busy'))
+        self.assertIn('ajuda-original progresso-', self.page.locator('#regiao-teste-progresso').get_attribute('aria-describedby'))
+        self.assertLessEqual(barra.bounding_box()['width'], 480)
 
     def select_value(self, native, value):
         """Escolhe no controle Carbon e confere o valor legado usado pelos handlers."""

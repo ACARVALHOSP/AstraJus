@@ -1809,7 +1809,7 @@ async function carregarMonitoramentos() {
 }
 
 async function carregarStatusIntegracoes(...args) {
-  return window.cnjUI.executar(() => carregarStatusIntegracoesSemProgresso(...args), "Verificando integrações");
+  return window.cnjUI.executar(() => carregarStatusIntegracoesSemProgresso(...args), "Verificando integrações", document.getElementById("integracoes-resultado"));
 }
 
 async function carregarStatusIntegracoesSemProgresso() {
@@ -1820,7 +1820,7 @@ async function carregarStatusIntegracoesSemProgresso() {
   if (!cliente) {
     for (const selo of [seloGoogle, seloAsaas]) selo.textContent = "Acesso necessário";
     mostrarAviso(resultado, "Conecte-se na aba Acesso para verificar a configuração dos serviços.");
-    return;
+    return { ok: false, mensagem: "Conecte-se para verificar as integrações." };
   }
   for (const selo of [seloGoogle, seloAsaas]) {
     if (!selo) continue;
@@ -1854,6 +1854,7 @@ async function carregarStatusIntegracoesSemProgresso() {
       selo.textContent = erro.status === 401 ? "Acesso necessário" : "Falha na verificação";
       selo.className = "cds--tag cds--tag--gray cds--tag--sm";
     }
+    return { ok: false, mensagem: resultado.textContent };
   }
 }
 

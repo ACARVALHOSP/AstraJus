@@ -5,47 +5,77 @@
   const valorSelect = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
   const indiceSelect = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'selectedIndex');
   let sequencia = 0;
-  const operacoes = new Map();
-  let painel;
-  let barra;
-  let retorno;
-  let houveFalha = false;
-  function iniciar(rotulo = 'Consultando informações') {
-    if (!operacoes.size) houveFalha = false;
-    const id = ++sequencia;
-    operacoes.set(id, rotulo);
-    if (!painel) {
-      painel = document.createElement('div');
+  const contextos = new Map();
+  function regiaoAtual() {
+    const foco = document.activeElement;
+    return foco?.closest('form, [role="tabpanel"], cds-modal-body') ||
+      [...document.querySelectorAll('[role="tabpanel"]')].filter((el) => el.getClientRects().length).at(-1) ||
+      document.querySelector('main') || document.body;
+  }
+  function iniciar(rotulo = 'Consultando informações', regiao = regiaoAtual()) {
+    let estado = contextos.get(regiao);
+    if (!estado) {
+      const painel = document.createElement('div');
       painel.className = 'app-progresso-global';
-      painel.setAttribute('role', 'status');
-      barra = document.createElement('cds-progress-bar');
+      painel.id = `progresso-${++sequencia}`;
+      const barra = document.createElement('cds-progress-bar');
       barra.setAttribute('size', 'small');
       painel.append(barra);
-      document.body.append(painel);
+      if (regiao === document.body) regiao.prepend(painel);
+      else regiao.before(painel);
+      estado = { painel, barra, operacoes: new Map(), falha: '', retorno: null, dispensado: false };
+      // A barra é irmã da região para sobreviver à atualização do conteúdo.
+      // Acompanha a visibilidade da própria aba, inclusive durante consultas de fundo.
+      new MutationObserver(() => { painel.hidden = regiao.hidden || estado.dispensado; })
+        .observe(regiao, { attributes: true, attributeFilter: ['hidden'] });
+      contextos.set(regiao, estado);
     }
-    clearTimeout(retorno);
-    painel.hidden = false;
-    barra.removeAttribute('value');
+    const { painel, barra, operacoes } = estado;
+    if (!operacoes.size) {
+      estado.falha = '';
+      estado.busyOriginal = regiao.getAttribute('aria-busy');
+      barra.label = rotulo;
+    }
+    clearTimeout(estado.retorno);
+    const id = ++sequencia;
+    operacoes.set(id, rotulo);
+    estado.dispensado = false;
+    painel.hidden = regiao.hidden;
+    regiao.setAttribute('aria-busy', 'true');
+    const descricoes = new Set((regiao.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean));
+    descricoes.add(painel.id);
+    regiao.setAttribute('aria-describedby', [...descricoes].join(' '));
     barra.value = undefined;
     barra.status = 'active';
-    barra.label = rotulo;
-    barra.helperText = 'Aguarde. A operação está em andamento.';
-    return (falhou = false) => {
+    const atualizarAjuda = () => {
+      barra.helperText = operacoes.size > 1 ? `${operacoes.size} operações em andamento. Aguarde.` : 'Aguarde. A operação está em andamento.';
+    };
+    atualizarAjuda();
+    return (falhou = false, mensagem = '') => {
       if (!operacoes.delete(id)) return;
-      houveFalha ||= falhou;
-      if (operacoes.size) {
-        barra.label = [...operacoes.values()].at(-1);
-        return;
-      }
-      barra.status = houveFalha ? 'error' : 'finished';
-      barra.helperText = houveFalha ? 'Não foi possível concluir. Confira a mensagem da operação.' : 'Operação finalizada. Confira o resultado.';
-      retorno = setTimeout(() => { painel.hidden = true; }, houveFalha ? 5000 : 1500);
+      if (falhou) estado.falha = mensagem || 'Não foi possível concluir a operação. Tente novamente.';
+      if (operacoes.size) { atualizarAjuda(); return; }
+      if (estado.busyOriginal === null) regiao.removeAttribute('aria-busy');
+      else regiao.setAttribute('aria-busy', estado.busyOriginal);
+      barra.status = estado.falha ? 'error' : 'finished';
+      barra.helperText = estado.falha || 'Operação concluída.';
+      // Erros ficam visíveis para permitir leitura e recuperação.
+      if (!estado.falha) estado.retorno = setTimeout(() => {
+        estado.dispensado = true;
+        painel.hidden = true;
+        const ids = (regiao.getAttribute('aria-describedby') || '').split(/\s+/).filter((id) => id && id !== painel.id);
+        if (ids.length) regiao.setAttribute('aria-describedby', ids.join(' '));
+        else regiao.removeAttribute('aria-describedby');
+      }, 3000);
     };
   }
-  async function executar(acao, rotulo) {
-    const terminar = iniciar(rotulo);
-    try { const resultado = await acao(); terminar(); return resultado; }
-    catch (erro) { terminar(true); throw erro; }
+  async function executar(acao, rotulo, regiao) {
+    const terminar = iniciar(rotulo, regiao);
+    try {
+      const resultado = await acao();
+      terminar(resultado?.ok === false, resultado?.mensagem || (resultado?.ok === false ? 'Não foi possível concluir a consulta. Confira os dados e tente novamente.' : ''));
+      return resultado;
+    } catch (erro) { terminar(true, erro.message); throw erro; }
   }
   window.cnjUI = { iniciar, executar, pares };
 
@@ -202,11 +232,18 @@
   // Formulários que navegam para uma resposta do servidor (cadastro/admin/OAuth).
   document.addEventListener('submit', (evento) => {
     const form = evento.target;
-    if (form.hasAttribute('action') && !evento.defaultPrevented) iniciar('Enviando informações');
+    if (form.hasAttribute('action') && !evento.defaultPrevented) iniciar('Enviando informações', form);
   });
   window.addEventListener('pageshow', (evento) => {
     if (!evento.persisted) return;
-    operacoes.clear();
-    if (painel) painel.hidden = true;
+    for (const [regiao, estado] of contextos) {
+      clearTimeout(estado.retorno);
+      if (estado.operacoes.size) {
+        if (estado.busyOriginal === null) regiao.removeAttribute('aria-busy');
+        else regiao.setAttribute('aria-busy', estado.busyOriginal);
+      }
+      estado.operacoes.clear();
+      estado.painel.hidden = true;
+    }
   });
 })();

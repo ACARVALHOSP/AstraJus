@@ -39,3 +39,5 @@ Bundle local: ui-controls.min.js; fontes: ui-controls.entry.js.
 Build com os mesmos pacotes acima: node static/carbon/build-ui-controls.cjs
 CARBON_BUILD_MODULES permite indicar uma pasta node_modules alternativa.
 Licenças: LICENSE-ui-controls.txt e ui-controls.min.js.LEGAL.txt.
+
+ProgressBar 2.66.0: ui-controls.entry.js adapta updated para nome/descrição no Shadow DOM, anúncio do helper em português e aria-busy correto no erro. Reavaliar ao atualizar o pacote.
