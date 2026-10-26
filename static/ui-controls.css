@@ -1,0 +1,11 @@
+.app-choice { display: block; inline-size: 100%; min-inline-size: 0; }
+.app-choice-original-label { display: none; }
+.linha-repetivel > .app-choice, .endereco-card-topo > .app-choice { flex: 0 1 12rem; }
+cds-radio-button-group.app-choice { padding-block: 0.5rem; }
+.cadastro-painel > .cds--form-item:has(> cds-radio-button-group.app-choice) { grid-column: 1 / -1; }
+.app-progresso-global { position: fixed; inset-block-start: 3rem; inset-inline: 0; z-index: 11000; padding: 0.75rem 1rem; background: var(--cds-background, #fff); color: var(--cds-text-primary, #161616); border-block-end: 1px solid var(--cds-border-subtle, #e0e0e0); }
+.app-progresso-global[hidden] { display: none; }
+.app-modal-footer > button { flex: 1; max-inline-size: none; }
+.app-modal cds-modal-body form { display: grid; gap: 1rem; }
+.app-modal .cds--date-picker__input-wrapper { position: relative; }
+select[hidden][aria-hidden="true"] { display: none !important; }

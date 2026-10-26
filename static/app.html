@@ -361,16 +361,7 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 
 .app-espera { display: flex; align-items: center; font-size: var(--fonte-base); color: var(--cds-text-secondary, #525252); }
 .app-espera--inline { margin: 0.25rem 0 0; }
-.espera-spinner {
-  width: 1rem; height: 1rem; margin-right: 0.5rem; display: inline-block;
-  border: 2px solid var(--cds-border-subtle, #c6c6c6);
-  border-top-color: var(--cds-interactive, #0f62fe);
-  border-radius: 50%;
-  animation: girar 0.8s linear infinite;
-}
-@keyframes girar { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
-  .espera-spinner { animation: none; border-top-color: var(--cds-border-subtle, #c6c6c6); }
   .header-busca-painel, .header-notificacoes-painel, .cliente-sugestoes, .pub-oab-combo-menu.cds--menu {
     transition-property: opacity;
   }
@@ -748,6 +739,7 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 <script src="/static/theme.js"></script>
 <link rel="stylesheet" href="/static/theme.css">
 <script src="/static/carbon/theme-components.min.js" defer></script>
+<link rel="stylesheet" href="/static/ui-controls.css">
 </head>
 <body>
 <div id="toast-global" aria-live="polite" style="position:fixed;top:1rem;right:1rem;z-index:9999;width:min(380px,calc(100vw - 2rem));display:flex;flex-direction:column;gap:0.5rem;pointer-events:none"></div>
@@ -2066,6 +2058,8 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <script src="/static/carbon/flatpickr-l10n-pt.js"></script>
 <script src="/static/carbon/flatpickr-rangePlugin.js"></script>
 <script src="/static/carbon/oab-components.min.js" defer></script>
+<script src="/static/carbon/ui-controls.min.js" defer></script>
+<script src="/static/ui-controls.js" defer></script>
 <script src="/static/app.js" defer></script>
 <script src="/static/carbon/search-components.min.js" defer></script>
 <script src="/static/search-fields.js" defer></script>

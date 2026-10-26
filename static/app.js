@@ -62,7 +62,7 @@ function registrarSalvamento(form, salvar) {
 
 function formulariosPendentes(raiz = document) {
   return [...formulariosProtegidos.keys()].filter((form) => raiz.contains(form) &&
-    !form.closest(".fluxo-pagina:not(.is-visible)") && formularioAlterado(form));
+    !form.closest(".fluxo-pagina:not(.is-visible), .app-modal:not(.is-visible)") && formularioAlterado(form));
 }
 
 function revelarFormulario(form) {
@@ -130,7 +130,11 @@ class ClienteMCP {
     this.proximoId = 1;
   }
 
-  async _enviar(corpo, { comResposta = true, podeReiniciar = true } = {}) {
+  async _enviar(...args) {
+    return window.cnjUI.executar(() => this._enviarSemProgresso(...args), "Consultando informações");
+  }
+
+  async _enviarSemProgresso(corpo, { comResposta = true, podeReiniciar = true } = {}) {
     const headers = {
       "Content-Type": "application/json",
       Accept: "application/json, text/event-stream",
@@ -321,7 +325,6 @@ function mostrarEspera(container, botao, titulo) {
   // O cronômetro fica num span aria-hidden para não re-anunciar a cada segundo em leitores de tela
   const cronometro = el("span", { "aria-hidden": "true" });
   const texto = el("p", { class: "app-espera" }, [
-    el("span", { class: "espera-spinner", "aria-hidden": "true" }),
     `${titulo}…`,
     cronometro,
   ]);
@@ -1735,7 +1738,11 @@ async function carregarMonitoramentos() {
   }
 }
 
-async function carregarStatusIntegracoes() {
+async function carregarStatusIntegracoes(...args) {
+  return window.cnjUI.executar(() => carregarStatusIntegracoesSemProgresso(...args), "Verificando integrações");
+}
+
+async function carregarStatusIntegracoesSemProgresso() {
   const seloGoogle = document.getElementById("integracao-google-status");
   const seloAsaas = document.getElementById("integracao-asaas-status");
   const resultado = document.getElementById("integracoes-resultado");
@@ -1787,7 +1794,11 @@ document.getElementById("integracoes-atualizar").addEventListener("click", carre
 // As árvores (Vara/Classe/Assunto) e a lista de Magistrados vêm de endpoints HTTP simples
 // (não tools MCP - são só suporte de UI, ver server.py). Usam o mesmo token Bearer do /mcp.
 
-async function _buscarJson(url) {
+async function _buscarJson(...args) {
+  return window.cnjUI.executar(() => _buscarJsonSemProgresso(...args), "Consultando informações");
+}
+
+async function _buscarJsonSemProgresso(url) {
   if (!cliente) throw new ErroMCP(401, "Conecte-se primeiro.");
   const resposta = await fetch(url, { headers: { Authorization: `Bearer ${cliente.token}` } });
   if (!resposta.ok) {
@@ -1797,7 +1808,11 @@ async function _buscarJson(url) {
   return resposta.json();
 }
 
-async function _enviarJson(url, corpo, metodo = "POST") {
+async function _enviarJson(...args) {
+  return window.cnjUI.executar(() => _enviarJsonSemProgresso(...args), "Salvando informações");
+}
+
+async function _enviarJsonSemProgresso(url, corpo, metodo = "POST") {
   if (!cliente) throw new ErroMCP(401, "Conecte-se primeiro.");
   const resposta = await fetch(url, {
     method: metodo,
@@ -2123,13 +2138,18 @@ function abrirModal(id) {
   if (!secao || secao.classList.contains("is-visible")) return;
   const origem = document.activeElement;
   const anterior = secoesAbertas.at(-1)?.secao;
-  if (anterior) anterior.after(secao);
+  if (secao.matches("cds-modal.app-modal")) secao.open = true;
+  else if (anterior && !anterior.matches("cds-modal.app-modal")) anterior.after(secao);
   else document.getElementById("conteudo").prepend(secao);
   secoesAbertas.push({ secao, origem });
+  if (secao.matches("cds-modal.app-modal")) {
+    secao.style.zIndex = String(9000 + secoesAbertas.length);
+    if (anterior) anterior.inert = true;
+  }
   secao.classList.add("is-visible");
   secao.tabIndex = -1;
   for (const form of secao.querySelectorAll("form")) marcarFormularioSalvo(form, true);
-  secao.focus();
+  if (!secao.matches("cds-modal.app-modal")) secao.focus();
 }
 
 async function fecharModal(id) {
@@ -2139,6 +2159,11 @@ async function fecharModal(id) {
   const indice = secoesAbertas.findIndex((item) => item.secao === secao);
   const entrada = indice >= 0 ? secoesAbertas.splice(indice, 1)[0] : null;
   secao.classList.remove("is-visible");
+  if (secao.matches("cds-modal.app-modal")) secao.open = false;
+  secao.style.zIndex = "";
+  secao.inert = false;
+  const anterior = secoesAbertas.at(-1)?.secao;
+  if (anterior) anterior.inert = false;
   if (entrada?.origem?.isConnected && entrada.origem.getClientRects().length) entrada.origem.focus();
   return true;
 }
@@ -2155,6 +2180,8 @@ document.addEventListener("click", (ev) => {
   const alvo = ev.target.closest("[data-fechar-modal]");
   if (alvo) fecharModal(alvo.dataset.fecharModal);
 });
+
+window.cnjUI.fecharModal = fecharModal;
 
 function escolherSaidaEdicao() {
   return new Promise((resolve) => {
@@ -3522,7 +3549,11 @@ function _criarGrupoSites(prefixo) {
 // terceiro, e indo pelo nosso servidor isso deixa de importar). Devolve {ok: true, dados} ou
 // {ok: false, motivo}, distinguindo "CEP não existe" de falha de rede (sempre registrada no
 // console, já que o motivo real não aparece pra quem está usando o formulário).
-async function _buscarCep(cep) {
+async function _buscarCep(...args) {
+  return window.cnjUI.executar(() => _buscarCepSemProgresso(...args), "Consultando CEP");
+}
+
+async function _buscarCepSemProgresso(cep) {
   const digitos = (cep || "").replace(/\D/g, "");
   if (digitos.length !== 8) return { ok: false, motivo: "formato" };
   try {
