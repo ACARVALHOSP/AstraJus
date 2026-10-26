@@ -827,7 +827,8 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 
 
 /* Formulário de lançamento: agrupamento e refluxo da prévia aprovada. */
-#modal-honorario .fluxo-pagina-container { max-inline-size: 48rem; }
+#modal-honorario cds-modal-body form { gap: var(--cds-spacing-06, 1.5rem); }
+#modal-honorario .app-modal-footer > button { min-block-size: 4rem; }
 #form-honorario { display: grid; gap: var(--cds-spacing-06, 1.5rem); }
 .lancamento-grupo { display: grid; gap: var(--cds-spacing-05, 1rem); border-block-end: 1px solid var(--cds-border-subtle); padding-block-end: var(--cds-spacing-06, 1.5rem); min-inline-size: 0; }
 .lancamento-subtitulo { font-size: var(--cds-heading-compact-01-font-size, 1rem); font-weight: var(--cds-heading-compact-01-font-weight, 600); line-height: var(--cds-heading-compact-01-line-height, 1.375); margin: 0; }

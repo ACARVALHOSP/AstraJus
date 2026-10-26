@@ -239,17 +239,23 @@
   });
 
   // Preserva IDs e botões usados pelos fluxos de atividade e confirmação.
-  for (const id of ['modal-atividade', 'modal-confirmar', 'modal-edicao-pendente']) {
+  for (const id of ['modal-atividade', 'modal-confirmar', 'modal-edicao-pendente', 'modal-honorario']) {
     const original = document.getElementById(id);
     if (!original) continue;
     const modal = document.createElement('cds-modal');
     modal.id = id;
     modal.className = 'app-modal';
-    modal.setAttribute('size', id === 'modal-confirmar' ? 'xs' : 'sm');
+    modal.setAttribute('size', id === 'modal-confirmar' ? 'xs' : id === 'modal-honorario' ? 'md' : 'sm');
+    if (id === 'modal-honorario') modal.setAttribute('has-scrolling-content', '');
     modal.setAttribute('prevent-close-on-click-outside', '');
-    if (id !== 'modal-atividade') modal.setAttribute('alert', '');
+    if (id === 'modal-confirmar' || id === 'modal-edicao-pendente') modal.setAttribute('alert', '');
     const titulo = original.querySelector('.fluxo-pagina-header__heading');
     const header = document.createElement('cds-modal-header');
+    if (id === 'modal-honorario') {
+      const label = document.createElement('cds-modal-label');
+      label.textContent = 'Financeiro';
+      header.append(label);
+    }
     const heading = document.createElement('cds-modal-heading');
     heading.id = titulo.id;
     heading.textContent = titulo.textContent;
@@ -272,6 +278,18 @@
     modal.append(header, body, footer);
     original.replaceWith(modal);
     if (id === 'modal-atividade') body.querySelector('#atividade-titulo')?.setAttribute('data-modal-primary-focus', '');
+    if (id === 'modal-honorario') {
+      body.querySelector('#honorario-descricao').setAttribute('data-modal-primary-focus', '');
+      modal.addEventListener('keydown', (evento) => {
+        const campo = body.querySelector('#honorario-vencimento');
+        if (evento.key === 'Escape' && campo._flatpickr?.isOpen) {
+          evento.preventDefault();
+          evento.stopImmediatePropagation();
+          campo._flatpickr.close();
+          campo.focus();
+        }
+      }, { capture: true });
+    }
     modal.addEventListener('cds-modal-beingclosed', (evento) => {
       evento.preventDefault();
       if (id === 'modal-confirmar') document.getElementById('modal-confirmar-cancelar').click();
