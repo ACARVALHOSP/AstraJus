@@ -1413,7 +1413,8 @@ class FeedbackEnvioTest(_RegistroTemporario):
     def test_pagina_carrega_script_externo_e_barra(self):
         corpo = self._pagina_email()
         self.assertIn(b'<script src="/static/cadastro.js" defer></script>', corpo)
-        self.assertIn(b'class="enviando-barra"', corpo)
+        self.assertIn(b'src="/static/ui-controls.js"', corpo)
+        self.assertIn(b'src="/static/carbon/ui-controls.min.js"', corpo)
 
     def test_nao_ha_script_inline_na_pagina(self):
         corpo = self._pagina_email()
@@ -1493,7 +1494,10 @@ class PainelWebTest(_RegistroTemporario):
     def test_search_carbon_assets_publicos_sem_cache(self):
         for caminho, tipo in (("/static/search-fields.js", b"javascript"),
                               ("/static/search-fields.css", b"text/css"),
-                              ("/static/carbon/search-components.min.js", b"javascript")):
+                              ("/static/carbon/search-components.min.js", b"javascript"),
+                              ("/static/ui-controls.js", b"javascript"),
+                              ("/static/ui-controls.css", b"text/css"),
+                              ("/static/carbon/ui-controls.min.js", b"javascript")):
             with self.subTest(caminho=caminho):
                 status, corpo, cab = _chamar_asgi(self.mw, "GET", caminho)
                 self.assertEqual(status, 200)
