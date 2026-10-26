@@ -15,7 +15,7 @@ class Element {
 }
 class Document extends Element {
   constructor() { super(); this.body = new Element(); }
-  createElement() { return new Element(); }
+  createElement(tag) { const el = new Element(); el.tagName = tag; return el; }
   getElementById() { return null; }
   querySelector() { return null; }
 }
@@ -46,5 +46,22 @@ vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, 'static/ui-
   await ui.executar(async () => ({ ok: true }), 'CEP', region); assert.equal(bar.status, 'finished');
   const finishOther = ui.iniciar('Salvar', other); assert.notEqual(other.beforeElement, region.beforeElement);
   finishOther();
-  console.log('PASS: rótulo estável, indeterminação, concorrência, regiões, ARIA, falha retornada/rejeitada e recuperação');
+  assert.equal(ui.tipoRequisicao('/clientes'), 'interno');
+  assert.equal(ui.tipoRequisicao('/publicacoes-oab/status', 'POST'), 'interno');
+  assert.equal(ui.tipoRequisicao('/publicacoes-oab/capturar-manual', 'POST'), 'externo');
+  assert.equal(ui.tipoRequisicao('/cjpg-arvore/magistrados'), 'interno');
+  assert.equal(ui.tipoRequisicao('/cep/01001000'), 'externo');
+  assert.equal(ui.tipoRequisicao('/pagamentos?status=PENDING'), 'externo');
+  const pageRegion = new Element();
+  const pageEnd = ui.iniciar('Processos', pageRegion, 'pagina');
+  const skeleton = pageRegion.beforeElement.children[0];
+  assert.equal(skeleton.children[0].tagName, 'cds-skeleton-text');
+  const internalEnd = ui.iniciar('Salvar', pageRegion, 'interno');
+  const loading = pageRegion.beforeElement.children[0];
+  assert.equal(loading.tagName, 'cds-inline-loading');
+  pageEnd(); assert.equal(pageRegion.getAttribute('aria-busy'), 'true');
+  internalEnd(); assert.equal(pageRegion.getAttribute('aria-busy'), null);
+  assert.equal(loading.status, 'finished');
+  assert.equal(skeleton.children.length, 4);
+  console.log('PASS: feedback por origem, skeleton, loading, concorrência entre tipos; rótulo estável, indeterminação, concorrência, regiões, ARIA, falha retornada/rejeitada e recuperação');
 })().catch(error => { console.error(error); process.exitCode = 1; });

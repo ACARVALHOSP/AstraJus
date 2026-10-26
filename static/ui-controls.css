@@ -9,3 +9,7 @@ cds-radio-button-group.app-choice { padding-block: 0.5rem; }
 .app-modal cds-modal-body form { display: grid; gap: 1rem; }
 .app-modal .cds--date-picker__input-wrapper { position: relative; }
 select[hidden][aria-hidden="true"] { display: none !important; }
+
+.app-feedback--pagina { max-inline-size: none; border: 0; padding: var(--cds-spacing-05, 1rem); }
+.app-feedback--pagina cds-skeleton-text { display: block; margin-block-end: var(--cds-spacing-05, 1rem); }
+.app-feedback--interno { border: 0; padding: var(--cds-spacing-03, 0.5rem) 0; }

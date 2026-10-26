@@ -41,3 +41,5 @@ CARBON_BUILD_MODULES permite indicar uma pasta node_modules alternativa.
 Licenças: LICENSE-ui-controls.txt e ui-controls.min.js.LEGAL.txt.
 
 ProgressBar 2.66.0: ui-controls.entry.js adapta updated para nome/descrição no Shadow DOM, anúncio do helper em português e aria-busy correto no erro. Reavaliar ao atualizar o pacote.
+
+Feedback por contexto: o bundle também contém SkeletonText e InlineLoading. A API operacao recebe tipo pagina/interno/externo; wrappers HTTP e MCP informam a origem e os loaders de página identificam a região. Regressões: node test_progress_controls.cjs e node test_feedback_requests.cjs.

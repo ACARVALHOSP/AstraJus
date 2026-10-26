@@ -6,20 +6,35 @@
   const indiceSelect = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'selectedIndex');
   let sequencia = 0;
   const contextos = new Map();
+  const regioesOcupadas = new WeakMap();
   function regiaoAtual() {
     const foco = document.activeElement;
     return foco?.closest('form, [role="tabpanel"], cds-modal-body') ||
       [...document.querySelectorAll('[role="tabpanel"]')].filter((el) => el.getClientRects().length).at(-1) ||
       document.querySelector('main') || document.body;
   }
-  function iniciar(rotulo = 'Consultando informações', regiao = regiaoAtual()) {
-    let estado = contextos.get(regiao);
+  function iniciar(rotulo = 'Consultando informações', regiao = regiaoAtual(), tipo = 'externo') {
+    regiao ||= regiaoAtual();
+    const grupos = contextos.get(regiao) || new Map();
+    contextos.set(regiao, grupos);
+    let estado = grupos.get(tipo);
     if (!estado) {
       const painel = document.createElement('div');
-      painel.className = 'app-progresso-global';
+      painel.className = `app-progresso-global app-feedback--${tipo}`;
       painel.id = `progresso-${++sequencia}`;
-      const barra = document.createElement('cds-progress-bar');
-      barra.setAttribute('size', 'small');
+      const barra = document.createElement(tipo === 'externo' ? 'cds-progress-bar' : tipo === 'pagina' ? 'div' : 'cds-inline-loading');
+      if (tipo === 'externo') barra.setAttribute('size', 'small');
+      if (tipo === 'interno') barra.setAttribute('controlled', '');
+      if (tipo === 'pagina') {
+        barra.setAttribute('role', 'status');
+        barra.setAttribute('aria-label', 'Carregando informações');
+        for (let linha = 0; linha < 4; linha++) {
+          const esqueleto = document.createElement('cds-skeleton-text');
+          esqueleto.setAttribute('width', linha % 2 ? '80%' : '95%');
+          esqueleto.setAttribute('aria-hidden', 'true');
+          barra.append(esqueleto);
+        }
+      }
       painel.append(barra);
       if (regiao === document.body) regiao.prepend(painel);
       else regiao.before(painel);
@@ -28,12 +43,14 @@
       // Acompanha a visibilidade da própria aba, inclusive durante consultas de fundo.
       new MutationObserver(() => { painel.hidden = regiao.hidden || estado.dispensado; })
         .observe(regiao, { attributes: true, attributeFilter: ['hidden'] });
-      contextos.set(regiao, estado);
+      grupos.set(tipo, estado);
     }
     const { painel, barra, operacoes } = estado;
     if (!operacoes.size) {
       estado.falha = '';
-      estado.busyOriginal = regiao.getAttribute('aria-busy');
+      const ocupado = regioesOcupadas.get(regiao) || { quantidade: 0, original: regiao.getAttribute('aria-busy') };
+      ocupado.quantidade++;
+      regioesOcupadas.set(regiao, ocupado);
       barra.label = rotulo;
     }
     clearTimeout(estado.retorno);
@@ -45,20 +62,35 @@
     const descricoes = new Set((regiao.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean));
     descricoes.add(painel.id);
     regiao.setAttribute('aria-describedby', [...descricoes].join(' '));
-    barra.value = undefined;
+    if (tipo === 'externo') barra.value = undefined;
     barra.status = 'active';
+    if (tipo === 'interno') {
+      barra.textContent = rotulo + '…';
+      barra.setAttribute('icon-description', rotulo);
+    }
     const atualizarAjuda = () => {
-      barra.helperText = operacoes.size > 1 ? `${operacoes.size} operações em andamento. Aguarde.` : 'Aguarde. A operação está em andamento.';
+      const ajuda = operacoes.size > 1 ? `${operacoes.size} operações em andamento. Aguarde.` : 'Aguarde. A operação está em andamento.';
+      if (tipo === 'externo') barra.helperText = ajuda;
+      else if (tipo === 'interno') barra.textContent = operacoes.size > 1 ? ajuda : barra.label + '…';
     };
     atualizarAjuda();
     return (falhou = false, mensagem = '') => {
       if (!operacoes.delete(id)) return;
       if (falhou) estado.falha = mensagem || 'Não foi possível concluir a operação. Tente novamente.';
       if (operacoes.size) { atualizarAjuda(); return; }
-      if (estado.busyOriginal === null) regiao.removeAttribute('aria-busy');
-      else regiao.setAttribute('aria-busy', estado.busyOriginal);
+      const ocupado = regioesOcupadas.get(regiao);
+      if (ocupado && --ocupado.quantidade === 0) {
+        if (ocupado.original === null) regiao.removeAttribute('aria-busy');
+        else regiao.setAttribute('aria-busy', ocupado.original);
+        regioesOcupadas.delete(regiao);
+      }
       barra.status = estado.falha ? 'error' : 'finished';
       barra.helperText = estado.falha || 'Operação concluída.';
+      if (tipo === 'interno') {
+        barra.textContent = barra.helperText;
+        barra.setAttribute('icon-description', estado.falha ? 'Falha' : 'Concluído');
+      }
+      if (tipo === 'pagina') { estado.dispensado = true; painel.hidden = true; }
       // Erros ficam visíveis para permitir leitura e recuperação.
       if (!estado.falha) estado.retorno = setTimeout(() => {
         estado.dispensado = true;
@@ -69,15 +101,25 @@
       }, 3000);
     };
   }
-  async function executar(acao, rotulo, regiao) {
-    const terminar = iniciar(rotulo, regiao);
+  async function executar(acao, rotulo, regiao, tipo = 'externo') {
+    const terminar = iniciar(rotulo, regiao, tipo);
     try {
       const resultado = await acao();
-      terminar(resultado?.ok === false, resultado?.mensagem || (resultado?.ok === false ? 'Não foi possível concluir a consulta. Confira os dados e tente novamente.' : ''));
+      const falhou = resultado?.ok === false || Boolean(resultado?.erro);
+      terminar(falhou, resultado?.mensagem || (falhou ? 'Não foi possível concluir a consulta. Confira os dados e tente novamente.' : ''));
       return resultado;
     } catch (erro) { terminar(true, erro.message); throw erro; }
   }
-  window.cnjUI = { iniciar, executar, pares };
+  function tipoRequisicao(url, metodo = 'GET') {
+    const caminho = url.split('?')[0];
+    return /^\/(pagamentos|cep)(\/|$)/.test(caminho) ||
+      /\/(evento-calendar|capa\/atualizar|capturar-manual)$/.test(caminho) ||
+      (caminho === '/casos' && metodo === 'POST') ? 'externo' : 'interno';
+  }
+  function operacao(acao, { tipo = 'interno', rotulo = 'Processando informações', regiao } = {}) {
+    return executar(acao, rotulo, regiao, tipo);
+  }
+  window.cnjUI = { iniciar, executar, operacao, tipoRequisicao, pares };
 
   function rotulo(select) {
     const nome = select.getAttribute('aria-label') || select.labels?.[0]?.textContent.trim() ||
@@ -232,18 +274,23 @@
   // Formulários que navegam para uma resposta do servidor (cadastro/admin/OAuth).
   document.addEventListener('submit', (evento) => {
     const form = evento.target;
-    if (form.hasAttribute('action') && !evento.defaultPrevented) iniciar('Enviando informações', form);
+    if (form.hasAttribute('action') && !evento.defaultPrevented) iniciar('Enviando informações', form, /google/.test(form.getAttribute('action')) ? 'externo' : 'interno');
   });
   window.addEventListener('pageshow', (evento) => {
     if (!evento.persisted) return;
-    for (const [regiao, estado] of contextos) {
-      clearTimeout(estado.retorno);
-      if (estado.operacoes.size) {
-        if (estado.busyOriginal === null) regiao.removeAttribute('aria-busy');
-        else regiao.setAttribute('aria-busy', estado.busyOriginal);
+    for (const [regiao, grupos] of contextos) {
+      const ocupado = regioesOcupadas.get(regiao);
+      if (ocupado) {
+        if (ocupado.original === null) regiao.removeAttribute('aria-busy');
+        else regiao.setAttribute('aria-busy', ocupado.original);
+        regioesOcupadas.delete(regiao);
       }
-      estado.operacoes.clear();
-      estado.painel.hidden = true;
+      for (const estado of grupos.values()) {
+        clearTimeout(estado.retorno);
+        estado.operacoes.clear();
+        estado.dispensado = true;
+        estado.painel.hidden = true;
+      }
     }
   });
 })();

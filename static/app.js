@@ -131,7 +131,7 @@ class ClienteMCP {
   }
 
   async _enviar(...args) {
-    return window.cnjUI.executar(() => this._enviarSemProgresso(...args), "Consultando informações");
+    return this._enviarSemProgresso(...args);
   }
 
   async _enviarSemProgresso(corpo, { comResposta = true, podeReiniciar = true } = {}) {
@@ -222,7 +222,14 @@ class ClienteMCP {
     await this._enviar({ jsonrpc: "2.0", method: "notifications/initialized" }, { comResposta: false });
   }
 
-  async chamarTool(nome, argumentos) {
+  async chamarTool(nome, argumentos, feedback = {}) {
+    const externas = new Set(['consultar_processo_datajud', 'consultar_publicacoes_djen', 'buscar_feriados_forenses', 'baixar_certidao_djen', 'perfil_decisorio_magistrado', 'consultar_jurimetria_cjpg']);
+    return window.cnjUI.operacao(() => this._chamarToolSemFeedback(nome, argumentos), {
+      tipo: externas.has(nome) ? 'externo' : 'interno', rotulo: externas.has(nome) ? 'Consultando fonte externa' : 'Processando solicitação', ...feedback,
+    });
+  }
+
+  async _chamarToolSemFeedback(nome, argumentos) {
     if (!this.sessionId) await this._iniciar();
     const resultado = await this._enviar({
       jsonrpc: "2.0",
@@ -230,6 +237,7 @@ class ClienteMCP {
       method: "tools/call",
       params: { name: nome, arguments: argumentos },
     });
+    if (resultado?.isError) throw new ErroMCP(200, resultado.content?.[0]?.text || "Não foi possível concluir a solicitação.");
     const item = resultado && resultado.content && resultado.content[0];
     if (!item || typeof item.text !== "string") {
       throw new ErroMCP(200, "Resposta vazia do servidor.");
@@ -506,7 +514,7 @@ async function validarToken(valor, lembrar, navegar = true) {
   limpar(resultado);
   try {
     const candidato = new ClienteMCP(valor);
-    await candidato._iniciar(); // Autentica no servidor, sem consultar APIs judiciais.
+    await window.cnjUI.operacao(() => candidato._iniciar(), { tipo: "interno", rotulo: "Verificando acesso", regiao: form }); // Autentica no servidor, sem consultar APIs judiciais.
     if (tentativa !== geracaoConexao) return;
     cliente = candidato;
     try {
@@ -778,14 +786,14 @@ async function selecionarAba(alvo, { registrarHistorico = true } = {}) {
     alvo.painel.focus();
   } else alvo.botao.focus();
   if (alvo.painel.id === "aba-historico") { renderizarListaRapida(); renderizarCasosFavoritos(); }
-  if (alvo.painel.id === "aba-monitoramentos") carregarMonitoramentos();
-  if (alvo.painel.id === "aba-contatos") { voltarParaContatos(); carregarContatos(); }
-  if (alvo.painel.id === "aba-casos") carregarCasosPagina();
-  if (alvo.painel.id === "aba-atividades") carregarAtividadesAbertas();
-  if (alvo.painel.id === "aba-publicacoes-oab") carregarPublicacoesOab();
-  if (alvo.painel.id === "aba-integracoes") carregarStatusIntegracoes();
-  if (alvo.painel.id === "aba-financeiro") carregarLancamentos();
-  if (alvo.painel.id === "aba-pagamentos") carregarPagamentos();
+  if (alvo.painel.id === "aba-monitoramentos") carregarMonitoramentos("pagina");
+  if (alvo.painel.id === "aba-contatos") { voltarParaContatos(); carregarContatos("pagina"); }
+  if (alvo.painel.id === "aba-casos") carregarCasosPagina("pagina");
+  if (alvo.painel.id === "aba-atividades") carregarAtividadesAbertas("pagina");
+  if (alvo.painel.id === "aba-publicacoes-oab") carregarPublicacoesOab("pagina");
+  if (alvo.painel.id === "aba-integracoes") carregarStatusIntegracoes("pagina");
+  if (alvo.painel.id === "aba-financeiro") carregarLancamentos("pagina");
+  if (alvo.painel.id === "aba-pagamentos") carregarPagamentos("pagina");
   return true;
 }
 
@@ -1784,12 +1792,12 @@ function cartaoMonitoramento(m) {
 
 const resultadoMonitoramentos = document.getElementById("resultado-monitoramentos");
 
-async function carregarMonitoramentos() {
+async function carregarMonitoramentos(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("resultado-monitoramentos") };
   if (!exigirCliente(resultadoMonitoramentos)) return;
   limpar(resultadoMonitoramentos);
-  resultadoMonitoramentos.appendChild(el("p", { class: "app-espera" }, ["Carregando…"]));
   try {
-    const dados = await cliente.chamarTool("listar_monitoramentos", {});
+    const dados = await cliente.chamarTool("listar_monitoramentos", {}, feedback);
     limpar(resultadoMonitoramentos);
     if (dados.erro) {
       resultadoMonitoramentos.appendChild(notificacao("error", "Não foi possível carregar", dados.mensagem));
@@ -1808,8 +1816,10 @@ async function carregarMonitoramentos() {
   }
 }
 
-async function carregarStatusIntegracoes(...args) {
-  return window.cnjUI.executar(() => carregarStatusIntegracoesSemProgresso(...args), "Verificando integrações", document.getElementById("integracoes-resultado"));
+async function carregarStatusIntegracoes(tipo = "interno") {
+  return window.cnjUI.operacao(() => carregarStatusIntegracoesSemProgresso(), {
+    tipo: tipo === "pagina" ? "pagina" : "interno", rotulo: "Verificando integrações", regiao: document.getElementById("integracoes-resultado"),
+  });
 }
 
 async function carregarStatusIntegracoesSemProgresso() {
@@ -1865,8 +1875,10 @@ document.getElementById("integracoes-atualizar").addEventListener("click", carre
 // As árvores (Vara/Classe/Assunto) e a lista de Magistrados vêm de endpoints HTTP simples
 // (não tools MCP - são só suporte de UI, ver server.py). Usam o mesmo token Bearer do /mcp.
 
-async function _buscarJson(...args) {
-  return window.cnjUI.executar(() => _buscarJsonSemProgresso(...args), "Consultando informações");
+async function _buscarJson(url, feedback = {}) {
+  return window.cnjUI.operacao(() => _buscarJsonSemProgresso(url), {
+    tipo: window.cnjUI.tipoRequisicao(url), rotulo: "Consultando informações", ...feedback,
+  });
 }
 
 async function _buscarJsonSemProgresso(url) {
@@ -1879,8 +1891,10 @@ async function _buscarJsonSemProgresso(url) {
   return resposta.json();
 }
 
-async function _enviarJson(...args) {
-  return window.cnjUI.executar(() => _enviarJsonSemProgresso(...args), "Salvando informações");
+async function _enviarJson(url, corpo, metodo = "POST") {
+  return window.cnjUI.operacao(() => _enviarJsonSemProgresso(url, corpo, metodo), {
+    tipo: window.cnjUI.tipoRequisicao(url, metodo), rotulo: "Enviando informações",
+  });
 }
 
 async function _enviarJsonSemProgresso(url, corpo, metodo = "POST") {
@@ -2526,7 +2540,8 @@ async function abrirNovoContato() {
   document.getElementById("contato-nome").focus();
 }
 
-async function abrirContato(clienteId) {
+async function abrirContato(clienteId, tipoFeedback = "pagina") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("contatos-vista-detalhe") };
   if (!(await permitirSaidaEdicao())) return;
   document.getElementById("contatos-vista-lista").hidden = true;
   document.getElementById("contatos-vista-detalhe").hidden = false;
@@ -2536,7 +2551,7 @@ async function abrirContato(clienteId) {
   const resultadoContatoCadastro = document.getElementById("resultado-contato-cadastro");
   limpar(resultadoContatoCadastro);
   try {
-    const cliente_registro = await _buscarJson(`/clientes/${clienteId}`);
+    const cliente_registro = await _buscarJson(`/clientes/${clienteId}`, feedback);
     document.getElementById("contato-detalhe-nome").textContent = cliente_registro.nome ? formatarNomeExibicao(cliente_registro.nome) : "(sem nome)";
     document.getElementById("contato-nome").value = cliente_registro.nome || "";
     document.getElementById("contato-cpf-cnpj").value = cliente_registro.cpf_cnpj || "";
@@ -2569,22 +2584,22 @@ function _selecionarSubabaContato(nome) {
     botao.tabIndex = ativa ? 0 : -1;
     document.getElementById(`contato-subaba-${aba}`).hidden = !ativa;
   }
-  if (nome === "financeiro") carregarFinanceiroContato();
+  if (nome === "financeiro") carregarFinanceiroContato("pagina");
 }
 
 let _financeiroContatoRequisicao = 0;
 
-async function carregarFinanceiroContato() {
+async function carregarFinanceiroContato(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("contato-financeiro") };
   const container = document.getElementById("contato-financeiro");
   const clienteId = document.getElementById("form-contato-cadastro").dataset.clienteId;
   const requisicao = ++_financeiroContatoRequisicao;
   limpar(container);
   if (!clienteId) return;
-  container.appendChild(el("p", { class: "app-espera", texto: "Carregando financeiro…" }));
   const atual = () => requisicao === _financeiroContatoRequisicao
     && document.getElementById("form-contato-cadastro").dataset.clienteId === clienteId;
   try {
-    const [{ lancamentos }, { casos }] = await Promise.all([_buscarJson("/lancamentos"), _buscarJson("/casos")]);
+    const [{ lancamentos }, { casos }] = await Promise.all([_buscarJson("/lancamentos", feedback), _buscarJson("/casos", feedback)]);
     if (!atual()) return;
     limpar(container);
     const itens = (lancamentos || []).filter((item) => item.cliente_id === clienteId);
@@ -2643,7 +2658,6 @@ function _renderizarCasosVinculadosNoContainer(container, clienteId) {
 async function _renderizarProcessosVinculados(clienteId) {
   const container = document.getElementById("contato-processos-vinculados");
   limpar(container);
-  container.appendChild(el("p", { class: "app-espera" }, ["Carregando…"]));
   try {
     const { casos } = await _buscarJson("/casos");
     _cache.casos = casos || [];
@@ -2889,15 +2903,15 @@ function formatarMoeda(valor) {
   return (Number(valor) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-async function carregarLancamentos() {
+async function carregarLancamentos(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-lancamentos") };
   const container = document.getElementById("lista-lancamentos");
   limpar(container);
-  container.appendChild(el("p", { class: "app-espera", texto: "Carregando…" }));
   try {
     const [{ lancamentos }] = await Promise.all([
-      _buscarJson("/lancamentos"),
-      _cache.clientes.length ? Promise.resolve() : _buscarJson("/clientes").then((r) => { _cache.clientes = r.clientes || []; }),
-      _cache.casos.length ? Promise.resolve() : _buscarJson("/casos").then((r) => { _cache.casos = r.casos || []; }),
+      _buscarJson("/lancamentos", feedback),
+      _cache.clientes.length ? Promise.resolve() : _buscarJson("/clientes", feedback).then((r) => { _cache.clientes = r.clientes || []; }),
+      _cache.casos.length ? Promise.resolve() : _buscarJson("/casos", feedback).then((r) => { _cache.casos = r.casos || []; }),
     ]);
     _renderizarLancamentos(lancamentos || []);
   } catch (erro) {
@@ -2998,15 +3012,15 @@ const _ROTULOS_STATUS_PAGAMENTO = {
 };
 const _ROTULOS_TIPO_PAGAMENTO = { BOLETO: "Boleto", PIX: "Pix", UNDEFINED: "A definir" };
 
-async function carregarPagamentos() {
+async function carregarPagamentos(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-pagamentos") };
   const container = document.getElementById("lista-pagamentos");
   const aviso = document.getElementById("pagamentos-aviso-integracao");
   limpar(aviso);
   limpar(container);
-  container.appendChild(el("p", { class: "app-espera", texto: "Carregando…" }));
   try {
     if (!_cache.clientes.length) {
-      const { clientes } = await _buscarJson("/clientes");
+      const { clientes } = await _buscarJson("/clientes", feedback);
       _cache.clientes = clientes || [];
     }
     const params = new URLSearchParams();
@@ -3015,7 +3029,7 @@ async function carregarPagamentos() {
     if (status) params.set("status", status);
     if (clienteId) params.set("cliente_id", clienteId);
     const url = "/pagamentos" + (params.toString() ? `?${params}` : "");
-    const { cobrancas } = await _buscarJson(url);
+    const { cobrancas } = await _buscarJson(url, { ...feedback, tipo: tipoFeedback === "pagina" ? "pagina" : "externo" });
     limpar(container);
     _renderizarPagamentos(cobrancas || []);
   } catch (erro) {
@@ -3309,11 +3323,12 @@ function cartaoPendente(p) {
   return card;
 }
 
-async function carregarPendentes() {
+async function carregarPendentes(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-pendentes") };
   const listaPendentesEl = document.getElementById("lista-pendentes");
   limpar(listaPendentesEl);
   try {
-    const { pendentes } = await _buscarJson("/pendentes");
+    const { pendentes } = await _buscarJson("/pendentes", feedback);
     if (!(pendentes || []).length) {
       listaPendentesEl.appendChild(notificacao("info", "Nenhum processo pendente de triagem"));
     } else {
@@ -3324,14 +3339,14 @@ async function carregarPendentes() {
   }
 }
 
-async function carregarContatos() {
+async function carregarContatos(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-contatos") };
   const listaContatosEl = document.getElementById("lista-contatos");
   if (!exigirCliente(listaContatosEl)) return;
   _construirBarraAZ();
   limpar(listaContatosEl);
-  listaContatosEl.appendChild(el("p", { class: "app-espera" }, ["Carregando…"]));
   try {
-    const { clientes } = await _buscarJson("/clientes");
+    const { clientes } = await _buscarJson("/clientes", feedback);
     _cache.clientes = clientes || [];
     renderizarListaContatos();
   } catch (erro) {
@@ -3340,14 +3355,14 @@ async function carregarContatos() {
   }
 }
 
-async function carregarCasosPagina() {
+async function carregarCasosPagina(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-casos") };
   const listaCasosEl = document.getElementById("lista-casos");
   if (!exigirCliente(listaCasosEl)) return;
   limpar(listaCasosEl);
-  listaCasosEl.appendChild(el("p", { class: "app-espera", role: "status", texto: "Carregando processos…" }));
-  carregarPendentes();
+  carregarPendentes(tipoFeedback);
   try {
-    const [{ clientes }, { casos }] = await Promise.all([_buscarJson("/clientes"), _buscarJson("/casos")]);
+    const [{ clientes }, { casos }] = await Promise.all([_buscarJson("/clientes", feedback), _buscarJson("/casos", feedback)]);
     _cache.clientes = clientes || [];
     _cache.casos = casos || [];
     _renderizarTabelaCasosPagina();
@@ -4967,7 +4982,8 @@ function _paginacaoPubOab(total) {
   ]);
 }
 
-async function carregarPublicacoesOab() {
+async function carregarPublicacoesOab(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-publicacoes-oab") };
   const container = document.getElementById("lista-publicacoes-oab");
   if (!exigirCliente(container)) return;
   const requisicao = ++_pubOabRequisicao;
@@ -4978,7 +4994,7 @@ async function carregarPublicacoesOab() {
   try {
     const query = new URLSearchParams({ pagina: String(_pubOabPagina), tamanho: String(_pubOabTamanho) });
     if (filtroStatus) query.set("status", filtroStatus);
-    const dados = await _buscarJson(`/publicacoes-oab?${query}`);
+    const dados = await _buscarJson(`/publicacoes-oab?${query}`, feedback);
     if (requisicao !== _pubOabRequisicao) return;
     const publicacoes = dados.publicacoes || [], total = dados.total ?? publicacoes.length;
     _pubOabPagina = dados.pagina || Math.min(_pubOabPagina, Math.max(1, Math.ceil(total / _pubOabTamanho)));
@@ -5126,7 +5142,8 @@ function _selecionarSubabaCaso(nome) {
   }
 }
 
-async function abrirCaso(casoId) {
+async function abrirCaso(casoId, tipoFeedback = "pagina") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("caso-vista-detalhe") };
   if (!(await permitirSaidaEdicao())) return false;
   limpar(document.getElementById("atividade-origem"));
   document.getElementById("caso-vista-lista").hidden = true;
@@ -5136,14 +5153,14 @@ async function abrirCaso(casoId) {
   limpar(document.getElementById("lista-atividades"));
   limpar(document.getElementById("resultado-caso-editar"));
   try {
-    const caso = await _buscarJson(`/casos/${casoId}`);
+    const caso = await _buscarJson(`/casos/${casoId}`, feedback);
     _casoDetalheAtual = caso;
     document.getElementById("caso-detalhe-titulo").textContent = caso.titulo ? formatarNomeExibicao(caso.titulo) : "(sem título)";
     const responsavel = document.getElementById("editar-caso-responsavel");
     limpar(responsavel);
     responsavel.appendChild(el("option", {value: "", texto: "Selecione um responsável"}));
     try {
-      const dados = await _buscarJson("/responsaveis");
+      const dados = await _buscarJson("/responsaveis", feedback);
       for (const nome of [...new Set([...(dados.responsaveis || []), caso.responsavel].filter(Boolean))]) {
         responsavel.appendChild(el("option", {value: nome, texto: formatarNomeExibicao(nome)}));
       }
@@ -5157,8 +5174,8 @@ async function abrirCaso(casoId) {
     document.getElementById("form-caso-editar").dataset.casoId = casoId;
     marcarFormularioSalvo(document.getElementById("form-caso-editar"), true);
     limpar(document.getElementById("lista-movimentacoes"));
-    await _carregarCapaProcessos(casoId);
-    await _carregarAtividades(casoId);
+    await _carregarCapaProcessos(casoId, tipoFeedback);
+    await _carregarAtividades(casoId, tipoFeedback);
     return true;
   } catch (erro) {
     document.getElementById("caso-detalhe-titulo").textContent = "Erro ao carregar";
@@ -5167,11 +5184,12 @@ async function abrirCaso(casoId) {
   }
 }
 
-async function _carregarAtividades(casoId) {
+async function _carregarAtividades(casoId, tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-atividades") };
   const lista = document.getElementById("lista-atividades");
   limpar(lista);
   try {
-    const { atividades } = await _buscarJson(`/casos/${casoId}/atividades`);
+    const { atividades } = await _buscarJson(`/casos/${casoId}/atividades`, feedback);
     _renderizarAtividades(casoId, atividades || []);
   } catch (erro) {
     mostrarErro(lista, erro.message);
@@ -5295,9 +5313,10 @@ async function _abrirModalAtividade(casoId, atividade = null, publicacaoHash = "
   abrirModal("modal-atividade");
 }
 
-async function _carregarChecklistAtividade(casoId, aid) {
+async function _carregarChecklistAtividade(casoId, aid, tipoFeedback = "pagina") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("atividade-checklist-lista") };
   try {
-    const { itens } = await _buscarJson(`/casos/${casoId}/atividades/${aid}/checklist`);
+    const { itens } = await _buscarJson(`/casos/${casoId}/atividades/${aid}/checklist`, feedback);
     _renderizarChecklistAtividade(itens || []);
   } catch (erro) {
     mostrarToast("error", "Erro ao carregar checklist", erro.message);
@@ -5401,11 +5420,12 @@ function _siglaTribunal(num) {
   return null;
 }
 
-async function _carregarPublicacoesCaso(casoId) {
+async function _carregarPublicacoesCaso(casoId, tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-publicacoes-caso") };
   const lista = document.getElementById("lista-publicacoes-caso");
   limpar(lista);
   try {
-    const resp = await _buscarJson(`/casos/${casoId}/publicacoes`);
+    const resp = await _buscarJson(`/casos/${casoId}/publicacoes`, feedback);
     const pubs = resp.publicacoes || [];
     if (!pubs.length) {
       lista.textContent = "Nenhuma publicação vinculada a este processo.";
@@ -5459,12 +5479,13 @@ function formatarNumeroCNJ(valor) {
   return String(valor || "").replace(/^(\d{7})(\d{2})(\d{4})(\d)(\d{2})(\d{4})$/, "$1-$2.$3.$4.$5.$6");
 }
 
-async function _carregarCapaProcessos(casoId) {
+async function _carregarCapaProcessos(casoId, tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-capa-processos") };
   const lista = document.getElementById("lista-capa-processos");
   limpar(lista);
   let numeros;
   try {
-    numeros = (await _buscarJson(`/casos/${casoId}`)).processos || [];
+    numeros = (await _buscarJson(`/casos/${casoId}`, feedback)).processos || [];
   } catch (erro) {
     mostrarErro(lista, erro.message);
     return;
@@ -5476,7 +5497,7 @@ async function _carregarCapaProcessos(casoId) {
   const movimentos = [];
   for (const numero of numeros) {
     try {
-      const capa = await _buscarJson(`/casos/${casoId}/processos/${numero}/capa`);
+      const capa = await _buscarJson(`/casos/${casoId}/processos/${numero}/capa`, feedback);
       lista.appendChild(_cardCapaProcesso(casoId, numero, capa));
       movimentos.push(...(capa.movimentos || []));
     } catch (erro) {
@@ -5706,11 +5727,12 @@ const _ROTULO_TIPO_VINCULO = {
   relacionado: "Relacionado",
 };
 
-async function _carregarVinculos(casoId) {
+async function _carregarVinculos(casoId, tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-vinculos") };
   const lista = document.getElementById("lista-vinculos");
   limpar(lista);
   try {
-    const { vinculos } = await _buscarJson(`/casos/${casoId}/vinculos`);
+    const { vinculos } = await _buscarJson(`/casos/${casoId}/vinculos`, feedback);
     _renderizarVinculos(casoId, vinculos || []);
   } catch (erro) {
     mostrarErro(lista, erro.message);
@@ -5851,7 +5873,7 @@ document.getElementById("caso-subaba-atividades-botao").addEventListener("click"
 document.getElementById("caso-subaba-publicacoes-botao").addEventListener("click", () => {
   _selecionarSubabaCaso("publicacoes");
   const casoId = document.getElementById("form-caso-editar").dataset.casoId;
-  if (casoId) _carregarPublicacoesCaso(casoId);
+  if (casoId) _carregarPublicacoesCaso(casoId, "pagina");
 });
 document.getElementById("caso-subaba-movimentacoes-botao").addEventListener("click", () => {
   _selecionarSubabaCaso("movimentacoes");
@@ -5860,7 +5882,7 @@ document.getElementById("caso-subaba-movimentacoes-botao").addEventListener("cli
 document.getElementById("caso-subaba-vinculos-botao").addEventListener("click", () => {
   _selecionarSubabaCaso("vinculos");
   const casoId = document.getElementById("form-caso-editar").dataset.casoId;
-  if (casoId) _carregarVinculos(casoId);
+  if (casoId) _carregarVinculos(casoId, "pagina");
 });
 document.getElementById("btn-buscar-movimentacoes").addEventListener("click", () => {
   const casoId = document.getElementById("form-caso-editar").dataset.casoId;
@@ -6083,7 +6105,8 @@ registrarSalvamento(document.getElementById("form-honorario"), async (evento) =>
 // Revisão transversal usando as mesmas permissões e endpoints do detalhe.
 let _atividadesAbertas = [];
 let _geracaoAtividades = 0;
-async function carregarAtividadesAbertas() {
+async function carregarAtividadesAbertas(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("atividades-lista") };
   const lista = document.getElementById("atividades-lista");
   const status = document.getElementById("atividades-status");
   const geracao = ++_geracaoAtividades;
@@ -6094,7 +6117,7 @@ async function carregarAtividadesAbertas() {
   atualizar.disabled = true;
   status.appendChild(el("p", { role: "status", texto: "Carregando atividades dos processos…" }));
   try {
-    const { casos } = await _buscarJson("/casos");
+    const { casos } = await _buscarJson("/casos", feedback);
     if (!Array.isArray(casos)) throw new Error("Resposta de processos inválida.");
     const resultados = [];
     const falhas = [];
@@ -6104,7 +6127,7 @@ async function carregarAtividadesAbertas() {
       while (indice < casos.length && geracao === _geracaoAtividades) {
         const caso = casos[indice++];
         try {
-          const dados = await _buscarJson(`/casos/${caso.id}/atividades`);
+          const dados = await _buscarJson(`/casos/${caso.id}/atividades`, feedback);
           if (!Array.isArray(dados.atividades)) throw new Error("Resposta de atividades inválida.");
           resultados.push(...dados.atividades.filter((a) => a.status !== "concluida").map((atividade) => ({ caso, atividade })));
         } catch { falhas.push(caso.titulo || "Processo sem título"); }
@@ -6260,7 +6283,7 @@ async function carregarConsultaGlobal() {
   atualizarConsultaGlobal();
   const fontes = [["clientes", "/clientes", "Clientes"], ["casos", "/casos", "Processos"]];
   const respostas = await Promise.allSettled(fontes.map(async ([chave, url]) => {
-    const dados = await _buscarJson(url);
+    const dados = await _buscarJson(url, { tipo: "interno", regiao: document.getElementById("header-busca-resultados") });
     if (!Array.isArray(dados[chave])) throw new Error("Resposta inválida");
     return dados[chave];
   }));
