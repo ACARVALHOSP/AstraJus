@@ -167,6 +167,14 @@
         }
         campo.disabled = select.disabled;
         campo.hidden = eraOculto;
+        if (radio) campo.addEventListener('cds-radio-button-changed', (evento) => {
+          // Normaliza a exclusividade antes de o grupo ler o botão marcado.
+          // Na inicialização por value, o manager pode manter o anterior checked.
+          if (!evento.detail?.checked) return;
+          for (const item of campo.querySelectorAll('cds-radio-button')) {
+            item.checked = item.value === evento.detail.value;
+          }
+        }, { capture: true });
         campo.addEventListener(radio ? 'cds-radio-button-group-changed' : 'cds-dropdown-selected', (evento) => {
           const valor = evento.detail?.value ?? evento.detail?.item?.value ?? campo.value;
           valorSelect.set.call(select, valor);

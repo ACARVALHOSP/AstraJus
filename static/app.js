@@ -3268,28 +3268,65 @@ registrarSalvamento(document.getElementById("form-nova-cobranca"), async (evento
   });
 })();
 
+let _honorarioCarregando = false;
+async function _carregarVinculosHonorario() {
+  if (_honorarioCarregando) return;
+  _honorarioCarregando = true;
+  const salvar = document.querySelector("button[form='form-honorario'][type='submit']");
+  salvar.disabled = true;
+  const resultado = document.getElementById("honorario-carregamento");
+  limpar(resultado);
+  const falhas = [];
+  await Promise.all(["clientes", "casos"].map(async (tipo) => {
+    const select = document.getElementById(tipo === "casos" ? "honorario-caso" : "honorario-cliente");
+    const selecionado = select.value;
+    select.disabled = true;
+    try {
+      if (!_cache[tipo].length) {
+        const dados = await _buscarJson(`/${tipo}`);
+        _cache[tipo] = dados[tipo] || [];
+      }
+      limpar(select);
+      const nome = tipo === "casos" ? "processo" : "cliente";
+      select.appendChild(el("option", { value: "", texto: `— selecione o ${nome} —` }));
+      for (const item of _cache[tipo]) {
+        const titulo = tipo === "casos" ? `${item.numero ? `Processo ${item.numero}` : item.id} — ${formatarNomeExibicao(item.titulo || "Sem título")}` : formatarNomeExibicao(item.nome);
+        select.appendChild(el("option", { value: item.id, texto: titulo }));
+      }
+      if ([...select.options].some((opcao) => opcao.value === selecionado)) select.value = selecionado;
+      if (!_cache[tipo].length) falhas.push(`Nenhum ${nome} cadastrado. Cadastre um ${nome} para continuar.`);
+    } catch {
+      falhas.push(`Não foi possível carregar ${tipo === "casos" ? "os processos" : "os clientes"}. Tente novamente.`);
+    } finally { select.disabled = false; }
+  }));
+  if (falhas.length) {
+    mostrarErro(resultado, falhas.join(" "));
+    resultado.appendChild(el("button", { type: "button", class: "cds--btn cds--btn--tertiary cds--btn--sm", texto: "Tentar novamente", onclick: _carregarVinculosHonorario }));
+  }
+  salvar.disabled = false;
+  _honorarioCarregando = false;
+}
+
 async function _abrirModalHonorario() {
-  if (!_cache.clientes.length) {
-    try { const { clientes } = await _buscarJson("/clientes"); _cache.clientes = clientes || []; } catch { /* segue */ }
-  }
-  if (!_cache.casos.length) {
-    try { const { casos } = await _buscarJson("/casos"); _cache.casos = casos || []; } catch { /* segue */ }
-  }
   document.getElementById("form-honorario").reset();
+  document.getElementById("honorario-valor").setCustomValidity("");
   limpar(document.getElementById("resultado-honorario"));
-
-  const selectCaso = document.getElementById("honorario-caso");
-  limpar(selectCaso);
-  selectCaso.appendChild(el("option", { value: "", texto: "— selecione o processo —" }));
-  for (const c of _cache.casos) selectCaso.appendChild(el("option", { value: c.id, texto: c.titulo ? formatarNomeExibicao(c.titulo) : "(sem título)" }));
-
-  const selectCliente = document.getElementById("honorario-cliente");
-  limpar(selectCliente);
-  selectCliente.appendChild(el("option", { value: "", texto: "— selecione o cliente —" }));
-  for (const c of _cache.clientes) selectCliente.appendChild(el("option", { value: c.id, texto: formatarNomeExibicao(c.nome) }));
-
+  // Preencher opções antes de registrar a base de alterações pendentes.
+  await _carregarVinculosHonorario();
   abrirModal("modal-honorario");
 }
+
+function _valorLancamentoEmReais(texto) {
+  const valor = String(texto).trim();
+  if (!/^(?:\d+|\d{1,3}(?:\.\d{3})+)(?:,\d{1,2})?$/.test(valor)) return null;
+  const numero = Number(valor.replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(numero) && numero > 0 && numero <= Number.MAX_SAFE_INTEGER / 100 ? numero : null;
+}
+
+document.getElementById("honorario-valor").addEventListener("input", (evento) => {
+  const campo = evento.target;
+  campo.setCustomValidity(campo.value && _valorLancamentoEmReais(campo.value) === null ? "Informe um valor maior que zero, como 1.500,00." : "");
+});
 
 function cartaoPendente(p) {
   const d = p.dados || {};
@@ -6046,9 +6083,15 @@ registrarSalvamento(document.getElementById("form-honorario"), async (evento) =>
   evento.preventDefault();
   const botao = document.querySelector("button[form='form-honorario'][type='submit']");
   const resultado = document.getElementById("resultado-honorario");
+  const campoValor = document.getElementById("honorario-valor");
+  if (_valorLancamentoEmReais(campoValor.value) === null) {
+    campoValor.setCustomValidity("Informe um valor maior que zero, como 1.500,00.");
+    campoValor.reportValidity();
+    return;
+  }
   const corpo = {
     vencimento: _ddmmaaaaParaIso(document.getElementById("honorario-vencimento").value),
-    valor: document.getElementById("honorario-valor").value,
+    valor: _valorLancamentoEmReais(document.getElementById("honorario-valor").value),
     descricao: document.getElementById("honorario-descricao").value.trim(),
     recorrente: document.getElementById("honorario-recorrente").checked,
     caso_id: document.getElementById("honorario-caso").value,
@@ -6060,7 +6103,8 @@ registrarSalvamento(document.getElementById("form-honorario"), async (evento) =>
   try {
     await _enviarJson("/lancamentos", corpo);
     marcarFormularioSalvo(document.getElementById("form-honorario"));
-    fecharModal("modal-honorario");
+    await fecharModal("modal-honorario");
+    mostrarToast("success", "Lançamento salvo");
     await carregarLancamentos();
   } catch (erro) {
     mostrarErro(resultado, erro.message);

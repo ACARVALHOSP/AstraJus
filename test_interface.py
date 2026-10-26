@@ -1548,5 +1548,69 @@ class InterfaceTest(unittest.TestCase):
         self.assertFalse(self.errors)
 
 
+    def test_lancamento_reais_envio_e_recuperacao(self):
+        self.connect()
+        self.page.evaluate("_abrirModalHonorario()")
+        self.page.locator("#honorario-descricao").fill("Honorários de teste")
+        self.page.locator("#honorario-responsavel").fill("Ana")
+        self.page.locator("#honorario-vencimento").fill("10/11/2026")
+        self.page.locator("#honorario-descricao").click()
+        for ident, selected in (("honorario-caso", "caso-1"), ("honorario-cliente", "cliente-1")):
+            host = self.page.locator(f'[data-select-id="{ident}"]')
+            host.locator('[role="combobox"]').click()
+            host.locator(f'cds-dropdown-item[value="{selected}"]').click()
+        valor = self.page.locator("#honorario-valor")
+        for invalido in ("0", "-1", "1.50", "1,234", "abc"):
+            valor.fill(invalido)
+            self.assertFalse(valor.evaluate("e => e.checkValidity()"), invalido)
+        valor.fill("1.500,00")
+        self.assertTrue(valor.evaluate("e => e.checkValidity()"))
+        enviados = []
+        def salvar(route):
+            enviados.append(route.request.post_data_json)
+            if len(enviados) == 1:
+                route.fulfill(status=500, json={"mensagem":"Falha simulada no lançamento"})
+            else:
+                route.fulfill(status=201, json={"id":"lancamento-1"})
+        self.context.route("**/lancamentos", salvar)
+        botao = self.page.locator("button[form='form-honorario']")
+        botao.click()
+        self.page.locator("#resultado-honorario").get_by_text("Falha simulada no lançamento").wait_for()
+        self.assertEqual(valor.input_value(), "1.500,00")
+        self.assertEqual(self.page.locator("#honorario-descricao").input_value(), "Honorários de teste")
+        self.page.locator('[data-select-id="honorario-direcao"] cds-radio-button[value="DESPESA"]').locator('label').click()
+        self.page.wait_for_function("document.getElementById('honorario-direcao').value === 'DESPESA'")
+        self.assertEqual(self.page.locator('[data-select-id="honorario-direcao"] cds-radio-button[checked]').count(), 1)
+        botao.click()
+        self.page.wait_for_function("!document.getElementById('modal-honorario').classList.contains('is-visible')")
+        self.assertEqual(enviados[0]["valor"], 1500)
+        self.assertEqual(enviados[0]["vencimento"], "2026-11-10")
+        self.assertEqual(enviados[0]["direcao"], "RECEITA")
+        self.assertEqual(enviados[1]["direcao"], "DESPESA")
+        self.assertFalse(self.errors)
+
+    def test_lancamento_retry_preserva_dados_e_layout(self):
+        self.connect()
+        falhar = [True]
+        def carregar(route):
+            if falhar[0]: route.fulfill(status=500, json={"mensagem":"Falha simulada"})
+            else: route.fulfill(json={"casos":[self.case]})
+        self.context.route("**/casos", carregar)
+        self.page.evaluate("_cache.casos = []; _abrirModalHonorario()")
+        self.page.locator("#honorario-carregamento").get_by_text("Tentar novamente").wait_for()
+        self.page.locator("#honorario-descricao").fill("Preservar esta descrição")
+        falhar[0] = False
+        self.page.locator("#honorario-carregamento").get_by_text("Tentar novamente").click()
+        self.page.wait_for_function("document.getElementById('honorario-caso').options.length === 2")
+        self.assertEqual(self.page.locator("#honorario-descricao").input_value(), "Preservar esta descrição")
+        self.assertIn("Processo 1", self.page.locator("#honorario-caso option").nth(1).text_content())
+        pasta = Path(__file__).parent / "output" / "lancamento-frontend"
+        pasta.mkdir(parents=True, exist_ok=True)
+        for largura in (1440, 390):
+            self.page.set_viewport_size({"width":largura,"height":1100})
+            self.assertEqual(self.page.evaluate("document.documentElement.scrollWidth"), largura)
+            self.page.locator("#modal-honorario").screenshot(path=str(pasta / f"lancamento-{largura}.png"))
+        self.assertFalse(self.errors)
+
 if __name__ == "__main__":
     unittest.main()
