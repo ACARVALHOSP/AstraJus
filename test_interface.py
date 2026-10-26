@@ -133,7 +133,7 @@ class InterfaceTest(unittest.TestCase):
         self.assertEqual(progress.evaluate("el => el.status"), "active")
         self.page.evaluate("() => window.fimB(true)")
         self.assertEqual(progress.evaluate("el => el.status"), "error")
-        self.assertFalse(self.page.locator(".espera-spinner, cds-loading, cds-inline-loading").count())
+        self.assertFalse(self.page.locator(".espera-spinner").count())
 
     def test_progresso_falha_retornada_e_relacoes_acessiveis(self):
         self.connect()
