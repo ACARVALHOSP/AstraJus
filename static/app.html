@@ -825,6 +825,16 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
   letter-spacing: var(--cds-helper-text-01-letter-spacing, 0.32px);
 }
 
+
+/* Formulário de lançamento: agrupamento e refluxo da prévia aprovada. */
+#modal-honorario .fluxo-pagina-container { max-inline-size: 48rem; }
+#form-honorario { display: grid; gap: var(--cds-spacing-06, 1.5rem); }
+.lancamento-grupo { display: grid; gap: var(--cds-spacing-05, 1rem); border-block-end: 1px solid var(--cds-border-subtle); padding-block-end: var(--cds-spacing-06, 1.5rem); min-inline-size: 0; }
+.lancamento-subtitulo { font-size: var(--cds-heading-compact-01-font-size, 1rem); font-weight: var(--cds-heading-compact-01-font-weight, 600); line-height: var(--cds-heading-compact-01-line-height, 1.375); margin: 0; }
+.lancamento-linha { row-gap: var(--cds-spacing-05, 1rem); padding-inline: 0; }
+.lancamento-data { inline-size: 100%; }
+#honorario-carregamento:empty, #resultado-honorario:empty { display: none; }
+
 </style>
 <link rel="stylesheet" href="/static/search-fields.css">
 <script src="/static/theme.js"></script>
@@ -2032,40 +2042,50 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="fluxo-pagina" id="modal-honorario" role="region" aria-labelledby="modal-honorario-titulo">
 <div class="fluxo-pagina-container fluxo-pagina-container--sm">
 <div class="fluxo-pagina-header">
-<p class="fluxo-pagina-header__heading" id="modal-honorario-titulo">Adicionar Honorário</p>
+<h2 class="fluxo-pagina-header__heading" id="modal-honorario-titulo">Adicionar lançamento</h2>
 <button class="fluxo-pagina-close" type="button" id="modal-honorario-fechar" aria-label="Fechar">
 <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="20" height="20" fill="currentColor"><path d="M17.41 16 24 9.41 22.59 8 16 14.59 9.41 8 8 9.41 14.59 16 8 22.59 9.41 24 16 17.41 22.59 24 24 22.59 17.41 16z"/></svg>
 </button>
 </div>
 <div class="fluxo-pagina-content">
 <form id="form-honorario">
+<p class="campo-ajuda">Registre um valor a receber ou a pagar. Os campos com * são obrigatórios.</p>
+<section class="lancamento-grupo" aria-labelledby="lancamento-dados-titulo">
+<h3 class="lancamento-subtitulo" id="lancamento-dados-titulo">Dados do lançamento</h3>
 <div class="cds--form-item">
-<label class="cds--label" for="honorario-vencimento">Vencimento <span aria-hidden="true">*</span></label>
-<div class="cds--date-picker__input-wrapper">
-<svg class="cds--date-picker__icon" width="16" height="16" viewBox="0 0 32 32" aria-hidden="true">
-<path d="M26 4h-4V2h-2v2H12V2h-2v2H6a2 2 0 0 0-2 2v20a2 2 0 0 0 2 2h20a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2ZM6 6h20v4H6Zm0 20V12h20v14Z"></path>
-</svg>
-<input class="cds--text-input" type="text" id="honorario-vencimento" name="vencimento" placeholder="Ex.: 10/11/2026" autocomplete="off" required>
-</div>
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="honorario-valor">Valor <span aria-hidden="true">*</span></label>
-<input class="cds--text-input" type="number" id="honorario-valor" name="valor" min="0.01" step="0.01" placeholder="Ex.: 1500.00" autocomplete="off" required>
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="honorario-descricao">Descrição <span aria-hidden="true">*</span></label>
-<input class="cds--text-input" type="text" id="honorario-descricao" name="descricao" placeholder="Ex.: Honorários iniciais, Parcela contratual" autocomplete="off" required>
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="honorario-direcao">Direção <span aria-hidden="true">*</span></label>
+<label class="cds--label" for="honorario-direcao">Tipo de lançamento <span aria-hidden="true">*</span></label>
 <select class="cds--select-input" id="honorario-direcao" name="direcao" autocomplete="off">
 <option value="RECEITA" selected>A receber</option>
 <option value="DESPESA">A pagar</option>
 </select>
 </div>
-<label class="checkbox-lembrar"><input type="checkbox" id="honorario-recorrente"> Repetir mensalmente</label>
 <div class="cds--form-item">
-<label class="cds--label" for="honorario-caso">Processo, Processo ou Atendimento <span aria-hidden="true">*</span></label>
+<label class="cds--label" for="honorario-descricao">Descrição <span aria-hidden="true">*</span></label>
+<input class="cds--text-input" type="text" id="honorario-descricao" name="descricao" placeholder="Ex.: Honorários iniciais, Parcela contratual" autocomplete="off" required>
+</div>
+<div class="cds--css-grid cds--css-grid--narrow lancamento-linha">
+<div class="cds--css-grid-column cds--sm:col-span-4 cds--md:col-span-4 cds--lg:col-span-8"><div class="cds--form-item">
+<label class="cds--label" for="honorario-valor">Valor (R$) <span aria-hidden="true">*</span></label>
+<input class="cds--text-input" type="text" inputmode="decimal" id="honorario-valor" name="valor" placeholder="Ex.: 1.500,00" autocomplete="off" aria-describedby="honorario-valor-ajuda" required>
+<p class="campo-ajuda" id="honorario-valor-ajuda">Use vírgula para os centavos.</p>
+</div></div>
+<div class="cds--css-grid-column cds--sm:col-span-4 cds--md:col-span-4 cds--lg:col-span-8"><div class="cds--form-item">
+<label class="cds--label" for="honorario-vencimento">Vencimento <span aria-hidden="true">*</span></label>
+<div class="cds--date-picker__input-wrapper">
+<svg class="cds--date-picker__icon" width="16" height="16" viewBox="0 0 32 32" aria-hidden="true">
+<path d="M26 4h-4V2h-2v2H12V2h-2v2H6a2 2 0 0 0-2 2v20a2 2 0 0 0 2 2h20a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2ZM6 6h20v4H6Zm0 20V12h20v14Z"></path>
+</svg>
+<input class="cds--text-input lancamento-data" type="text" id="honorario-vencimento" name="vencimento" placeholder="Ex.: 10/11/2026" autocomplete="off" required>
+</div>
+</div></div>
+</div>
+<label class="checkbox-lembrar"><input type="checkbox" id="honorario-recorrente"> Repetir mensalmente</label>
+</section>
+<section class="lancamento-grupo" aria-labelledby="lancamento-vinculos-titulo">
+<h3 class="lancamento-subtitulo" id="lancamento-vinculos-titulo">Vínculos e responsabilidade</h3>
+<div id="honorario-carregamento" class="app-resultado"></div>
+<div class="cds--form-item">
+<label class="cds--label" for="honorario-caso">Processo <span aria-hidden="true">*</span></label>
 <select class="cds--select-input" id="honorario-caso" name="caso_id" autocomplete="off" required>
 <option value="">— selecione o processo —</option>
 </select>
@@ -2080,12 +2100,13 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <label class="cds--label" for="honorario-responsavel">Responsável <span aria-hidden="true">*</span></label>
 <input class="cds--text-input" type="text" id="honorario-responsavel" name="responsavel" placeholder="Ex.: Dra. Fernanda Reis" autocomplete="off" required>
 </div>
+</section>
 <div id="resultado-honorario" class="app-resultado"></div>
 </form>
 </div>
 <div class="fluxo-pagina-footer">
 <button class="cds--btn cds--btn--secondary" type="button" data-fechar-modal="modal-honorario">Cancelar</button>
-<button class="cds--btn cds--btn--primary" type="submit" form="form-honorario">Salvar</button>
+<button class="cds--btn cds--btn--primary" type="submit" form="form-honorario">Salvar lançamento</button>
 </div>
 </div>
 </div>
