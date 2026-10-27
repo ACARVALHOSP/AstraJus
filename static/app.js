@@ -2225,6 +2225,7 @@ function abrirModal(id) {
   const secao = document.getElementById(id);
   if (!secao || secao.classList.contains("is-visible")) return;
   const origem = document.activeElement;
+  const primeiroModal = secoesAbertas.length === 0;
   const anterior = secoesAbertas.at(-1)?.secao;
   if (secao.matches("cds-modal.app-modal")) secao.open = true;
   else if (anterior && !anterior.matches("cds-modal.app-modal")) anterior.after(secao);
@@ -2234,10 +2235,9 @@ function abrirModal(id) {
     .map((item) => ({ item, inert: item.inert })) : [];
   for (const { item } of fundo) item.inert = true;
   secoesAbertas.push({ secao, origem, fundo });
-  if (secao.matches("cds-modal.app-modal")) {
-    secao.style.zIndex = String(9000 + secoesAbertas.length);
-    if (anterior) anterior.inert = true;
-  }
+  secao.style.zIndex = String(9000 + secoesAbertas.length);
+  if (anterior) anterior.inert = true;
+  if (primeiroModal) document.body.classList.add("sem-rolagem");
   secao.classList.add("is-visible");
   secao.tabIndex = -1;
   for (const form of secao.querySelectorAll("form")) marcarFormularioSalvo(form, true);
@@ -2259,6 +2259,7 @@ async function fecharModal(id) {
   secao.inert = false;
   const anterior = secoesAbertas.at(-1)?.secao;
   if (anterior) anterior.inert = false;
+  if (!secoesAbertas.length) document.body.classList.remove("sem-rolagem");
   if (entrada?.origem?.isConnected && entrada.origem.getClientRects().length) entrada.origem.focus();
   return true;
 }
@@ -2273,7 +2274,10 @@ document.addEventListener("keydown", (ev) => {
 
 document.addEventListener("click", (ev) => {
   const alvo = ev.target.closest("[data-fechar-modal]");
-  if (alvo) fecharModal(alvo.dataset.fecharModal);
+  if (alvo) { fecharModal(alvo.dataset.fecharModal); return; }
+  if (ev.target.classList.contains("fluxo-pagina") && ev.target.classList.contains("is-visible")) {
+    fecharModal(ev.target.id);
+  }
 });
 
 window.cnjUI.fecharModal = fecharModal;
@@ -4006,16 +4010,24 @@ const resultadoCaso = document.getElementById("resultado-caso");
 registrarSalvamento(formCaso, async (evento) => {
   evento.preventDefault();
   if (!exigirCliente(resultadoCaso)) return;
-  const clienteId = document.getElementById("caso-cliente").value;
-  if (!clienteId) {
-    mostrarErro(resultadoCaso, "Selecione um cliente.");
-    document.getElementById("caso-cliente-busca").focus();
+  const buscaCliente = document.getElementById("caso-cliente-busca");
+  const clienteIdExistente = document.getElementById("caso-cliente").value;
+  const nomePrincipalDigitado = buscaCliente.value.trim();
+  const nomePrincipalCapturado = _partesCapturadasNovoCaso.find(
+    (p) => p.nome.trim().toUpperCase() === nomePrincipalDigitado.toUpperCase()
+  );
+  if (!clienteIdExistente && !(nomePrincipalDigitado && nomePrincipalCapturado)) {
+    mostrarErro(resultadoCaso, "Selecione um cliente existente ou escolha uma parte capturada externamente.");
+    buscaCliente.focus();
     return;
   }
   const botao = document.querySelector("button[form='form-caso'][type='submit']");
   const numeros = document.getElementById("caso-processos").value.split(",").map((s) => s.trim()).filter(Boolean);
   const corpo = {
-    cliente_id: clienteId,
+    ...(clienteIdExistente ? { cliente_id: clienteIdExistente } : { cliente_novo: { nome: nomePrincipalDigitado } }),
+    clientes_adicionais: _partesCapturadasNovoCaso
+      .filter((p) => p.nome.trim().toUpperCase() !== nomePrincipalDigitado.toUpperCase())
+      .map((p) => ({ cliente_novo: { nome: p.nome.trim() } })),
     titulo: document.getElementById("caso-titulo").value.trim(),
     responsavel: document.getElementById("caso-responsavel").value.trim(),
     acao: document.getElementById("caso-acao").value.trim(),
@@ -4057,7 +4069,12 @@ registrarSalvamento(formCaso, async (evento) => {
   }
 });
 
+// Partes capturadas externamente para o "Novo processo": a escolhida vira o cliente
+// principal, as demais são enviadas como clientes_adicionais no POST /casos.
+let _partesCapturadasNovoCaso = [];
+
 function _resetarIndicadoresCapturaExterna() {
+  _partesCapturadasNovoCaso = [];
   limpar(document.getElementById("status-datajud-modal"));
   const partesEl = document.getElementById("caso-partes-captura");
   limpar(partesEl);
@@ -5329,13 +5346,17 @@ async function capturarDadosExternos() {
   limpar(statusEl);
   limpar(partesEl);
   partesEl.hidden = true;
+  // Nova captura substitui as partes da anterior, mesmo que não haja resultado.
+  _partesCapturadasNovoCaso = [];
   tituloAviso.hidden = true;
   tagAcao.hidden = true;
   tagForo.hidden = true;
   tagTitulo.hidden = true;
-  statusEl.appendChild(notificacao("info", "Consultando DataJud e DJEN…"));
+  const progresso = document.getElementById("captura-progresso");
+  progresso.hidden = false;
   try {
     const dados = await cliente.chamarTool("consultar_processo_unificado", { numero_processo: numero, tribunal });
+    progresso.hidden = true;
     limpar(statusEl);
     if (dados.erro) { mostrarErro(statusEl, dados.mensagem || "Erro ao consultar DataJud/DJEN."); return; }
 
@@ -5385,8 +5406,9 @@ async function capturarDadosExternos() {
 
     if (partes.length) {
       partesEl.hidden = false;
-      partesEl.appendChild(el("p", { class: "campo-ajuda" }, [document.createTextNode("Partes encontradas no DJEN — clique para preencher o Cliente:")]));
+      partesEl.appendChild(el("p", { class: "campo-ajuda" }, [document.createTextNode("Partes encontradas no DJEN — clique para escolher o cliente principal (todas as partes são cadastradas como clientes do processo):")]));
       const nomesUnicos = [...new Map(partes.map((p) => [(p.nome || "").trim().toUpperCase(), p])).values()];
+      _partesCapturadasNovoCaso = nomesUnicos.filter((p) => p.nome);
       nomesUnicos.filter((p) => p.nome).forEach((p) => {
         const polo = poloAtivo(p) ? "Autor" : poloPassivo(p) ? "Réu" : "Polo não informado";
         const btn = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: `${formatarNomeExibicao(p.nome)} · ${polo}` });
@@ -5398,9 +5420,11 @@ async function capturarDadosExternos() {
     const form = campAcao.closest("form");
     if (form) atualizarIndicadorEdicao(form);
   } catch (err) {
+    progresso.hidden = true;
     limpar(statusEl);
     mostrarErro(statusEl, err.message || "Erro ao consultar DataJud/DJEN.");
   } finally {
+    progresso.hidden = true;
     botao.disabled = false;
   }
 }
