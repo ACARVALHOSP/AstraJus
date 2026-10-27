@@ -609,11 +609,11 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 :is(.sub-abas, .sub-tabs, .cadastro-tabs, .resultado-texto, .tabela-responsiva-wrap) {
   scrollbar-color: var(--cds-border-strong, #8d8d8d) transparent;
 }
-#modal-edicao-pendente .fluxo-pagina-footer {
+#modal-edicao-pendente .app-modal-footer {
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-row: 3;
   block-size: auto; background: var(--cds-layer, #f4f4f4);
 }
-#modal-edicao-pendente .fluxo-pagina-footer .cds--btn {
+#modal-edicao-pendente .app-modal-footer > button {
   min-inline-size: 0; inline-size: 100%; max-inline-size: none;
   block-size: auto; min-block-size: 4rem; padding: var(--cds-spacing-05, 1rem);
   align-items: center; white-space: normal;
@@ -634,7 +634,12 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
   }
   .caso-detalhe-cabecalho { flex-direction: column; gap: var(--cds-spacing-03, 0.5rem); }
   .sub-aba-botao, .sub-tab-link { min-block-size: 2.75rem; }
-  #modal-edicao-pendente .fluxo-pagina-footer { grid-template-columns: minmax(0, 1fr); }
+  #modal-edicao-pendente .app-modal-footer { grid-template-columns: minmax(0, 1fr); }
+  #notificacoes-conteudo::part(content) {
+    position: fixed; top: 3rem; inset-inline: 1rem; inline-size: auto;
+    inset-block-end: auto; block-size: max-content;
+    max-inline-size: calc(100vw - 2rem); transform: none;
+  }
 }
 @media (max-width: 480px) {
   #form-contato-cadastro .token-acoes > .cds--btn { inline-size: 100%; max-inline-size: none; }
@@ -777,7 +782,7 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 .fluxo-pagina-header__heading { font-size: 1.5rem; line-height: 1.3; }
 .fluxo-pagina-close { background: transparent; border: 0; cursor: pointer; padding: .75rem; color: inherit; }
 .fluxo-pagina-content { min-inline-size: 0; }
-.fluxo-pagina-footer { display: flex; flex-wrap: wrap; gap: .var(--cds-spacing-11, 5rem); margin-block-start: var(--cds-spacing-06, 1.5rem); }
+.fluxo-pagina-footer { display: flex; flex-wrap: wrap; gap: var(--cds-spacing-03, 0.5rem); margin-block-start: var(--cds-spacing-06, 1.5rem); }
 @media (max-width: 480px) {
   .fluxo-pagina-container { padding: var(--cds-spacing-05, 1rem); }
   .fluxo-pagina-footer .cds--btn { max-inline-size: none; inline-size: 100%; }

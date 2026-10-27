@@ -27,7 +27,9 @@ CDSProgressBar.prototype.updated = function (alteracoes) {
   if (anuncioIngles) {
     anuncioIngles.removeAttribute('aria-live');
     anuncioIngles.setAttribute('aria-hidden', 'true');
-    anuncioIngles.textContent = '';
+    anuncioIngles.hidden = true;
+    // Não apagar os nós de texto/âncoras geridos pelo Lit. aria-hidden já
+    // suprime o anúncio inglês; helper-text fornece a mensagem em português.
   }
   ajuda.setAttribute('role', 'status');
   ajuda.setAttribute('aria-live', 'polite');
