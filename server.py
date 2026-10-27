@@ -40,11 +40,13 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import asaas_integracao
+import agenda_atividades
+import notificacoes
 import db as _db
 import google_integracao
-from _util import _hash_token
+from _util import _hash_token, hash_origem_djen_valido, origem_djen_legada
 from db import (
-    CacheDataJud, RegistroClientesCasos, RegistroIntegracaoGoogle, RegistroMonitoramentos,
+    CacheDataJud, ConflitoClientesLote, RegistroClientesCasos, RegistroIntegracaoGoogle, RegistroMonitoramentos,
     RegistroPublicacoesOAB, RegistroUsuarios,
 )
 
@@ -2072,6 +2074,9 @@ async def _verificar_um_monitoramento(
     novos = [item for item in itens if item.get("hash") and item["hash"] not in hashes_vistos]
 
     if novos:
+        if gestao is not None:
+            # Outbox antes do SMTP: uma falha de envio não perde a ocorrência do feed.
+            notificacoes.Repositorio(gestao.caminho, agora=lambda: agora_dt).registrar_monitoramento(monitoramento["usuario"], novos)
         try:
             await asyncio.to_thread(enviar_fn, monitoramento["usuario"], criterio, novos)
         except Exception:
@@ -2133,6 +2138,7 @@ async def _verificar_um_monitoramento(
 def _registrar_itens_capturados(
     itens_brutos: list[dict], monitoramento_id: str | None, nome_pesquisado: str | None,
     publicacoes: "RegistroPublicacoesOAB", gestao: "RegistroClientesCasos", agora,
+    usuario_monitoramento: str | None = None,
 ) -> int:
     """Extrai e grava cada item do DJEN no log de publicações por OAB (dedupe por hash via
     RegistroPublicacoesOAB.registrar). Devolve quantas eram novas (não estavam capturadas ainda).
@@ -2150,6 +2156,7 @@ def _registrar_itens_capturados(
         inseriu = publicacoes.registrar(
             hash_publicacao, monitoramento_id, nome_pesquisado, numero, item,
             status_inicial, casos_ligados[0] if casos_ligados else None, agora,
+            usuario_notificacao=usuario_monitoramento,
         )
         if inseriu:
             novas += 1
@@ -2159,6 +2166,7 @@ def _registrar_itens_capturados(
 async def _capturar_um_monitoramento_oab(
     id_monitoramento: str, criterio: dict, publicacoes: "RegistroPublicacoesOAB",
     gestao: "RegistroClientesCasos", agora,
+    usuario: str | None = None,
 ) -> None:
     params = {k: v for k, v in {
         "numeroOab": criterio.get("numero_oab"), "ufOab": criterio.get("uf_oab"),
@@ -2176,6 +2184,7 @@ async def _capturar_um_monitoramento_oab(
 
     _registrar_itens_capturados(
         dados_resp.get("items") or [], id_monitoramento, criterio.get("nome"), publicacoes, gestao, agora,
+        usuario_monitoramento=usuario,
     )
 
 
@@ -2192,15 +2201,15 @@ async def _capturar_publicacoes_oab(
     if isinstance(sonda, dict):
         log.warning("CircuitBreaker DJEN: API indisponível na sonda — ciclo de captura OAB ignorado")
         return
-    async def _capturar_com_sem(id_mon: str, criterio: dict) -> None:
+    async def _capturar_com_sem(id_mon: str, criterio: dict, usuario: str | None) -> None:
         async with _SEM_MONITORAMENTO:
             try:
-                await _capturar_um_monitoramento_oab(id_mon, criterio, publicacoes, gestao, agora)
+                await _capturar_um_monitoramento_oab(id_mon, criterio, publicacoes, gestao, agora, usuario=usuario)
             except Exception:
                 log.exception("Captura 24h (OAB): falha no monitoramento %s", id_mon)
 
     await asyncio.gather(*[
-        _capturar_com_sem(id_mon, mon.get("criterio") or {})
+        _capturar_com_sem(id_mon, mon.get("criterio") or {}, mon.get("usuario"))
         for id_mon, mon in list(registro.carregar().items())
         if (mon.get("criterio") or {}).get("numero_oab")
     ])
@@ -2339,6 +2348,7 @@ async def _sincronizar_calendar_google_job(
     injetada, diferente de _sincronizar_calendar_google, que os testes chamam direto com mock)."""
     try:
         async with _cliente(20) as http_cliente:
+            await agenda_atividades.sincronizar(registro_google, gestao, client_id, client_secret, http_cliente)
             await _sincronizar_calendar_google(registro_google, gestao, client_id, client_secret, http_cliente)
     except Exception:
         log.exception("Falha na sincronização periódica do Google Calendar")
@@ -2926,6 +2936,24 @@ def _enderecos_de(dados: dict) -> list[dict]:
     return [unico] if any(unico.values()) else []
 
 
+def _origem_djen_da_atividade(dados: dict, criando: bool) -> dict:
+    """Compatibilidade só na criação; PATCH omitido nunca reinterpreta observações."""
+    if not criando and "origem_djen_hash" not in dados:
+        return {}
+    legada, motivo = origem_djen_legada(dados.get("observacoes"))
+    if motivo:
+        raise ValueError("Referência DJEN legada inválida ou ambígua. Informe uma única origem válida.")
+    if "origem_djen_hash" in dados:
+        origem = dados["origem_djen_hash"]
+        if origem is not None and not hash_origem_djen_valido(origem):
+            raise ValueError("Referência DJEN inválida.")
+        if legada is not None and legada != origem:
+            raise ValueError("A referência DJEN difere do marcador nas observações.")
+    else:
+        origem = legada
+    return {"origem_djen_hash": origem}
+
+
 def _criar_cliente_validado(gestao: RegistroClientesCasos, dados: dict) -> tuple[dict | None, dict | None]:
     """Valida o corpo de POST /clientes. Devolve (cliente, None) ou (None, erro)."""
     nome = (dados.get("nome") or "").strip()
@@ -3367,6 +3395,10 @@ class _AutenticacaoBearer:
 
         scope["usuario"] = usuario
 
+        if caminho == "/notificacoes" or caminho.startswith("/notificacoes/"):
+            await self._notificacoes(scope, receive, send, caminho)
+            return
+
         if self.limitador and scope.get("method") == "POST" and caminho == "/mcp":
             permitido, espera, motivo = self.limitador.verificar(usuario)
             if not permitido:
@@ -3394,6 +3426,9 @@ class _AutenticacaoBearer:
         if caminho == "/responsaveis" and scope.get("method") == "GET":
             await _json(send, 200, {"responsaveis": self.registro.ativos()})
             return
+        if caminho == "/clientes/acoes-em-massa" and self.gestao is not None:
+            await self._clientes_em_massa(scope, receive, send)
+            return
         if caminho == "/clientes" and self.gestao is not None:
             await self._clientes(scope, receive, send)
             return
@@ -3408,6 +3443,10 @@ class _AutenticacaoBearer:
             await self._evento_calendar_do_caso(scope, receive, send, caso_id)
             return
         if caminho.startswith("/casos/") and "/atividades" in caminho and self.gestao is not None:
+            rota_agenda = re.fullmatch(r"/casos/([^/]+)/atividades/([0-9]+)/agenda", caminho)
+            if rota_agenda:
+                await self._agenda_da_atividade(scope, receive, send, rota_agenda[1], int(rota_agenda[2]))
+                return
             partes = caminho[len("/casos/"):].split("/atividades")
             caso_id = partes[0].rstrip("/")
             rest = partes[1].strip("/") if len(partes) > 1 else ""
@@ -3421,6 +3460,9 @@ class _AutenticacaoBearer:
                 await self._checklist_da_atividade(scope, receive, send, caso_id, int(aid_parte), item_id)
                 return
             aid = int(rest) if rest.isdigit() else None
+            if rest and aid is None:
+                await _responder(send, 404, b"Nao encontrado")
+                return
             await self._atividades_do_caso(scope, receive, send, caso_id, aid)
             return
         if caminho.startswith("/casos/") and "/publicacoes" in caminho \
@@ -3679,6 +3721,25 @@ class _AutenticacaoBearer:
     # faz sentido um agente de IA cadastrar cliente/caso por conta própria. Mesmo token Bearer
     # do resto do app; "todos veem tudo" (sem filtro por usuário), conforme decidido para a
     # Fase 1 da gestão de escritório.
+
+    async def _clientes_em_massa(self, scope, receive, send):
+        if scope.get("method") != "POST":
+            await _responder(send, 405, b"Metodo nao permitido")
+            return
+        corpo = await _ler_corpo(receive)
+        if corpo is None:
+            await _json(send, 413, _erro("Corpo da requisição grande demais."))
+            return
+        try:
+            dados = json.loads(corpo.decode("utf-8") or "{}")
+            resultado = self.gestao.clientes_em_massa(dados)
+        except ConflitoClientesLote as erro:
+            await _json(send, 409, _erro(str(erro)))
+            return
+        except (ValueError, UnicodeDecodeError) as erro:
+            await _json(send, 400, _erro(str(erro)))
+            return
+        await _json(send, 200, resultado)
 
     async def _clientes(self, scope, receive, send):
         metodo = scope.get("method")
@@ -3973,7 +4034,11 @@ class _AutenticacaoBearer:
             await _responder(send, 404, b"Nao encontrado")
             return
         if metodo == "DELETE":
-            excluiu = self.gestao.excluir_caso(caso_id)
+            try:
+                excluiu = self.gestao.excluir_caso(caso_id)
+            except _db.ConflitoAgenda as erro:
+                await _json(send, 409, _erro(str(erro)))
+                return
             if not excluiu:
                 await _json(send, 404, _erro("Caso não encontrado."))
                 return
@@ -4108,14 +4173,20 @@ class _AutenticacaoBearer:
 
     async def _atividades_do_caso(self, scope, receive, send, caso_id: str, aid: int | None):
         """GET /casos/<id>/atividades, POST /casos/<id>/atividades,
-        PATCH /casos/<id>/atividades/<aid>, DELETE /casos/<id>/atividades/<aid>"""
+        PATCH /casos/<id>/atividades/<aid>, DELETE /casos/<id>/atividades/<aid>.
+        Responsável vazio/null significa o usuário autenticado ("Eu mesmo").
+        Omitir responsável no PATCH preserva a atribuição existente.
+        """
         metodo = scope.get("method")
         if not caso_id:
             await _responder(send, 404, b"Nao encontrado")
             return
         if aid is None:
             if metodo == "GET":
-                await _json(send, 200, {"atividades": self.gestao.listar_atividades(caso_id)})
+                vinculos = {v["atividade_id"]: agenda_atividades.resumo(v) for v in agenda_atividades.Repositorio(self.gestao.caminho).listar(caso_id)}
+                atividades = [{**a, "agenda": vinculos.get(a["id"])} for a in self.gestao.listar_atividades(caso_id)]
+                await _json(send, 200, {"atividades": atividades, "origem_djen_estruturada": True,
+                                       "agenda_disponivel": bool(self._google_conectado()) and self._google_configurado()})
                 return
             if metodo == "POST":
                 corpo = await _ler_corpo(receive)
@@ -4123,6 +4194,14 @@ class _AutenticacaoBearer:
                     dados = json.loads((corpo or b"").decode("utf-8") or "{}")
                 except (ValueError, UnicodeDecodeError):
                     await _json(send, 400, _erro("JSON inválido."))
+                    return
+                if not isinstance(dados, dict):
+                    await _json(send, 400, _erro("Informe um objeto JSON."))
+                    return
+                try:
+                    origem = _origem_djen_da_atividade(dados, criando=True)
+                except ValueError as erro:
+                    await _json(send, 400, _erro(str(erro)))
                     return
                 titulo = (dados.get("titulo") or "").strip()
                 if not titulo:
@@ -4132,16 +4211,20 @@ class _AutenticacaoBearer:
                 if responsavel and self.registro is not None and responsavel not in self.registro.ativos():
                     await _json(send, 400, _erro("Responsável inválido."))
                     return
-                atividade = self.gestao.criar_atividade(
-                    caso_id,
-                    tipo=dados.get("tipo") or "tarefa",
-                    titulo=titulo,
-                    data=dados.get("data"),
-                    hora=dados.get("hora"),
-                    observacoes=dados.get("observacoes"),
-                    responsavel=responsavel,
-                    agora=lambda: datetime.now(timezone.utc),
-                )
+                try:
+                    atividade = self.gestao.criar_atividade(
+                        caso_id,
+                        tipo=dados.get("tipo") or "tarefa",
+                        titulo=titulo,
+                        data=dados.get("data"),
+                        hora=dados.get("hora"),
+                        observacoes=dados.get("observacoes"),
+                        responsavel=responsavel,
+                        agora=lambda: datetime.now(timezone.utc), ator=scope.get("usuario"), **origem,
+                    )
+                except ValueError:
+                    await _json(send, 404, _erro("Publicação de origem indisponível neste processo."))
+                    return
                 if responsavel and responsavel != scope.get("usuario"):
                     await self._avisar_atividade_delegada(responsavel, atividade)
                 await _json(send, 201, atividade)
@@ -4155,20 +4238,43 @@ class _AutenticacaoBearer:
             except (ValueError, UnicodeDecodeError):
                 await _json(send, 400, _erro("JSON inválido."))
                 return
+            if not isinstance(dados, dict):
+                await _json(send, 400, _erro("Informe um objeto JSON."))
+                return
             muda_responsavel = "responsavel" in dados
+            try:
+                origem = _origem_djen_da_atividade(dados, criando=False)
+            except ValueError as erro:
+                await _json(send, 400, _erro(str(erro)))
+                return
             responsavel_antigo = None
             if muda_responsavel:
-                novo_responsavel = (dados.get("responsavel") or "").strip() or None
+                novo_responsavel = (dados.get("responsavel") or "").strip() or scope.get("usuario")
+                if not novo_responsavel:
+                    await _json(send, 400, _erro("Não foi possível identificar o responsável. Selecione um usuário."))
+                    return
                 if novo_responsavel and self.registro is not None and novo_responsavel not in self.registro.ativos():
                     await _json(send, 400, _erro("Responsável inválido."))
                     return
                 dados["responsavel"] = novo_responsavel
                 atual = next((a for a in self.gestao.listar_atividades(caso_id) if a["id"] == aid), None)
                 responsavel_antigo = atual["responsavel"] if atual else None
-            atividade = self.gestao.atualizar_atividade(caso_id, aid, **{
-                k: v for k, v in dados.items()
-                if k in ("titulo", "tipo", "data", "hora", "status", "observacoes", "responsavel")
-            })
+            try:
+                if "data" in dados and dados["data"] is None and any(
+                    v["atividade_id"] == aid and v["estado"] != "cancelado"
+                    for v in agenda_atividades.Repositorio(self.gestao.caminho).listar(caso_id)
+                ):
+                    raise _db.ConflitoAgenda("Cancele o vínculo antes de remover a data da atividade.")
+                atividade = self.gestao.atualizar_atividade(caso_id, aid, **{
+                    k: v for k, v in dados.items()
+                    if k in ("titulo", "tipo", "data", "hora", "status", "observacoes", "responsavel")
+                }, ator=scope.get("usuario"), **origem)
+            except _db.ConflitoAgenda as erro:
+                await _json(send, 409, _erro(str(erro)))
+                return
+            except ValueError:
+                await _json(send, 404, _erro("Publicação de origem indisponível neste processo."))
+                return
             if atividade is None:
                 await _json(send, 404, _erro("Atividade não encontrada."))
                 return
@@ -4179,10 +4285,123 @@ class _AutenticacaoBearer:
             await _json(send, 200, atividade)
             return
         if metodo == "DELETE":
-            excluiu = self.gestao.excluir_atividade(caso_id, aid)
+            try:
+                excluiu = self.gestao.excluir_atividade(caso_id, aid)
+            except _db.ConflitoAgenda as erro:
+                await _json(send, 409, _erro(str(erro)))
+                return
             await _json(send, 200 if excluiu else 404, {"excluido": excluiu})
             return
         await _responder(send, 405, b"Metodo nao permitido")
+
+    async def _notificacoes(self, scope, receive, send, caminho):
+        if self.gestao is None:
+            await _json(send, 503, _erro("A central de notificações não está disponível neste servidor."))
+            return
+        repo = notificacoes.Repositorio(self.gestao.caminho)
+        usuario = scope["usuario"]
+        metodo = scope.get("method")
+        try:
+            if caminho == "/notificacoes" and metodo == "GET":
+                parametros = dict(_query(scope))
+                dados = repo.listar(usuario, limite=int(parametros.get("limite", "20")),
+                                    estado=parametros.get("estado", "todas"), cursor=parametros.get("cursor"))
+                await _json(send, 200, dados)
+                return
+            destino = re.fullmatch(r"/notificacoes/([0-9]{1,20})/destino", caminho)
+            if destino and metodo == "GET":
+                dados = repo.destino(usuario, destino[1])
+                await _json(send, 200 if dados else 404, {"destino": dados} if dados else _erro("Notificação indisponível."))
+                return
+            item = re.fullmatch(r"/notificacoes/([0-9]{1,20})", caminho)
+            if item and metodo == "PATCH":
+                corpo = await _ler_corpo(receive)
+                if corpo is None:
+                    await _json(send, 413, _erro("Corpo da requisição grande demais."))
+                    return
+                try:
+                    dados = json.loads(corpo.decode("utf-8"))
+                except (ValueError, UnicodeDecodeError):
+                    raise ValueError("JSON inválido.")
+                if not isinstance(dados, dict) or set(dados) != {"lida"} or dados["lida"] is not True:
+                    raise ValueError("Informe somente lida: true para marcar a notificação como lida.")
+                marcada = repo.marcar_lida(usuario, item[1])
+                await _json(send, 200 if marcada else 404, marcada or _erro("Notificação indisponível."))
+                return
+            await _json(send, 405 if caminho == "/notificacoes" or item or destino else 404,
+                        _erro("Operação de notificação indisponível."))
+        except ValueError as erro:
+            await _json(send, 400, _erro(str(erro)))
+
+    async def _agenda_da_atividade(self, scope, receive, send, caso_id, aid):
+        """Mesma coleção autenticada de atividades; nenhuma autorização extra por vínculo."""
+        repo = agenda_atividades.Repositorio(self.gestao.caminho)
+        metodo = scope.get("method")
+        try:
+            if metodo == "GET":
+                if not any(a["id"] == aid for a in self.gestao.listar_atividades(caso_id)):
+                    raise agenda_atividades.ErroAgenda("Atividade não encontrada.", 404)
+                await _json(send, 200, {"agenda": agenda_atividades.resumo(repo.obter(caso_id, aid))})
+                return
+            if metodo not in ("POST", "PATCH", "DELETE"):
+                await _responder(send, 405, b"Metodo nao permitido")
+                return
+            corpo = await _ler_corpo(receive)
+            if corpo is None:
+                await _json(send, 413, _erro("Corpo da requisição grande demais."))
+                return
+            try:
+                dados = json.loads(corpo.decode("utf-8") or "{}")
+            except (ValueError, UnicodeDecodeError):
+                raise agenda_atividades.ErroAgenda("JSON inválido.", 400)
+            if not isinstance(dados, dict):
+                raise agenda_atividades.ErroAgenda("Informe um objeto JSON.", 400)
+            async with _cliente(20) as http_cliente:
+                if metodo == "POST":
+                    chave = dict(scope.get("headers") or []).get(b"idempotency-key", b"").decode("latin-1")
+                    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", chave):
+                        raise agenda_atividades.ErroAgenda("Informe uma Idempotency-Key válida.", 400)
+                    pedido = agenda_atividades.assinatura_pedido(caso_id, aid, dados)
+                    v = repo.por_chave(scope["usuario"], chave, pedido)
+                    conexao = None
+                    if not v:
+                        if dados:
+                            raise agenda_atividades.ErroAgenda("O vínculo usa data e título da atividade. Envie um objeto vazio.", 400)
+                        atividade = next((a for a in self.gestao.listar_atividades(caso_id) if a["id"] == aid), None)
+                        if not atividade:
+                            raise agenda_atividades.ErroAgenda("Atividade não encontrada.", 404)
+                        _db.validar_data_atividade_agenda(atividade["data"], atividade["hora"])
+                        # Ler a identidade não cria recurso remoto; reservar antes do INSERT.
+                        conexao = await agenda_atividades.conectar(self.registro_google, self.google_client_id, self.google_client_secret, http_cliente)
+                        v = repo.reservar(caso_id, aid, conexao[1], scope["usuario"], chave, pedido)
+                    await agenda_atividades.processar(repo, v["id"], self.registro_google, self.google_client_id, self.google_client_secret, http_cliente, conexao)
+                else:
+                    identificador = dados.get("vinculo_id")
+                    versao = dados.get("versao")
+                    if not isinstance(identificador, str) or type(versao) is not int or versao < 1:
+                        raise agenda_atividades.ErroAgenda("Informe vínculo e versão válidos.", 400)
+                    v = repo.obter(caso_id, aid, identificador)
+                    if not v:
+                        raise agenda_atividades.ErroAgenda("Vínculo não encontrado.", 404)
+                    if metodo == "DELETE":
+                        v = repo.cancelar(caso_id, aid, identificador, versao)
+                    else:
+                        if dados.get("comando") not in ("usar_data_da_atividade", "aceitar_data_da_agenda"):
+                            raise agenda_atividades.ErroAgenda("Comando de agenda inválido.", 400)
+                        token, calendario = await agenda_atividades.conectar(self.registro_google, self.google_client_id, self.google_client_secret, http_cliente)
+                        if calendario != v["calendario_id"]:
+                            raise agenda_atividades.ErroAgenda("Reconecte o calendário original para resolver o vínculo.")
+                        remoto = await google_integracao.obter_evento_vinculado(http_cliente, token, calendario, v["evento_id"])
+                        agenda_atividades.conferir_identidade(v, remoto)
+                        repo.resolver(caso_id, aid, identificador, versao, dados["comando"], remoto)
+                    await agenda_atividades.processar(repo, v["id"], self.registro_google, self.google_client_id, self.google_client_secret, http_cliente)
+                atual = repo.obter(caso_id, aid, v["id"])
+                status = 202 if atual["estado"] in ("pendente", "cancelamento_pendente", "falha") else 200
+                await _json(send, status, {"agenda": agenda_atividades.resumo(atual)})
+        except (agenda_atividades.ErroAgenda, _db.ConflitoAgenda) as erro:
+            await _json(send, getattr(erro, "status", 409), _erro(str(erro)))
+        except (google_integracao.ErroGoogle, httpx.HTTPError):
+            await _json(send, 502, _erro("Não foi possível consultar o Google Calendar. Atualize a agenda para tentar novamente."))
 
     async def _checklist_da_atividade(self, scope, receive, send, caso_id: str, aid: int, item_id: int | None):
         """GET/POST /casos/<id>/atividades/<aid>/checklist,
@@ -4443,7 +4662,7 @@ class _AutenticacaoBearer:
                     ok = True
             await _json(send, 200 if ok else 404, {"vinculada": ok})
         elif metodo == "DELETE" and pub_hash:
-            ok = self.publicacoes.vincular_caso(pub_hash, None)
+            ok = self.publicacoes.desvincular_do_caso(pub_hash, caso_id)
             await _json(send, 200 if ok else 404, {"desvinculada": ok})
         else:
             await _responder(send, 405, b"Method Not Allowed")

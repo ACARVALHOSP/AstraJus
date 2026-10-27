@@ -99,6 +99,79 @@ class InterfaceTest(unittest.TestCase):
         self.page.wait_for_function("document.getElementById('status-conexao').textContent === 'Conectado'")
         self.assertFalse(self.errors)
 
+    def test_contatos_filtros_acentos_telefone_e_recuperacao(self):
+        self.connect()
+        self.page.locator("#aba-contatos-botao").click()
+        self.page.wait_for_selector(".contato-nome-link")
+        self.page.evaluate("""() => {
+            _cache.clientes = [
+                {id:'cliente-1', nome:'Álvaro Nunes', tipo_pessoa:'fisica', telefone:'(11) 99999-0000', email:'alvaro@example.com'},
+                {id:'cliente-2', nome:'Beta Ltda', tipo_pessoa:'juridica'},
+                {id:'cliente-3', nome:'李明'}
+            ];
+            renderizarListaContatos();
+        }""")
+        self.assertEqual(self.page.locator(".contatos-tabela input[type=checkbox]").count(), 0)
+        self.assertEqual(self.page.locator(".contatos-tabela th").all_text_contents(), ["Nome", "Tipo", "Telefone", "E-mail", "Ações"])
+        self.assertEqual(self.page.locator('a[href="tel:11999990000"]').count(), 1)
+        self.assertEqual(self.page.locator('a[href="mailto:alvaro%40example.com"]').count(), 1)
+        self.assertIn("Pessoa jurídica", self.page.locator(".contatos-tabela").inner_text())
+        self.assertIn("李明", self.page.locator(".contatos-tabela").inner_text())
+        self.page.locator("#contatos-az").get_by_role("button", name="A", exact=True).click()
+        self.page.locator("cds-search:has(+ #contatos-busca) input").fill("alvaro")
+        self.assertEqual(self.page.locator(".contato-nome-link").all_text_contents(), ["Álvaro Nunes"])
+        self.page.locator("#contatos-az").get_by_role("button", name="B", exact=True).click()
+        self.assertIn("Nenhum cliente corresponde", self.page.locator("#lista-contatos").inner_text())
+        self.assertIn("Inicial: B", self.page.locator("#contatos-status").inner_text())
+        self.assertIn("alvaro", self.page.locator("#contatos-status").inner_text())
+        self.page.locator("#contatos-limpar-filtros").click()
+        self.assertEqual(self.page.locator(".contato-nome-link").count(), 3)
+        self.assertEqual(self.page.locator("#contatos-busca").input_value(), "")
+        self.page.locator("cds-search:has(+ #contatos-busca) input").fill("11999990000")
+        self.assertEqual(self.page.locator(".contato-nome-link").all_text_contents(), ["Álvaro Nunes"])
+        self.assertFalse(self.errors)
+
+    def test_contato_falha_preserva_edicao_e_salvar_restabelece_retorno(self):
+        self.connect()
+        self.page.locator("#aba-contatos-botao").click()
+        self.page.locator(".contato-nome-link").click()
+        self.page.wait_for_function("document.getElementById('contato-nome').value === 'Cliente de teste'")
+        self.page.locator("#contato-nome").fill("Cliente atualizado")
+        self.fail_save = True
+        self.page.locator("#contato-voltar").click()
+        self.choose("salvar")
+        self.page.wait_for_function("document.getElementById('resultado-contato-cadastro').textContent.includes('Falha simulada')")
+        self.assertTrue(self.page.locator("#contatos-vista-detalhe").is_visible())
+        self.assertEqual(self.page.locator("#contato-nome").input_value(), "Cliente atualizado")
+        self.fail_save = False
+        self.page.locator("#contato-voltar").click()
+        self.choose("salvar")
+        self.page.wait_for_selector("#contatos-vista-lista", state="visible")
+        self.assertEqual(self.contact["nome"], "Cliente atualizado")
+        self.assertEqual(self.page.evaluate("document.activeElement.dataset.clienteId"), "cliente-1")
+        self.assertFalse(self.errors)
+
+    def test_contatos_abas_teclado_e_retorno_foco(self):
+        self.connect()
+        self.page.locator("#aba-contatos-botao").click()
+        self.page.locator(".contato-nome-link").click()
+        self.page.wait_for_function("document.getElementById('contato-detalhe-nome').textContent === 'Cliente de teste'")
+        self.assertEqual(self.page.evaluate("document.activeElement.id"), "contato-detalhe-nome")
+        self.page.locator("#contato-subaba-cadastro-botao").focus()
+        self.page.keyboard.press("ArrowRight")
+        self.assertEqual(self.page.evaluate("document.activeElement.id"), "contato-subaba-processos-botao")
+        self.assertEqual(self.page.locator("#contato-subaba-processos-botao").get_attribute("aria-selected"), "true")
+        self.page.keyboard.press("Home")
+        self.page.locator("#contato-cadastro-aba-pessoal-botao").focus()
+        self.page.keyboard.press("ArrowRight")
+        self.assertTrue(self.page.locator("#contato-cadastro-painel-documentacao").is_visible())
+        self.page.keyboard.press("End")
+        self.assertTrue(self.page.locator("#contato-cadastro-painel-complementar").is_visible())
+        self.page.keyboard.press("Home")
+        self.page.locator("#contato-voltar").click()
+        self.assertEqual(self.page.evaluate("document.activeElement.dataset.clienteId"), "cliente-1")
+        self.assertFalse(self.errors)
+
     def test_dropdowns_de_duas_opcoes_usam_radios_e_preservam_valor(self):
         self.connect()
         self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-contatos')); await abrirNovoContato(); }")
@@ -145,7 +218,7 @@ class InterfaceTest(unittest.TestCase):
             host.get_by_role("radio", name=label, exact=True).check()
         else:
             host.get_by_role("combobox").click()
-            host.locator("cds-dropdown-item").filter(has_text=re.compile("^" + re.escape(label) + "$" )).click()
+            host.get_by_role("option", name=label, exact=True).click()
         self.assertEqual(native.input_value(), value)
 
     def open_case(self):
@@ -1072,14 +1145,106 @@ class InterfaceTest(unittest.TestCase):
         self.assertEqual(self.page.locator("#atividades-lista article").count(), 2)
         self.assertFalse(self.errors)
 
+    def test_revisao_atividades_filtra_executor_independente_do_processo(self):
+        self.connect()
+        casos = [
+            {**self.case, "id": "caso-1", "responsavel": "Ana"},
+            {**self.case, "id": "caso-2", "responsavel": "Bia"},
+        ]
+        atividades = {
+            "caso-1": [
+                {"id": 1, "titulo": "Delegada para Bia", "responsavel": "Bia", "tipo": "prazo", "status": "pendente"},
+                {"id": 2, "titulo": "Execução de Ana", "responsavel": "Ana", "tipo": "tarefa", "status": "pendente"},
+                {"id": 3, "titulo": "Atividade legada", "responsavel": None, "tipo": "tarefa", "status": "pendente"},
+            ],
+            "caso-2": [
+                {"id": 4, "titulo": "Outra atividade de Bia", "responsavel": "Bia", "tipo": "tarefa", "status": "pendente"},
+            ],
+        }
+        self.context.route("**/casos", lambda rota: rota.fulfill(json={"casos": casos}))
+        def responder(rota):
+            caso_id = rota.request.url.split("/casos/")[1].split("/")[0]
+            rota.fulfill(json={"atividades": atividades[caso_id]})
+        self.context.route("**/casos/caso-*/atividades", responder)
+        self.page.evaluate("selecionarAba(abas.find(a => a.painel.id === 'aba-atividades'))")
+        self.page.wait_for_function("document.getElementById('atividades-status').textContent.includes('Revisados 2')")
+        executor = self.page.locator("#atividades-executor")
+        processo = self.page.locator("#atividades-responsavel")
+        lista = self.page.locator("#atividades-lista")
+        self.assertEqual(lista.locator("article").count(), 4)
+        self.select_value(executor, "responsavel:Bia")
+        self.assertEqual(lista.locator("article").count(), 2)
+        self.select_value(processo, "Ana")
+        self.assertEqual(lista.locator("article").count(), 1)
+        self.assertIn("Delegada para Bia", lista.inner_text())
+        self.assertIn("Responsável pelo processo: Ana", lista.inner_text())
+        self.assertIn("Responsável pela atividade: Bia", lista.inner_text())
+        self.select_value(self.page.locator("#atividades-tipo"), "tarefa")
+        self.assertEqual(lista.locator("article").count(), 0)
+        self.select_value(self.page.locator("#atividades-tipo"), "")
+        self.page.locator("#atividades-atualizar").click()
+        self.page.wait_for_function("!document.getElementById('atividades-atualizar').disabled")
+        self.assertEqual(executor.input_value(), "responsavel:Bia")
+        self.assertEqual(lista.locator("article").count(), 1)
+        self.select_value(executor, "responsavel:Ana")
+        self.assertIn("Execução de Ana", lista.inner_text())
+        self.select_value(executor, "sem-responsavel")
+        self.assertEqual(lista.locator("article").count(), 1)
+        self.assertIn("Atividade legada", lista.inner_text())
+        self.assertIn("Responsável pela atividade: Sem responsável", lista.inner_text())
+        atividades["caso-1"].pop()
+        self.page.locator("#atividades-atualizar").click()
+        self.page.wait_for_function("!document.getElementById('atividades-atualizar').disabled")
+        self.assertEqual(executor.input_value(), "")
+        self.assertEqual(lista.locator("article").count(), 2)
+        self.assertFalse(self.errors)
+
+    def test_editar_atividade_preserva_responsavel_em_falha_e_envia_eu_mesmo(self):
+        atividade = {"id": 1, "titulo": "Conferir publicação", "tipo": "tarefa", "status": "pendente", "responsavel": "Bia"}
+        envios = []
+        falha = [False]
+        def responsaveis(rota):
+            if falha[0]:
+                return rota.fulfill(status=500, json={"mensagem": "Falha simulada"})
+            rota.fulfill(json={"responsaveis": ["Ana", "Bia"]})
+        def responder(rota):
+            if rota.request.method == "PATCH":
+                corpo = rota.request.post_data_json
+                envios.append(corpo)
+                atividade.update(corpo)
+                atividade["responsavel"] = corpo["responsavel"] or "Ana"
+                return rota.fulfill(json=atividade)
+            if rota.request.url.endswith("/checklist"):
+                return rota.fulfill(json={"itens": []})
+            rota.fulfill(json={"atividades": [atividade]})
+        self.context.route("**/responsaveis", responsaveis)
+        self.context.route("**/casos/caso-1/atividades**", responder)
+        self.open_case()
+        falha[0] = True
+        self.page.evaluate("() => _abrirModalAtividade('caso-1', {id:1, titulo:'Conferir publicação', tipo:'tarefa', responsavel:'Bia'})")
+        self.assertEqual(self.page.locator("#atividade-responsavel").input_value(), "Bia")
+        self.assertIn("responsável atual foi preservado", self.page.locator("#resultado-atividade").inner_text())
+        self.page.locator("button[form='form-atividade'][type='submit']").click()
+        self.page.wait_for_function("!document.getElementById('modal-atividade').open")
+        self.assertEqual(envios[-1]["responsavel"], "Bia")
+        falha[0] = False
+        self.page.evaluate("() => _abrirModalAtividade('caso-1', {id:1, titulo:'Conferir publicação', tipo:'tarefa', responsavel:'Bia'})")
+        self.select_value(self.page.locator("#atividade-responsavel"), "")
+        self.page.locator("button[form='form-atividade'][type='submit']").click()
+        self.page.wait_for_function("!document.getElementById('modal-atividade').open")
+        self.assertIsNone(envios[-1]["responsavel"])
+        self.page.locator("#lista-atividades").get_by_text("Responsável: Ana", exact=True).wait_for()
+        self.assertFalse(self.errors)
+
     def test_auditoria_layout_atividades_e_enderecos_desktop_mobile(self):
         self.connect()
         pasta = Path(__file__).parent / 'output' / 'playwright' / 'auditoria-gtd'
         pasta.mkdir(parents=True, exist_ok=True)
         self.context.route('**/casos/caso-1/atividades', lambda rota: rota.fulfill(json={'atividades': [
-            {'id': 1, 'titulo': 'Conferir intimação e registrar a providência necessária no processo ' + 'X' * 90, 'tipo': 'prazo', 'status': 'pendente', 'data': '2026-10-30'}]}))
+            {'id': 1, 'titulo': 'Conferir intimação e registrar a providência necessária no processo ' + 'X' * 90, 'tipo': 'prazo', 'status': 'pendente', 'data': '2026-10-30', 'responsavel': 'Bia'}]}))
         self.page.evaluate("selecionarAba(abas.find(a => a.painel.id === 'aba-atividades'))")
         self.page.locator('#atividades-lista article').wait_for()
+        self.page.wait_for_function("!document.querySelector('.app-progresso-global:not([hidden])')")
         for largura in (1440, 390, 320):
             self.page.set_viewport_size({'width': largura, 'height': 900})
             self.page.wait_for_timeout(150)
@@ -1095,6 +1260,12 @@ class InterfaceTest(unittest.TestCase):
         self.assertFalse(self.errors)
 
     def test_auditoria_publicacao_atividade_falha_persistencia_e_origem(self):
+        self._verificar_publicacao_atividade_compatibilidade(estruturada=False)
+
+    def test_publicacao_atividade_estruturada_sem_marcador_e_com_origem_apos_recarga(self):
+        self._verificar_publicacao_atividade_compatibilidade(estruturada=True)
+
+    def _verificar_publicacao_atividade_compatibilidade(self, estruturada):
         self.open_publicacoes_oab()
         self.pub_oab_items[0]['caso_id'] = 'caso-1'
         self.pub_oab_items[0]['dados'] = {'texto': 'Texto integral da publicação de teste'}
@@ -1106,7 +1277,7 @@ class InterfaceTest(unittest.TestCase):
                     return rota.fulfill(status=500, json={'mensagem': 'Falha simulada'})
                 salvas.append({**rota.request.post_data_json, 'id': 42, 'status': 'pendente'})
                 return rota.fulfill(json=salvas[-1])
-            rota.fulfill(json={'atividades': salvas})
+            rota.fulfill(json={'atividades': salvas, 'origem_djen_estruturada': estruturada})
         self.context.route('**/casos/caso-1/atividades', responder)
         self.context.route('**/casos/caso-1/publicacoes', lambda rota: rota.fulfill(json={'publicacoes': self.pub_oab_items[:1]}))
         self.page.evaluate('carregarPublicacoesOab()')
@@ -1123,7 +1294,11 @@ class InterfaceTest(unittest.TestCase):
         falha[0] = False
         self.page.locator("button[form='form-atividade'][type='submit']").click()
         self.page.get_by_role('button', name='Ver publicação de origem', exact=True).wait_for()
-        self.assertIn('Publicação de origem (DJEN): pub-1', salvas[0]['observacoes'])
+        if estruturada:
+            self.assertEqual(salvas[0]['origem_djen_hash'], 'pub-1')
+            self.assertEqual(salvas[0]['observacoes'], 'Verificar providência necessária')
+        else:
+            self.assertIn('Publicação de origem (DJEN): pub-1', salvas[0]['observacoes'])
         self.assertEqual(len(self.pub_oab_posts), 0)
         self.page.reload()
         self.page.wait_for_function("typeof abrirCaso === 'function'")
@@ -1132,6 +1307,143 @@ class InterfaceTest(unittest.TestCase):
         self.page.locator('#caso-subaba-atividades-botao').click()
         self.page.get_by_role('button', name='Ver publicação de origem', exact=True).click()
         self.page.get_by_text('Texto integral da publicação de teste', exact=True).wait_for()
+        self.assertFalse(self.errors)
+
+    def test_origem_null_nao_reinterpreta_marcador_nem_reenvia_origem_ao_editar(self):
+        self.open_case()
+        atividade = {'id': 1, 'titulo': 'Revisar origem', 'tipo': 'tarefa', 'origem_djen_hash': None,
+                     'observacoes': 'Publicação de origem (DJEN): pub-antiga'}
+        self.page.evaluate('(atividade) => _renderizarAtividades("caso-1", [atividade])', atividade)
+        self.assertEqual(self.page.get_by_role('button', name='Ver publicação de origem', exact=True).count(), 0)
+        self.page.evaluate('(atividade) => _abrirModalAtividade("caso-1", atividade)', atividade)
+        self.assertEqual(self.page.locator('#atividade-observacoes').input_value(), atividade['observacoes'])
+        self.assertEqual(self.page.locator('#form-atividade').get_attribute('data-publicacao-hash'), '')
+        self.assertEqual(self.page.locator('#form-atividade').get_attribute('data-origem-estruturada'), 'true')
+        pedidos = []
+        def gravar(rota):
+            pedidos.append(rota.request.post_data_json)
+            rota.fulfill(json={**atividade, **pedidos[-1]})
+        self.context.route('**/casos/caso-1/atividades/1', gravar)
+        self.page.locator('#atividade-titulo').fill('Título atualizado')
+        self.page.locator("button[form='form-atividade'][type='submit']").click()
+        self.page.wait_for_function("!document.getElementById('modal-atividade').open")
+        self.assertNotIn('origem_djen_hash', pedidos[0])
+        self.assertEqual(pedidos[0]['observacoes'], atividade['observacoes'])
+        self.assertFalse(self.errors)
+
+    def test_desvincular_publicacao_limpa_origem_e_impede_recuperacao_pelo_hash(self):
+        atividade = {'id': 1, 'titulo': 'Revisar origem', 'tipo': 'tarefa', 'origem_djen_hash': 'pub-1'}
+        publicacoes = [{'hash': 'pub-1', 'dados': {'texto': 'Conteúdo vinculado de teste'}}]
+        self.context.route('**/casos/caso-1/atividades', lambda rota: rota.fulfill(json={'atividades': [atividade], 'origem_djen_estruturada': True}))
+        def responder(rota):
+            if rota.request.method == 'DELETE':
+                publicacoes.clear()
+                return rota.fulfill(json={'desvinculada': True})
+            rota.fulfill(json={'publicacoes': publicacoes})
+        self.context.route('**/casos/caso-1/publicacoes**', responder)
+        self.open_case()
+        self.page.locator('#caso-subaba-atividades-botao').click()
+        self.page.get_by_role('button', name='Ver publicação de origem', exact=True).click()
+        self.page.locator('#atividade-origem').get_by_text('Conteúdo vinculado de teste', exact=True).wait_for()
+        self.page.locator('#caso-subaba-publicacoes-botao').click()
+        self.page.get_by_role('button', name='Desvincular', exact=True).click()
+        self.page.locator('#modal-confirmar-ok').click()
+        self.page.wait_for_function("document.getElementById('atividade-origem').textContent === ''")
+        self.page.locator('#caso-subaba-atividades-botao').click()
+        self.page.get_by_role('button', name='Ver publicação de origem', exact=True).click()
+        self.page.locator('#atividade-origem').get_by_text('Publicação de origem indisponível', exact=True).wait_for()
+        self.assertNotIn('Conteúdo vinculado de teste', self.page.locator('#atividade-origem').inner_text())
+        self.assertFalse(any(caminho == '/publicacoes-oab' for _, caminho in self.requests))
+        self.assertFalse(self.errors)
+
+    def test_agenda_atividade_retry_conflito_resolucao_cancelamento_e_layout(self):
+        atividade = {'id': 1, 'titulo': 'Conferir publicação', 'tipo': 'prazo', 'status': 'pendente', 'data': '2026-10-30', 'hora': None, 'agenda': None}
+        pedidos = []
+        falha = [True]
+        def responder(rota):
+            request = rota.request
+            if request.url.endswith('/agenda'):
+                pedidos.append((request.method, request.headers.get('idempotency-key'), request.post_data_json))
+                if falha[0]:
+                    falha[0] = False
+                    return rota.fulfill(status=500, json={'mensagem': 'Falha simulada da agenda. Tente novamente.'})
+                if request.method == 'POST' and not atividade['agenda']:
+                    atividade['agenda'] = {'id': 'vinculo-1', 'estado': 'sincronizado', 'versao': 1}
+                elif request.method == 'PATCH':
+                    atividade['titulo'] = 'Título da agenda'
+                    atividade['data'] = '2026-11-02'
+                    atividade['agenda'].update(estado='sincronizado', versao=3)
+                elif request.method == 'DELETE':
+                    atividade['agenda'].update(estado='cancelado', versao=4)
+                return rota.fulfill(json={'agenda': atividade['agenda']})
+            rota.fulfill(json={'atividades': [atividade], 'agenda_disponivel': True, 'origem_djen_estruturada': True})
+        self.context.route('**/casos/caso-1/atividades**', responder)
+        self.open_case()
+        self.page.locator('#caso-subaba-atividades-botao').click()
+        self.page.get_by_role('button', name='Vincular à agenda: Conferir publicação', exact=True).click()
+        self.page.get_by_text('Falha simulada da agenda. Tente novamente.', exact=True).wait_for()
+        self.page.get_by_role('button', name='Vincular à agenda: Conferir publicação', exact=True).click()
+        self.page.get_by_text('Agenda: Sincronizado', exact=True).wait_for()
+        self.assertEqual(pedidos[0][1], pedidos[1][1])
+        self.assertTrue(pedidos[0][1])
+        atividade['agenda'].update(estado='divergente', versao=2, data_remota='2026-11-02', titulo_remoto='Título da agenda')
+        self.page.get_by_role('button', name='Atualizar agenda: Conferir publicação', exact=True).click()
+        self.page.get_by_text('Agenda: Dados diferentes na agenda', exact=True).wait_for()
+        self.page.wait_for_function("!document.querySelector('.app-progresso-global:not([hidden])')")
+        while self.page.locator('#toast-global .cds--inline-notification__close-button').count():
+            self.page.locator('#toast-global .cds--inline-notification__close-button').first.click()
+        pasta = Path(__file__).parent / 'output' / 'playwright' / 'i04'
+        pasta.mkdir(parents=True, exist_ok=True)
+        for tema in ('white', 'g100'):
+            self.page.evaluate('(tema) => AstraJusTema.aplicar(tema)', tema)
+            for largura in (1440, 390):
+                self.page.set_viewport_size({'width': largura, 'height': 1000})
+                self.page.wait_for_timeout(300)  # aguarda transição responsiva do drawer e controles
+                self.page.evaluate('_sideNavAbrir()' if largura > 768 else '_sideNavFechar()')
+                if largura <= 768:
+                    self.page.wait_for_function("document.getElementById('side-nav').getBoundingClientRect().right <= 1")
+                self.assertEqual(self.page.evaluate('document.documentElement.scrollWidth'), largura)
+                self.page.screenshot(path=str(pasta / f'agenda-{tema}-{largura}.png'), full_page=True)
+        self.page.set_viewport_size({'width': 1440, 'height': 1000})
+        self.page.get_by_role('button', name='Usar data e título da agenda: Conferir publicação', exact=True).click()
+        self.page.locator('#modal-confirmar-ok').click()
+        self.page.get_by_text('Agenda: Sincronizado', exact=True).wait_for()
+        self.assertEqual(pedidos[-1][0], 'PATCH')
+        self.assertEqual(pedidos[-1][2], {'vinculo_id': 'vinculo-1', 'versao': 2, 'comando': 'aceitar_data_da_agenda'})
+        self.page.get_by_role('button', name='Cancelar evento: Título da agenda', exact=True).click()
+        self.page.locator('#modal-confirmar-ok').click()
+        self.page.get_by_text('Agenda: Evento cancelado; atividade preservada', exact=True).wait_for()
+        self.assertEqual(atividade['status'], 'pendente')
+        self.assertEqual(pedidos[-1][0], 'DELETE')
+        self.assertEqual(self.page.get_by_role('button', name='Vincular à agenda: Título da agenda', exact=True).count(), 1)
+        self.assertFalse(self.errors)
+
+    def test_agenda_atividade_sem_data_hora_e_integracao_desconectada(self):
+        atividade = {'id': 1, 'titulo': 'Atividade com hora', 'tipo': 'reuniao', 'status': 'pendente', 'data': '2026-10-30', 'hora': '10:00'}
+        disponivel = [True]
+        self.context.route('**/casos/caso-1/atividades', lambda rota: rota.fulfill(json={'atividades': [atividade], 'agenda_disponivel': disponivel[0]}))
+        self.open_case()
+        self.page.locator('#caso-subaba-atividades-botao').click()
+        self.page.get_by_text('Para vincular à agenda, informe uma data e deixe a hora vazia.', exact=True).wait_for()
+        self.assertEqual(self.page.get_by_role('button', name='Vincular à agenda: Atividade com hora', exact=True).count(), 0)
+        disponivel[0] = False
+        atividade['agenda'] = {'id': 'vinculo-antigo', 'estado': 'falha', 'versao': 2, 'erro': 'Reconecte a conta original.'}
+        self.page.evaluate('_carregarAtividades("caso-1")')
+        self.page.get_by_text('Google desconectado. Conecte a conta institucional em /admin e atualize as atividades.', exact=True).wait_for()
+        self.assertEqual(self.page.get_by_role('button', name='Atualizar agenda: Atividade com hora', exact=True).count(), 1)
+        self.assertFalse(self.errors)
+
+    def test_resposta_de_origem_atrasada_nao_reabre_conteudo_invalidado(self):
+        self.open_case()
+        pendentes = []
+        self.context.route('**/casos/caso-1/publicacoes', lambda rota: pendentes.append(rota))
+        self.page.evaluate('() => { void mostrarOrigemAtividade("caso-1", "pub-1"); }')
+        self.page.wait_for_timeout(100)
+        self.assertEqual(len(pendentes), 1)
+        self.page.evaluate('invalidarOrigemAtividade()')
+        pendentes[0].fulfill(json={'publicacoes': [{'hash': 'pub-1', 'dados': {'texto': 'Resposta antiga'}}]})
+        self.page.wait_for_function("!document.querySelector('.app-progresso-global:not([hidden])')")
+        self.assertEqual(self.page.locator('#atividade-origem').inner_text(), '')
         self.assertFalse(self.errors)
 
 

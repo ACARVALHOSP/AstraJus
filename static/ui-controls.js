@@ -159,15 +159,15 @@
   });
 
   // Preserva IDs e botões usados pelos fluxos de atividade e confirmação.
-  for (const id of ['modal-atividade', 'modal-confirmar', 'modal-edicao-pendente']) {
+  for (const id of ['modal-atividade', 'modal-confirmar', 'modal-edicao-pendente', 'modal-clientes-lote']) {
     const original = document.getElementById(id);
     if (!original) continue;
     const modal = document.createElement('cds-modal');
     modal.id = id;
     modal.className = 'app-modal';
-    modal.setAttribute('size', id === 'modal-confirmar' ? 'xs' : 'sm');
+    modal.setAttribute('size', id === 'modal-clientes-lote' ? 'lg' : id === 'modal-confirmar' ? 'xs' : 'sm');
     modal.setAttribute('prevent-close-on-click-outside', '');
-    if (id !== 'modal-atividade') modal.setAttribute('alert', '');
+    if (id === 'modal-confirmar' || id === 'modal-edicao-pendente') modal.setAttribute('alert', '');
     const titulo = original.querySelector('.fluxo-pagina-header__heading');
     const header = document.createElement('cds-modal-header');
     const heading = document.createElement('cds-modal-heading');

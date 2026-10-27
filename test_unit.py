@@ -2429,6 +2429,51 @@ class AtividadeDelegacaoHttpTest(_RegistroTemporario):
         self.assertEqual(status, 200)
         envio.assert_not_called()
 
+    def test_eu_mesmo_reatribui_atividade_delegada_e_persiste(self):
+        for valor in (None, "", "   "):
+            with self.subTest(responsavel=valor):
+                atv = self.gestao.criar_atividade(
+                    self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora,
+                    responsavel=self.bia,
+                )
+                with mock.patch.object(server, "_enviar_aviso_atividade_delegada") as envio:
+                    status, resultado = self._patch(atv["id"], {"responsavel": valor})
+                self.assertEqual(status, 200)
+                self.assertEqual(resultado["responsavel"], "ana")
+                persistida = next(a for a in self.gestao.listar_atividades(self.caso["id"]) if a["id"] == atv["id"])
+                self.assertEqual(persistida["responsavel"], "ana")
+                envio.assert_not_called()
+
+    def test_patch_sem_responsavel_preserva_delegacao(self):
+        atv = self.gestao.criar_atividade(
+            self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora,
+            responsavel=self.bia,
+        )
+        status, resultado = self._patch(atv["id"], {"status": "concluida"})
+        self.assertEqual(status, 200)
+        self.assertEqual(resultado["responsavel"], self.bia)
+        self.assertEqual(resultado["status"], "concluida")
+
+    def test_eu_mesmo_sem_registro_de_usuarios_resolve_identidade(self):
+        self.mw.registro = None
+        atv = self.gestao.criar_atividade(
+            self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora,
+            responsavel=self.bia,
+        )
+        status, resultado = self._patch(atv["id"], {"responsavel": None}, usuario="usuario-local")
+        self.assertEqual(status, 200)
+        self.assertEqual(resultado["responsavel"], "usuario-local")
+
+    def test_eu_mesmo_sem_identidade_nao_simula_reatribuicao(self):
+        atv = self.gestao.criar_atividade(
+            self.caso["id"], "tarefa", "Peticionar", None, None, None, self.agora,
+            responsavel=self.bia,
+        )
+        status, resultado = self._patch(atv["id"], {"responsavel": None}, usuario=None)
+        self.assertEqual(status, 400)
+        self.assertTrue(resultado["erro"])
+        self.assertEqual(self.gestao.listar_atividades(self.caso["id"])[0]["responsavel"], self.bia)
+
 
 if __name__ == "__main__":
     unittest.main()
