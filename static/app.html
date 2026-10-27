@@ -1909,19 +1909,20 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div id="caso-cliente-sugestoes" class="cliente-sugestoes" hidden></div>
 </div>
 <div class="cds--form-item">
-<label class="cds--label" for="caso-titulo">Título</label>
+<label class="cds--label" for="caso-titulo">Título <span id="caso-titulo-tag" class="cds--tag cds--tag--blue cds--tag--sm" hidden>auto · DJEN</span></label>
 <input class="cds--text-input" id="caso-titulo" name="titulo" placeholder="Ex.: Cobrança de honorários" autocomplete="off">
+<span id="caso-titulo-aviso" class="campo-ajuda" hidden>Não foi possível montar o título automaticamente — o DJEN não trouxe partes para este processo. Informe manualmente.</span>
 </div>
 <div class="cds--form-item">
 <label class="cds--label" for="caso-responsavel">Responsável</label>
 <input class="cds--text-input" id="caso-responsavel" name="responsavel" placeholder="Ex.: Dra. Fernanda Reis" autocomplete="off">
 </div>
 <div class="cds--form-item">
-<label class="cds--label" for="caso-acao">Ação</label>
+<label class="cds--label" for="caso-acao">Ação <span id="caso-acao-tag" class="cds--tag cds--tag--blue cds--tag--sm" hidden>auto · DataJud</span></label>
 <input class="cds--text-input" id="caso-acao" name="acao" placeholder="Ex.: Cumprimento de sentença" autocomplete="off">
 </div>
 <div class="cds--form-item">
-<label class="cds--label" for="caso-foro">Foro</label>
+<label class="cds--label" for="caso-foro">Foro <span id="caso-foro-tag" class="cds--tag cds--tag--blue cds--tag--sm" hidden>auto · DataJud</span></label>
 <input class="cds--text-input" id="caso-foro" name="foro" placeholder="Ex.: 3ª Vara Cível" autocomplete="off">
 </div>
 <div class="cds--form-item">
@@ -1941,9 +1942,10 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="cds--form-item">
 <label class="cds--label" for="caso-processos">Número CNJ (opcional)</label>
 <input class="cds--text-input" id="caso-processos" name="numeros_processo" placeholder="1006314-27.2023.8.26.0005" autocomplete="off">
-<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="btn-datajud-modal">Consultar ação/foro no DataJud</button>
-<div id="status-datajud-modal" class="campo-ajuda"></div>
-<span class="campo-ajuda">Informe um único número ou deixe em branco se ainda não existir.</span>
+<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="btn-datajud-modal">Capturar externamente</button>
+<div id="status-datajud-modal" class="campo-ajuda" role="status"></div>
+<div id="caso-partes-captura" class="app-resultado" hidden></div>
+<span class="campo-ajuda">Informe um único número ou deixe em branco se ainda não existir. "Capturar externamente" busca ação, foro, título e partes no DataJud e no DJEN.</span>
 </div>
 </form>
 <div id="resultado-caso" class="app-resultado" aria-live="polite"></div>

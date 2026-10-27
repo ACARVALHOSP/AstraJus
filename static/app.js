@@ -4030,6 +4030,7 @@ registrarSalvamento(formCaso, async (evento) => {
     formCaso.reset();
     document.getElementById("caso-cliente-busca").value = "";
     document.getElementById("caso-cliente").value = "";
+    _resetarIndicadoresCapturaExterna();
     marcarFormularioSalvo(formCaso, true);
     _cache.casos = [..._cache.casos, novoCaso];
     _renderizarTabelaCasosPagina();
@@ -4056,11 +4057,23 @@ registrarSalvamento(formCaso, async (evento) => {
   }
 });
 
+function _resetarIndicadoresCapturaExterna() {
+  limpar(document.getElementById("status-datajud-modal"));
+  const partesEl = document.getElementById("caso-partes-captura");
+  limpar(partesEl);
+  partesEl.hidden = true;
+  document.getElementById("caso-titulo-aviso").hidden = true;
+  document.getElementById("caso-acao-tag").hidden = true;
+  document.getElementById("caso-foro-tag").hidden = true;
+  document.getElementById("caso-titulo-tag").hidden = true;
+}
+
 document.getElementById("btn-novo-contato").addEventListener("click", abrirNovoContato);
 document.getElementById("btn-novo-caso").addEventListener("click", async () => {
   if (!_cache.clientes.length) {
     try { const { clientes } = await _buscarJson("/clientes"); _cache.clientes = clientes || []; } catch { /* segue */ }
   }
+  _resetarIndicadoresCapturaExterna();
   abrirModal("modal-novo-caso");
 });
 document.getElementById("modal-novo-caso-fechar").addEventListener("click", () => fecharModal("modal-novo-caso"));
@@ -5280,47 +5293,119 @@ document.getElementById("form-pub-oab-manual").addEventListener("submit", async 
   }
 });
 
-// ─── DataJud: busca ação/foro a partir de número de processo ─────────────────
+// ─── Captura externa: ação/foro/título/partes a partir de número de processo ─
 
-async function buscarAcaoForoDataJud(numerosCampo, campAcao, campForo, statusEl, botao) {
-  if (!cliente) { mostrarErro(statusEl, "Conecte-se em Acesso antes de consultar o DataJud."); return; }
+function _preencherClienteCapturado(nome, statusEl) {
+  const busca = document.getElementById("caso-cliente-busca");
+  const hidden = document.getElementById("caso-cliente");
+  if (busca.value.trim()) { mostrarAviso(statusEl, "Campo Cliente já preenchido — não alterado."); return; }
+  const correspondencia = _cache.clientes.find((c) => c.nome.trim().toUpperCase() === nome.trim().toUpperCase());
+  busca.value = nome;
+  hidden.value = correspondencia ? correspondencia.id : "";
+  if (!correspondencia) busca.dispatchEvent(new Event("input"));
+}
+
+async function capturarDadosExternos() {
+  const numerosCampo = document.getElementById("caso-processos");
+  const campAcao = document.getElementById("caso-acao");
+  const campForo = document.getElementById("caso-foro");
+  const campTitulo = document.getElementById("caso-titulo");
+  const tagAcao = document.getElementById("caso-acao-tag");
+  const tagForo = document.getElementById("caso-foro-tag");
+  const tagTitulo = document.getElementById("caso-titulo-tag");
+  const tituloAviso = document.getElementById("caso-titulo-aviso");
+  const partesEl = document.getElementById("caso-partes-captura");
+  const statusEl = document.getElementById("status-datajud-modal");
+  const botao = document.getElementById("btn-datajud-modal");
+
+  if (!cliente) { mostrarErro(statusEl, "Conecte-se em Acesso antes de capturar externamente."); return; }
   const numeros = numerosCampo.value.split(",").map((s) => s.trim()).filter(Boolean);
   if (numeros.length !== 1) { mostrarAviso(statusEl, "Informe um único número CNJ para consultar."); return; }
   const numero = numeros[0];
   const tribunal = _siglaTribunal(numero);
   if (!tribunal) { mostrarAviso(statusEl, "Não foi possível determinar o tribunal pelo número informado."); return; }
+
   botao.disabled = true;
   limpar(statusEl);
-  statusEl.appendChild(notificacao("info", "Consultando DataJud…"));
+  limpar(partesEl);
+  partesEl.hidden = true;
+  tituloAviso.hidden = true;
+  tagAcao.hidden = true;
+  tagForo.hidden = true;
+  tagTitulo.hidden = true;
+  statusEl.appendChild(notificacao("info", "Consultando DataJud e DJEN…"));
   try {
-    const dados = await cliente.chamarTool("consultar_processo_datajud", { numero_processo: numero, tribunal });
-    if (dados.erro) { mostrarErro(statusEl, dados.mensagem || "Erro no DataJud."); return; }
-    const proc = (dados.processos || [])[0];
-    if (!proc) { mostrarAviso(statusEl, dados.mensagem || "Processo não encontrado."); return; }
-    if (proc.classe && !campAcao.value) {
-      const partes = [proc.classe, ...(proc.assuntos || [])].filter(Boolean);
-      campAcao.value = partes.join(" - ");
+    const dados = await cliente.chamarTool("consultar_processo_unificado", { numero_processo: numero, tribunal });
+    limpar(statusEl);
+    if (dados.erro) { mostrarErro(statusEl, dados.mensagem || "Erro ao consultar DataJud/DJEN."); return; }
+
+    const instancia = (dados.instancias || [])[0];
+    if (instancia) {
+      if (instancia.classe && !campAcao.value) {
+        campAcao.value = [instancia.classe, ...(instancia.assuntos || [])].filter(Boolean).join(" - ");
+        tagAcao.hidden = false;
+      }
+      if (!campForo.value) {
+        if (instancia.orgaoJulgador) {
+          campForo.value = instancia.orgaoJulgador;
+          tagForo.textContent = "auto · DataJud";
+          tagForo.hidden = false;
+        } else if (dados.orgao_julgador_djen) {
+          campForo.value = dados.orgao_julgador_djen;
+          tagForo.textContent = "auto · DJEN (reserva)";
+          tagForo.hidden = false;
+        }
+      }
+    } else if (!campForo.value && dados.orgao_julgador_djen) {
+      campForo.value = dados.orgao_julgador_djen;
+      tagForo.textContent = "auto · DJEN (reserva)";
+      tagForo.hidden = false;
     }
-    if (proc.orgaoJulgador && !campForo.value) campForo.value = proc.orgaoJulgador;
+
+    const partes = dados.partes || [];
+    const poloAtivo = (p) => /^(A|AT|ATIVO)$/i.test(p.polo || "");
+    const poloPassivo = (p) => /^(P|PA|PASSIVO)$/i.test(p.polo || "");
+    const autores = [...new Set(partes.filter(poloAtivo).map((p) => (p.nome || "").trim()).filter(Boolean))];
+    const reus = [...new Set(partes.filter(poloPassivo).map((p) => (p.nome || "").trim()).filter(Boolean))];
+
+    if (!instancia && !partes.length) {
+      statusEl.appendChild(notificacao("warning", "Atenção", "Nada encontrado no DataJud nem no DJEN para este número."));
+    } else {
+      statusEl.appendChild(notificacao("success", instancia ? "Dados localizados em DataJud e DJEN." : "Dados localizados no DJEN (DataJud sem este processo)."));
+    }
+
+    if (!campTitulo.value) {
+      if (autores.length || reus.length) {
+        campTitulo.value = `${autores.join(" / ") || "Parte autora não informada"} x ${reus.join(" / ") || "Parte ré não informada"}`;
+        tagTitulo.hidden = false;
+      } else {
+        tituloAviso.hidden = false;
+      }
+    }
+
+    if (partes.length) {
+      partesEl.hidden = false;
+      partesEl.appendChild(el("p", { class: "campo-ajuda" }, [document.createTextNode("Partes encontradas no DJEN — clique para preencher o Cliente:")]));
+      const nomesUnicos = [...new Map(partes.map((p) => [(p.nome || "").trim().toUpperCase(), p])).values()];
+      nomesUnicos.filter((p) => p.nome).forEach((p) => {
+        const polo = poloAtivo(p) ? "Autor" : poloPassivo(p) ? "Réu" : "Polo não informado";
+        const btn = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: `${formatarNomeExibicao(p.nome)} · ${polo}` });
+        btn.addEventListener("click", () => _preencherClienteCapturado(p.nome, statusEl));
+        partesEl.appendChild(btn);
+      });
+    }
+
     const form = campAcao.closest("form");
     if (form) atualizarIndicadorEdicao(form);
-    proc.classe ? mostrarSucesso(statusEl, "Preenchido.") : mostrarAviso(statusEl, "Sem dados de classe/órgão.");
   } catch (err) {
-    mostrarErro(statusEl, err.message || "Erro ao consultar DataJud.");
+    limpar(statusEl);
+    mostrarErro(statusEl, err.message || "Erro ao consultar DataJud/DJEN.");
   } finally {
     botao.disabled = false;
   }
 }
 
-document.getElementById("btn-datajud-modal").addEventListener("click", () =>
-  buscarAcaoForoDataJud(
-    document.getElementById("caso-processos"),
-    document.getElementById("caso-acao"),
-    document.getElementById("caso-foro"),
-    document.getElementById("status-datajud-modal"),
-    document.getElementById("btn-datajud-modal"),
-  )
-);
+document.getElementById("btn-datajud-modal").addEventListener("click", capturarDadosExternos);
 
 // ─── Vista de detalhe do caso ────────────────────────────────────────────────
 
