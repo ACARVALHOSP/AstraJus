@@ -1,6 +1,6 @@
 # Clientes: etiquetas e atualização de perfil em massa
 
-Status: implementação aprovada; validação e publicação em andamento
+Status: implementação validada; publicação autorizada em andamento
 
 ## Escopo e aprovação
 
@@ -78,4 +78,5 @@ Validação da prévia: executada em Chromium com dados fictícios; verificados 
 - Cinco jornadas de lote no navegador com SQLite temporário real passaram: aplicar/remover etiquetas, perfil, conflito e revisão sem mudança, falha e recuperação, limpeza ao filtrar. Prévia não grava dados e confirmação preserva campos não envolvidos.
 - Capturas de revisão inspecionadas; modal verificado em 1440, 768, 390 e 320 px. Escape e retorno de foco cobertos. Dados fictícios, sem mutação de produção.
 - Testes Node `test_progress_controls.cjs` e `test_feedback_requests.cjs` passaram.
-- Regressão completa de interface em andamento antes da publicação.
+- Regressão completa: 81 testes, 72 aprovados e nove falhas/erros também reproduzidos na main isolada. Detalhes em `validacao.md`. Nenhuma nova falha detectada nesses testes.
+- White e Gray 100 inspecionados, confinamento de Tab no modal e retorno por Escape verificados.
