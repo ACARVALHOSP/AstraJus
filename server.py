@@ -682,8 +682,10 @@ async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> d
 
     Retorno: dicionário com "numero_processo", "encontrado_datajud" (bool), "instancias" (lista de
     capa+movimentos por grau, igual a "processos" de consultar_processo_datajud), "partes"
-    (nome e polo, deduplicadas por nome) e "advogados" (nome, numero_oab e uf_oab, deduplicados
-    por OAB). Para o texto das publicações, use consultar_publicacoes_djen separadamente.
+    (nome e polo, deduplicadas por nome), "advogados" (nome, numero_oab e uf_oab, deduplicados
+    por OAB) e "orgao_julgador_djen" (nomeOrgao da publicação do DJEN mais recente; serve de reserva
+    quando o DataJud não traz órgão julgador). Para o texto das publicações, use
+    consultar_publicacoes_djen separadamente.
 
     Limitações:
     - "partes" e "advogados" vêm do DJEN e só existem se já houve ao menos uma publicação desse
@@ -704,6 +706,8 @@ async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> d
 
         partes: dict[str, dict] = {}
         advogados: dict[str, dict] = {}
+        orgao_julgador_djen = None
+        data_mais_recente = None
         for item in resultado_djen.get("itens") or []:
             for parte in item.get("destinatarios") or []:
                 chave = (parte.get("nome") or "").strip().upper()
@@ -713,6 +717,10 @@ async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> d
                 chave = advogado.get("numero_oab") or advogado.get("nome")
                 if chave:
                     advogados[chave] = advogado
+            data_item = item.get("data_disponibilizacao") or ""
+            if item.get("nomeOrgao") and (data_mais_recente is None or data_item > data_mais_recente):
+                orgao_julgador_djen = item.get("nomeOrgao")
+                data_mais_recente = data_item
 
         return {
             "numero_processo": _so_digitos(numero_processo),
@@ -720,6 +728,7 @@ async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> d
             "instancias": resultado_datajud.get("processos") or [],
             "partes": list(partes.values()),
             "advogados": list(advogados.values()),
+            "orgao_julgador_djen": orgao_julgador_djen,
         }
     except Exception as exc:
         log.exception("Falha inesperada em consultar_processo_unificado")
