@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Verifica sintaxe Python
-        run: python3 -m py_compile server.py db.py _util.py google_integracao.py asaas_integracao.py
+        run: python3 -m py_compile server.py db.py _util.py google_integracao.py agenda_atividades.py notificacoes.py asaas_integracao.py
 
       - name: Verifica sintaxe JavaScript
         uses: actions/setup-node@v4

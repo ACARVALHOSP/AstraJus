@@ -10,7 +10,8 @@ próprio app cria - não todo o Drive da conta, por privacidade).
 """
 
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote
+from datetime import date, timedelta
 
 import httpx
 
@@ -27,6 +28,77 @@ _URL_CALENDAR_EVENTOS = "https://www.googleapis.com/calendar/v3/calendars/primar
 
 class ErroGoogle(Exception):
     """Erro ao falar com a API do Google (credenciais, rede, ou resposta inesperada)."""
+
+
+class ErroAgendaGoogle(ErroGoogle):
+    def __init__(self, status: int):
+        self.status = status
+        super().__init__(f"Falha no Google Calendar (HTTP {status}).")
+
+
+async def calendario_principal(cliente, token: str) -> str:
+    resposta = await cliente.get(
+        "https://www.googleapis.com/calendar/v3/calendars/primary", headers={"Authorization": f"Bearer {token}"},
+    )
+    dados = _resposta_agenda(resposta)
+    if not isinstance(dados.get("id"), str) or not dados["id"]:
+        raise ErroGoogle("O Google não identificou o calendário.")
+    return dados["id"]
+
+
+def _url_eventos_vinculados(calendario: str, evento_id: str = "") -> str:
+    base = f"https://www.googleapis.com/calendar/v3/calendars/{quote(calendario, safe='')}/events"
+    return base + ("/" + quote(evento_id, safe="") if evento_id else "")
+
+
+def _resposta_agenda(resposta) -> dict:
+    if resposta.status_code >= 400:
+        raise ErroAgendaGoogle(resposta.status_code)
+    if resposta.status_code == 204:
+        return {}
+    try:
+        dados = resposta.json()
+    except ValueError as erro:
+        raise ErroGoogle("Resposta inválida do Google Calendar.") from erro
+    if not isinstance(dados, dict):
+        raise ErroGoogle("Resposta inválida do Google Calendar.")
+    return dados
+
+
+async def obter_evento_vinculado(cliente, token, calendario, evento_id):
+    return _resposta_agenda(await cliente.get(
+        _url_eventos_vinculados(calendario, evento_id), headers={"Authorization": f"Bearer {token}"},
+    ))
+
+
+def _corpo_evento_vinculado(vinculo):
+    return {
+        "summary": vinculo["titulo"], "start": {"date": vinculo["data"]},
+        "end": {"date": (date.fromisoformat(vinculo["data"]) + timedelta(days=1)).isoformat()},
+        "extendedProperties": {"private": {"cnj_caso_id": vinculo["caso_id"],
+            "cnj_atividade_id": str(vinculo["atividade_id"]), "cnj_vinculo_id": vinculo["id"]}},
+    }
+
+
+async def criar_evento_vinculado(cliente, token, vinculo):
+    corpo = {"id": vinculo["evento_id"], **_corpo_evento_vinculado(vinculo)}
+    return _resposta_agenda(await cliente.post(
+        _url_eventos_vinculados(vinculo["calendario_id"]), headers={"Authorization": f"Bearer {token}"}, json=corpo,
+    ))
+
+
+async def atualizar_evento_vinculado(cliente, token, vinculo, etag):
+    return _resposta_agenda(await cliente.patch(
+        _url_eventos_vinculados(vinculo["calendario_id"], vinculo["evento_id"]),
+        headers={"Authorization": f"Bearer {token}", "If-Match": etag}, json=_corpo_evento_vinculado(vinculo),
+    ))
+
+
+async def cancelar_evento_vinculado(cliente, token, vinculo, etag):
+    return _resposta_agenda(await cliente.delete(
+        _url_eventos_vinculados(vinculo["calendario_id"], vinculo["evento_id"]),
+        headers={"Authorization": f"Bearer {token}", "If-Match": etag},
+    ))
 
 
 def url_autorizacao(client_id: str, redirect_uri: str, state: str) -> str:

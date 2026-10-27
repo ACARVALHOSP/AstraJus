@@ -16,7 +16,8 @@ Depois: node static/carbon/build-search-components.cjs
 Licença: LICENSE-search-components.txt e search-components.min.js.LEGAL.txt.
 
 Web Components de Publicações OAB: @carbon/web-components 2.66.0.
-Bundle local oab-components.min.js: DataTable, Toggletip, Tag e IconButton.
+Bundle local oab-components.min.js: DataTable, Toggletip, Tag, Card, IconButton,
+BadgeIndicator e Popover (incluindo Tab tip da central de notificações).
 Fonte: https://github.com/carbon-design-system/carbon/tree/main/packages/web-components
 Licenças: LICENSE-web-components.txt e oab-components.min.js.LEGAL.txt.
 O bundle inclui estilos encapsulados dos componentes; o CSS Carbon existente continua

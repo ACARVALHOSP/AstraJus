@@ -499,6 +499,7 @@ function definirStatus(texto, tom) {
 
 function conectarComToken(valor) {
   cliente = valor ? new ClienteMCP(valor) : null;
+  window.dispatchEvent(new Event("cnj-acesso-alterado"));
   definirStatus(valor ? "Token definido" : "Sem token", valor ? "blue" : "gray");
 }
 
@@ -508,6 +509,7 @@ async function validarToken(valor, lembrar, navegar = true) {
   const resultado = document.getElementById("resultado-token");
   const tentativa = ++geracaoConexao;
   cliente = null;
+  window.dispatchEvent(new Event("cnj-acesso-alterado"));
   botao.disabled = true;
   form.setAttribute("aria-busy", "true");
   definirStatus("Verificando…", "gray");
@@ -517,6 +519,7 @@ async function validarToken(valor, lembrar, navegar = true) {
     await window.cnjUI.operacao(() => candidato._iniciar(), { tipo: "interno", rotulo: "Verificando acesso", regiao: form }); // Autentica no servidor, sem consultar APIs judiciais.
     if (tentativa !== geracaoConexao) return;
     cliente = candidato;
+    window.dispatchEvent(new Event("cnj-acesso-alterado"));
     try {
       if (lembrar) localStorage.setItem(CHAVE_TOKEN, valor);
       else localStorage.removeItem(CHAVE_TOKEN);
@@ -1891,17 +1894,17 @@ async function _buscarJsonSemProgresso(url) {
   return resposta.json();
 }
 
-async function _enviarJson(url, corpo, metodo = "POST") {
-  return window.cnjUI.operacao(() => _enviarJsonSemProgresso(url, corpo, metodo), {
+async function _enviarJson(url, corpo, metodo = "POST", cabecalhos = {}) {
+  return window.cnjUI.operacao(() => _enviarJsonSemProgresso(url, corpo, metodo, cabecalhos), {
     tipo: window.cnjUI.tipoRequisicao(url, metodo), rotulo: "Enviando informações",
   });
 }
 
-async function _enviarJsonSemProgresso(url, corpo, metodo = "POST") {
+async function _enviarJsonSemProgresso(url, corpo, metodo = "POST", cabecalhos = {}) {
   if (!cliente) throw new ErroMCP(401, "Conecte-se primeiro.");
   const resposta = await fetch(url, {
     method: metodo,
-    headers: { Authorization: `Bearer ${cliente.token}`, "Content-Type": "application/json" },
+    headers: { ...cabecalhos, Authorization: `Bearer ${cliente.token}`, "Content-Type": "application/json" },
     body: JSON.stringify(corpo),
   });
   const dados = await resposta.json().catch(() => ({}));
@@ -2686,6 +2689,10 @@ function _resumoEventoCaso(evento) {
   if (evento.tipo === "evento_agenda_alterado") {
     if (c.status === "cancelled") return "Evento da agenda foi cancelado";
     return `Evento da agenda mudou: ${c.titulo || "Prazo"} agora em ${formatarDataSimples(c.data)}`;
+  }
+  if (String(evento.tipo || "").startsWith("agenda_atividade_")) {
+    const estados = { agenda_atividade_sincronizado: "sincronizado", agenda_atividade_divergente: "com divergência", agenda_atividade_cancelado: "cancelado" };
+    return `Vínculo de agenda da atividade ${c.atividade_id}: ${estados[evento.tipo] || "atualizado"}`;
   }
   if (evento.tipo === "movimento_processual") {
     const ultimo = c.ultimo?.nome ? ` (último: ${c.ultimo.nome})` : "";
@@ -5188,7 +5195,7 @@ function _selecionarSubabaCaso(nome) {
 async function abrirCaso(casoId, tipoFeedback = "pagina") {
   const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("caso-vista-detalhe") };
   if (!(await permitirSaidaEdicao())) return false;
-  limpar(document.getElementById("atividade-origem"));
+  invalidarOrigemAtividade();
   document.getElementById("caso-vista-lista").hidden = true;
   document.getElementById("caso-vista-detalhe").hidden = false;
   _selecionarSubabaCaso("cadastro");
@@ -5227,12 +5234,19 @@ async function abrirCaso(casoId, tipoFeedback = "pagina") {
   }
 }
 
+const _casosComOrigemEstruturada = new Set();
+const _casosComAgendaDisponivel = new Set();
+const _chavesAgendaAtividade = new Map();
 async function _carregarAtividades(casoId, tipoFeedback = "interno") {
   const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-atividades") };
   const lista = document.getElementById("lista-atividades");
   limpar(lista);
   try {
-    const { atividades } = await _buscarJson(`/casos/${casoId}/atividades`, feedback);
+    const { atividades, origem_djen_estruturada, agenda_disponivel } = await _buscarJson(`/casos/${casoId}/atividades`, feedback);
+    if (agenda_disponivel) _casosComAgendaDisponivel.add(casoId);
+    else _casosComAgendaDisponivel.delete(casoId);
+    if (origem_djen_estruturada === true || (atividades || []).some((a) => Object.hasOwn(a, "origem_djen_hash"))) _casosComOrigemEstruturada.add(casoId);
+    else _casosComOrigemEstruturada.delete(casoId);
     _renderizarAtividades(casoId, atividades || []);
   } catch (erro) {
     mostrarErro(lista, erro.message);
@@ -5274,8 +5288,9 @@ function _renderizarAtividades(casoId, atividades) {
     corpo.appendChild(el("p", { class: "atividade-meta", texto: partesMeta.join(" · ") }));
     if (atv.responsavel) corpo.appendChild(el("p", { class: "atividade-meta", texto: `Responsável: ${formatarNomeExibicao(atv.responsavel)}` }));
     if (atv.observacoes) corpo.appendChild(el("p", { class: "atividade-meta", texto: atv.observacoes }));
-    const origem = origemPublicacaoAtividade(atv.observacoes);
+    const origem = origemPublicacaoAtividade(atv);
     if (origem) corpo.appendChild(el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Ver publicação de origem", onclick: () => mostrarOrigemAtividade(casoId, origem) }));
+    if (atv.agenda || _casosComAgendaDisponivel.has(casoId)) corpo.appendChild(_controlesAgendaAtividade(casoId, atv));
     item.appendChild(corpo);
 
     const acoes = el("div", { class: "atividade-acoes" });
@@ -5298,21 +5313,86 @@ function _renderizarAtividades(casoId, atividades) {
   }
 }
 
-const _MARCADOR_ORIGEM_ATIVIDADE = /^Publicação de origem \(DJEN\): (.+)$/m;
-function origemPublicacaoAtividade(observacoes) {
-  return String(observacoes || "").match(_MARCADOR_ORIGEM_ATIVIDADE)?.[1] || "";
+function _controlesAgendaAtividade(casoId, atividade) {
+  const v = atividade.agenda;
+  const destino = el("div", { class: "atividade-agenda", "data-agenda-atividade": String(atividade.id) });
+  const acoes = el("div", { class: "atividade-agenda-acoes" });
+  const chaveLocal = `${casoId}/${atividade.id}`;
+  const estados = { pendente: "Sincronização pendente", sincronizado: "Sincronizado", divergente: "Dados diferentes na agenda",
+    cancelamento_pendente: "Cancelamento pendente", cancelado: "Evento cancelado; atividade preservada", falha: "Não foi possível confirmar a operação" };
+  if (v) destino.appendChild(el("p", { class: "atividade-meta", texto: `Agenda: ${estados[v.estado] || v.estado}` }));
+  if (v?.erro) destino.appendChild(el("p", { class: "atividade-meta", texto: v.erro }));
+  if (v?.estado === "divergente") destino.appendChild(el("p", { class: "atividade-meta", texto:
+    `Na agenda: ${v.titulo_remoto || "Sem título"} · ${v.data_remota ? formatarDataSimples(v.data_remota) : "Evento sem data de dia inteiro"}` }));
+  if (!_casosComAgendaDisponivel.has(casoId)) destino.appendChild(el("p", { class: "atividade-meta", texto: "Google desconectado. Conecte a conta institucional em /admin e atualize as atividades." }));
+  const ativo = v && v.estado !== "cancelado";
+  if (v?.estado === "cancelado") _chavesAgendaAtividade.delete(chaveLocal);
+  const executar = async (botao, metodo, comando) => {
+    if (metodo === "DELETE" && !(await confirmarAcao("Cancelar o evento na agenda? A atividade será preservada."))) return;
+    if (metodo === "PATCH" && !(await confirmarAcao(comando === "aceitar_data_da_agenda"
+      ? "Usar a data e o título da agenda nesta atividade?" : "Substituir a data e o título do evento pelos dados desta atividade?"))) return;
+    botao.disabled = true;
+    try {
+      let corpo = {}, cabecalhos = {};
+      if (metodo === "POST") {
+        if (!_chavesAgendaAtividade.has(chaveLocal)) _chavesAgendaAtividade.set(chaveLocal, crypto.randomUUID());
+        cabecalhos = { "Idempotency-Key": _chavesAgendaAtividade.get(chaveLocal) };
+      } else corpo = { vinculo_id: v.id, versao: v.versao, ...(comando ? { comando } : {}) };
+      const resposta = await _enviarJson(`/casos/${casoId}/atividades/${atividade.id}/agenda`, corpo, metodo, cabecalhos);
+      await _carregarAtividades(casoId);
+      [...document.querySelectorAll("#lista-atividades [data-agenda-atividade]")]
+        .find((no) => no.dataset.agendaAtividade === String(atividade.id))?.querySelector("button")?.focus();
+      const estado = resposta.agenda?.estado;
+      mostrarToast(["sincronizado", "cancelado"].includes(estado) ? "success" : "warning",
+        estado === "divergente" ? "Revise os dados da agenda" : "Agenda atualizada", estados[estado] || "Confira o vínculo da atividade.");
+    } catch (erro) {
+      mostrarToast("error", "Não foi possível atualizar a agenda", erro.message);
+    } finally { botao.disabled = false; }
+  };
+  const botao = (texto, metodo, comando) => {
+    const b = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto,
+      "aria-label": `${texto}: ${atividade.titulo}` });
+    b.addEventListener("click", () => executar(b, metodo, comando));
+    acoes.appendChild(b);
+  };
+  if (ativo) {
+    botao("Atualizar agenda", "POST");
+    if (v.estado === "divergente") {
+      botao("Manter dados da atividade", "PATCH", "usar_data_da_atividade");
+      botao("Usar data e título da agenda", "PATCH", "aceitar_data_da_agenda");
+    }
+    botao("Cancelar evento", "DELETE");
+  } else if (_casosComAgendaDisponivel.has(casoId) && atividade.data && !atividade.hora) botao("Vincular à agenda", "POST");
+  else if (_casosComAgendaDisponivel.has(casoId)) destino.appendChild(el("p", { class: "atividade-meta", texto: "Para vincular à agenda, informe uma data e deixe a hora vazia." }));
+  if (v?.link) acoes.appendChild(el("a", { href: v.link, target: "_blank", rel: "noopener", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Abrir no Google Calendar" }));
+  destino.appendChild(acoes);
+  return destino;
+}
+
+function origemPublicacaoAtividade(atividade) {
+  if (atividade && Object.hasOwn(atividade, "origem_djen_hash")) return atividade.origem_djen_hash || "";
+  const marcadores = String(atividade?.observacoes || "").split(/\r?\n/).filter((linha) => linha.startsWith("Publicação de origem (DJEN)"));
+  return marcadores.length === 1 ? marcadores[0].match(/^Publicação de origem \(DJEN\): ([A-Za-z0-9_-]{1,512})$/)?.[1] || "" : "";
+}
+let _geracaoOrigemAtividade = 0;
+function invalidarOrigemAtividade() {
+  ++_geracaoOrigemAtividade;
+  limpar(document.getElementById("atividade-origem"));
 }
 async function mostrarOrigemAtividade(casoId, hash) {
+  const geracao = ++_geracaoOrigemAtividade;
   const destino = document.getElementById("atividade-origem");
   limpar(destino);
   destino.appendChild(el("p", { role: "status", texto: "Carregando publicação de origem…" }));
   try {
     const { publicacoes } = await _buscarJson(`/casos/${casoId}/publicacoes`);
+    if (geracao !== _geracaoOrigemAtividade) return;
     const origem = (publicacoes || []).find((p) => p.hash === hash);
     limpar(destino);
     if (!origem) destino.appendChild(notificacao("warning", "Publicação de origem indisponível", `Referência DJEN: ${hash}. Ela pode ter sido desvinculada deste processo.`));
     else destino.appendChild(_publicacaoCompletaPubOab(origem, "publicacao-origem-atividade"));
   } catch (erro) {
+    if (geracao !== _geracaoOrigemAtividade) return;
     mostrarErro(destino, erro.message);
     destino.appendChild(el("button", { type: "button", class: "cds--btn cds--btn--tertiary cds--btn--sm", texto: "Tentar novamente", onclick: () => mostrarOrigemAtividade(casoId, hash) }));
   }
@@ -5321,7 +5401,11 @@ async function mostrarOrigemAtividade(casoId, hash) {
 }
 
 async function _abrirModalAtividade(casoId, atividade = null, publicacaoHash = "") {
-  document.getElementById("form-atividade").dataset.publicacaoHash = publicacaoHash || origemPublicacaoAtividade(atividade?.observacoes);
+  const resultado = document.getElementById("resultado-atividade");
+  limpar(resultado);
+  const form = document.getElementById("form-atividade");
+  form.dataset.publicacaoHash = publicacaoHash || origemPublicacaoAtividade(atividade);
+  form.dataset.origemEstruturada = String(_casosComOrigemEstruturada.has(casoId) || !!atividade && Object.hasOwn(atividade, "origem_djen_hash"));
   document.getElementById("atividade-id").value = atividade ? atividade.id : "";
   document.getElementById("atividade-tipo").value = atividade ? atividade.tipo : "tarefa";
   document.getElementById("atividade-titulo").value = atividade ? atividade.titulo : "";
@@ -5334,20 +5418,23 @@ async function _abrirModalAtividade(casoId, atividade = null, publicacaoHash = "
   const responsavel = document.getElementById("atividade-responsavel");
   limpar(responsavel);
   responsavel.appendChild(el("option", { value: "", texto: "Eu mesmo" }));
+  const nomes = new Set([atividade?.responsavel].filter(Boolean));
   try {
     const { responsaveis } = await _buscarJson("/responsaveis");
-    for (const nome of [...new Set([...(responsaveis || []), atividade?.responsavel].filter(Boolean))]) {
-      responsavel.appendChild(el("option", { value: nome, texto: formatarNomeExibicao(nome) }));
-    }
-  } catch { /* lista de responsáveis é só uma comodidade; segue sem ela se a busca falhar */ }
+    for (const nome of (responsaveis || []).filter(Boolean)) nomes.add(nome);
+  } catch {
+    mostrarAviso(resultado, "Não foi possível carregar os responsáveis. O responsável atual foi preservado. Reabra a atividade para tentar novamente.");
+  }
+  for (const nome of nomes) responsavel.appendChild(el("option", { value: nome, texto: formatarNomeExibicao(nome) }));
   responsavel.value = atividade?.responsavel || "";
-  document.getElementById("atividade-observacoes").value = String(atividade?.observacoes || "").replace(_MARCADOR_ORIGEM_ATIVIDADE, "").trim();
+  const hashOrigem = form.dataset.publicacaoHash;
+  document.getElementById("atividade-observacoes").value = String(atividade?.observacoes || "").split(/\r?\n/)
+    .filter((linha) => !hashOrigem || linha !== `Publicação de origem (DJEN): ${hashOrigem}`).join("\n").trim();
   const origem = document.getElementById("atividade-publicacao-origem");
   origem.textContent = document.getElementById("form-atividade").dataset.publicacaoHash
     ? `Origem: publicação DJEN ${document.getElementById("form-atividade").dataset.publicacaoHash}. Criar a atividade não altera o status da publicação.` : "";
   document.getElementById("modal-atividade-titulo").textContent = atividade ? "Editar atividade" : "Nova atividade";
   document.getElementById("form-atividade").dataset.casoId = casoId;
-  limpar(document.getElementById("resultado-atividade"));
   const checklistWrapper = document.getElementById("atividade-checklist-wrapper");
   checklistWrapper.hidden = !atividade;
   checklistWrapper.dataset.casoId = casoId;
@@ -5497,6 +5584,7 @@ async function _carregarPublicacoesCaso(casoId, tipoFeedback = "interno") {
         if (!(await confirmarAcao("Desvincular esta publicação do processo?"))) return;
         try {
           await _enviarJson(`/casos/${cid}/publicacoes/${h}`, {}, "DELETE");
+          invalidarOrigemAtividade();
           await _carregarPublicacoesCaso(cid);
         } catch (err) { mostrarToast("error", "Erro", err.message); }
       });
@@ -6006,7 +6094,11 @@ registrarSalvamento(document.getElementById("form-atividade"), async (evento) =>
     observacoes: document.getElementById("atividade-observacoes").value.trim() || null,
   };
   const origem = evento.target.dataset.publicacaoHash;
-  if (origem) corpo.observacoes = [corpo.observacoes, `Publicação de origem (DJEN): ${origem.replace(/[\r\n]/g, "")}`].filter(Boolean).join("\n");
+  if (evento.target.dataset.origemEstruturada === "true") {
+    // Edição comum não troca a origem, inclusive se um marcador antigo permaneceu no texto.
+    if (!aid) corpo.origem_djen_hash = origem || null;
+  }
+  else if (origem) corpo.observacoes = [corpo.observacoes, `Publicação de origem (DJEN): ${origem.replace(/[\r\n]/g, "")}`].filter(Boolean).join("\n");
   if (!corpo.titulo) { mostrarErro(resultado, "Informe o título."); return; }
   const pararEspera = mostrarEspera(resultado, botao, "Salvando");
   try {
@@ -6156,6 +6248,9 @@ registrarSalvamento(document.getElementById("form-honorario"), async (evento) =>
 // Revisão transversal usando as mesmas permissões e endpoints do detalhe.
 let _atividadesAbertas = [];
 let _geracaoAtividades = 0;
+function valorFiltroExecutor(atividade) {
+  return atividade.responsavel ? `responsavel:${atividade.responsavel}` : "sem-responsavel";
+}
 async function carregarAtividadesAbertas(tipoFeedback = "interno") {
   const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("atividades-lista") };
   const lista = document.getElementById("atividades-lista");
@@ -6192,6 +6287,15 @@ async function carregarAtividadesAbertas(tipoFeedback = "interno") {
     responsavel.appendChild(el("option", { value: "", texto: "Todos" }));
     for (const nome of [...new Set(casos.map((c) => c.responsavel || "Sem responsável"))].sort()) responsavel.appendChild(el("option", { value: nome, texto: nome === "Sem responsável" ? nome : formatarNomeExibicao(nome) }));
     if ([...responsavel.options].some((o) => o.value === anterior)) responsavel.value = anterior;
+    const executor = document.getElementById("atividades-executor");
+    const executorAnterior = executor.value;
+    limpar(executor);
+    executor.appendChild(el("option", { value: "", texto: "Todos" }));
+    const executores = new Map(resultados.map(({ atividade }) => [valorFiltroExecutor(atividade), atividade.responsavel || "Sem responsável"]));
+    for (const [valor, nome] of [...executores].sort((a, b) => a[1].localeCompare(b[1], "pt-BR"))) {
+      executor.appendChild(el("option", { value: valor, texto: nome }));
+    }
+    if ([...executor.options].some((o) => o.value === executorAnterior)) executor.value = executorAnterior;
     limpar(status);
     if (falhas.length) {
       status.appendChild(notificacao("warning", "Lista incompleta", `Não foi possível carregar ${falhas.length} processo(s): ${falhas.join(", ")}. Use Atualizar atividades para tentar novamente.`));
@@ -6207,8 +6311,10 @@ function renderizarAtividadesAbertas() {
   const lista = document.getElementById("atividades-lista");
   limpar(lista);
   const responsavel = document.getElementById("atividades-responsavel").value;
+  const executor = document.getElementById("atividades-executor").value;
   const tipo = document.getElementById("atividades-tipo").value;
-  const itens = _atividadesAbertas.filter(({ caso, atividade }) => (!responsavel || (caso.responsavel || "Sem responsável") === responsavel) && (!tipo || atividade.tipo === tipo));
+  const itens = _atividadesAbertas.filter(({ caso, atividade }) => (!responsavel || (caso.responsavel || "Sem responsável") === responsavel)
+    && (!executor || valorFiltroExecutor(atividade) === executor) && (!tipo || atividade.tipo === tipo));
   if (!itens.length) {
     lista.appendChild(notificacao("info", "Nenhuma atividade aberta nos processos carregados com estes filtros"));
     return;
@@ -6218,6 +6324,7 @@ function renderizarAtividadesAbertas() {
     const corpo = el("div", { class: "atividade-corpo" }, [
       el("h3", { class: "atividade-titulo", texto: formatarNomeExibicao(atividade.titulo) }),
       el("p", { class: "atividade-meta", texto: `${caso.titulo ? formatarNomeExibicao(caso.titulo) : "Processo sem título"} · Responsável pelo processo: ${caso.responsavel ? formatarNomeExibicao(caso.responsavel) : "Não definido"}` }),
+      el("p", { class: "atividade-meta", texto: `Responsável pela atividade: ${atividade.responsavel || "Sem responsável"}` }),
       el("p", { class: "atividade-meta", texto: `${_ROTULO_TIPO_ATIVIDADE[atividade.tipo] || atividade.tipo} · ${atividade.data ? formatarDataSimples(atividade.data) : "Sem data"}${atividade.hora ? " · " + atividade.hora : ""}` }),
     ]);
     const abrir = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Abrir processo", onclick: async () => {
@@ -6239,7 +6346,7 @@ function renderizarAtividadesAbertas() {
   }
 }
 document.getElementById("atividades-atualizar").addEventListener("click", carregarAtividadesAbertas);
-for (const id of ["atividades-responsavel", "atividades-tipo"]) document.getElementById(id).addEventListener("change", renderizarAtividadesAbertas);
+for (const id of ["atividades-executor", "atividades-responsavel", "atividades-tipo"]) document.getElementById(id).addEventListener("change", renderizarAtividadesAbertas);
 
 // --- Header: hambúrguer / side-nav rail ----------------------------------------------------
 const _mqMobile = window.matchMedia("(max-width: 768px)");
@@ -6297,22 +6404,16 @@ const _inputBusca = document.getElementById("header-busca-input");
 
 function _fecharPainelNotificacoes() {
   _painelNotificacoes.hidden = true;
+  const popover = document.getElementById("notificacoes-popover");
+  popover.open = false;
   _btnNotificacoesToggle.setAttribute("aria-expanded", "false");
+  _btnNotificacoesToggle.isSelected = false;
+  _btnNotificacoesToggle.shadowRoot?.querySelector("button")?.setAttribute("aria-expanded", "false");
 }
 function _fecharPainelBusca() {
   _painelBusca.hidden = true;
   _btnBuscaToggle.setAttribute("aria-expanded", "false");
 }
-_btnNotificacoesToggle.addEventListener("click", () => {
-  const abrindo = _painelNotificacoes.hidden;
-  _fecharPainelBusca();
-  if (abrindo) {
-    _painelNotificacoes.hidden = false;
-    _btnNotificacoesToggle.setAttribute("aria-expanded", "true");
-  } else {
-    _fecharPainelNotificacoes();
-  }
-});
 document.addEventListener("click", (ev) => {
   const caminho = ev.composedPath();
   if (!_painelNotificacoes.hidden && !caminho.includes(_painelNotificacoes) && !caminho.includes(_btnNotificacoesToggle)) {
