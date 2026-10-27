@@ -15,7 +15,7 @@ const packages = [...new Set(Object.keys(result.metafile.inputs).filter((p) => p
 }))].sort();
 const licenses = packages.map((name) => {
   const input = Object.keys(result.metafile.inputs).find((p) => p.includes(`node_modules/${name}/`));
-  const dir = path.resolve(root, input.slice(0, input.lastIndexOf(`node_modules/${name}/`) + `node_modules/${name}`.length));
+  const dir = path.resolve(input.slice(0, input.lastIndexOf(`node_modules/${name}/`) + `node_modules/${name}`.length));
   const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
   const file = ['LICENSE', 'LICENSE.txt', 'LICENSE.md'].find((f) => fs.existsSync(path.join(dir, f)));
   if (!file) throw new Error(`Licença ausente: ${name}`);

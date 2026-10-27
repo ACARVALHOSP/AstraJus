@@ -3277,7 +3277,8 @@ class _AutenticacaoBearer:
             return
         if caminho in ("/static/search-fields.js", "/static/search-fields.css", "/static/carbon/search-components.min.js",
                        "/static/ui-controls.js", "/static/ui-controls.css", "/static/carbon/ui-controls.min.js",
-                       "/static/theme.js", "/static/theme.css", "/static/carbon/theme-components.min.js") and scope.get("method") == "GET":
+                       "/static/theme.js", "/static/theme.css", "/static/carbon/theme-components.min.js",
+                       "/static/notificacoes.js") and scope.get("method") == "GET":
             arquivo = Path(__file__).resolve().parent / caminho.lstrip("/")
             tipo = "text/css; charset=utf-8" if caminho.endswith(".css") else "application/javascript; charset=utf-8"
             if arquivo.is_file():

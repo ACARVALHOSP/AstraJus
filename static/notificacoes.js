@@ -91,7 +91,7 @@
     try {
       const query = new URLSearchParams({ limite: "20", estado: filtro.checked ? "nao_lidas" : "todas" });
       if (proximo) query.set("cursor", proximo);
-      const dados = await _buscarJson(`/notificacoes?${query}`);
+      const dados = await _buscarJsonSemProgresso(`/notificacoes?${query}`);
       if (versao !== geracao || dono !== cliente) return;
       if (!Array.isArray(dados.notificacoes) || !Number.isInteger(dados.nao_lidas) || dados.nao_lidas < 0) throw new Error("Resposta de notificações inválida. Tente novamente.");
       if (!anexar) lista.replaceChildren();

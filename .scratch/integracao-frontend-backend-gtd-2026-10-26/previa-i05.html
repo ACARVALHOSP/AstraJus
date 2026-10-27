@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="pt-BR" class="cds--white">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prévia I05 — Notificações</title>
+<link rel="stylesheet" href="../../static/carbon/styles.min.css">
+<script src="../../static/carbon/oab-components.min.js"></script>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--cds-text-primary); background: var(--cds-background); font: 14px 'IBM Plex Sans', sans-serif; }
+header { height: 3rem; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--cds-border-subtle); padding-inline: 1rem; }
+.shell-acoes { display: flex; align-items: center; gap: .5rem; }
+#sino { display: inline-block; }
+#sino[aria-expanded="true"]::part(button) { background: var(--cds-layer-01); }
+#popover-notificacoes { position: relative; }
+cds-popover-content::part(content) { inline-size: min(26rem, calc(100vw - 2rem)); max-inline-size: calc(100vw - 2rem); }
+main { max-width: 72rem; padding: 2rem 1rem; margin-inline: auto; }
+.nota { margin-block: 0 1.5rem; color: var(--cds-text-secondary); line-height: 1.5; max-width: 68ch; }
+.controles { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; margin-block-end: 2rem; }
+.controles .cds--form-item { max-width: 20rem; }
+#destino-demo { margin-block-start: 1rem; }
+.painel { width: min(26rem, calc(100vw - 2rem)); max-height: calc(100dvh - 4rem); overflow-y: auto; padding: 1rem; }
+.painel[hidden], [hidden] { display: none !important; }
+.cabecalho, .acoes { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.cabecalho { justify-content: space-between; }
+h1 { font-size: 1.25rem; line-height: 1.4; margin-block-end: 1rem; }
+.cabecalho h2, li h3 { font-size: .875rem; font-weight: 600; line-height: 1.5; }
+.ajuda { font-size: .75rem; line-height: 1.5; color: var(--cds-text-secondary); margin-block: .5rem; }
+.check { display: flex; align-items: center; gap: .5rem; margin-block: 1rem; }
+.check input { width: 1rem; height: 1rem; accent-color: var(--cds-interactive); }
+ul { list-style: none; margin: 0; padding: 0; }
+li { border-block-end: 1px solid var(--cds-border-subtle); padding-block: 1rem; overflow-wrap: anywhere; }
+li h3, li p { margin-block: 0 .5rem; }
+li p { line-height: 1.5; }
+.acoes .cds--btn { max-width: 100%; white-space: normal; }
+#status p { margin-block: 1rem; line-height: 1.5; }
+#status.erro { color: var(--cds-support-error); }
+@media(max-width:600px) { main { padding-block-start: 1rem; } .nota { max-width: 100%; } }
+</style>
+</head>
+<body>
+<header><span>AstraJus · Gestão processual</span><div class="shell-acoes">
+<button class="cds--btn cds--btn--ghost cds--btn--sm" id="tema" type="button">Tema escuro</button>
+<cds-popover id="popover-notificacoes" align="bottom-end" tabtip autoalign>
+<cds-icon-button id="sino" kind="ghost" size="lg" align="bottom-end" aria-controls="painel" aria-expanded="false">
+<svg slot="icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M14.4,10.1L13,8.8V6.5c0-2.6-1.9-4.7-4.5-5v-1h-1v1C5,1.8,3,3.9,3,6.5v2.3l-1.4,1.3c-0.1,0.1-0.2,0.2-0.1,0.4V12c0,0.3,0.2,0.5,0.4,0.5c0,0,0,0,0.1,0h3.5C5.5,13.9,6.6,15,8,15s2.5-1.1,2.5-2.5H14c0.3,0,0.5-0.2,0.5-0.4c0,0,0,0,0-0.1v-1.5C14.5,10.4,14.4,10.2,14.4,10.1z M8,14c-0.8,0-1.5-0.7-1.5-1.5h3C9.5,13.3,8.8,14,8,14z M13.5,11.5h-11v-0.8l1.3-1.4C3.9,9.3,4,9.1,4,9V6.5c0-2.2,1.8-4,4-4s4,1.8,4,4V9c0,0.1,0.1,0.3,0.1,0.4l1.4,1.3V11.5z"/></svg>
+<span slot="tooltip-content" id="rotulo-sino">Notificações: 3 não lidas</span>
+<cds-badge-indicator id="contador" count="3"></cds-badge-indicator>
+</cds-icon-button>
+<cds-popover-content id="conteudo-notificacoes"></cds-popover-content>
+</cds-popover></div></header>
+<main>
+<h1>Prévia da central de notificações</h1>
+<p class="nota">Acionador: Carbon Icon Button with Badge. Ao clicar: Carbon Popover com Tab tip, conectado ao cabeçalho.</p>
+<p class="nota">Artefato separado para aprovação. Todos os nomes, avisos e contagens abaixo são fictícios. Esta página não se conecta ao backend e não altera a aplicação.</p>
+<div class="controles"><div class="cds--form-item"><label class="cds--label" for="estado">Estado da prévia</label>
+<select class="cds--select-input" id="estado"><option value="itens">Com notificações</option><option value="carregando">Carregando</option><option value="vazio">Lista vazia</option><option value="falha">Falha de consulta</option><option value="acesso">Acesso necessário</option></select></div>
+<button class="cds--btn cds--btn--tertiary cds--btn--sm" id="restaurar" type="button">Restaurar dados fictícios</button></div>
+<p class="nota">Use o sino para abrir e fechar. Escape fecha e devolve o foco ao sino. “Abrir” demonstra a navegação sem marcar leitura; “Marcar como lida” altera apenas o estado fictício desta prévia.</p>
+<div id="destino-demo" role="status" tabindex="-1"></div>
+</main>
+<section class="painel" id="painel" role="region" aria-labelledby="titulo-painel">
+<div class="cabecalho"><h2 id="titulo-painel">Notificações</h2><button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="atualizar">Atualizar</button></div>
+<p class="ajuda">Últimos 180 dias. Ler um aviso não trata a publicação nem conclui a atividade.</p>
+<label class="check" for="nao-lidas"><input type="checkbox" id="nao-lidas">Somente não lidas</label>
+<div id="status" aria-live="polite"></div><ul id="lista"></ul>
+<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="mais">Carregar mais notificações</button>
+</section>
+<script>
+const $ = id => document.getElementById(id);
+const iniciais = [
+ { id: '1', titulo: 'Atividade atribuída', mensagem: 'Conferir a publicação e registrar a próxima providência.', data: '26/10/2026 às 14:40', destino: 'Atividades do processo', lida: false },
+ { id: '2', titulo: 'Nova publicação monitorada', mensagem: 'Confira a publicação na área autorizada.', data: '26/10/2026 às 12:15', destino: 'Publicações monitoradas', lida: false },
+ { id: '3', titulo: 'Atividade atribuída', mensagem: 'Revisar os documentos recebidos do cliente.', data: '25/10/2026 às 17:30', destino: 'Atividades do processo', lida: false }
+];
+let itens = [], mais = false;
+function texto(tag, valor, classe) { const no = document.createElement(tag); no.textContent = valor; if (classe) no.className = classe; return no; }
+function botao(nome, acao) { const b = texto('button', nome, 'cds--btn cds--btn--ghost cds--btn--sm'); b.type='button'; b.addEventListener('click', acao); return b; }
+function sincronizarAcionador() {
+ const aberto=$('popover-notificacoes').open;
+ $('sino').setAttribute('aria-expanded',String(aberto));
+ $('sino').isSelected=aberto;
+ const nativo=$('sino').shadowRoot?.querySelector('button');
+ if(nativo) { nativo.setAttribute('aria-expanded',String(aberto)); nativo.setAttribute('aria-controls','painel'); }
+}
+function abrir() { $('popover-notificacoes').open=true; sincronizarAcionador(); }
+function fechar() { $('popover-notificacoes').open=false; sincronizarAcionador(); }
+function rotuloSino(rotulo) {
+ $('rotulo-sino').textContent=rotulo;
+ $('sino').requestUpdate();
+}
+function renderizar() {
+ $('lista').replaceChildren(); $('status').replaceChildren(); $('status').className='';
+ const estado=$('estado').value; const operacional=estado==='itens'||estado==='vazio';
+ $('atualizar').disabled=estado==='carregando'; $('nao-lidas').disabled=estado==='carregando';
+ $('mais').hidden=estado!=='itens'||mais;
+ if (!operacional) {
+   $('contador').hidden=true; rotuloSino('Notificações: contagem indisponível');
+   const mensagens={carregando:'Carregando notificações…', falha:'Não foi possível carregar suas notificações. Tente novamente.', acesso:'Conecte-se na aba Acesso para consultar suas notificações.'};
+   const aviso=texto('p',mensagens[estado]); aviso.setAttribute('role',estado==='falha'?'alert':'status'); $('status').append(aviso);
+   if(estado==='falha') { $('status').className='erro'; $('status').append(botao('Tentar novamente',()=>{$('estado').value='itens';renderizar();})); }
+   return;
+ }
+ const contagem=estado==='vazio'?0:itens.filter(n=>!n.lida).length;
+ $('contador').count=contagem; $('contador').hidden=contagem===0;
+ rotuloSino(`Notificações: ${contagem} não lidas`);
+ const visiveis=estado==='vazio'?[]:itens.filter(n=>!$('nao-lidas').checked||!n.lida);
+ if(!visiveis.length) $('status').append(texto('p',$('nao-lidas').checked?'Nenhuma notificação não lida nos últimos 180 dias.':'Nenhuma notificação disponível nos últimos 180 dias.'));
+ for(const n of visiveis) {
+   const li=document.createElement('li'); li.append(texto('h3',n.titulo),texto('p',n.mensagem),texto('p',`${n.data} · ${n.lida?'Lida':'Não lida'}`,'ajuda'));
+   const acoes=document.createElement('div'); acoes.className='acoes';
+   acoes.append(botao('Abrir',()=>{fechar();$('destino-demo').textContent=`Prévia: abriria ${n.destino}. A notificação mantém seu estado de leitura.`;$('destino-demo').focus();}));
+   if(!n.lida) acoes.append(botao('Marcar como lida',()=>{n.lida=true;renderizar();$('atualizar').focus();}));
+   li.append(acoes);$('lista').append(li);
+ }
+}
+function restaurar(){itens=iniciais.map(n=>({...n}));mais=false;$('estado').value='itens';$('nao-lidas').checked=false;renderizar();}
+$('sino').addEventListener('click',()=>{if($('popover-notificacoes').open)fechar();else {abrir();renderizar();}});
+$('popover-notificacoes').addEventListener('cds-popover-closed',sincronizarAcionador);
+$('estado').addEventListener('change',()=>{abrir();renderizar();});
+$('atualizar').addEventListener('click',renderizar);
+$('nao-lidas').addEventListener('change',renderizar);
+$('restaurar').addEventListener('click',restaurar);
+$('mais').addEventListener('click',()=>{itens.push({id:'4',titulo:'Atividade atribuída',mensagem:'Conferir documentos. A atribuição mudou desde este aviso.',data:'24/10/2026 às 09:00',destino:'Atividades do processo',lida:true});mais=true;renderizar();});
+$('tema').addEventListener('click',()=>{const escuro=!document.documentElement.classList.contains('cds--g100');document.documentElement.className=escuro?'cds--g100':'cds--white';$('tema').textContent=escuro?'Tema claro':'Tema escuro';document.documentElement.style.colorScheme=escuro?'dark':'light';});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('popover-notificacoes').open){e.preventDefault();fechar();$('sino').shadowRoot?.querySelector('button')?.focus();}}, {capture:true});
+Promise.all(['cds-popover','cds-popover-content','cds-icon-button','cds-badge-indicator'].map(n=>customElements.whenDefined(n))).then(async()=>{
+ $('conteudo-notificacoes').append($('painel'));
+ $('popover-notificacoes').tabTip=true;
+ await $('sino').updateComplete;
+ restaurar();sincronizarAcionador();
+ window.previaI05Pronta=true;
+});
+</script>
+</body></html>

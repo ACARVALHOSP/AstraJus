@@ -131,7 +131,7 @@ class ClienteMCP {
   }
 
   async _enviar(...args) {
-    return window.cnjUI.executar(() => this._enviarSemProgresso(...args), "Consultando informações");
+    return this._enviarSemProgresso(...args);
   }
 
   async _enviarSemProgresso(corpo, { comResposta = true, podeReiniciar = true } = {}) {
@@ -222,7 +222,14 @@ class ClienteMCP {
     await this._enviar({ jsonrpc: "2.0", method: "notifications/initialized" }, { comResposta: false });
   }
 
-  async chamarTool(nome, argumentos) {
+  async chamarTool(nome, argumentos, feedback = {}) {
+    const externas = new Set(['consultar_processo_datajud', 'consultar_publicacoes_djen', 'buscar_feriados_forenses', 'baixar_certidao_djen', 'perfil_decisorio_magistrado', 'consultar_jurimetria_cjpg']);
+    return window.cnjUI.operacao(() => this._chamarToolSemFeedback(nome, argumentos), {
+      tipo: externas.has(nome) ? 'externo' : 'interno', rotulo: externas.has(nome) ? 'Consultando fonte externa' : 'Processando solicitação', ...feedback,
+    });
+  }
+
+  async _chamarToolSemFeedback(nome, argumentos) {
     if (!this.sessionId) await this._iniciar();
     const resultado = await this._enviar({
       jsonrpc: "2.0",
@@ -230,6 +237,7 @@ class ClienteMCP {
       method: "tools/call",
       params: { name: nome, arguments: argumentos },
     });
+    if (resultado?.isError) throw new ErroMCP(200, resultado.content?.[0]?.text || "Não foi possível concluir a solicitação.");
     const item = resultado && resultado.content && resultado.content[0];
     if (!item || typeof item.text !== "string") {
       throw new ErroMCP(200, "Resposta vazia do servidor.");
@@ -301,6 +309,38 @@ function mostrarAviso(container, mensagem) {
   container.appendChild(notificacao("warning", "Atenção", mensagem));
 }
 
+// Movimento próprio: estado final imediato com teclado ou preferência reduzida.
+const _motionReduzido = matchMedia("(prefers-reduced-motion: reduce)");
+const _motionAtivos = new Set();
+let _motionTeclado = false;
+function _concluirMotion() { for (const animacao of [..._motionAtivos]) animacao.finish(); }
+document.addEventListener("keydown", () => {
+  _motionTeclado = true;
+  document.documentElement.classList.add("app-motion-teclado");
+  _concluirMotion();
+}, true);
+document.addEventListener("pointerdown", () => {
+  _motionTeclado = false;
+  document.documentElement.classList.remove("app-motion-teclado");
+}, true);
+_motionReduzido.addEventListener("change", () => { if (_motionReduzido.matches) _concluirMotion(); });
+function _animarOpacidade(alvo, inicio, fim, token, curva) {
+  if (_motionReduzido.matches || _motionTeclado || !alvo.animate) return null;
+  const estilo = getComputedStyle(document.documentElement);
+  const animacao = alvo.animate([{ opacity: inicio }, { opacity: fim }], {
+    duration: parseFloat(estilo.getPropertyValue(token)), easing: estilo.getPropertyValue(curva).trim(),
+  });
+  _motionAtivos.add(animacao);
+  const concluir = () => _motionAtivos.delete(animacao);
+  animacao.addEventListener("finish", concluir, { once: true });
+  animacao.addEventListener("cancel", concluir, { once: true });
+  return animacao;
+}
+function _animarTooltip(alvo, evento) {
+  if (evento?.type !== "mouseenter" || !matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+  _animarOpacidade(alvo, 0, 1, "--cds-duration-fast-01", "--cds-ease-entrance");
+}
+
 function mostrarToast(tipo, titulo, mensagem, duracao = 5000) {
   const container = document.getElementById("toast-global");
   if (!container) { console.error(mensagem || titulo); return; }
@@ -312,10 +352,26 @@ function mostrarToast(tipo, titulo, mensagem, duracao = 5000) {
   fechar.className = "cds--inline-notification__close-button";
   fechar.innerHTML = "✕";
   fechar.style.cssText = "border:none;background:transparent;cursor:pointer;padding:0.5rem;font-size:1rem;line-height:1;opacity:.7";
-  fechar.addEventListener("click", () => ntf.remove());
+  let temporizador;
+  const remover = () => {
+    clearTimeout(temporizador);
+    for (const animacao of ntf.getAnimations()) animacao.cancel();
+    ntf.remove();
+  };
+  fechar.addEventListener("click", remover);
   ntf.querySelector(".cds--inline-notification__details").after(fechar);
+  const animavel = tipo !== "error" && container.childElementCount === 0;
+  // Rajadas interrompem também a entrada do aviso anterior.
+  if (container.childElementCount) for (const aviso of container.children) for (const animacao of aviso.getAnimations()) animacao.finish();
   container.appendChild(ntf);
-  if (duracao > 0) setTimeout(() => { if (ntf.parentNode) ntf.remove(); }, duracao);
+  if (animavel) _animarOpacidade(ntf, 0, 1, "--cds-duration-moderate-01", "--cds-ease-entrance");
+  if (duracao > 0) temporizador = setTimeout(() => {
+    if (!ntf.isConnected) return;
+    const saida = animavel && container.childElementCount === 1
+      ? _animarOpacidade(ntf, 1, 0, "--cds-duration-fast-02", "--cds-ease-exit") : null;
+    if (!saida) remover();
+    else { saida.addEventListener("finish", remover, { once: true }); saida.addEventListener("cancel", remover, { once: true }); }
+  }, duracao);
 }
 
 function mostrarEspera(container, botao, titulo) {
@@ -460,7 +516,7 @@ async function validarToken(valor, lembrar, navegar = true) {
   limpar(resultado);
   try {
     const candidato = new ClienteMCP(valor);
-    await candidato._iniciar(); // Autentica no servidor, sem consultar APIs judiciais.
+    await window.cnjUI.operacao(() => candidato._iniciar(), { tipo: "interno", rotulo: "Verificando acesso", regiao: form }); // Autentica no servidor, sem consultar APIs judiciais.
     if (tentativa !== geracaoConexao) return;
     cliente = candidato;
     window.dispatchEvent(new Event("cnj-acesso-alterado"));
@@ -628,7 +684,7 @@ async function renderizarCasosFavoritos() {
   for (const caso of casosFavoritos) {
     listaCasosFavoritos.appendChild(
       el("li", { class: "lista-rapida-item cds--tile" }, [
-        el("span", { texto: caso.titulo || "(sem título)" }),
+        el("span", { texto: caso.titulo ? formatarNomeExibicao(caso.titulo) : "(sem título)" }),
         el("div", {}, [
           el("button", {
             class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: "Abrir",
@@ -733,14 +789,14 @@ async function selecionarAba(alvo, { registrarHistorico = true } = {}) {
     alvo.painel.focus();
   } else alvo.botao.focus();
   if (alvo.painel.id === "aba-historico") { renderizarListaRapida(); renderizarCasosFavoritos(); }
-  if (alvo.painel.id === "aba-monitoramentos") carregarMonitoramentos();
-  if (alvo.painel.id === "aba-contatos") { voltarParaContatos(); carregarContatos(); }
-  if (alvo.painel.id === "aba-casos") carregarCasosPagina();
-  if (alvo.painel.id === "aba-atividades") carregarAtividadesAbertas();
-  if (alvo.painel.id === "aba-publicacoes-oab") carregarPublicacoesOab();
-  if (alvo.painel.id === "aba-integracoes") carregarStatusIntegracoes();
-  if (alvo.painel.id === "aba-financeiro") carregarLancamentos();
-  if (alvo.painel.id === "aba-pagamentos") carregarPagamentos();
+  if (alvo.painel.id === "aba-monitoramentos") carregarMonitoramentos("pagina");
+  if (alvo.painel.id === "aba-contatos") { voltarParaContatos(); carregarContatos("pagina"); }
+  if (alvo.painel.id === "aba-casos") carregarCasosPagina("pagina");
+  if (alvo.painel.id === "aba-atividades") carregarAtividadesAbertas("pagina");
+  if (alvo.painel.id === "aba-publicacoes-oab") carregarPublicacoesOab("pagina");
+  if (alvo.painel.id === "aba-integracoes") carregarStatusIntegracoes("pagina");
+  if (alvo.painel.id === "aba-financeiro") carregarLancamentos("pagina");
+  if (alvo.painel.id === "aba-pagamentos") carregarPagamentos("pagina");
   return true;
 }
 
@@ -1369,6 +1425,8 @@ function abrirDemonstrativoPdf({ dataBase, dias, tipo, municipio, dia1, vencimen
   janela.focus();
 }
 
+let _sequenciaPainelPrazo = 0;
+
 function painelCalculoPrazo(item) {
   const dataBase = (item.data_disponibilizacao || "").slice(0, 10);
   const tribunal = (item.siglaTribunal || "").toLowerCase() || "tjsp";
@@ -1379,16 +1437,28 @@ function painelCalculoPrazo(item) {
     return painel;
   }
 
-  const campoDias = el("input", { class: "cds--text-input", type: "number", min: "1", value: "15" });
+  const prefixo = `prazo-${++_sequenciaPainelPrazo}`;
+  let municipioInicial = "São Paulo";
+  let avisoPreferencia = "";
+  try {
+    municipioInicial = localStorage.getItem(CHAVE_PRAZO_MUNICIPIO) || municipioInicial;
+  } catch {
+    avisoPreferencia = "Não foi possível ler a preferência de município neste navegador. São Paulo foi preenchido como padrão; confira o município antes de calcular.";
+  }
+  const preferenciaEl = el("p", { id: `${prefixo}-preferencia`, class: "campo-ajuda prazo-preferencia-status", role: "status", texto: avisoPreferencia });
+  preferenciaEl.hidden = !avisoPreferencia;
+  const campoDias = el("input", { id: `${prefixo}-dias`, class: "cds--text-input", type: "number", min: "1", value: "15" });
   const campoTipo = el(
     "select",
-    { class: "cds--select-input" },
+    { id: `${prefixo}-tipo`, class: "cds--select-input" },
     TIPOS_CONTAGEM_PRAZO.map((t) => el("option", { value: t.valor, texto: t.rotulo }))
   );
   const campoMunicipio = el("input", {
+    id: `${prefixo}-municipio`,
     class: "cds--text-input",
     type: "text",
-    value: localStorage.getItem(CHAVE_PRAZO_MUNICIPIO) || "São Paulo",
+    value: municipioInicial,
+    "aria-describedby": preferenciaEl.id,
   });
   const botaoCalcular = el("button", { class: "cds--btn cds--btn--primary cds--btn--sm", type: "button", texto: "Calcular" });
   const resultadoEl = el("div", { class: "prazo-resultado" });
@@ -1399,11 +1469,12 @@ function painelCalculoPrazo(item) {
   );
   painel.appendChild(
     el("div", { class: "prazo-painel-grade" }, [
-      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", texto: "Dias" }), campoDias]),
-      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", texto: "Contagem a partir de" }), campoTipo]),
-      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", texto: "Município/comarca" }), campoMunicipio]),
+      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: campoDias.id, texto: "Dias" }), campoDias]),
+      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: campoTipo.id, texto: "Contagem a partir de" }), campoTipo]),
+      el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: campoMunicipio.id, texto: "Município/comarca" }), campoMunicipio]),
     ])
   );
+  painel.appendChild(preferenciaEl);
   painel.appendChild(botaoCalcular);
   painel.appendChild(resultadoEl);
 
@@ -1415,7 +1486,14 @@ function painelCalculoPrazo(item) {
       return;
     }
     const municipio = campoMunicipio.value.trim() || "São Paulo";
-    localStorage.setItem(CHAVE_PRAZO_MUNICIPIO, municipio);
+    try {
+      localStorage.setItem(CHAVE_PRAZO_MUNICIPIO, municipio);
+      preferenciaEl.textContent = "";
+      preferenciaEl.hidden = true;
+    } catch {
+      preferenciaEl.textContent = "Não foi possível lembrar o município neste navegador. O cálculo continuará com o município informado.";
+      preferenciaEl.hidden = false;
+    }
     const textoOriginal = botaoCalcular.textContent;
     botaoCalcular.disabled = true;
     botaoCalcular.textContent = "Calculando…";
@@ -1717,12 +1795,12 @@ function cartaoMonitoramento(m) {
 
 const resultadoMonitoramentos = document.getElementById("resultado-monitoramentos");
 
-async function carregarMonitoramentos() {
+async function carregarMonitoramentos(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("resultado-monitoramentos") };
   if (!exigirCliente(resultadoMonitoramentos)) return;
   limpar(resultadoMonitoramentos);
-  resultadoMonitoramentos.appendChild(el("p", { class: "app-espera" }, ["Carregando…"]));
   try {
-    const dados = await cliente.chamarTool("listar_monitoramentos", {});
+    const dados = await cliente.chamarTool("listar_monitoramentos", {}, feedback);
     limpar(resultadoMonitoramentos);
     if (dados.erro) {
       resultadoMonitoramentos.appendChild(notificacao("error", "Não foi possível carregar", dados.mensagem));
@@ -1741,8 +1819,10 @@ async function carregarMonitoramentos() {
   }
 }
 
-async function carregarStatusIntegracoes(...args) {
-  return window.cnjUI.executar(() => carregarStatusIntegracoesSemProgresso(...args), "Verificando integrações");
+async function carregarStatusIntegracoes(tipo = "interno") {
+  return window.cnjUI.operacao(() => carregarStatusIntegracoesSemProgresso(), {
+    tipo: tipo === "pagina" ? "pagina" : "interno", rotulo: "Verificando integrações", regiao: document.getElementById("integracoes-resultado"),
+  });
 }
 
 async function carregarStatusIntegracoesSemProgresso() {
@@ -1753,7 +1833,7 @@ async function carregarStatusIntegracoesSemProgresso() {
   if (!cliente) {
     for (const selo of [seloGoogle, seloAsaas]) selo.textContent = "Acesso necessário";
     mostrarAviso(resultado, "Conecte-se na aba Acesso para verificar a configuração dos serviços.");
-    return;
+    return { ok: false, mensagem: "Conecte-se para verificar as integrações." };
   }
   for (const selo of [seloGoogle, seloAsaas]) {
     if (!selo) continue;
@@ -1787,6 +1867,7 @@ async function carregarStatusIntegracoesSemProgresso() {
       selo.textContent = erro.status === 401 ? "Acesso necessário" : "Falha na verificação";
       selo.className = "cds--tag cds--tag--gray cds--tag--sm";
     }
+    return { ok: false, mensagem: resultado.textContent };
   }
 }
 
@@ -1797,8 +1878,10 @@ document.getElementById("integracoes-atualizar").addEventListener("click", carre
 // As árvores (Vara/Classe/Assunto) e a lista de Magistrados vêm de endpoints HTTP simples
 // (não tools MCP - são só suporte de UI, ver server.py). Usam o mesmo token Bearer do /mcp.
 
-async function _buscarJson(...args) {
-  return window.cnjUI.executar(() => _buscarJsonSemProgresso(...args), "Consultando informações");
+async function _buscarJson(url, feedback = {}) {
+  return window.cnjUI.operacao(() => _buscarJsonSemProgresso(url), {
+    tipo: window.cnjUI.tipoRequisicao(url), rotulo: "Consultando informações", ...feedback,
+  });
 }
 
 async function _buscarJsonSemProgresso(url) {
@@ -1811,8 +1894,10 @@ async function _buscarJsonSemProgresso(url) {
   return resposta.json();
 }
 
-async function _enviarJson(...args) {
-  return window.cnjUI.executar(() => _enviarJsonSemProgresso(...args), "Salvando informações");
+async function _enviarJson(url, corpo, metodo = "POST", cabecalhos = {}) {
+  return window.cnjUI.operacao(() => _enviarJsonSemProgresso(url, corpo, metodo, cabecalhos), {
+    tipo: window.cnjUI.tipoRequisicao(url, metodo), rotulo: "Enviando informações",
+  });
 }
 
 async function _enviarJsonSemProgresso(url, corpo, metodo = "POST", cabecalhos = {}) {
@@ -2144,7 +2229,11 @@ function abrirModal(id) {
   if (secao.matches("cds-modal.app-modal")) secao.open = true;
   else if (anterior && !anterior.matches("cds-modal.app-modal")) anterior.after(secao);
   else document.getElementById("conteudo").prepend(secao);
-  secoesAbertas.push({ secao, origem });
+  const fundo = secao.id === "modal-honorario" ? [...document.body.children]
+    .filter((item) => !item.matches("cds-modal, script, style, link") && item.id !== "toast-global")
+    .map((item) => ({ item, inert: item.inert })) : [];
+  for (const { item } of fundo) item.inert = true;
+  secoesAbertas.push({ secao, origem, fundo });
   if (secao.matches("cds-modal.app-modal")) {
     secao.style.zIndex = String(9000 + secoesAbertas.length);
     if (anterior) anterior.inert = true;
@@ -2164,6 +2253,8 @@ async function fecharModal(id) {
   const entrada = indice >= 0 ? secoesAbertas.splice(indice, 1)[0] : null;
   secao.classList.remove("is-visible");
   if (secao.matches("cds-modal.app-modal")) secao.open = false;
+  for (const { item, inert } of entrada?.fundo || []) item.inert = inert;
+  if (id === "modal-honorario") document.getElementById("honorario-vencimento")._flatpickr?.close();
   secao.style.zIndex = "";
   secao.inert = false;
   const anterior = secoesAbertas.at(-1)?.secao;
@@ -2319,7 +2410,7 @@ function linhaContato(c) {
   });
   tr.appendChild(el("td", { "data-label": "Selecionar" }, [checkbox]));
 
-  const botaoNome = el("button", { class: "contato-nome-link", type: "button", texto: c.nome, "data-cliente-id": c.id });
+  const botaoNome = el("button", { class: "contato-nome-link", type: "button", texto: formatarNomeExibicao(c.nome), "data-cliente-id": c.id });
   botaoNome.addEventListener("click", () => abrirContato(c.id));
   tr.appendChild(el("td", { "data-label": "Nome" }, [botaoNome]));
   tr.appendChild(el("td", { "data-label": "Tipo", texto: ({ fisica: "Pessoa física", juridica: "Pessoa jurídica" })[c.tipo_pessoa] || "Não informado" }));
@@ -2370,11 +2461,14 @@ async function excluirContato(clienteId, nome, botao) {
 
 function tabelaContatos(contatos) {
   const todos = el("input", { type: "checkbox", id: "clientes-selecionar-todos", "aria-label": "Selecionar todos os clientes exibidos" });
-  todos.addEventListener("change", () => {
-    for (const c of contatos) { if (todos.checked) _clientesSelecionados.add(c.id); else _clientesSelecionados.delete(c.id); }
+  const todosMobile = el("input", { type: "checkbox", id: "clientes-selecionar-todos-mobile" });
+  const selecionarTodos = evento => {
+    for (const c of contatos) { if (evento.target.checked) _clientesSelecionados.add(c.id); else _clientesSelecionados.delete(c.id); }
     for (const checkbox of document.querySelectorAll("[data-selecionar-cliente]")) checkbox.checked = _clientesSelecionados.has(checkbox.dataset.selecionarCliente);
     _atualizarSelecaoClientes();
-  });
+  };
+  todos.addEventListener("change", selecionarTodos);
+  todosMobile.addEventListener("change", selecionarTodos);
   const thead = el("thead", {}, [
     el("tr", {}, [
       el("th", { scope: "col" }, [todos]),
@@ -2383,7 +2477,7 @@ function tabelaContatos(contatos) {
   ]);
   const tbody = el("tbody", {});
   for (const c of contatos) tbody.appendChild(linhaContato(c));
-  return el("div", { class: "tabela-responsiva-wrap" }, [el("table", { class: "tabela-responsiva contatos-tabela" }, [thead, tbody])]);
+  return el("div", { class: "tabela-responsiva-wrap" }, [el("label", { class: "clientes-selecao-mobile" }, [todosMobile, "Selecionar todos os clientes exibidos"]), el("table", { class: "tabela-responsiva contatos-tabela" }, [thead, tbody])]);
 }
 
 let _contatosFiltroLetra = "TODOS";
@@ -2398,8 +2492,7 @@ function _atualizarSelecaoClientes() {
   for (const id of _clientesSelecionados) if (!ids.has(id)) _clientesSelecionados.delete(id);
   document.getElementById("clientes-lote-barra").hidden = !_clientesSelecionados.size;
   document.getElementById("clientes-lote-quantidade").textContent = `${_clientesSelecionados.size} cliente(s) selecionado(s)`;
-  const todos = document.getElementById("clientes-selecionar-todos");
-  if (todos) {
+  for (const todos of document.querySelectorAll("#clientes-selecionar-todos, #clientes-selecionar-todos-mobile")) {
     todos.checked = visiveis.length > 0 && _clientesSelecionados.size === visiveis.length;
     todos.indeterminate = _clientesSelecionados.size > 0 && _clientesSelecionados.size < visiveis.length;
   }
@@ -2600,7 +2693,8 @@ async function abrirNovoContato() {
   document.getElementById("contato-nome").focus();
 }
 
-async function abrirContato(clienteId) {
+async function abrirContato(clienteId, tipoFeedback = "pagina") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("contatos-vista-detalhe") };
   if (!(await permitirSaidaEdicao())) return;
   _contatoOrigemId = clienteId;
   document.getElementById("contatos-vista-lista").hidden = true;
@@ -2612,8 +2706,8 @@ async function abrirContato(clienteId) {
   const resultadoContatoCadastro = document.getElementById("resultado-contato-cadastro");
   limpar(resultadoContatoCadastro);
   try {
-    const cliente_registro = await _buscarJson(`/clientes/${clienteId}`);
-    document.getElementById("contato-detalhe-nome").textContent = cliente_registro.nome || "(sem nome)";
+    const cliente_registro = await _buscarJson(`/clientes/${clienteId}`, feedback);
+    document.getElementById("contato-detalhe-nome").textContent = cliente_registro.nome ? formatarNomeExibicao(cliente_registro.nome) : "(sem nome)";
     document.getElementById("contato-nome").value = cliente_registro.nome || "";
     document.getElementById("contato-cpf-cnpj").value = cliente_registro.cpf_cnpj || "";
     document.getElementById("contato-observacoes").value = cliente_registro.observacoes || "";
@@ -2647,22 +2741,22 @@ function _selecionarSubabaContato(nome) {
     botao.tabIndex = ativa ? 0 : -1;
     document.getElementById(`contato-subaba-${aba}`).hidden = !ativa;
   }
-  if (nome === "financeiro") carregarFinanceiroContato();
+  if (nome === "financeiro") carregarFinanceiroContato("pagina");
 }
 
 let _financeiroContatoRequisicao = 0;
 
-async function carregarFinanceiroContato() {
+async function carregarFinanceiroContato(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("contato-financeiro") };
   const container = document.getElementById("contato-financeiro");
   const clienteId = document.getElementById("form-contato-cadastro").dataset.clienteId;
   const requisicao = ++_financeiroContatoRequisicao;
   limpar(container);
   if (!clienteId) return;
-  container.appendChild(el("p", { class: "app-espera", texto: "Carregando financeiro…" }));
   const atual = () => requisicao === _financeiroContatoRequisicao
     && document.getElementById("form-contato-cadastro").dataset.clienteId === clienteId;
   try {
-    const [{ lancamentos }, { casos }] = await Promise.all([_buscarJson("/lancamentos"), _buscarJson("/casos")]);
+    const [{ lancamentos }, { casos }] = await Promise.all([_buscarJson("/lancamentos", feedback), _buscarJson("/casos", feedback)]);
     if (!atual()) return;
     limpar(container);
     const itens = (lancamentos || []).filter((item) => item.cliente_id === clienteId);
@@ -2721,7 +2815,6 @@ function _renderizarCasosVinculadosNoContainer(container, clienteId) {
 async function _renderizarProcessosVinculados(clienteId) {
   const container = document.getElementById("contato-processos-vinculados");
   limpar(container);
-  container.appendChild(el("p", { class: "app-espera" }, ["Carregando…"]));
   try {
     const { casos } = await _buscarJson("/casos");
     _cache.casos = casos || [];
@@ -2793,7 +2886,7 @@ function linhaCaso(caso, aoExcluir) {
 
   const celTitulo = el("td", { "data-label": "Título" });
   const linhaTitulo = el("div", { class: "caso-titulo-linha" }, [
-    el("span", { texto: caso.titulo || "(sem título)" }),
+    el("span", { texto: caso.titulo ? formatarNomeExibicao(caso.titulo) : "(sem título)" }),
   ]);
   if (caso.monitorado) {
     linhaTitulo.appendChild(el("span", { class: "cds--tag cds--tag--green cds--tag--sm", texto: "Monitorado" }));
@@ -2848,7 +2941,7 @@ function linhaCaso(caso, aoExcluir) {
   celTitulo.appendChild(botaoTimeline);
   tr.appendChild(celTitulo);
 
-  const celCliente = el("td", { "data-label": "Cliente/Pasta" }, [el("div", { texto: nomesClientes.join(", ") })]);
+  const celCliente = el("td", { "data-label": "Cliente/Pasta" }, [el("div", { texto: nomesClientes.map(formatarNomeExibicao).join(", ") })]);
   if (caso.drive_pasta_id) {
     const linkDrive = el("a", {
       href: `https://drive.google.com/drive/folders/${caso.drive_pasta_id}`, target: "_blank", rel: "noopener",
@@ -2861,12 +2954,12 @@ function linhaCaso(caso, aoExcluir) {
   const containerAcao = el("div", { style: "display:flex; flex-wrap:wrap; gap:4px" });
   const pedacosAcao = (caso.acao || "").split(" - ").map((pedaco) => pedaco.trim()).filter(Boolean);
   if (pedacosAcao.length === 0) {
-    containerAcao.appendChild(el("span", { class: "cds--tag cds--tag--blue cds--tag--sm", texto: "-" }));
+    containerAcao.appendChild(el("span", { class: "campo-ajuda", texto: "Classe não informada" }));
   } else {
     pedacosAcao.forEach((pedaco, indice) => {
       containerAcao.appendChild(el("span", {
         class: indice === 0 ? "cds--tag cds--tag--blue cds--tag--sm" : "cds--tag cds--tag--teal cds--tag--sm",
-        texto: pedaco,
+        texto: formatarClasseProcesso(pedaco),
       }));
     });
   }
@@ -2921,71 +3014,46 @@ function tabelaCasos(casos, aoExcluir) {
   return el("div", { class: "tabela-responsiva-wrap" }, [el("table", { class: "tabela-responsiva tabela-casos" }, [thead, tbody])]);
 }
 
+// Rótulos de classe/rito não são nomes próprios. Não altera os dados salvos.
+function formatarClasseProcesso(valor) {
+  const siglas = new Set(["CNJ", "STF", "STJ", "TST", "TRT", "TRF", "TJ", "OAB", "INSS", "FGTS", "ICMS", "IPI", "IPTU", "ISS", "IRPF", "IRPJ", "CPC", "CPP", "CLT", "CDC", "ECA", "CTN", "JEC", "JEFAZ"]);
+  return String(valor || "").split(" - ").map(parte => {
+    const texto = parte.trim().toLocaleLowerCase("pt-BR").replace(/\p{L}+/gu, palavra => siglas.has(palavra.toLocaleUpperCase("pt-BR")) ? palavra.toLocaleUpperCase("pt-BR") : palavra);
+    return texto.replace(/^\p{L}/u, letra => letra.toLocaleUpperCase("pt-BR"));
+  }).filter(Boolean).join(" · ");
+}
+
 function cartoesCasos(casos, aoExcluir) {
-  const nomeCliente = (id) => (_cache.clientes.find((c) => c.id === id) || {}).nome || id;
-  const formatarTitulo = (titulo) => {
-    const texto = String(titulo || "sem título").trim().toLocaleLowerCase("pt-BR");
-    return texto.replace(/(^|[\s/–—-])(\p{L})/gu, (_trecho, separador, letra) =>
-      `${separador}${letra.toLocaleUpperCase("pt-BR")}`
-    );
-  };
-  const ordenados = [...casos].sort((a, b) => (b.ultima_movimentacao || "").localeCompare(a.ultima_movimentacao || ""));
+  const nomeCliente = id => (_cache.clientes.find(c => c.id === id) || {}).nome || id;
   const grade = el("div", { class: "cds--grid grade-casos" });
   const linha = el("div", { class: "cds--row grade-casos-linha" });
-  grade.appendChild(linha);
-  for (const caso of ordenados) {
-    const tituloCartao = formatarTitulo(caso.titulo);
-    const card = el("cds-card", { class: "processo-card", density: "productive", "aria-label": tituloCartao });
-    const cabecalho = el("cds-card-header");
-    const corpo = el("cds-card-body");
-
-    const tituloLinha = el("cds-card-title", {}, [
-      el("span", { texto: tituloCartao }),
-    ]);
-    if (caso.monitorado) {
-      tituloLinha.appendChild(el("span", { class: "cds--tag cds--tag--green cds--tag--sm", texto: "Monitorado" }));
+  grade.append(linha);
+  for (const caso of [...casos].sort((a,b) => (b.ultima_movimentacao || "").localeCompare(a.ultima_movimentacao || ""))) {
+    const titulo = caso.titulo?.trim() ? formatarNomeExibicao(caso.titulo) : "Processo sem título";
+    const card = el("article", { class: "processo-card", "aria-label": titulo });
+    const abrir = el("button", { type: "button", class: "processo-card-titulo", texto: titulo, title: titulo, "aria-label": `Abrir processo: ${titulo}` });
+    abrir.addEventListener("click", () => abrirCaso(caso.id));
+    const acoes = el("div", { class: "processo-card-acoes" });
+    for (const [icone, rotulo, acao] of [["editar", "Editar", () => abrirCaso(caso.id)], ["excluir", "Excluir", botao => excluirCaso(caso.id, caso.titulo, botao, aoExcluir)]]) {
+      const botao = el("cds-icon-button", { kind: "ghost", size: "sm", label: `${rotulo}: ${titulo}` });
+      const criarSvg = item => _elSvg(document, item.elem, item.attrs || {}, (item.content || []).map(criarSvg));
+      const svg = criarSvg(window.cnjProcessoIcones[icone]); svg.setAttribute("slot", "icon"); svg.setAttribute("aria-hidden", "true");
+      botao.append(svg, el("span", { slot: "tooltip-content", texto: rotulo }));
+      botao.addEventListener("click", () => acao(botao)); acoes.append(botao);
     }
-    if (caso.desfecho && _ROTULO_DESFECHO_CASO[caso.desfecho]) {
-      tituloLinha.appendChild(el("span", { class: "cds--tag cds--tag--purple cds--tag--sm", texto: _ROTULO_DESFECHO_CASO[caso.desfecho] }));
+    card.append(el("div", { class: "processo-card-cabecalho" }, [el("h3", {}, [abrir]), acoes]));
+    const estados = el("div", { class: "processo-card-estados" });
+    if (caso.monitorado) estados.append(el("span", { class: "cds--tag cds--tag--green cds--tag--sm", texto: "Monitorado" }));
+    if (_ROTULO_DESFECHO_CASO[caso.desfecho]) estados.append(el("span", { class: "cds--tag cds--tag--purple cds--tag--sm", texto: _ROTULO_DESFECHO_CASO[caso.desfecho] }));
+    card.append(estados);
+    const nomes = [caso.cliente_id, ...(caso.clientes_adicionais || [])].map(nomeCliente).filter(Boolean).map(formatarNomeExibicao);
+    const dados = el("dl", { class: "processo-card-dados" });
+    for (const [rotulo, valor] of [["Cliente", nomes.join(", ") || "Sem cliente vinculado"], ["Classe / rito", formatarClasseProcesso(caso.acao) || "Classe não informada"], ["Órgão julgador", caso.foro || "Não informado"], ["Última movimentação", formatarDataSimples(caso.ultima_movimentacao)]]) {
+      dados.append(el("div", {}, [el("dt", { texto: rotulo }), el("dd", { texto: valor, title: valor })]));
     }
-    cabecalho.appendChild(tituloLinha);
-
-    const nomesClientes = [caso.cliente_id, ...(caso.clientes_adicionais || [])].map(nomeCliente).filter(Boolean);
-    corpo.appendChild(el("p", { class: "campo-ajuda", texto: nomesClientes.join(", ") || "Sem cliente vinculado" }));
-
-    const containerAcao = el("div", { style: "display:flex; flex-wrap:wrap; gap:4px" });
-    const pedacosAcao = (caso.acao || "").split(" - ").map((pedaco) => pedaco.trim()).filter(Boolean);
-    if (pedacosAcao.length === 0) {
-      containerAcao.appendChild(el("span", { class: "cds--tag cds--tag--blue cds--tag--sm", texto: "-" }));
-    } else {
-      pedacosAcao.forEach((pedaco) => {
-        containerAcao.appendChild(el("span", { class: "cds--tag cds--tag--blue cds--tag--sm", texto: pedaco }));
-      });
-    }
-    if (caso.foro) containerAcao.appendChild(el("span", { class: "cds--tag cds--tag--gray cds--tag--sm", texto: caso.foro }));
-    corpo.appendChild(containerAcao);
-
-    corpo.appendChild(el("p", { class: "campo-ajuda", texto: `Últ. mov.: ${formatarDataSimples(caso.ultima_movimentacao)}` }));
-
-    const criarAcao = (nome, rotulo) => {
-      const botao = el("cds-icon-button", { kind: "ghost", size: "sm", label: rotulo });
-      const criarSvg = (item) => _elSvg(document, item.elem, item.attrs || {}, (item.content || []).map(criarSvg));
-      const icone = criarSvg(window.cnjProcessoIcones[nome]);
-      icone.setAttribute("slot", "icon");
-      icone.setAttribute("aria-hidden", "true");
-      botao.append(icone, el("span", { slot: "tooltip-content", texto: rotulo }));
-      return botao;
-    };
-    const botaoAbrirCaso = criarAcao("editar", "Editar");
-    botaoAbrirCaso.addEventListener("click", () => abrirCaso(caso.id));
-    const botaoExcluirCaso = criarAcao("excluir", "Excluir");
-    botaoExcluirCaso.addEventListener("click", () => excluirCaso(caso.id, caso.titulo, botaoExcluirCaso, aoExcluir));
-    cabecalho.appendChild(el("cds-card-actions", {}, [
-      el("cds-card-action", { label: "Editar" }, [botaoAbrirCaso]),
-      el("cds-card-action", { label: "Excluir" }, [botaoExcluirCaso]),
-    ]));
-    card.append(cabecalho, corpo);
-    linha.appendChild(el("div", { class: "cds--col-sm-4 cds--col-md-4 cds--col-lg-4 processo-card-coluna" }, [card]));
+    card.append(dados);
+    if (!caso.titulo?.trim()) card.append(el("p", { class: "processo-card-identificador", texto: (caso.processos || []).map(formatarNumeroCNJ).join(" · ") || `Registro ${caso.numero || caso.id}`, title: caso.id }));
+    linha.append(el("div", { class: "cds--col-sm-4 cds--col-md-4 cds--col-lg-4 processo-card-coluna" }, [card]));
   }
   return grade;
 }
@@ -2996,15 +3064,15 @@ function formatarMoeda(valor) {
   return (Number(valor) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-async function carregarLancamentos() {
+async function carregarLancamentos(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-lancamentos") };
   const container = document.getElementById("lista-lancamentos");
   limpar(container);
-  container.appendChild(el("p", { class: "app-espera", texto: "Carregando…" }));
   try {
     const [{ lancamentos }] = await Promise.all([
-      _buscarJson("/lancamentos"),
-      _cache.clientes.length ? Promise.resolve() : _buscarJson("/clientes").then((r) => { _cache.clientes = r.clientes || []; }),
-      _cache.casos.length ? Promise.resolve() : _buscarJson("/casos").then((r) => { _cache.casos = r.casos || []; }),
+      _buscarJson("/lancamentos", feedback),
+      _cache.clientes.length ? Promise.resolve() : _buscarJson("/clientes", feedback).then((r) => { _cache.clientes = r.clientes || []; }),
+      _cache.casos.length ? Promise.resolve() : _buscarJson("/casos", feedback).then((r) => { _cache.casos = r.casos || []; }),
     ]);
     _renderizarLancamentos(lancamentos || []);
   } catch (erro) {
@@ -3040,9 +3108,9 @@ function _renderizarLancamentos(lancamentos) {
       el("td", { "data-label": "Vencimento", texto: formatarDataSimples(lanc.vencimento) }),
       el("td", { "data-label": "Valor", texto: formatarMoeda(lanc.valor) }),
       el("td", { "data-label": "Descrição", texto: lanc.descricao + (lanc.recorrente ? " (mensal)" : "") }),
-      el("td", { "data-label": "Cliente", texto: nomeCliente(lanc.cliente_id) }),
-      el("td", { "data-label": "Processo", texto: tituloCaso(lanc.caso_id) }),
-      el("td", { "data-label": "Responsável", texto: lanc.responsavel }),
+      el("td", { "data-label": "Cliente", texto: formatarNomeExibicao(nomeCliente(lanc.cliente_id)) }),
+      el("td", { "data-label": "Processo", texto: formatarNomeExibicao(tituloCaso(lanc.caso_id)) }),
+      el("td", { "data-label": "Responsável", texto: formatarNomeExibicao(lanc.responsavel) }),
     ]);
 
     const rotuloDirecao = lanc.direcao === "DESPESA" ? "A pagar" : "A receber";
@@ -3105,15 +3173,15 @@ const _ROTULOS_STATUS_PAGAMENTO = {
 };
 const _ROTULOS_TIPO_PAGAMENTO = { BOLETO: "Boleto", PIX: "Pix", UNDEFINED: "A definir" };
 
-async function carregarPagamentos() {
+async function carregarPagamentos(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-pagamentos") };
   const container = document.getElementById("lista-pagamentos");
   const aviso = document.getElementById("pagamentos-aviso-integracao");
   limpar(aviso);
   limpar(container);
-  container.appendChild(el("p", { class: "app-espera", texto: "Carregando…" }));
   try {
     if (!_cache.clientes.length) {
-      const { clientes } = await _buscarJson("/clientes");
+      const { clientes } = await _buscarJson("/clientes", feedback);
       _cache.clientes = clientes || [];
     }
     const params = new URLSearchParams();
@@ -3122,7 +3190,7 @@ async function carregarPagamentos() {
     if (status) params.set("status", status);
     if (clienteId) params.set("cliente_id", clienteId);
     const url = "/pagamentos" + (params.toString() ? `?${params}` : "");
-    const { cobrancas } = await _buscarJson(url);
+    const { cobrancas } = await _buscarJson(url, { ...feedback, tipo: tipoFeedback === "pagina" ? "pagina" : "externo" });
     limpar(container);
     _renderizarPagamentos(cobrancas || []);
   } catch (erro) {
@@ -3361,28 +3429,65 @@ registrarSalvamento(document.getElementById("form-nova-cobranca"), async (evento
   });
 })();
 
+let _honorarioCarregando = false;
+async function _carregarVinculosHonorario() {
+  if (_honorarioCarregando) return;
+  _honorarioCarregando = true;
+  const salvar = document.querySelector("button[form='form-honorario'][type='submit']");
+  salvar.disabled = true;
+  const resultado = document.getElementById("honorario-carregamento");
+  limpar(resultado);
+  const falhas = [];
+  await Promise.all(["clientes", "casos"].map(async (tipo) => {
+    const select = document.getElementById(tipo === "casos" ? "honorario-caso" : "honorario-cliente");
+    const selecionado = select.value;
+    select.disabled = true;
+    try {
+      if (!_cache[tipo].length) {
+        const dados = await _buscarJson(`/${tipo}`);
+        _cache[tipo] = dados[tipo] || [];
+      }
+      limpar(select);
+      const nome = tipo === "casos" ? "processo" : "cliente";
+      select.appendChild(el("option", { value: "", texto: `— selecione o ${nome} —` }));
+      for (const item of _cache[tipo]) {
+        const titulo = tipo === "casos" ? `${item.numero ? `Processo ${item.numero}` : item.id} — ${formatarNomeExibicao(item.titulo || "Sem título")}` : formatarNomeExibicao(item.nome);
+        select.appendChild(el("option", { value: item.id, texto: titulo }));
+      }
+      if ([...select.options].some((opcao) => opcao.value === selecionado)) select.value = selecionado;
+      if (!_cache[tipo].length) falhas.push(`Nenhum ${nome} cadastrado. Cadastre um ${nome} para continuar.`);
+    } catch {
+      falhas.push(`Não foi possível carregar ${tipo === "casos" ? "os processos" : "os clientes"}. Tente novamente.`);
+    } finally { select.disabled = false; }
+  }));
+  if (falhas.length) {
+    mostrarErro(resultado, falhas.join(" "));
+    resultado.appendChild(el("button", { type: "button", class: "cds--btn cds--btn--tertiary cds--btn--sm", texto: "Tentar novamente", onclick: _carregarVinculosHonorario }));
+  }
+  salvar.disabled = false;
+  _honorarioCarregando = false;
+}
+
 async function _abrirModalHonorario() {
-  if (!_cache.clientes.length) {
-    try { const { clientes } = await _buscarJson("/clientes"); _cache.clientes = clientes || []; } catch { /* segue */ }
-  }
-  if (!_cache.casos.length) {
-    try { const { casos } = await _buscarJson("/casos"); _cache.casos = casos || []; } catch { /* segue */ }
-  }
   document.getElementById("form-honorario").reset();
+  document.getElementById("honorario-valor").setCustomValidity("");
   limpar(document.getElementById("resultado-honorario"));
-
-  const selectCaso = document.getElementById("honorario-caso");
-  limpar(selectCaso);
-  selectCaso.appendChild(el("option", { value: "", texto: "— selecione o processo —" }));
-  for (const c of _cache.casos) selectCaso.appendChild(el("option", { value: c.id, texto: c.titulo || "(sem título)" }));
-
-  const selectCliente = document.getElementById("honorario-cliente");
-  limpar(selectCliente);
-  selectCliente.appendChild(el("option", { value: "", texto: "— selecione o cliente —" }));
-  for (const c of _cache.clientes) selectCliente.appendChild(el("option", { value: c.id, texto: c.nome }));
-
+  // Preencher opções antes de registrar a base de alterações pendentes.
+  await _carregarVinculosHonorario();
   abrirModal("modal-honorario");
 }
+
+function _valorLancamentoEmReais(texto) {
+  const valor = String(texto).trim();
+  if (!/^(?:\d+|\d{1,3}(?:\.\d{3})+)(?:,\d{1,2})?$/.test(valor)) return null;
+  const numero = Number(valor.replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(numero) && numero > 0 && numero <= Number.MAX_SAFE_INTEGER / 100 ? numero : null;
+}
+
+document.getElementById("honorario-valor").addEventListener("input", (evento) => {
+  const campo = evento.target;
+  campo.setCustomValidity(campo.value && _valorLancamentoEmReais(campo.value) === null ? "Informe um valor maior que zero, como 1.500,00." : "");
+});
 
 function cartaoPendente(p) {
   const d = p.dados || {};
@@ -3416,11 +3521,12 @@ function cartaoPendente(p) {
   return card;
 }
 
-async function carregarPendentes() {
+async function carregarPendentes(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-pendentes") };
   const listaPendentesEl = document.getElementById("lista-pendentes");
   limpar(listaPendentesEl);
   try {
-    const { pendentes } = await _buscarJson("/pendentes");
+    const { pendentes } = await _buscarJson("/pendentes", feedback);
     if (!(pendentes || []).length) {
       listaPendentesEl.appendChild(notificacao("info", "Nenhum processo pendente de triagem"));
     } else {
@@ -3431,14 +3537,14 @@ async function carregarPendentes() {
   }
 }
 
-async function carregarContatos() {
+async function carregarContatos(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-contatos") };
   const listaContatosEl = document.getElementById("lista-contatos");
   if (!exigirCliente(listaContatosEl)) return;
   _construirBarraAZ();
   limpar(listaContatosEl);
-  listaContatosEl.appendChild(el("p", { class: "app-espera" }, ["Carregando…"]));
   try {
-    const { clientes } = await _buscarJson("/clientes");
+    const { clientes } = await _buscarJson("/clientes", feedback);
     _cache.clientes = clientes || [];
     renderizarListaContatos();
   } catch (erro) {
@@ -3447,14 +3553,14 @@ async function carregarContatos() {
   }
 }
 
-async function carregarCasosPagina() {
+async function carregarCasosPagina(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-casos") };
   const listaCasosEl = document.getElementById("lista-casos");
   if (!exigirCliente(listaCasosEl)) return;
   limpar(listaCasosEl);
-  listaCasosEl.appendChild(el("p", { class: "app-espera", role: "status", texto: "Carregando processos…" }));
-  carregarPendentes();
+  carregarPendentes(tipoFeedback);
   try {
-    const [{ clientes }, { casos }] = await Promise.all([_buscarJson("/clientes"), _buscarJson("/casos")]);
+    const [{ clientes }, { casos }] = await Promise.all([_buscarJson("/clientes", feedback), _buscarJson("/casos", feedback)]);
     _cache.clientes = clientes || [];
     _cache.casos = casos || [];
     _renderizarTabelaCasosPagina();
@@ -3505,7 +3611,7 @@ function _selecionarAbaCadastro(prefixo, nome) {
     const ativa = aba.nome === nome;
     const botao = document.getElementById(`${prefixo}-cadastro-aba-${aba.sufixo}-botao`);
     const painel = document.getElementById(`${prefixo}-cadastro-painel-${aba.sufixo}`);
-    botao.classList.toggle("cds--content-switcher--selected", ativa);
+    if (!botao.classList.contains("contato-cadastro-tab")) botao.classList.toggle("cds--content-switcher--selected", ativa);
     botao.setAttribute("aria-selected", String(ativa));
     botao.tabIndex = ativa ? 0 : -1;
     painel.hidden = !ativa;
@@ -3574,7 +3680,7 @@ let _sequenciaCampoRepetivel = 0;
 function identificarGrupoRepetivel(grupo, nome, rotulos) {
   const identificador = ++_sequenciaCampoRepetivel;
   grupo.setAttribute("role", "group");
-  const titulo = el("p", { id: `grupo-repetivel-${identificador}`, class: "campo-ajuda grupo-repetivel-titulo", texto: nome });
+  const titulo = el("p", { id: `grupo-repetivel-${identificador}`, class: "campo-ajuda grupo-repetivel-titulo", texto: formatarNomeExibicao(nome) });
   grupo.prepend(titulo);
   grupo.setAttribute("aria-labelledby", titulo.id);
   [...grupo.querySelectorAll("input, select")].forEach((campo, i) => {
@@ -3757,7 +3863,7 @@ function _criarGrupoEnderecos(prefixo) {
     inputCidade.value = valor.cidade || "";
     inputEstado.value = valor.estado || "";
     inputPais.value = valor.pais || "Brasil";
-    const grade = el("div", { class: "endereco-grade" }, [
+    const grade = el("div", { class: "endereco-grade cds--css-grid" }, [
       inputRua, inputNumero, inputBairro, inputComplemento, inputCidade, inputEstado, inputPais,
     ]);
 
@@ -3977,7 +4083,7 @@ document.getElementById("casos-busca").addEventListener("input", function () {
     const filtrados = _cache.clientes.filter((c) => c.nome.toLowerCase().includes(termo.toLowerCase()));
     if (!filtrados.length) { lista.hidden = true; return; }
     filtrados.slice(0, 10).forEach((c) => {
-      const btn = el("button", { type: "button", texto: c.nome });
+      const btn = el("button", { type: "button", texto: formatarNomeExibicao(c.nome) });
       btn.addEventListener("mousedown", (ev) => {
         ev.preventDefault();
         busca.value = c.nome;
@@ -4015,7 +4121,7 @@ document.getElementById("contato-voltar").addEventListener("click", voltarParaCo
 document.getElementById("contatos-limpar-filtros").addEventListener("click", limparFiltrosContatos);
 document.getElementById("clientes-lote-etiquetas").addEventListener("click", () => abrirClientesLote("etiquetas"));
 document.getElementById("clientes-lote-perfil").addEventListener("click", () => abrirClientesLote("perfil"));
-document.getElementById("clientes-lote-cancelar").addEventListener("click", () => { _limparSelecaoClientes(); renderizarListaContatos(); document.getElementById("clientes-selecionar-todos")?.focus(); });
+document.getElementById("clientes-lote-cancelar").addEventListener("click", () => { _limparSelecaoClientes(); renderizarListaContatos(); document.getElementById("contatos-titulo").focus(); });
 document.getElementById("clientes-lote-confirmar").addEventListener("click", executarClientesLote);
 document.getElementById("clientes-lote-voltar").addEventListener("click", _configurarClientesLote);
 document.getElementById("clientes-lote-operacao").addEventListener("change", evento => { document.getElementById("clientes-lote-nova-campo").hidden = evento.target.value === "remover_etiquetas"; });
@@ -4056,7 +4162,7 @@ registrarSalvamento(formContatoCadastro, async (evento) => {
       : await _enviarJson(`/clientes/${clienteId}`, corpo, "PATCH");
     limpar(resultadoContatoCadastro);
     resultadoContatoCadastro.appendChild(notificacao("success", criando ? "Cliente cadastrado" : "Cliente atualizado"));
-    document.getElementById("contato-detalhe-nome").textContent = salvo.nome;
+    document.getElementById("contato-detalhe-nome").textContent = formatarNomeExibicao(salvo.nome);
     formContatoCadastro.dataset.clienteId = salvo.id;
     marcarFormularioSalvo(formContatoCadastro);
     if (criando) {
@@ -4366,6 +4472,7 @@ async function _irParaConsultaProcesso(numeroProcesso) {
 const _publicacoesOabSelecionadas = new Set();
 let _pubOabCarregando = false;
 let _pubOabAtualizando = false;
+let _pubOabInlineEnviando = false;
 let _pubOabPagina = 1;
 let _pubOabTamanho = 5;
 let _pubOabRequisicao = 0;
@@ -4376,7 +4483,7 @@ function _sincronizarSelecaoPubOab() {
   const linhas = [...container.querySelectorAll("input[data-publicacao-hash]")];
   for (const campo of linhas) {
     campo.checked = _publicacoesOabSelecionadas.has(campo.dataset.publicacaoHash);
-    campo.disabled = _pubOabAtualizando;
+    campo.disabled = _pubOabAtualizando || _pubOabInlineEnviando;
     const linha = campo.closest("cds-table-row");
     linha.classList.toggle("pub-oab-linha--selecionada", campo.checked);
     linha.selected = campo.checked;
@@ -4386,25 +4493,41 @@ function _sincronizarSelecaoPubOab() {
     const selecionadas = linhas.filter((campo) => campo.checked).length;
     todos.checked = linhas.length > 0 && selecionadas === linhas.length;
     todos.indeterminate = selecionadas > 0 && selecionadas < linhas.length;
-    todos.disabled = _pubOabAtualizando;
+    todos.disabled = _pubOabAtualizando || _pubOabInlineEnviando;
   }
   _atualizarBotoesLotePubOab();
 }
 
+function _acaoLinhaBloqueadaPubOab() {
+  return _publicacoesOabSelecionadas.size > 0 || _pubOabCarregando || _pubOabAtualizando || _pubOabInlineEnviando;
+}
+
 function _atualizarBotoesLotePubOab() {
   const quantidade = _publicacoesOabSelecionadas.size;
-  const tem = !_pubOabCarregando && !_pubOabAtualizando && quantidade > 0;
+  const bloqueada = _acaoLinhaBloqueadaPubOab();
+  if (bloqueada) _fecharTodosComboMenusOab();
+  for (const acao of document.querySelectorAll('[data-pub-oab-acao]')) {
+    acao.disabled = bloqueada;
+    acao.inert = bloqueada;
+  }
+  for (const linha of document.querySelectorAll('.pub-oab-inline-row')) {
+    const suspenso = quantidade > 0;
+    linha.querySelector('form').inert = suspenso;
+    linha.classList.toggle('pub-oab-inline-row--suspensa', suspenso);
+    linha.querySelector('.pub-oab-inline-suspensao').hidden = !suspenso;
+  }
+  const tem = !_pubOabCarregando && !_pubOabAtualizando && !_pubOabInlineEnviando && quantidade > 0;
   for (const botao of document.querySelectorAll("[data-status-lote]")) botao.disabled = !tem;
   const toolbar = document.querySelector(".pub-oab-tabela-toolbar");
   if (toolbar) toolbar.hidden = quantidade > 0;
   for (const controle of document.querySelectorAll(".pub-oab-paginacao button, .pub-oab-paginacao select, [data-cancelar-lote]")) {
-    controle.disabled = _pubOabAtualizando || _pubOabCarregando || controle.dataset.limite === "true";
+    controle.disabled = _pubOabAtualizando || _pubOabCarregando || _pubOabInlineEnviando || controle.dataset.limite === "true";
   }
   const barra = document.getElementById("pub-oab-batch");
   if (barra) {
     barra.hidden = quantidade === 0;
     barra.classList.toggle("cds--batch-actions--active", quantidade > 0);
-    document.getElementById("pub-oab-selecionadas").textContent = `${quantidade} ${quantidade === 1 ? "Selecionada" : "Selecionadas"}`;
+    document.getElementById("pub-oab-selecionadas").textContent = `${quantidade} ${quantidade === 1 ? "selecionada" : "selecionadas"}`;
   }
 }
 
@@ -4416,7 +4539,7 @@ function _statusGeralPubOab(mensagem, erro) {
 }
 
 async function _aplicarStatusPubOab(hashes, status) {
-  if (!hashes.length || _pubOabAtualizando || _pubOabCarregando) return;
+  if (!hashes.length || _pubOabAtualizando || _pubOabCarregando || _pubOabInlineEnviando) return;
   _pubOabAtualizando = true;
   _sincronizarSelecaoPubOab();
   try {
@@ -4441,8 +4564,8 @@ async function _aplicarStatusPubOab(hashes, status) {
 
 let _pubOabContadorLinha = 0;
 
-// Colunas com chaves estáveis: preferências não dependem da ordem de exibição.
-function _tituloPubOab(valor) {
+// Formata somente dados de nomes na exibição, sem alterar o valor persistido.
+function formatarNomeExibicao(valor) {
   return String(valor ?? "").toLocaleLowerCase("pt-BR").replace(/(^|[^\p{L}\p{N}])(\p{L})/gu,
     (_, separador, letra) => separador + letra.toLocaleUpperCase("pt-BR"));
 }
@@ -4450,33 +4573,37 @@ function _tituloPubOab(valor) {
 function _valorPubOab(valor, literal = false) {
   if (valor === null || valor === undefined || valor === "") return "—";
   if (Array.isArray(valor)) return valor.map((v) => _valorPubOab(v, literal)).join(" · ") || "—";
-  if (typeof valor === "object") return Object.entries(valor).map(([k, v]) => `${_tituloPubOab(k.replace(/_/g, " "))}: ${_valorPubOab(v, literal)}`).join("; ");
+  if (typeof valor === "object") return Object.entries(valor).map(([k, v]) => {
+    const rotulo = ({ nome: "Nome", uf_oab: "UF da OAB", numero_oab: "Número da OAB" })[k] || _rotuloCampoDjen(k);
+    const preservar = literal || /(^|_)(uf|oab|id|hash|url|link|numero)(_|$)/i.test(k);
+    return `${rotulo}: ${k === "nome" ? formatarNomeExibicao(v) : _valorPubOab(v, preservar)}`;
+  }).join("; ");
   if (typeof valor === "boolean") return valor ? "Sim" : "Não";
-  return literal ? String(valor) : _tituloPubOab(valor);
+  return literal ? String(valor) : String(valor).charAt(0).toLocaleUpperCase("pt-BR") + String(valor).slice(1).toLocaleLowerCase("pt-BR");
 }
 
 const _COLUNAS_FIXAS_PUB_OAB = new Set(["processo", "tribunal", "nome"]);
 
 function _nomeProcessoPubOab(p) {
   const partes = p.dados?.destinatarios || [];
-  const nomes = (polo) => [...new Set(partes.filter((d) => String(d.polo || "").toUpperCase() === polo).map((d) => d.nome).filter(Boolean))].map(_tituloPubOab).join(" / ");
-  return `${nomes("A") || "Parte Ativa Não Informada"} X ${nomes("P") || "Parte Passiva Não Informada"}`;
+  const nomes = (polo) => [...new Set(partes.filter((d) => String(d.polo || "").toUpperCase() === polo).map((d) => d.nome).filter(Boolean))].map(formatarNomeExibicao).join(" / ");
+  return `${nomes("A") || "Parte ativa não informada"} X ${nomes("P") || "Parte passiva não informada"}`;
 }
 
 function _publicacaoCompletaPubOab(p, id) {
   const d = p.dados || {};
   const informacoes = [
     ["Processo", formatarNumeroCNJ(d.numeroprocessocommascara || p.numero_processo || "")],
-    ["Nome Do Processo", _nomeProcessoPubOab(p)],
-    ["Partes", (d.destinatarios || []).map((parte) => `${parte.nome || "—"} (${parte.polo || "Polo Não Informado"})`).join("; ")],
+    ["Nome do processo", _nomeProcessoPubOab(p)],
+    ["Partes", (d.destinatarios || []).map((parte) => `${parte.nome ? formatarNomeExibicao(parte.nome) : "—"} (${parte.polo || "Polo não informado"})`).join("; ")],
     ["Tribunal", (d.siglaTribunal || "").toUpperCase()], ["Órgão", d.nomeOrgao],
     ["Divulgado", formatarDataSimples(d.data_disponibilizacao)],
     ["Tipo", d.tipoComunicacao], ["Documento", d.tipoDocumento], ["Classe", d.nomeClasse],
-    ["Advogados", (d.destinatarioadvogados || []).map((a) => `${a.nome || "—"} · OAB ${a.numero_oab || "—"}/${a.uf_oab || "—"}`).join("; ")],
+    ["Advogados", (d.destinatarioadvogados || []).map((a) => `${a.nome ? formatarNomeExibicao(a.nome) : "—"} · OAB ${a.numero_oab || "—"}/${a.uf_oab || "—"}`).join("; ")],
   ];
-  return el("article", { id, class: "pub-oab-publicacao-completa", "aria-label": "Publicação Completa" }, [
+  return el("article", { id, class: "pub-oab-publicacao-completa", "aria-label": "Publicação completa" }, [
     el("header", { class: "pub-oab-publicacao-cabecalho" }, informacoes.filter(([, valor]) => valor).map(([rotulo, valor]) => el("p", {}, [el("strong", { texto: `${rotulo}: ${valor}` })]))),
-    el("div", { class: "pub-oab-publicacao-texto", texto: d.texto || "Texto Não Informado" }),
+    el("div", { class: "pub-oab-publicacao-texto", texto: d.texto || "Texto não informado" }),
   ]);
 }
 
@@ -4485,27 +4612,28 @@ function _normalizarConsultaPubOab(valor) {
 }
 
 async function _abrirFluxoInlinePubOab(tr, p, colunas, tipo, origem) {
+  if (_acaoLinhaBloqueadaPubOab()) return;
   const anterior = [...tr.parentElement.querySelectorAll(".pub-oab-inline-row")].find((linha) => linha.dataset.fluxoPublicacao === p.hash);
   if (anterior) anterior.remove();
   const id = `pub-oab-fluxo-${++_pubOabContadorLinha}`;
   const busca = el("input", { id: `${id}-busca`, type: "search", class: "cds--text-input", autocomplete: "off",
-    placeholder: tipo === "cadastro" ? "Nome Do Cliente" : "Número, Parte Ou Cliente" });
-  const resultados = el("div", { class: "pub-oab-resultados-busca", "aria-label": "Resultados Da Consulta" });
+    placeholder: tipo === "cadastro" ? "Nome do cliente" : "Número, parte ou cliente" });
+  const resultados = el("div", { class: "pub-oab-resultados-busca", "aria-label": "Resultados da consulta" });
   const escolhido = el("div", { class: "pub-oab-confirmacao", hidden: "hidden" });
   const status = el("p", { id: `${id}-status`, class: "campo-ajuda", role: "status", "aria-live": "polite", texto: "Carregando…" });
   busca.setAttribute("aria-describedby", status.id);
-  const confirmar = el("button", { type: "submit", class: "cds--btn cds--btn--primary cds--btn--sm", texto: tipo === "cadastro" ? "Confirmar Cadastro" : "Confirmar Vínculo", disabled: "disabled" });
+  const confirmar = el("button", { type: "submit", class: "cds--btn cds--btn--primary cds--btn--sm", texto: tipo === "cadastro" ? "Confirmar cadastro" : "Confirmar vínculo", disabled: "disabled" });
   const cancelar = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Cancelar" });
-  const responsavel = el("select", { id: `${id}-responsavel`, class: "cds--select-input", required: "required" }, [el("option", { value: "", texto: "Selecione O Responsável" })]);
-  const form = el("form", { class: "pub-oab-inline-form", "aria-label": tipo === "cadastro" ? "Cadastrar Processo" : "Vincular A Processo Existente" }, [
-    el("h3", { texto: tipo === "cadastro" ? "Cadastrar Processo" : "Vincular A Processo Existente" }),
+  const responsavel = el("select", { id: `${id}-responsavel`, class: "cds--select-input", required: "required" }, [el("option", { value: "", texto: "Selecione o responsável" })]);
+  const form = el("form", { class: "pub-oab-inline-form", "aria-label": tipo === "cadastro" ? "Cadastrar processo" : "Vincular a processo existente" }, [
+    el("h3", { texto: tipo === "cadastro" ? "Cadastrar processo" : "Vincular a processo existente" }),
     el("p", { class: "campo-ajuda", texto: `${formatarNumeroCNJ(p.numero_processo || "")} · ${_nomeProcessoPubOab(p)}` }),
-    el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: busca.id, texto: tipo === "cadastro" ? "Cliente" : "Consultar Processo" }), busca]),
+    el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: busca.id, texto: tipo === "cadastro" ? "Cliente" : "Consultar processo" }), busca]),
     resultados, escolhido,
     ...(tipo === "cadastro" ? [el("div", { class: "cds--form-item" }, [el("label", { class: "cds--label", for: responsavel.id, texto: "Responsável" }), responsavel])] : []),
     status, el("div", { class: "pub-oab-inline-acoes" }, [confirmar, cancelar]),
   ]);
-  const linha = el("cds-table-expanded-row", { class: "pub-oab-inline-row", expanded: "", colspan: String(colunas.length + 3), "data-fluxo-publicacao": p.hash }, [form]);
+  const linha = el("cds-table-expanded-row", { class: "pub-oab-inline-row", expanded: "", colspan: String(colunas.length + 3), "data-fluxo-publicacao": p.hash }, [el("p", { class: "pub-oab-inline-suspensao campo-ajuda", role: "status", hidden: "hidden", texto: "Formulário pausado durante a seleção em lote. Cancele a seleção para continuar; os valores foram preservados." }), form]);
   const expansao = tr.nextElementSibling;
   if (expansao?.matches(".pub-oab-expansao")) expansao.after(linha);
   else tr.after(linha);
@@ -4519,32 +4647,32 @@ async function _abrirFluxoInlinePubOab(tr, p, colunas, tipo, origem) {
   const escolher = (item, descricao) => {
     selecionado = item;
     limpar(escolhido);
-    escolhido.append(el("strong", { texto: tipo === "cadastro" ? "Cliente Selecionado" : "Confirmar Processo Selecionado" }), el("p", { texto: descricao }));
+    escolhido.append(el("strong", { texto: tipo === "cadastro" ? "Cliente selecionado" : "Confirmar processo selecionado" }), el("p", { texto: descricao }));
     escolhido.hidden = false;
     confirmar.disabled = false;
     limpar(resultados);
-    status.textContent = "Confira Os Dados E Confirme Abaixo.";
+    status.textContent = "Confira os dados e confirme abaixo.";
   };
   const exibir = (itens) => {
     limpar(resultados);
-    if (!itens.length) { status.textContent = "Nenhum Resultado. Altere Os Termos Da Consulta."; return; }
+    if (!itens.length) { status.textContent = "Nenhum resultado. Altere os termos da consulta."; return; }
     for (const item of itens.slice(0, 20)) {
       const cliente = clientes.find((c) => c.id === item.cliente_id);
-      const descricao = tipo === "cadastro" ? item.nome : [item.titulo, item.autor, item.reu, ...(item.processos || []).map(formatarNumeroCNJ), cliente?.nome || item.nome_cliente].filter(Boolean).join(" · ");
+      const descricao = tipo === "cadastro" ? formatarNomeExibicao(item.nome) : [item.titulo, item.autor, item.reu].map(formatarNomeExibicao).concat([ ...(item.processos || []).map(formatarNumeroCNJ), formatarNomeExibicao(cliente?.nome || item.nome_cliente)]).filter(Boolean).join(" · ");
       const botao = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: descricao });
       botao.addEventListener("click", () => escolher(item, descricao));
       resultados.appendChild(botao);
     }
-    status.textContent = `${Math.min(itens.length, 20)} Resultado(s). Selecione Um Para Confirmar.`;
+    status.textContent = `${Math.min(itens.length, 20)} resultado(s). Selecione um para confirmar.`;
   };
   busca.addEventListener("input", () => {
     selecionado = null; confirmar.disabled = true; escolhido.hidden = true; limpar(resultados);
     clearTimeout(temporizador); const numeroRequisicao = ++requisicao;
     if (!pronto) return;
     const termo = busca.value.trim();
-    if (!termo) { status.textContent = "Informe Um Termo Para Consultar."; return; }
+    if (!termo) { status.textContent = "Informe um termo para consultar."; return; }
     if (tipo === "cadastro") { exibir(clientes.filter((c) => _normalizarConsultaPubOab(c.nome).includes(_normalizarConsultaPubOab(termo)))); return; }
-    status.textContent = "Consultando Processos…";
+    status.textContent = "Consultando processos…";
     temporizador = setTimeout(async () => {
       try {
         const dados = await _buscarJson(`/casos?q=${encodeURIComponent(termo)}`);
@@ -4554,55 +4682,72 @@ async function _abrirFluxoInlinePubOab(tr, p, colunas, tipo, origem) {
   });
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    if (!selecionado || confirmar.disabled) return;
+    if (!selecionado || confirmar.disabled || _acaoLinhaBloqueadaPubOab()) return;
+    _pubOabInlineEnviando = true;
+    _sincronizarSelecaoPubOab();
     confirmar.disabled = true; cancelar.disabled = true; busca.disabled = true; responsavel.disabled = true;
-    status.textContent = tipo === "cadastro" ? "Cadastrando Processo…" : "Vinculando Publicação…";
+    status.textContent = tipo === "cadastro" ? "Cadastrando processo…" : "Vinculando publicação…";
     try {
       if (tipo === "cadastro") await _enviarJson(`/publicacoes-oab/${encodeURIComponent(p.hash)}/criar-caso`, { cliente_id: selecionado.id, responsavel: responsavel.value });
       else await _enviarJson(`/casos/${encodeURIComponent(selecionado.id)}/publicacoes`, { hash: p.hash, numero_processo: p.numero_processo || null, dados: p.dados || null });
-      mostrarToast("success", tipo === "cadastro" ? "Processo Cadastrado" : "Publicação Vinculada", tipo === "cadastro" ? "Dados Capturados Preenchidos E Publicação Vinculada." : "Vínculo Confirmado.");
+      mostrarToast("success", tipo === "cadastro" ? "Processo cadastrado" : "Publicação vinculada", tipo === "cadastro" ? "Dados capturados preenchidos e publicação vinculada." : "Vínculo confirmado.");
       await carregarPublicacoesOab();
     } catch (erro) {
       status.textContent = erro.message;
       confirmar.disabled = false; cancelar.disabled = false; busca.disabled = false; responsavel.disabled = false;
+    } finally {
+      _pubOabInlineEnviando = false;
+      _sincronizarSelecaoPubOab();
     }
   });
   try {
     const dadosClientes = await _buscarJson("/clientes"); clientes = dadosClientes.clientes || [];
     if (tipo === "cadastro") {
       const dados = await _buscarJson("/responsaveis");
-      for (const nome of dados.responsaveis || []) responsavel.appendChild(el("option", { value: nome, texto: nome }));
+      for (const nome of dados.responsaveis || []) responsavel.appendChild(el("option", { value: nome, texto: formatarNomeExibicao(nome) }));
     }
     pronto = true;
-    status.textContent = "Informe Um Termo Para Consultar.";
+    status.textContent = "Informe um termo para consultar.";
     if (busca.value) busca.dispatchEvent(new Event("input"));
   } catch (erro) {
-    status.textContent = `Não Foi Possível Carregar As Opções: ${erro.message}`;
-    const repetir = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Tentar Novamente" });
+    status.textContent = `Não foi possível carregar as opções: ${erro.message}`;
+    const repetir = el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Tentar novamente" });
     repetir.addEventListener("click", () => _abrirFluxoInlinePubOab(tr, p, colunas, tipo, origem));
     resultados.appendChild(repetir);
   }
 }
 
+function _rotuloCampoDjen(chave) {
+  // Rótulo de interface: nunca usar o formatador de nomes ou transformar o dado.
+  const siglas = new Set(["oab", "uf", "id", "cnj", "djen", "url", "api", "cpf", "cnpj"]);
+  const palavras = chave
+    .replace(/(\p{Lu})(\p{Lu}\p{Ll})/gu, "$1 $2")
+    .replace(/(\p{Ll}|\p{N})(\p{Lu})/gu, "$1 $2")
+    .replace(/_/g, " ").trim().toLocaleLowerCase("pt-BR").split(/\s+/);
+  return palavras.map((palavra, indice) => siglas.has(palavra)
+    ? palavra.toLocaleUpperCase("pt-BR")
+    : indice === 0 ? palavra.charAt(0).toLocaleUpperCase("pt-BR") + palavra.slice(1) : palavra).join(" ");
+}
+
 function _colunasPubOab(publicacoes = [], camposDjen = []) {
   const colunas = [
-    ["divulgado", "Divulgado", (p) => formatarDataSimples(p.dados?.data_disponibilizacao), true],
-    ["capturado", "Capturado", (p) => formatarData(p.criado_em), true],
-    ["tipo", "Tipo", (p) => p.dados?.tipoComunicacao, true],
+    ["divulgado", "Divulgado", (p) => formatarDataSimples(p.dados?.data_disponibilizacao), false],
+    ["capturado", "Capturado", (p) => formatarData(p.criado_em), false],
+    ["tipo", "Tipo", (p) => p.dados?.tipoComunicacao, false],
     ["processo", "Processo", () => "", true],
     ["tribunal", "Tribunal", (p) => (p.dados?.siglaTribunal || "").toUpperCase(), true, true],
     ["orgao", "Órgão", (p) => p.dados?.nomeOrgao, false],
-    ["nome", "Nome Do Processo", _nomeProcessoPubOab, true],
-    ["referencia", "Nome De Referência", (p) => p.nome_pesquisado, true],
-    ["status", "Status", (p) => _ROTULO_STATUS_PUB_OAB[p.status] || p.status, true],
-    ["documento", "Tipo De Documento", (p) => p.dados?.tipoDocumento, false],
+    ["nome", "Nome do processo", _nomeProcessoPubOab, true, true],
+    ["referencia", "Nome de referência", (p) => formatarNomeExibicao(p.nome_pesquisado), false, true],
+    ["status", "Status", (p) => _ROTULO_STATUS_PUB_OAB[p.status] || p.status, false],
+    ["documento", "Tipo de documento", (p) => p.dados?.tipoDocumento, false],
     ["classe", "Classe", (p) => p.dados?.nomeClasse, false],
-    ["destinatarios", "Destinatários", (p) => p.dados?.destinatarios, false],
-    ["polos", "Polos Dos Destinatários", (p) => (p.dados?.destinatarios || []).map((d) => d.polo), false],
-    ["advogados", "Advogados", (p) => (p.dados?.destinatarioadvogados || []).map((d) => d.nome), false],
-    ["oab", "Número Da OAB", (p) => (p.dados?.destinatarioadvogados || []).map((d) => d.numero_oab), false, true],
-    ["uf", "UF Da OAB", (p) => (p.dados?.destinatarioadvogados || []).map((d) => d.uf_oab), false],
-    ["dados_advogados", "Dados Dos Advogados", (p) => p.dados?.destinatarioadvogados, false],
+    ["destinatarios", "Destinatários", (p) => (p.dados?.destinatarios || []).map((d) => formatarNomeExibicao(d.nome)), false, true],
+    ["polos", "Polos dos destinatários", (p) => (p.dados?.destinatarios || []).map((d) => d.polo), false],
+    ["advogados", "Advogados", (p) => (p.dados?.destinatarioadvogados || []).map((d) => formatarNomeExibicao(d.nome)), false, true],
+    ["oab", "Número da OAB", (p) => (p.dados?.destinatarioadvogados || []).map((d) => d.numero_oab), false, true],
+    ["uf", "UF da OAB", (p) => (p.dados?.destinatarioadvogados || []).map((d) => d.uf_oab), false, true],
+    ["dados_advogados", "Dados dos advogados", (p) => p.dados?.destinatarioadvogados, false],
     ["texto", "Texto", (p) => p.dados?.texto, false, true],
     ["hash", "Hash", (p) => p.dados?.hash || p.hash, false, true],
     ["link", "Link", (p) => p.dados?.link, false, true],
@@ -4610,12 +4755,98 @@ function _colunasPubOab(publicacoes = [], camposDjen = []) {
   const conhecidos = new Set(["data_disponibilizacao", "siglaTribunal", "nomeOrgao", "tipoComunicacao", "tipoDocumento", "nomeClasse", "numeroprocessocommascara", "destinatarios", "destinatarioadvogados", "texto", "hash", "link"]);
   const extras = new Set([...camposDjen, ...publicacoes.flatMap((p) => Object.keys(p.dados || {}))].filter((k) => !conhecidos.has(k)));
   for (const chave of [...extras].sort()) {
-    colunas.push({ id: `djen:${chave}`, rotulo: _tituloPubOab(chave.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ")),
+    colunas.push({ id: `djen:${chave}`, rotulo: _rotuloCampoDjen(chave),
       valor: (p) => p.dados?.[chave], padrao: false, literal: /(^id$|hash|url|link|numero)/i.test(chave) });
   }
   const ordem = { tribunal: 0, processo: 1, nome: 2 };
   return colunas.map((c) => ({ ...c, padrao: _COLUNAS_FIXAS_PUB_OAB.has(c.id) }))
     .sort((a, b) => (ordem[a.id] ?? 3) - (ordem[b.id] ?? 3));
+}
+
+// Carbon Link16 / Archive16, Apache-2.0. Licença em carbon/LICENSE-web-components.txt.
+const _ICONES_PUBLICACAO_OAB = {
+  "vinculo": {
+    "elem": "svg",
+    "attrs": {
+      "xmlns": "http://www.w3.org/2000/svg",
+      "viewBox": "0 0 32 32",
+      "fill": "currentColor",
+      "width": 16,
+      "height": 16
+    },
+    "content": [
+      {
+        "elem": "path",
+        "attrs": {
+          "d": "M29.25,6.76a6,6,0,0,0-8.5,0l1.42,1.42a4,4,0,1,1,5.67,5.67l-8,8a4,4,0,1,1-5.67-5.66l1.41-1.42-1.41-1.42-1.42,1.42a6,6,0,0,0,0,8.5A6,6,0,0,0,17,25a6,6,0,0,0,4.27-1.76l8-8A6,6,0,0,0,29.25,6.76Z"
+        }
+      },
+      {
+        "elem": "path",
+        "attrs": {
+          "d": "M4.19,24.82a4,4,0,0,1,0-5.67l8-8a4,4,0,0,1,5.67,0A3.94,3.94,0,0,1,19,14a4,4,0,0,1-1.17,2.85L15.71,19l1.42,1.42,2.12-2.12a6,6,0,0,0-8.51-8.51l-8,8a6,6,0,0,0,0,8.51A6,6,0,0,0,7,28a6.07,6.07,0,0,0,4.28-1.76L9.86,24.82A4,4,0,0,1,4.19,24.82Z"
+        }
+      }
+    ],
+    "name": "link",
+    "size": 16
+  },
+  "arquivar": {
+    "elem": "svg",
+    "attrs": {
+      "xmlns": "http://www.w3.org/2000/svg",
+      "viewBox": "0 0 32 32",
+      "fill": "currentColor",
+      "width": 16,
+      "height": 16
+    },
+    "content": [
+      {
+        "elem": "path",
+        "attrs": {
+          "d": "M14 19H18V21H14z"
+        }
+      },
+      {
+        "elem": "path",
+        "attrs": {
+          "d": "M6,2V28a2,2,0,0,0,2,2H24a2,2,0,0,0,2-2V2ZM24,28H8V16H24Zm0-14H8V10H24ZM8,8V4H24V8Z"
+        }
+      }
+    ],
+    "name": "archive",
+    "size": 16
+  }
+};
+
+function _iconePublicacaoOab(chave) {
+  const fonte = _ICONES_PUBLICACAO_OAB[chave];
+  if (!fonte) throw new Error("Ícone de ação de publicação indisponível: " + chave);
+  const montar = no => _elSvg(document, no.elem, { ...no.attrs }, (no.content || []).map(montar));
+  return _elSvg(document, "svg", { ...fonte.attrs, slot: "icon", width: "16", height: "16", "aria-hidden": "true", focusable: "false", fill: "currentColor" }, (fonte.content || []).map(montar));
+}
+
+function _cabecalhoPublicacaoOab(coluna) {
+  const id = "pub-oab-cabecalho-" + (++_pubOabContadorLinha);
+  const texto = el("span", { class: "pub-oab-cabecalho-texto", texto: coluna.rotulo });
+  const alvo = el("span", { class: "pub-oab-cabecalho", tabindex: "0", "aria-describedby": id }, [texto]);
+  const tooltip = el("span", { id, class: "pub-oab-tooltip-nome", role: "tooltip", popover: "manual", texto: coluna.rotulo });
+  const fechar = () => { if (tooltip.matches(":popover-open")) tooltip.hidePopover(); };
+  const mostrar = (evento) => {
+    if (!tooltip.isConnected || tooltip.matches(":popover-open")) return;
+    tooltip.showPopover();
+    _animarTooltip(tooltip, evento);
+    const r = alvo.getBoundingClientRect(), t = tooltip.getBoundingClientRect();
+    tooltip.style.left = Math.max(8, Math.min(r.left, innerWidth - t.width - 8)) + "px";
+    tooltip.style.top = Math.max(8, Math.min(r.bottom + 4, innerHeight - t.height - 8)) + "px";
+  };
+  alvo.addEventListener("mouseenter", mostrar);
+  alvo.addEventListener("focus", mostrar);
+  alvo.addEventListener("blur", fechar);
+  alvo.addEventListener("mouseleave", evento => { if (document.activeElement !== alvo && !tooltip.contains(evento.relatedTarget)) fechar(); });
+  tooltip.addEventListener("mouseleave", () => { if (document.activeElement !== alvo) fechar(); });
+  alvo.addEventListener("keydown", evento => { if (evento.key === "Escape") { evento.preventDefault(); fechar(); } });
+  return el("cds-table-header-cell", { "data-coluna": coluna.id }, [alvo, tooltip]);
 }
 
 function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
@@ -4628,14 +4859,15 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
   const checkbox = el("input", { type: "checkbox", "data-publicacao-hash": p.hash, "aria-label": `Selecionar publicação: ${identificacao}` });
   checkbox.checked = _publicacoesOabSelecionadas.has(p.hash);
   checkbox.addEventListener("change", () => {
+    if (_pubOabAtualizando || _pubOabInlineEnviando) { _sincronizarSelecaoPubOab(); return; }
     if (checkbox.checked) _publicacoesOabSelecionadas.add(p.hash);
     else _publicacoesOabSelecionadas.delete(p.hash);
     _sincronizarSelecaoPubOab();
   });
-  tr.appendChild(el("cds-table-cell", { "data-label": "Selecionar", class: "pub-oab-controle" }, [checkbox]));
+  const celSelecao = el("cds-table-cell", { "data-label": "Selecionar", class: "pub-oab-controle" }, [checkbox]);
 
   const celExpansao = el("cds-table-cell", { "data-label": "Expandir", class: "pub-oab-controle" });
-  tr.appendChild(celExpansao);
+  tr.append(celExpansao, celSelecao);
   const celProcesso = el("cds-table-cell", { "data-label": "Processo" });
   if (p.numero_processo) {
     celProcesso.appendChild(el("div", { texto: formatarNumeroCNJ(d.numeroprocessocommascara || p.numero_processo) }));
@@ -4673,7 +4905,7 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
     if (coluna.id === "processo") celula = celProcesso;
     else if (coluna.id === "status") {
       const badge = _badgeStatusPubOab(p.status);
-      badge.querySelector(".pub-oab-status-texto").textContent = _tituloPubOab(badge.textContent);
+      // O status mantém o rótulo de interface em capitalização de frase.
       celula = el("cds-table-cell", {}, [badge]);
     } else {
       const valor = _valorPubOab(coluna.valor(p), coluna.literal);
@@ -4683,11 +4915,12 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
       const nome = _nomeProcessoPubOab(p);
       limpar(celula);
       const nomeEl = el("span", { class: "pub-oab-nome-processo", texto: nome, title: nome, tabindex: "0" });
-      const tooltip = el("span", { id: `${idTexto}-nome`, class: "pub-oab-tooltip-nome", role: "tooltip", popover: "manual", texto: nome });
+      const tooltip = el("span", { id: `${idTexto}-nome`, class: "pub-oab-tooltip-nome", role: "tooltip", popover: "manual", texto: formatarNomeExibicao(nome) });
       nomeEl.setAttribute("aria-describedby", tooltip.id);
-      const mostrar = () => {
+      const mostrar = (evento) => {
         if (!tooltip.isConnected || tooltip.matches(":popover-open")) return;
         tooltip.showPopover();
+        _animarTooltip(tooltip, evento);
         const r = nomeEl.getBoundingClientRect(), t = tooltip.getBoundingClientRect();
         tooltip.style.left = `${Math.max(8, Math.min(r.left, innerWidth - t.width - 8))}px`;
         tooltip.style.top = `${Math.max(8, Math.min(r.bottom + 4, innerHeight - t.height - 8))}px`;
@@ -4711,7 +4944,7 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
   if (d.link) {
     acoesLinha.appendChild(
       el("cds-icon-button", {
-        class: "pub-oab-abrir", href: d.link, target: "_blank", rel: "noopener noreferrer",
+        class: "pub-oab-abrir", "data-pub-oab-acao": "", onclick: (evento) => { if (_acaoLinhaBloqueadaPubOab()) { evento.preventDefault(); evento.stopImmediatePropagation(); } }, href: d.link, target: "_blank", rel: "noopener noreferrer",
         kind: "ghost", size: "md", align: "left", "link-role": "link",
       }, [
         el("span", { class: "pub-oab-abrir-rotulo", texto: "Abrir publicação no DJEN (nova aba)" }),
@@ -4724,77 +4957,67 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
     );
   }
 
-  // Ações compactas: link direto e Overflow Menu Carbon.
   const comboContainer = el("div", { class: "pub-oab-combo" });
-  const podeAdcCaso = !p.caso_id && p.status !== "tratada" && Boolean(p.numero_processo);
-
+  const acoes = [];
+  if (!p.caso_id) {
+    const motivo = p.status === "tratada" ? "Publicação já tratada" : !p.numero_processo ? "Número do processo não informado" : "";
+    acoes.push({ id: "cadastro", rotulo: "Cadastrar processo", motivo,
+      executar: origem => _abrirFluxoInlinePubOab(tr, p, colunas, "cadastro", origem) });
+    acoes.push({ id: "vinculo", rotulo: "Vincular a processo existente",
+      executar: origem => _abrirFluxoInlinePubOab(tr, p, colunas, "vinculo", origem) });
+  } else {
+    acoes.push({ id: "abrir", rotulo: "Abrir processo", executar: async () => {
+      if (await selecionarAba(abas.find(a => a.painel.id === "aba-casos"))) await abrirCaso(p.caso_id);
+    }});
+    acoes.push({ id: "atividade", rotulo: "Criar atividade", executar: async () => {
+      if (!(await selecionarAba(abas.find(a => a.painel.id === "aba-casos")))) return;
+      if (!(await abrirCaso(p.caso_id))) return;
+      _selecionarSubabaCaso("atividades");
+      _abrirModalAtividade(p.caso_id, null, p.hash);
+    }});
+  }
+  if (p.status !== "tratada") acoes.push({ id: "tratada", rotulo: "Marcar como tratada", executar: () => _aplicarStatusPubOab([p.hash], "tratada") });
+  if (p.status !== "arquivada") acoes.push({ id: "arquivar", rotulo: "Arquivar", executar: () => _aplicarStatusPubOab([p.hash], "arquivada") });
+  const executarAcao = (acao, origem) => {
+    if (acao.motivo || _acaoLinhaBloqueadaPubOab()) return;
+    _fecharTodosComboMenusOab(true);
+    return acao.executar(origem);
+  };
+  const disponiveis = acoes.filter(a => !a.motivo);
+  if (disponiveis.length < 3) {
+    const motivos = acoes.filter(a => a.motivo).map(a => a.rotulo + ": " + a.motivo).join(". ");
+    if (motivos) acoesLinha.setAttribute("aria-description", motivos);
+    for (const acao of disponiveis) {
+      const botao = el("cds-icon-button", { class: "pub-oab-acao-inline", "data-pub-oab-acao": "", "data-acao-publicacao": acao.id,
+        kind: "ghost", size: "md", align: "left", "aria-label": acao.rotulo + ": " + identificacao }, [
+        _iconePublicacaoOab(acao.id), el("span", { slot: "tooltip-content", texto: acao.rotulo + ": " + identificacao }),
+      ]);
+      botao.addEventListener("click", () => executarAcao(acao, botao));
+      acoesLinha.appendChild(botao);
+    }
+    if (motivos) acoesLinha.appendChild(el("span", { class: "pub-oab-motivo-indisponivel", texto: motivos }));
+    celAcoes.appendChild(acoesLinha); tr.appendChild(celAcoes);
+    return linhas;
+  }
   const iconeChevron = _elSvg(document, "svg", { width: "16", height: "16", viewBox: "0 0 16 16", "aria-hidden": "true" }, [
     _elSvg(document, "path", { d: "M9 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm0 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm0 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z", fill: "currentColor" }),
   ]);
   const botaoTrigger = el("button", {
     class: "cds--btn cds--btn--ghost cds--btn--sm cds--btn--icon-only cds--menu-button__trigger pub-oab-overflow",
-    type: "button", "aria-haspopup": "true", "aria-expanded": "false", "aria-label": `Mais ações da publicação: ${identificacao}`, "aria-controls": `${idTexto}-menu`,
+    type: "button", "data-pub-oab-acao": "", "aria-haspopup": "true", "aria-expanded": "false", "aria-label": "Mais ações da publicação: " + identificacao, "aria-controls": idTexto + "-menu",
   }, [iconeChevron]);
   comboContainer.appendChild(botaoTrigger);
-
-  const menu = el("ul", { id: `${idTexto}-menu`, class: "cds--menu pub-oab-combo-menu", popover: "manual", role: "menu", "aria-label": `Ações da publicação: ${identificacao}` });
+  const menu = el("ul", { id: idTexto + "-menu", class: "cds--menu pub-oab-combo-menu", popover: "manual", role: "menu", "aria-label": "Ações da publicação: " + identificacao });
   menu.hidden = true;
-  const itemCadastro = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1",
-    "aria-disabled": String(!podeAdcCaso) }, [el("div", { class: "cds--menu-item__label", texto: "Cadastrar Processo" })]);
-  if (!podeAdcCaso) {
-    itemCadastro.appendChild(el("div", { class: "pub-oab-menu-motivo", texto: p.status === "tratada" ? "Publicação Já Tratada" : "Número Do Processo Não Informado" }));
-  }
-  itemCadastro.addEventListener("click", () => {
-    if (!podeAdcCaso) return;
-    _fecharTodosComboMenusOab(true);
-    _abrirFluxoInlinePubOab(tr, p, colunas, "cadastro", botaoTrigger);
-  });
-  if (!p.caso_id) menu.appendChild(itemCadastro);
-  else {
-    const abrir = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1" }, [el("div", { class: "cds--menu-item__label", texto: "Abrir Processo" })]);
-    abrir.addEventListener("click", async () => {
-      _fecharTodosComboMenusOab(true);
-      if (await selecionarAba(abas.find((a) => a.painel.id === "aba-casos"))) await abrirCaso(p.caso_id);
-    });
-    menu.appendChild(abrir);
-    const atividade = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1" }, [el("div", { class: "cds--menu-item__label", texto: "Criar atividade" })]);
-    atividade.addEventListener("click", async () => {
-      _fecharTodosComboMenusOab(true);
-      if (!(await selecionarAba(abas.find((a) => a.painel.id === "aba-casos")))) return;
-      if (!(await abrirCaso(p.caso_id))) return;
-      _selecionarSubabaCaso("atividades");
-      _abrirModalAtividade(p.caso_id, null, p.hash);
-    });
-    menu.appendChild(atividade);
-
-  }
-
-  // Vincular a caso existente: abre mini-form inline logo abaixo da linha.
-  const itemVincular = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1" }, [
-    el("div", { class: "cds--menu-item__label", texto: "Vincular a processo existente" }),
-  ]);
-  itemVincular.addEventListener("click", () => {
-    _fecharTodosComboMenusOab(true);
-    _abrirFluxoInlinePubOab(tr, p, colunas, "vinculo", botaoTrigger);
-  });
-  if (!p.caso_id) menu.appendChild(itemVincular);
-
-  if (p.status !== "tratada") {
-    const itemTratada = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1" }, [
-      el("div", { class: "cds--menu-item__label", texto: "Marcar como tratada" }),
-    ]);
-    itemTratada.addEventListener("click", () => { _fecharTodosComboMenusOab(true); _aplicarStatusPubOab([p.hash], "tratada"); });
-    menu.appendChild(itemTratada);
-  }
-  if (p.status !== "arquivada") {
-    const itemArquivar = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1" }, [
-      el("div", { class: "cds--menu-item__label", texto: "Arquivar" }),
-    ]);
-    itemArquivar.addEventListener("click", () => { _fecharTodosComboMenusOab(true); _aplicarStatusPubOab([p.hash], "arquivada"); });
-    menu.appendChild(itemArquivar);
+  for (const acao of acoes) {
+    const item = el("li", { class: "cds--menu-item", role: "menuitem", tabindex: "-1", "aria-disabled": String(Boolean(acao.motivo)) }, [el("div", { class: "cds--menu-item__label", texto: acao.rotulo })]);
+    if (acao.motivo) item.appendChild(el("div", { class: "pub-oab-menu-motivo", texto: acao.motivo }));
+    item.addEventListener("click", () => executarAcao(acao, botaoTrigger));
+    menu.appendChild(item);
   }
   botaoTrigger.addEventListener("click", (ev) => {
     ev.stopPropagation();
+    if (_acaoLinhaBloqueadaPubOab()) return;
     const abrindo = menu.hidden;
     _fecharTodosComboMenusOab(true);
     if (abrindo) {
@@ -4809,6 +5032,7 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
   botaoTrigger.addEventListener("keydown", (ev) => {
     if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
       ev.preventDefault();
+      if (_acaoLinhaBloqueadaPubOab()) return;
       if (menu.hidden) botaoTrigger.click();
       const itens = menu.querySelectorAll('[role="menuitem"]:not([aria-disabled="true"])');
       itens[ev.key === "ArrowUp" ? itens.length - 1 : 0]?.focus();
@@ -4840,17 +5064,9 @@ function linhaPublicacaoOab(p, colunas = _colunasPubOab([p])) {
   celAcoes.appendChild(acoesLinha);
   tr.appendChild(celAcoes);
 
-  for (const linha of linhas) _capitalizarTextosPubOab(linha);
   return linhas;
 }
 
-function _capitalizarTextosPubOab(raiz) {
-  const walker = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT);
-  while (walker.nextNode()) {
-    const no = walker.currentNode;
-    if (!no.parentElement?.closest('.pub-oab-publicacao-completa, .pub-oab-abrir, [data-coluna="texto"], [data-coluna="tribunal"], [data-coluna="hash"], [data-coluna="link"], [data-coluna="oab"], [data-coluna^="djen:"]')) no.textContent = _tituloPubOab(no.textContent);
-  }
-}
 
 function criarTabelaPublicacoesOab(tabela, quantidade, colunas) {
   const chave = "cnj_pub_oab_colunas_visiveis_v2";
@@ -4899,7 +5115,7 @@ function criarTabelaPublicacoesOab(tabela, quantidade, colunas) {
     rotulo.addEventListener("pointerdown", (evento) => evento.preventDefault());
     campos.appendChild(el("div", { class: "pub-oab-coluna-opcao" }, [input, rotulo]));
   }
-  campos.appendChild(el("p", { class: "campo-ajuda", texto: "Seleção, Processo, Tribunal, Nome Do Processo E Ações Ficam Sempre Visíveis." }));
+  campos.appendChild(el("p", { class: "campo-ajuda", texto: "Seleção, processo, tribunal, nome do processo e ações ficam sempre visíveis." }));
   seletor.append(resumo, campos);
   seletor.addEventListener("keydown", (evento) => {
     if (evento.key === "Escape") { evento.preventDefault(); seletor.open = false; seletor.focus(); }
@@ -4913,27 +5129,26 @@ function criarTabelaPublicacoesOab(tabela, quantidade, colunas) {
     botao.addEventListener("click", () => _aplicarStatusPubOab([..._publicacoesOabSelecionadas], status));
     return botao;
   };
-  const cancelar = el("button", { type: "button", class: "cds--btn cds--btn--primary cds--btn--sm", texto: "Cancelar Seleção", "data-cancelar-lote": "" });
+  const cancelar = el("button", { type: "button", class: "cds--btn cds--btn--primary cds--btn--sm", texto: "Cancelar seleção", "data-cancelar-lote": "" });
   cancelar.addEventListener("click", () => {
     _publicacoesOabSelecionadas.clear();
     _sincronizarSelecaoPubOab();
     tabela.querySelector("input[data-publicacoes-todas]")?.focus();
   });
 
-  const lote = el("div", { id: "pub-oab-batch", class: "cds--batch-actions pub-oab-batch", role: "region", "aria-label": "Ações Das Publicações Selecionadas" }, [
+  const lote = el("div", { id: "pub-oab-batch", class: "cds--batch-actions pub-oab-batch", role: "region", "aria-label": "Ações das publicações selecionadas" }, [
     el("span", { id: "pub-oab-selecionadas", role: "status", "aria-live": "polite" }),
-    criarAcaoLote("pub-oab-marcar-tratada", "Marcar Como Tratada", "tratada"),
+    criarAcaoLote("pub-oab-marcar-tratada", "Marcar como tratada", "tratada"),
     criarAcaoLote("pub-oab-arquivar", "Arquivar", "arquivada"), cancelar,
   ]);
   lote.hidden = _publicacoesOabSelecionadas.size === 0;
   const barra = el("div", { class: "pub-oab-tabela-toolbar" }, [
     el("strong", { texto: "Publicações" }),
-    el("span", { class: "pub-oab-tabela-contagem", texto: `${quantidade} ${quantidade === 1 ? "Publicação" : "Publicações"}` }),
+    el("span", { class: "pub-oab-tabela-contagem", texto: `${quantidade} ${quantidade === 1 ? "publicação" : "publicações"}` }),
     seletor,
   ]);
   aplicar();
   tabela.updateComplete?.then(aplicar);
-  _capitalizarTextosPubOab(barra);
   return el("div", { class: "pub-oab-grade" }, [barra, lote,
     el("div", { class: "tabela-responsiva-wrap pub-oab-rolagem", tabindex: "0", role: "region", "aria-label": "Tabela de publicações; role horizontalmente para ver todas as colunas" }, [tabela]),
   ]);
@@ -4960,7 +5175,7 @@ function _paginacaoPubOab(total) {
     return botao;
   };
   return el("nav", { class: "pub-oab-paginacao", "aria-label": "Paginação de publicações" }, [
-    el("div", { class: "pub-oab-paginacao-grupo" }, [el("label", { for: seletor.id, texto: "Itens por página:" }), seletor]),
+    el("div", { class: "pub-oab-paginacao-grupo" }, [el("label", { for: seletor.id, texto: "Itens por página" }), seletor]),
     el("div", { class: "pub-oab-paginacao-grupo" }, [
       el("span", { role: "status", "aria-live": "polite", texto: `${total ? (_pubOabPagina - 1) * _pubOabTamanho + 1 : 0}–${Math.min(_pubOabPagina * _pubOabTamanho, total)} de ${total} itens` }),
       el("span", { texto: `Página ${_pubOabPagina} de ${paginas}` }), mover(-1, "Página anterior"), mover(1, "Próxima página"),
@@ -4968,7 +5183,8 @@ function _paginacaoPubOab(total) {
   ]);
 }
 
-async function carregarPublicacoesOab() {
+async function carregarPublicacoesOab(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-publicacoes-oab") };
   const container = document.getElementById("lista-publicacoes-oab");
   if (!exigirCliente(container)) return;
   const requisicao = ++_pubOabRequisicao;
@@ -4979,7 +5195,7 @@ async function carregarPublicacoesOab() {
   try {
     const query = new URLSearchParams({ pagina: String(_pubOabPagina), tamanho: String(_pubOabTamanho) });
     if (filtroStatus) query.set("status", filtroStatus);
-    const dados = await _buscarJson(`/publicacoes-oab?${query}`);
+    const dados = await _buscarJson(`/publicacoes-oab?${query}`, feedback);
     if (requisicao !== _pubOabRequisicao) return;
     const publicacoes = dados.publicacoes || [], total = dados.total ?? publicacoes.length;
     _pubOabPagina = dados.pagina || Math.min(_pubOabPagina, Math.max(1, Math.ceil(total / _pubOabTamanho)));
@@ -4999,6 +5215,7 @@ async function carregarPublicacoesOab() {
     }
     const checkboxTodos = el("input", { type: "checkbox", "data-publicacoes-todas": "", "aria-label": "Selecionar publicações desta página" });
     checkboxTodos.addEventListener("change", () => {
+      if (_pubOabAtualizando || _pubOabInlineEnviando) { _sincronizarSelecaoPubOab(); return; }
       for (const p of publicacoes) {
         if (checkboxTodos.checked) _publicacoesOabSelecionadas.add(p.hash); else _publicacoesOabSelecionadas.delete(p.hash);
       }
@@ -5006,9 +5223,9 @@ async function carregarPublicacoesOab() {
     });
     const colunas = _colunasPubOab(publicacoes, dados.campos_djen || []);
     const thead = el("cds-table-head", {}, [el("cds-table-header-row", { size: "md" }, [
-      el("cds-table-header-cell", { class: "pub-oab-controle" }, [checkboxTodos]),
       el("cds-table-header-cell", { class: "pub-oab-controle", "aria-label": "Expandir publicação" }),
-      ...colunas.map((c) => el("cds-table-header-cell", { texto: c.rotulo, "data-coluna": c.id })),
+      el("cds-table-header-cell", { class: "pub-oab-controle" }, [checkboxTodos]),
+      ...colunas.map(_cabecalhoPublicacaoOab),
       el("cds-table-header-cell", { texto: "Ações" }),
     ])]);
     const tbody = el("cds-table-body", {});
@@ -5126,7 +5343,8 @@ function _selecionarSubabaCaso(nome) {
   }
 }
 
-async function abrirCaso(casoId) {
+async function abrirCaso(casoId, tipoFeedback = "pagina") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("caso-vista-detalhe") };
   if (!(await permitirSaidaEdicao())) return false;
   invalidarOrigemAtividade();
   document.getElementById("caso-vista-lista").hidden = true;
@@ -5136,19 +5354,19 @@ async function abrirCaso(casoId) {
   limpar(document.getElementById("lista-atividades"));
   limpar(document.getElementById("resultado-caso-editar"));
   try {
-    const caso = await _buscarJson(`/casos/${casoId}`);
+    const caso = await _buscarJson(`/casos/${casoId}`, feedback);
     _casoDetalheAtual = caso;
-    document.getElementById("caso-detalhe-titulo").textContent = caso.titulo || "(sem título)";
+    document.getElementById("caso-detalhe-titulo").textContent = caso.titulo ? formatarNomeExibicao(caso.titulo) : "(sem título)";
     const responsavel = document.getElementById("editar-caso-responsavel");
     limpar(responsavel);
     responsavel.appendChild(el("option", {value: "", texto: "Selecione um responsável"}));
     try {
-      const dados = await _buscarJson("/responsaveis");
+      const dados = await _buscarJson("/responsaveis", feedback);
       for (const nome of [...new Set([...(dados.responsaveis || []), caso.responsavel].filter(Boolean))]) {
-        responsavel.appendChild(el("option", {value: nome, texto: nome}));
+        responsavel.appendChild(el("option", {value: nome, texto: formatarNomeExibicao(nome)}));
       }
     } catch (erro) {
-      if (caso.responsavel) responsavel.appendChild(el("option", {value: caso.responsavel, texto: caso.responsavel}));
+      if (caso.responsavel) responsavel.appendChild(el("option", {value: caso.responsavel, texto: formatarNomeExibicao(caso.responsavel)}));
       mostrarAviso(document.getElementById("resultado-caso-editar"), "Não foi possível carregar os responsáveis. Reabra o processo para tentar novamente.");
     }
     responsavel.value = caso.responsavel || "";
@@ -5157,8 +5375,8 @@ async function abrirCaso(casoId) {
     document.getElementById("form-caso-editar").dataset.casoId = casoId;
     marcarFormularioSalvo(document.getElementById("form-caso-editar"), true);
     limpar(document.getElementById("lista-movimentacoes"));
-    await _carregarCapaProcessos(casoId);
-    await _carregarAtividades(casoId);
+    await _carregarCapaProcessos(casoId, tipoFeedback);
+    await _carregarAtividades(casoId, tipoFeedback);
     return true;
   } catch (erro) {
     document.getElementById("caso-detalhe-titulo").textContent = "Erro ao carregar";
@@ -5170,11 +5388,12 @@ async function abrirCaso(casoId) {
 const _casosComOrigemEstruturada = new Set();
 const _casosComAgendaDisponivel = new Set();
 const _chavesAgendaAtividade = new Map();
-async function _carregarAtividades(casoId) {
+async function _carregarAtividades(casoId, tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-atividades") };
   const lista = document.getElementById("lista-atividades");
   limpar(lista);
   try {
-    const { atividades, origem_djen_estruturada, agenda_disponivel } = await _buscarJson(`/casos/${casoId}/atividades`);
+    const { atividades, origem_djen_estruturada, agenda_disponivel } = await _buscarJson(`/casos/${casoId}/atividades`, feedback);
     if (agenda_disponivel) _casosComAgendaDisponivel.add(casoId);
     else _casosComAgendaDisponivel.delete(casoId);
     if (origem_djen_estruturada === true || (atividades || []).some((a) => Object.hasOwn(a, "origem_djen_hash"))) _casosComOrigemEstruturada.add(casoId);
@@ -5212,13 +5431,13 @@ function _renderizarAtividades(casoId, atividades) {
     item.appendChild(check);
 
     const corpo = el("div", { class: "atividade-corpo" });
-    const titulo = el("p", { class: `atividade-titulo${atv.status === "concluida" ? " concluida" : ""}`, texto: atv.titulo });
+    const titulo = el("p", { class: `atividade-titulo${atv.status === "concluida" ? " concluida" : ""}`, texto: formatarNomeExibicao(atv.titulo) });
     corpo.appendChild(titulo);
     const partesMeta = [_ROTULO_TIPO_ATIVIDADE[atv.tipo] || atv.tipo];
     if (atv.data) partesMeta.push(formatarDataSimples(atv.data));
     if (atv.hora) partesMeta.push(atv.hora);
     corpo.appendChild(el("p", { class: "atividade-meta", texto: partesMeta.join(" · ") }));
-    if (atv.responsavel) corpo.appendChild(el("p", { class: "atividade-meta", texto: `Responsável: ${atv.responsavel}` }));
+    if (atv.responsavel) corpo.appendChild(el("p", { class: "atividade-meta", texto: `Responsável: ${formatarNomeExibicao(atv.responsavel)}` }));
     if (atv.observacoes) corpo.appendChild(el("p", { class: "atividade-meta", texto: atv.observacoes }));
     const origem = origemPublicacaoAtividade(atv);
     if (origem) corpo.appendChild(el("button", { type: "button", class: "cds--btn cds--btn--ghost cds--btn--sm", texto: "Ver publicação de origem", onclick: () => mostrarOrigemAtividade(casoId, origem) }));
@@ -5357,7 +5576,7 @@ async function _abrirModalAtividade(casoId, atividade = null, publicacaoHash = "
   } catch {
     mostrarAviso(resultado, "Não foi possível carregar os responsáveis. O responsável atual foi preservado. Reabra a atividade para tentar novamente.");
   }
-  for (const nome of nomes) responsavel.appendChild(el("option", { value: nome, texto: nome }));
+  for (const nome of nomes) responsavel.appendChild(el("option", { value: nome, texto: formatarNomeExibicao(nome) }));
   responsavel.value = atividade?.responsavel || "";
   const hashOrigem = form.dataset.publicacaoHash;
   document.getElementById("atividade-observacoes").value = String(atividade?.observacoes || "").split(/\r?\n/)
@@ -5375,9 +5594,10 @@ async function _abrirModalAtividade(casoId, atividade = null, publicacaoHash = "
   abrirModal("modal-atividade");
 }
 
-async function _carregarChecklistAtividade(casoId, aid) {
+async function _carregarChecklistAtividade(casoId, aid, tipoFeedback = "pagina") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("atividade-checklist-lista") };
   try {
-    const { itens } = await _buscarJson(`/casos/${casoId}/atividades/${aid}/checklist`);
+    const { itens } = await _buscarJson(`/casos/${casoId}/atividades/${aid}/checklist`, feedback);
     _renderizarChecklistAtividade(itens || []);
   } catch (erro) {
     mostrarToast("error", "Erro ao carregar checklist", erro.message);
@@ -5481,11 +5701,12 @@ function _siglaTribunal(num) {
   return null;
 }
 
-async function _carregarPublicacoesCaso(casoId) {
+async function _carregarPublicacoesCaso(casoId, tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-publicacoes-caso") };
   const lista = document.getElementById("lista-publicacoes-caso");
   limpar(lista);
   try {
-    const resp = await _buscarJson(`/casos/${casoId}/publicacoes`);
+    const resp = await _buscarJson(`/casos/${casoId}/publicacoes`, feedback);
     const pubs = resp.publicacoes || [];
     if (!pubs.length) {
       lista.textContent = "Nenhuma publicação vinculada a este processo.";
@@ -5540,12 +5761,13 @@ function formatarNumeroCNJ(valor) {
   return String(valor || "").replace(/^(\d{7})(\d{2})(\d{4})(\d)(\d{2})(\d{4})$/, "$1-$2.$3.$4.$5.$6");
 }
 
-async function _carregarCapaProcessos(casoId) {
+async function _carregarCapaProcessos(casoId, tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-capa-processos") };
   const lista = document.getElementById("lista-capa-processos");
   limpar(lista);
   let numeros;
   try {
-    numeros = (await _buscarJson(`/casos/${casoId}`)).processos || [];
+    numeros = (await _buscarJson(`/casos/${casoId}`, feedback)).processos || [];
   } catch (erro) {
     mostrarErro(lista, erro.message);
     return;
@@ -5557,7 +5779,7 @@ async function _carregarCapaProcessos(casoId) {
   const movimentos = [];
   for (const numero of numeros) {
     try {
-      const capa = await _buscarJson(`/casos/${casoId}/processos/${numero}/capa`);
+      const capa = await _buscarJson(`/casos/${casoId}/processos/${numero}/capa`, feedback);
       lista.appendChild(_cardCapaProcesso(casoId, numero, capa));
       movimentos.push(...(capa.movimentos || []));
     } catch (erro) {
@@ -5597,7 +5819,7 @@ async function _atualizarCapaProcessos(casoId) {
   const caso = await _buscarJson(`/casos/${casoId}`);
   if (_casoDetalheAtual?.id !== casoId) return;
   _casoDetalheAtual = caso;
-  document.getElementById("caso-detalhe-titulo").textContent = caso.titulo || "(sem título)";
+  document.getElementById("caso-detalhe-titulo").textContent = caso.titulo ? formatarNomeExibicao(caso.titulo) : "(sem título)";
   await _carregarCapaProcessos(casoId);
 }
 
@@ -5614,13 +5836,13 @@ function _dataDistribuicaoLegivel(valor) {
 }
 
 function _participantesCapa(capa) {
-  const nomes = (registros) => [...new Set(registros.map(p => (p.nome || "").trim()).filter(Boolean))].join("; ");
+  const nomes = (registros) => [...new Set(registros.map(p => formatarNomeExibicao((p.nome || "").trim())).filter(Boolean))].join("; ");
   const partes = capa.partes || [];
   const poloAtivo = p => /^(A|AT|ATIVO)$/i.test(p.polo || "");
   const poloPassivo = p => /^(P|PA|PASSIVO)$/i.test(p.polo || "");
   const advogados = [...new Set((capa.advogados || []).map(registro => {
     const advogado = registro.advogado || registro;
-    const nome = (advogado.nome || "").trim();
+    const nome = formatarNomeExibicao((advogado.nome || "").trim());
     if (!nome) return "";
     const oab = String(advogado.numero_oab || "").trim();
     const uf = String(advogado.uf_oab || "").trim().toUpperCase();
@@ -5640,7 +5862,7 @@ function _cardCapaProcesso(casoId, numero, capa) {
     ["Foro / Vara (órgão julgador)", capa.orgao_julgador],
     ["Tipo de justiça", capa.tipo_justica], ["Município", capa.cidade], ["UF", capa.uf],
     ["Assuntos", (capa.assuntos || []).join(", ")], ["Distribuição", _dataDistribuicaoLegivel(capa.data_distribuicao)],
-    ["Nível de sigilo", capa.nivel_sigilo], ["Nome do processo", capa.nome_processo],
+    ["Nível de sigilo", capa.nivel_sigilo], ["Nome do processo", capa.nome_processo ? formatarNomeExibicao(capa.nome_processo) : ""],
     ..._participantesCapa(capa),
   ].filter(([, valor]) => valor !== null && valor !== undefined && valor !== "");
 
@@ -5715,7 +5937,7 @@ function _cardCapaProcesso(casoId, numero, capa) {
   return el("div", { class: "capa-card" }, [
     el("h4", {}, [document.createTextNode(formatarNumeroCNJ(numero))]),
     blocoAuto,
-    el("div", { class: "capa-card-campos" }, inputs),
+    el("div", { class: "capa-card-campos cds--css-grid" }, inputs),
     el("div", { class: "capa-card-acoes" }, [btnSalvar, btnMonitorar]),
   ]);
 }
@@ -5787,11 +6009,12 @@ const _ROTULO_TIPO_VINCULO = {
   relacionado: "Relacionado",
 };
 
-async function _carregarVinculos(casoId) {
+async function _carregarVinculos(casoId, tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-vinculos") };
   const lista = document.getElementById("lista-vinculos");
   limpar(lista);
   try {
-    const { vinculos } = await _buscarJson(`/casos/${casoId}/vinculos`);
+    const { vinculos } = await _buscarJson(`/casos/${casoId}/vinculos`, feedback);
     _renderizarVinculos(casoId, vinculos || []);
   } catch (erro) {
     mostrarErro(lista, erro.message);
@@ -5932,7 +6155,7 @@ document.getElementById("caso-subaba-atividades-botao").addEventListener("click"
 document.getElementById("caso-subaba-publicacoes-botao").addEventListener("click", () => {
   _selecionarSubabaCaso("publicacoes");
   const casoId = document.getElementById("form-caso-editar").dataset.casoId;
-  if (casoId) _carregarPublicacoesCaso(casoId);
+  if (casoId) _carregarPublicacoesCaso(casoId, "pagina");
 });
 document.getElementById("caso-subaba-movimentacoes-botao").addEventListener("click", () => {
   _selecionarSubabaCaso("movimentacoes");
@@ -5941,7 +6164,7 @@ document.getElementById("caso-subaba-movimentacoes-botao").addEventListener("cli
 document.getElementById("caso-subaba-vinculos-botao").addEventListener("click", () => {
   _selecionarSubabaCaso("vinculos");
   const casoId = document.getElementById("form-caso-editar").dataset.casoId;
-  if (casoId) _carregarVinculos(casoId);
+  if (casoId) _carregarVinculos(casoId, "pagina");
 });
 document.getElementById("btn-buscar-movimentacoes").addEventListener("click", () => {
   const casoId = document.getElementById("form-caso-editar").dataset.casoId;
@@ -5976,7 +6199,7 @@ registrarSalvamento(document.getElementById("form-caso-editar"), async (evento) 
     resultado.appendChild(notificacao("success", "Processo atualizado"));
     marcarFormularioSalvo(evento.target);
     _casoDetalheAtual = atualizado;
-    document.getElementById("caso-detalhe-titulo").textContent = atualizado.titulo || "(sem título)";
+    document.getElementById("caso-detalhe-titulo").textContent = atualizado.titulo ? formatarNomeExibicao(atualizado.titulo) : "(sem título)";
     const indice = _cache.casos.findIndex((c) => c.id === casoId);
     if (indice !== -1) _cache.casos[indice] = { ..._cache.casos[indice], ...atualizado };
   } catch (erro) {
@@ -6089,6 +6312,7 @@ _inicializarDatePickerRange("pub-oab-manual-data-inicio", "pub-oab-manual-data-f
   const el = document.getElementById("honorario-vencimento");
   if (!el || typeof window.flatpickr !== "function") return;
   window.flatpickr(el, {
+    appendTo: document.querySelector("#modal-honorario cds-modal-body"),
     altInput: false,
     allowInput: true,
     locale: window.flatpickr.l10ns && window.flatpickr.l10ns.pt,
@@ -6109,9 +6333,15 @@ registrarSalvamento(document.getElementById("form-honorario"), async (evento) =>
   evento.preventDefault();
   const botao = document.querySelector("button[form='form-honorario'][type='submit']");
   const resultado = document.getElementById("resultado-honorario");
+  const campoValor = document.getElementById("honorario-valor");
+  if (_valorLancamentoEmReais(campoValor.value) === null) {
+    campoValor.setCustomValidity("Informe um valor maior que zero, como 1.500,00.");
+    campoValor.reportValidity();
+    return;
+  }
   const corpo = {
     vencimento: _ddmmaaaaParaIso(document.getElementById("honorario-vencimento").value),
-    valor: document.getElementById("honorario-valor").value,
+    valor: _valorLancamentoEmReais(document.getElementById("honorario-valor").value),
     descricao: document.getElementById("honorario-descricao").value.trim(),
     recorrente: document.getElementById("honorario-recorrente").checked,
     caso_id: document.getElementById("honorario-caso").value,
@@ -6123,7 +6353,8 @@ registrarSalvamento(document.getElementById("form-honorario"), async (evento) =>
   try {
     await _enviarJson("/lancamentos", corpo);
     marcarFormularioSalvo(document.getElementById("form-honorario"));
-    fecharModal("modal-honorario");
+    await fecharModal("modal-honorario");
+    mostrarToast("success", "Lançamento salvo");
     await carregarLancamentos();
   } catch (erro) {
     mostrarErro(resultado, erro.message);
@@ -6156,11 +6387,11 @@ registrarSalvamento(document.getElementById("form-honorario"), async (evento) =>
   botaoTabela.addEventListener("click", () => selecionar("tabela"));
   botaoCards.addEventListener("click", () => selecionar("cards"));
   switcher.addEventListener("keydown", (ev) => {
-    const botoes = [botaoTabela, botaoCards];
+    const botoes = [botaoCards, botaoTabela];
     let alvo;
     if (ev.key === "ArrowRight" || ev.key === "ArrowLeft") alvo = botoes[1 - botoes.indexOf(document.activeElement)];
-    else if (ev.key === "Home") alvo = botaoTabela;
-    else if (ev.key === "End") alvo = botaoCards;
+    else if (ev.key === "Home") alvo = botaoCards;
+    else if (ev.key === "End") alvo = botaoTabela;
     if (alvo) { ev.preventDefault(); alvo.click(); alvo.focus(); }
   });
 })();
@@ -6171,7 +6402,8 @@ let _geracaoAtividades = 0;
 function valorFiltroExecutor(atividade) {
   return atividade.responsavel ? `responsavel:${atividade.responsavel}` : "sem-responsavel";
 }
-async function carregarAtividadesAbertas() {
+async function carregarAtividadesAbertas(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("atividades-lista") };
   const lista = document.getElementById("atividades-lista");
   const status = document.getElementById("atividades-status");
   const geracao = ++_geracaoAtividades;
@@ -6182,7 +6414,7 @@ async function carregarAtividadesAbertas() {
   atualizar.disabled = true;
   status.appendChild(el("p", { role: "status", texto: "Carregando atividades dos processos…" }));
   try {
-    const { casos } = await _buscarJson("/casos");
+    const { casos } = await _buscarJson("/casos", feedback);
     if (!Array.isArray(casos)) throw new Error("Resposta de processos inválida.");
     const resultados = [];
     const falhas = [];
@@ -6192,7 +6424,7 @@ async function carregarAtividadesAbertas() {
       while (indice < casos.length && geracao === _geracaoAtividades) {
         const caso = casos[indice++];
         try {
-          const dados = await _buscarJson(`/casos/${caso.id}/atividades`);
+          const dados = await _buscarJson(`/casos/${caso.id}/atividades`, feedback);
           if (!Array.isArray(dados.atividades)) throw new Error("Resposta de atividades inválida.");
           resultados.push(...dados.atividades.filter((a) => a.status !== "concluida").map((atividade) => ({ caso, atividade })));
         } catch { falhas.push(caso.titulo || "Processo sem título"); }
@@ -6204,7 +6436,7 @@ async function carregarAtividadesAbertas() {
     const anterior = responsavel.value;
     limpar(responsavel);
     responsavel.appendChild(el("option", { value: "", texto: "Todos" }));
-    for (const nome of [...new Set(casos.map((c) => c.responsavel || "Sem responsável"))].sort()) responsavel.appendChild(el("option", { value: nome, texto: nome }));
+    for (const nome of [...new Set(casos.map((c) => c.responsavel || "Sem responsável"))].sort()) responsavel.appendChild(el("option", { value: nome, texto: nome === "Sem responsável" ? nome : formatarNomeExibicao(nome) }));
     if ([...responsavel.options].some((o) => o.value === anterior)) responsavel.value = anterior;
     const executor = document.getElementById("atividades-executor");
     const executorAnterior = executor.value;
@@ -6241,8 +6473,8 @@ function renderizarAtividadesAbertas() {
   for (const { caso, atividade } of itens) {
     const item = el("article", { class: "atividade-item" });
     const corpo = el("div", { class: "atividade-corpo" }, [
-      el("h3", { class: "atividade-titulo", texto: atividade.titulo }),
-      el("p", { class: "atividade-meta", texto: `${caso.titulo || "Processo sem título"} · Responsável pelo processo: ${caso.responsavel || "Não definido"}` }),
+      el("h3", { class: "atividade-titulo", texto: formatarNomeExibicao(atividade.titulo) }),
+      el("p", { class: "atividade-meta", texto: `${caso.titulo ? formatarNomeExibicao(caso.titulo) : "Processo sem título"} · Responsável pelo processo: ${caso.responsavel ? formatarNomeExibicao(caso.responsavel) : "Não definido"}` }),
       el("p", { class: "atividade-meta", texto: `Responsável pela atividade: ${atividade.responsavel || "Sem responsável"}` }),
       el("p", { class: "atividade-meta", texto: `${_ROTULO_TIPO_ATIVIDADE[atividade.tipo] || atividade.tipo} · ${atividade.data ? formatarDataSimples(atividade.data) : "Sem data"}${atividade.hora ? " · " + atividade.hora : ""}` }),
     ]);
@@ -6326,6 +6558,7 @@ function _fecharPainelNotificacoes() {
   const popover = document.getElementById("notificacoes-popover");
   popover.open = false;
   _btnNotificacoesToggle.setAttribute("aria-expanded", "false");
+  _btnNotificacoesToggle.isSelected = false;
   _btnNotificacoesToggle.shadowRoot?.querySelector("button")?.setAttribute("aria-expanded", "false");
 }
 function _fecharPainelBusca() {
@@ -6353,7 +6586,7 @@ async function carregarConsultaGlobal() {
   atualizarConsultaGlobal();
   const fontes = [["clientes", "/clientes", "Clientes"], ["casos", "/casos", "Processos"]];
   const respostas = await Promise.allSettled(fontes.map(async ([chave, url]) => {
-    const dados = await _buscarJson(url);
+    const dados = await _buscarJson(url, { tipo: "interno", regiao: document.getElementById("header-busca-resultados") });
     if (!Array.isArray(dados[chave])) throw new Error("Resposta inválida");
     return dados[chave];
   }));
@@ -6422,7 +6655,7 @@ function _renderizarResultadosBusca(resultados) {
   for (const r of resultados.slice(0, 20)) {
     const botao = el("button", {
       class: "header-busca-resultado-item", type: "button",
-      texto: `${r.rotulo} — ${r.sub}`,
+      texto: `${formatarNomeExibicao(r.rotulo)} — ${r.sub}`,
     });
     botao.addEventListener("click", async () => {
       _fecharPainelBusca();

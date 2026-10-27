@@ -1493,6 +1493,7 @@ class PainelWebTest(_RegistroTemporario):
 
     def test_search_carbon_assets_publicos_sem_cache(self):
         for caminho, tipo in (("/static/search-fields.js", b"javascript"),
+                              ("/static/notificacoes.js", b"javascript"),
                               ("/static/search-fields.css", b"text/css"),
                               ("/static/carbon/search-components.min.js", b"javascript"),
                               ("/static/ui-controls.js", b"javascript"),

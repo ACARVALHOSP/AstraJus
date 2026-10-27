@@ -16,7 +16,8 @@ Depois: node static/carbon/build-search-components.cjs
 Licença: LICENSE-search-components.txt e search-components.min.js.LEGAL.txt.
 
 Web Components de Publicações OAB: @carbon/web-components 2.66.0.
-Bundle local oab-components.min.js: DataTable, Toggletip, Tag e IconButton.
+Bundle local oab-components.min.js: DataTable, Toggletip, Tag, Card, IconButton,
+BadgeIndicator e Popover (incluindo Tab tip da central de notificações).
 Fonte: https://github.com/carbon-design-system/carbon/tree/main/packages/web-components
 Licenças: LICENSE-web-components.txt e oab-components.min.js.LEGAL.txt.
 O bundle inclui estilos encapsulados dos componentes; o CSS Carbon existente continua
@@ -39,3 +40,7 @@ Bundle local: ui-controls.min.js; fontes: ui-controls.entry.js.
 Build com os mesmos pacotes acima: node static/carbon/build-ui-controls.cjs
 CARBON_BUILD_MODULES permite indicar uma pasta node_modules alternativa.
 Licenças: LICENSE-ui-controls.txt e ui-controls.min.js.LEGAL.txt.
+
+ProgressBar 2.66.0: ui-controls.entry.js adapta updated para nome/descrição no Shadow DOM, anúncio do helper em português e aria-busy correto no erro. Reavaliar ao atualizar o pacote.
+
+Feedback por contexto: o bundle também contém SkeletonText e InlineLoading. A API operacao recebe tipo pagina/interno/externo; wrappers HTTP e MCP informam a origem e os loaders de página identificam a região. Regressões: node test_progress_controls.cjs e node test_feedback_requests.cjs.

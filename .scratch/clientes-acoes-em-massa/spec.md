@@ -1,10 +1,10 @@
 # Clientes: etiquetas e atualização de perfil em massa
 
-Status: needs-triage
+Status: implementação aprovada; validação e publicação em andamento
 
 ## Escopo e aprovação
 
-Solicitação: implementar as duas ações escolhidas pelo usuário — aplicar/remover etiquetas e atualizar perfil com prévia. Esta entrega prepara o fluxo e a prévia separada exigida pelo AGENTS.md antes de alterar o frontend. Nenhum arquivo da aplicação ou banco é alterado nesta etapa.
+Solicitação: implementar as duas ações escolhidas pelo usuário — aplicar/remover etiquetas e atualizar perfil com prévia. O mockup separado foi apresentado antes das alterações. A instrução “após fazer as ações em massa fazer pr, merge e deploy de tudo já feito” aprovou a implementação e a publicação.
 
 Usadas as referências Carbon Data table, UI/UX Pro Max e o fluxo GTD de esclarecer antes de engajar já adotado na auditoria. O mockup é HTML independente, não integração de componentes Carbon de produção.
 
@@ -59,6 +59,23 @@ Usadas as referências Carbon Data table, UI/UX Pro Max e o fluxo GTD de esclare
 
 ## Estado do mockup
 
-`mockup.html` permite selecionar linhas e testar ambas as ações com prévia e confirmação **somente em memória**, usando dados fictícios. Não conecta API, não grava banco e não persiste após recarregar. Aprovação visual pendente.
+`mockup.html` permite selecionar linhas e testar ambas as ações com prévia e confirmação **somente em memória**, usando dados fictícios. Não conecta API, não grava banco e não persiste após recarregar. O fluxo foi aprovado para implementação.
 
 Validação da prévia: executada em Chromium com dados fictícios; verificados seleção, aplicação aditiva de etiquetas, atualização de perfil, confirmação, contagem de registros sem alteração e ausência de overflow da página em 390 px. As capturas de revisão de etiquetas e perfil foram inspecionadas visualmente. Isso não valida backend, concorrência ou acessibilidade integral da implementação futura.
+
+## Implementação
+
+- POST autenticado `/clientes/acoes-em-massa`, com `confirmar=false` para prévia e `confirmar=true` + `esperado` para gravação. Ações: `perfil`, `aplicar_etiquetas`, `remover_etiquetas`.
+- Tabelas aditivas `etiquetas_clientes` e `cliente_etiquetas`, mantendo cadastro e vínculos existentes.
+- Confirmação com transação `BEGIN IMMEDIATE`, comparação de estado e resposta 409 para conflito; nenhuma gravação parcial.
+- Seleção individual, estado misto, selecionar todos os exibidos, cancelamento e limpeza ao filtrar. Controle de selecionar todos também disponível no layout de cards em tela pequena.
+- Modal Carbon integrado ao mecanismo existente, configuração, revisão e confirmação; bloqueio de envio repetido e fechamento durante requisição; erro preserva configuração e seleção.
+- A `main` foi integrada para preservar entregas anteriores já publicadas: Carbon, modais, feedback por contexto, atividades, agenda e notificações. Sem reversão dessas entregas e sem inclusão de `output/`, dependências de build ou backups locais no PR.
+
+## Validação da implementação
+
+- 300 testes de backend passaram (`test_unit`, `test_clientes_lote`, `test_agenda_atividades`, `test_notificacoes`, `test_origem_djen`).
+- Cinco jornadas de lote no navegador com SQLite temporário real passaram: aplicar/remover etiquetas, perfil, conflito e revisão sem mudança, falha e recuperação, limpeza ao filtrar. Prévia não grava dados e confirmação preserva campos não envolvidos.
+- Capturas de revisão inspecionadas; modal verificado em 1440, 768, 390 e 320 px. Escape e retorno de foco cobertos. Dados fictícios, sem mutação de produção.
+- Testes Node `test_progress_controls.cjs` e `test_feedback_requests.cjs` passaram.
+- Regressão completa de interface em andamento antes da publicação.

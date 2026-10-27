@@ -47,7 +47,7 @@ class ClientesLoteTest(unittest.TestCase):
         self.assertEqual(self.aplicar(acao="remover_etiquetas", etiquetas=["Ausente"])["alterados"], 0)
 
     def test_conflito_entre_instancias_nao_grava_parcial(self):
-        pedido = {"ids": self.ids, "acao": "perfil", "perfil": "contato"}
+        pedido = {"ids": self.ids, "acao": "perfil", "perfil": "cliente"}
         previa = self.gestao.clientes_em_massa(pedido)
         outra = db.RegistroClientesCasos(self.path)
         outro = {"ids": [self.b["id"]], "acao": "perfil", "perfil": "contato"}
