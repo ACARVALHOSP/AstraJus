@@ -226,6 +226,41 @@ class InterfaceTest(unittest.TestCase):
         self.assertIn('ajuda-original progresso-', self.page.locator('#regiao-teste-progresso').get_attribute('aria-describedby'))
         self.assertLessEqual(barra.bounding_box()['width'], 480)
 
+    def test_progresso_reutilizado_preserva_renderizacao_lit(self):
+        self.connect()
+        self.page.evaluate("""async () => {
+          await customElements.whenDefined('cds-progress-bar');
+          const regiao = document.createElement('section');
+          regiao.id = 'regiao-reuso-progresso';
+          document.body.append(regiao);
+          for (let i = 0; i < 4; i++) {
+            const fim = cnjUI.iniciar('Operação ' + i, regiao);
+            const barra = regiao.previousElementSibling.querySelector('cds-progress-bar');
+            await barra.updateComplete;
+            fim(i === 1, 'Falha temporária');
+            await barra.updateComplete;
+          }
+        }""")
+        barra = self.page.locator('#regiao-reuso-progresso').locator('xpath=preceding-sibling::*[1]').locator('cds-progress-bar')
+        self.assertEqual(barra.get_attribute('status'), 'finished')
+        self.assertIn('Operação concluída', barra.get_by_role('status').inner_text())
+        self.assertFalse(self.errors)
+
+    def test_notificacoes_abertas_reposicionam_ao_redimensionar(self):
+        self.connect()
+        self.page.locator('#btn-notificacoes-toggle').click()
+        for width in (1440, 320, 768, 390, 1440):
+            self.page.set_viewport_size({'width': width, 'height': 960})
+            self.page.wait_for_timeout(350)
+            painel = self.page.locator('#header-notificacoes-painel')
+            self.assertTrue(painel.is_visible())
+            rect = painel.bounding_box()
+            self.assertGreaterEqual(rect['x'], 0)
+            self.assertLessEqual(rect['x'] + rect['width'], width)
+        self.page.keyboard.press('Escape')
+        self.assertTrue(self.page.locator('#header-notificacoes-painel').is_hidden())
+        self.assertFalse(self.errors)
+
     def select_value(self, native, value):
         """Escolhe no controle Carbon e confere o valor legado usado pelos handlers."""
         if native.input_value() == value:
@@ -233,7 +268,7 @@ class InterfaceTest(unittest.TestCase):
         label = native.evaluate("(el, value) => [...el.options].find(o => o.value === value).textContent", value)
         host = native.locator("xpath=preceding-sibling::*[1]")
         if host.evaluate("el => el.tagName") == "CDS-RADIO-BUTTON-GROUP":
-            host.get_by_role("radio", name=label, exact=True).check()
+            host.get_by_text(label, exact=True).click()
         else:
             host.get_by_role("combobox").click()
             host.get_by_role("option", name=label, exact=True).click()
@@ -345,13 +380,15 @@ class InterfaceTest(unittest.TestCase):
             self.assertEqual(painel.get_by_role('spinbutton', name='Dias', exact=True).count(), 1)
             self.assertEqual(painel.get_by_role('combobox', name='Contagem a partir de', exact=True).count(), 1)
             self.assertEqual(painel.get_by_role('textbox', name='Município/comarca', exact=True).count(), 1)
-            for rotulo in painel.locator('label').all():
+            for rotulo in painel.locator('label[for]').all():
+                if not rotulo.evaluate("label => label.getRootNode() === document && label.getClientRects().length > 0"):
+                    continue  # O label legado é substituído pelo label público Carbon.
                 rotulo.click()
                 self.assertTrue(rotulo.evaluate("label => document.activeElement === document.getElementById(label.htmlFor)"))
             dias = painel.get_by_label('Dias', exact=True)
             dias.focus()
             dias.press('Tab')
-            self.assertTrue(painel.get_by_label('Contagem a partir de', exact=True).evaluate("el => el === document.activeElement"))
+            self.assertTrue(painel.get_by_role('combobox', name='Contagem a partir de', exact=True).evaluate("el => el.getRootNode().activeElement === el"))
             self.page.keyboard.press('Tab')
             self.assertTrue(painel.get_by_label('Município/comarca', exact=True).evaluate("el => el === document.activeElement"))
         paineis.nth(1).get_by_label('Dias', exact=True).fill('7')
@@ -705,7 +742,7 @@ class InterfaceTest(unittest.TestCase):
         self.page.wait_for_function('!_pubOabAtualizando && !_pubOabCarregando')
         self.assertEqual(set(self.pub_oab_posts[-1]['hashes']), {'pub-1', 'pub-6', 'pub-7', 'pub-8', 'pub-9', 'pub-10'})
         self.page.locator('input[data-publicacao-hash="pub-1"]').check()
-        self.page.get_by_role('navigation', name='Paginação de publicações').get_by_label('Itens por página', exact=True).select_option('10')
+        self.select_value(self.page.locator('#pub-oab-tamanho'), '10')
         self.page.wait_for_function("document.querySelectorAll('input[data-publicacao-hash]').length === 10")
         self.assertEqual(self.page.locator('input[data-publicacao-hash]:checked').count(), 0)
         self.assertIn('1–10 de 11', self.page.locator('.pub-oab-paginacao').inner_text())
@@ -1431,9 +1468,9 @@ class InterfaceTest(unittest.TestCase):
         self.assertEqual(self.page.evaluate("document.activeElement.id"), "aba-casos")
         self.page.locator("#casos-vista-tabela-botao").focus()
         self.page.keyboard.press("End")
-        self.assertEqual(self.page.locator("#casos-vista-cards-botao").get_attribute("aria-pressed"), "true")
-        self.page.keyboard.press("Home")
         self.assertEqual(self.page.locator("#casos-vista-tabela-botao").get_attribute("aria-pressed"), "true")
+        self.page.keyboard.press("Home")
+        self.assertEqual(self.page.locator("#casos-vista-cards-botao").get_attribute("aria-pressed"), "true")
         self.page.locator("#btn-menu-toggle").click()
         self.page.locator("#aba-casos-botao").focus()
         self.page.keyboard.press("Escape")
@@ -1504,7 +1541,7 @@ class InterfaceTest(unittest.TestCase):
         self.assertEqual(lista.locator("article").count(), 2)
         self.select_value(processo, "Ana")
         self.assertEqual(lista.locator("article").count(), 1)
-        self.assertIn("Delegada para Bia", lista.inner_text())
+        self.assertIn("Delegada Para Bia", lista.inner_text())
         self.assertIn("Responsável pelo processo: Ana", lista.inner_text())
         self.assertIn("Responsável pela atividade: Bia", lista.inner_text())
         self.select_value(self.page.locator("#atividades-tipo"), "tarefa")
@@ -1515,10 +1552,10 @@ class InterfaceTest(unittest.TestCase):
         self.assertEqual(executor.input_value(), "responsavel:Bia")
         self.assertEqual(lista.locator("article").count(), 1)
         self.select_value(executor, "responsavel:Ana")
-        self.assertIn("Execução de Ana", lista.inner_text())
+        self.assertIn("Execução De Ana", lista.inner_text())
         self.select_value(executor, "sem-responsavel")
         self.assertEqual(lista.locator("article").count(), 1)
-        self.assertIn("Atividade legada", lista.inner_text())
+        self.assertIn("Atividade Legada", lista.inner_text())
         self.assertIn("Responsável pela atividade: Sem responsável", lista.inner_text())
         atividades["caso-1"].pop()
         self.page.locator("#atividades-atualizar").click()

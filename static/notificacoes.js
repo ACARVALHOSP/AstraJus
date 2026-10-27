@@ -13,7 +13,18 @@
     $("notificacoes-rotulo").textContent = contagem === null ? "Notificações: contagem indisponível" : `Notificações: ${contagem} não lidas`;
     sino.requestUpdate?.();
   }
+  const telaPequena = window.matchMedia("(max-width: 768px)");
+  function configurarAncoragem() {
+    const ancorado = !telaPequena.matches;
+    popover.autoalign = ancorado;
+    // No mobile, o painel é fixo à viewport. Filter/will-change do modo
+    // tabTip criariam um containing block preso ao sino de 48 px.
+    popover.tabTip = ancorado;
+    popover.dropShadow = ancorado;
+  }
+  telaPequena.addEventListener("change", configurarAncoragem);
   function expandido(aberto) {
+    configurarAncoragem();
     popover.open = aberto;
     _painelNotificacoes.hidden = !aberto;
     sino.setAttribute("aria-expanded", String(aberto));
