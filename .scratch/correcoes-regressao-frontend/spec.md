@@ -1,6 +1,6 @@
 # Correções das nove falhas de interface
 
-Status: implementação autorizada; validação em andamento
+Status: implementação validada; publicação autorizada
 
 O usuário autorizou seguir com frontend e deploy após a investigação das falhas do PR #91. Escopo: remover os erros de renderização do feedback, corrigir o diálogo e o popover em tela pequena e atualizar os testes para os controles Carbon e a apresentação atuais. Sem mudança de backend ou de modelo de dados.
 
@@ -26,3 +26,5 @@ Os testes de cadastro por publicação, capa, radios, diálogo e paginação já
 Verificações Node de progresso e feedback HTTP/MCP e de sintaxe JavaScript passaram. A suíte completa de interface inclui dois novos testes de regressão (progresso reutilizado e notificações abertas durante resize), ações em massa e notificações.
 
 Publicação por PR, merge e workflow de deploy existente, seguida de conferência de saúde e dos assets públicos. Bancos temporários e artefatos de teste não entram no PR.
+
+Resultado final: **93 testes de interface aprovados**, sem falhas, em 315,5 s. Inclui os 83 testes do painel (81 anteriores e dois novos), os cinco fluxos de ações em massa e os cinco fluxos de notificações. Os nove casos que falhavam anteriormente passaram. Temas White/Gray 100 e capturas em 320 px foram inspecionados. Nenhuma alteração de backend foi necessária.

@@ -1,5 +1,7 @@
 # Validação e publicação de Clientes
 
+Atualização posterior: as nove falhas históricas registradas abaixo foram corrigidas. A suíte de interface ampliada passou com **93 testes**, incluindo os casos originais, novos testes de progresso/resize, ações em massa e notificações. Consulte [a especificação das correções](../correcoes-regressao-frontend/spec.md). Os números abaixo preservam o resultado original do PR #91.
+
 Data: 27/10/2026. PR: https://github.com/ACARVALHOSP/AstraJus/pull/91.
 
 ## Resultado
