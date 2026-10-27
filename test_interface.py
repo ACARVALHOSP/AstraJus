@@ -99,6 +99,79 @@ class InterfaceTest(unittest.TestCase):
         self.page.wait_for_function("document.getElementById('status-conexao').textContent === 'Conectado'")
         self.assertFalse(self.errors)
 
+    def test_contatos_filtros_acentos_telefone_e_recuperacao(self):
+        self.connect()
+        self.page.locator("#aba-contatos-botao").click()
+        self.page.wait_for_selector(".contato-nome-link")
+        self.page.evaluate("""() => {
+            _cache.clientes = [
+                {id:'cliente-1', nome:'Álvaro Nunes', tipo_pessoa:'fisica', telefone:'(11) 99999-0000', email:'alvaro@example.com'},
+                {id:'cliente-2', nome:'Beta Ltda', tipo_pessoa:'juridica'},
+                {id:'cliente-3', nome:'李明'}
+            ];
+            renderizarListaContatos();
+        }""")
+        self.assertEqual(self.page.locator("[data-selecionar-cliente]").count(), 3)
+        self.assertEqual(self.page.locator(".contatos-tabela th").all_text_contents(), ["", "Nome", "Tipo", "Perfil", "Telefone", "E-mail", "Etiquetas", "Ações"])
+        self.assertEqual(self.page.locator('a[href="tel:11999990000"]').count(), 1)
+        self.assertEqual(self.page.locator('a[href="mailto:alvaro%40example.com"]').count(), 1)
+        self.assertIn("Pessoa jurídica", self.page.locator(".contatos-tabela").inner_text())
+        self.assertIn("李明", self.page.locator(".contatos-tabela").inner_text())
+        self.page.locator("#contatos-az").get_by_role("button", name="A", exact=True).click()
+        self.page.locator("cds-search:has(+ #contatos-busca) input").fill("alvaro")
+        self.assertEqual(self.page.locator(".contato-nome-link").all_text_contents(), ["Álvaro Nunes"])
+        self.page.locator("#contatos-az").get_by_role("button", name="B", exact=True).click()
+        self.assertIn("Nenhum cliente corresponde", self.page.locator("#lista-contatos").inner_text())
+        self.assertIn("Inicial: B", self.page.locator("#contatos-status").inner_text())
+        self.assertIn("alvaro", self.page.locator("#contatos-status").inner_text())
+        self.page.locator("#contatos-limpar-filtros").click()
+        self.assertEqual(self.page.locator(".contato-nome-link").count(), 3)
+        self.assertEqual(self.page.locator("#contatos-busca").input_value(), "")
+        self.page.locator("cds-search:has(+ #contatos-busca) input").fill("11999990000")
+        self.assertEqual(self.page.locator(".contato-nome-link").all_text_contents(), ["Álvaro Nunes"])
+        self.assertFalse(self.errors)
+
+    def test_contato_falha_preserva_edicao_e_salvar_restabelece_retorno(self):
+        self.connect()
+        self.page.locator("#aba-contatos-botao").click()
+        self.page.locator(".contato-nome-link").click()
+        self.page.wait_for_function("document.getElementById('contato-nome').value === 'Cliente de teste'")
+        self.page.locator("#contato-nome").fill("Cliente atualizado")
+        self.fail_save = True
+        self.page.locator("#contato-voltar").click()
+        self.choose("salvar")
+        self.page.wait_for_function("document.getElementById('resultado-contato-cadastro').textContent.includes('Falha simulada')")
+        self.assertTrue(self.page.locator("#contatos-vista-detalhe").is_visible())
+        self.assertEqual(self.page.locator("#contato-nome").input_value(), "Cliente atualizado")
+        self.fail_save = False
+        self.page.locator("#contato-voltar").click()
+        self.choose("salvar")
+        self.page.wait_for_selector("#contatos-vista-lista", state="visible")
+        self.assertEqual(self.contact["nome"], "Cliente atualizado")
+        self.assertEqual(self.page.evaluate("document.activeElement.dataset.clienteId"), "cliente-1")
+        self.assertFalse(self.errors)
+
+    def test_contatos_abas_teclado_e_retorno_foco(self):
+        self.connect()
+        self.page.locator("#aba-contatos-botao").click()
+        self.page.locator(".contato-nome-link").click()
+        self.page.wait_for_function("document.getElementById('contato-detalhe-nome').textContent === 'Cliente De Teste'")
+        self.assertEqual(self.page.evaluate("document.activeElement.id"), "contato-detalhe-nome")
+        self.page.locator("#contato-subaba-cadastro-botao").focus()
+        self.page.keyboard.press("ArrowRight")
+        self.assertEqual(self.page.evaluate("document.activeElement.id"), "contato-subaba-processos-botao")
+        self.assertEqual(self.page.locator("#contato-subaba-processos-botao").get_attribute("aria-selected"), "true")
+        self.page.keyboard.press("Home")
+        self.page.locator("#contato-cadastro-aba-pessoal-botao").focus()
+        self.page.keyboard.press("ArrowRight")
+        self.assertTrue(self.page.locator("#contato-cadastro-painel-documentacao").is_visible())
+        self.page.keyboard.press("End")
+        self.assertTrue(self.page.locator("#contato-cadastro-painel-complementar").is_visible())
+        self.page.keyboard.press("Home")
+        self.page.locator("#contato-voltar").click()
+        self.assertEqual(self.page.evaluate("document.activeElement.dataset.clienteId"), "cliente-1")
+        self.assertFalse(self.errors)
+
     def test_dropdowns_de_duas_opcoes_usam_radios_e_preservam_valor(self):
         self.connect()
         self.page.evaluate("async () => { await selecionarAba(abas.find(a => a.painel.id === 'aba-contatos')); await abrirNovoContato(); }")

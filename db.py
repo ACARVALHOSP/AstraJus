@@ -20,6 +20,7 @@ import json
 import sqlite3
 import threading
 import uuid
+import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
 from datetime import date
@@ -33,6 +34,24 @@ _ORIGEM_NAO_INFORMADA = object()
 
 class ConflitoAgenda(ValueError):
     """Mudança incompatível com um vínculo de agenda ativo."""
+
+
+class ConflitoClientesLote(ValueError):
+    """Os dados mudaram após a revisão de uma operação em massa."""
+
+
+def normalizar_etiquetas(valores):
+    if not isinstance(valores, list) or not 1 <= len(valores) <= 20:
+        raise ValueError("Escolha entre 1 e 20 etiquetas.")
+    etiquetas = {}
+    for valor in valores:
+        if not isinstance(valor, str):
+            raise ValueError("Etiqueta inválida.")
+        nome = unicodedata.normalize("NFC", " ".join(valor.split()))
+        if not nome or len(nome) > 40 or any(unicodedata.category(c).startswith("C") for c in nome):
+            raise ValueError("Cada etiqueta deve ter de 1 a 40 caracteres, sem caracteres de controle.")
+        etiquetas.setdefault(nome.casefold(), nome)
+    return etiquetas
 
 
 def validar_data_atividade_agenda(data, hora=None) -> None:
@@ -134,6 +153,16 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
             );
 
             CREATE INDEX IF NOT EXISTS idx_cliente_telefones_cliente ON cliente_telefones (cliente_id);
+
+            CREATE TABLE IF NOT EXISTS etiquetas_clientes (
+                chave TEXT PRIMARY KEY,
+                nome TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS cliente_etiquetas (
+                cliente_id TEXT NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
+                etiqueta_chave TEXT NOT NULL REFERENCES etiquetas_clientes(chave),
+                PRIMARY KEY (cliente_id, etiqueta_chave)
+            );
 
             CREATE TABLE IF NOT EXISTS casos (
                 id TEXT PRIMARY KEY,
@@ -836,6 +865,7 @@ class RegistroClientesCasos:
                 return None
             cliente = _linha_cliente(linha)
             cliente["telefones"] = self._telefones_do_cliente(conexao, cliente_id)
+            cliente["etiquetas"] = self._etiquetas_clientes(conexao).get(cliente_id, [])
         return cliente
 
     def atualizar_cliente(
@@ -903,7 +933,83 @@ class RegistroClientesCasos:
                 "estado_civil, nacionalidade, profissao, emails_json, sites_json, enderecos_json "
                 "FROM clientes ORDER BY nome"
             )
-            return [_linha_cliente(linha) for linha in cursor.fetchall()]
+            etiquetas = self._etiquetas_clientes(conexao)
+            return [{**_linha_cliente(linha), "etiquetas": etiquetas.get(linha[0], [])} for linha in cursor.fetchall()]
+
+    @staticmethod
+    def _etiquetas_clientes(conexao):
+        resultado = {}
+        for cliente_id, nome in conexao.execute(
+            "SELECT ce.cliente_id, e.nome FROM cliente_etiquetas ce "
+            "JOIN etiquetas_clientes e ON e.chave = ce.etiqueta_chave ORDER BY e.chave"
+        ):
+            resultado.setdefault(cliente_id, []).append(nome)
+        return resultado
+
+    def clientes_em_massa(self, dados):
+        """Prévia ou confirmação atômica; nunca substitui o cadastro completo."""
+        if not isinstance(dados, dict):
+            raise ValueError("Informe um objeto JSON.")
+        ids, acao = dados.get("ids"), dados.get("acao")
+        if not isinstance(ids, list) or not 1 <= len(ids) <= 200 or any(not isinstance(i, str) or not i or len(i) > 128 for i in ids):
+            raise ValueError("Selecione de 1 a 200 clientes.")
+        if len(set(ids)) != len(ids):
+            raise ValueError("A seleção contém clientes repetidos.")
+        if acao not in ("perfil", "aplicar_etiquetas", "remover_etiquetas"):
+            raise ValueError("Ação inválida.")
+        confirmar = dados.get("confirmar", False)
+        if not isinstance(confirmar, bool):
+            raise ValueError("Confirmação inválida.")
+        perfil = dados.get("perfil")
+        if acao == "perfil" and perfil not in ("cliente", "contato"):
+            raise ValueError("Escolha o perfil Contato ou Cliente.")
+        etiquetas = normalizar_etiquetas(dados.get("etiquetas")) if acao != "perfil" else {}
+        esperado = dados.get("esperado")
+        if confirmar and (not isinstance(esperado, dict) or set(esperado) != set(ids)):
+            raise ValueError("Revise os clientes antes de confirmar.")
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute("BEGIN IMMEDIATE")
+            catalogo = dict(conexao.execute("SELECT chave, nome FROM etiquetas_clientes"))
+            etiquetas = {chave: catalogo.get(chave, nome) for chave, nome in etiquetas.items()}
+            todas = self._etiquetas_clientes(conexao)
+            mudancas, estado = [], {}
+            for cliente_id in ids:
+                linha = conexao.execute("SELECT nome, perfil FROM clientes WHERE id = ?", (cliente_id,)).fetchone()
+                if not linha:
+                    raise ValueError("Um ou mais clientes não estão disponíveis. Atualize a lista.")
+                nome, perfil_atual = linha
+                atuais = todas.get(cliente_id, [])
+                atual = perfil_atual if acao == "perfil" else atuais
+                if confirmar and esperado[cliente_id] != atual:
+                    raise ConflitoClientesLote("Os dados mudaram desde a prévia. Volte e revise novamente; nenhuma alteração foi aplicada.")
+                estado[cliente_id] = atual
+                if acao == "perfil":
+                    depois = perfil
+                else:
+                    mapa = {n.casefold(): n for n in atuais}
+                    if acao == "aplicar_etiquetas":
+                        mapa.update(etiquetas)
+                    else:
+                        mapa = {k: v for k, v in mapa.items() if k not in etiquetas}
+                    if len(mapa) > 20:
+                        raise ValueError("Um cliente excederia o limite de 20 etiquetas. Nenhuma alteração foi aplicada.")
+                    depois = [mapa[k] for k in sorted(mapa)]
+                mudancas.append({"id": cliente_id, "nome": nome, "atual": atual, "depois": depois, "alterado": atual != depois})
+            if confirmar:
+                for item in mudancas:
+                    if not item["alterado"]:
+                        continue
+                    if acao == "perfil":
+                        conexao.execute("UPDATE clientes SET perfil = ? WHERE id = ?", (perfil, item["id"]))
+                    else:
+                        conexao.execute("DELETE FROM cliente_etiquetas WHERE cliente_id = ?", (item["id"],))
+                        for nome in item["depois"]:
+                            chave = nome.casefold()
+                            conexao.execute("INSERT OR IGNORE INTO etiquetas_clientes (chave, nome) VALUES (?, ?)", (chave, nome))
+                            conexao.execute("INSERT INTO cliente_etiquetas (cliente_id, etiqueta_chave) VALUES (?, ?)", (item["id"], chave))
+            alterados = sum(m["alterado"] for m in mudancas)
+            return {"confirmado": confirmar, "alterados": alterados, "sem_alteracao": len(ids) - alterados,
+                    "mudancas": mudancas, "esperado": estado}
 
     def definir_asaas_customer_id(self, cliente_id: str, asaas_customer_id: str) -> dict | None:
         """Guarda o customer_id devolvido pela Asaas ao cadastrar o cliente lá, pra não

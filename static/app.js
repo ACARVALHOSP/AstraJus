@@ -2245,6 +2245,7 @@ function abrirModal(id) {
 }
 
 async function fecharModal(id) {
+  if (id === "modal-clientes-lote" && _clientesLote?.enviando) return false;
   const secao = document.getElementById(id);
   if (!secao?.classList.contains("is-visible")) return true;
   if (formulariosPendentes(secao).length && !(await permitirSaidaEdicao(secao))) return false;
@@ -2399,44 +2400,50 @@ const _cache = { clientes: [], casos: [] };
 let _filtroCasos = "";
 let _visualizacaoCasos = "tabela";
 
-function _iconePessoa() {
-  const ns = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(ns, "svg");
-  svg.setAttribute("viewBox", "0 0 32 32");
-  svg.setAttribute("width", "18");
-  svg.setAttribute("height", "18");
-  svg.setAttribute("fill", "currentColor");
-  svg.setAttribute("aria-hidden", "true");
-  const caminho = document.createElementNS(ns, "path");
-  caminho.setAttribute("d", "M16 17c3.9 0 7-3.1 7-7s-3.1-7-7-7-7 3.1-7 7 3.1 7 7 7zm0 3c-5.3 0-16 2.7-16 8v3h32v-3c0-5.3-10.7-8-16-8z");
-  svg.appendChild(caminho);
-  return svg;
-}
-
 function linhaContato(c) {
   const tr = el("tr", {});
-  const checkbox = el("input", { type: "checkbox", "aria-label": `Selecionar ${c.nome}` });
+  const checkbox = el("input", { type: "checkbox", "aria-label": `Selecionar ${c.nome}`, "data-selecionar-cliente": c.id });
+  checkbox.checked = _clientesSelecionados.has(c.id);
+  checkbox.addEventListener("change", () => {
+    if (checkbox.checked) _clientesSelecionados.add(c.id); else _clientesSelecionados.delete(c.id);
+    _atualizarSelecaoClientes();
+  });
   tr.appendChild(el("td", { "data-label": "Selecionar" }, [checkbox]));
-  tr.appendChild(el("td", { "data-label": "Tipo" }, [_iconePessoa()]));
 
-  const botaoNome = el("button", { class: "contato-nome-link", type: "button", texto: formatarNomeExibicao(c.nome) });
+  const botaoNome = el("button", { class: "contato-nome-link", type: "button", texto: formatarNomeExibicao(c.nome), "data-cliente-id": c.id });
   botaoNome.addEventListener("click", () => abrirContato(c.id));
   tr.appendChild(el("td", { "data-label": "Nome" }, [botaoNome]));
+  tr.appendChild(el("td", { "data-label": "Tipo", texto: ({ fisica: "Pessoa física", juridica: "Pessoa jurídica" })[c.tipo_pessoa] || "Não informado" }));
+  tr.appendChild(el("td", { "data-label": "Perfil", texto: c.perfil === "contato" ? "Contato" : c.perfil === "cliente" ? "Cliente" : "Não informado" }));
 
   tr.appendChild(el("td", { "data-label": "Telefone" }, [
-    c.telefone ? el("span", { texto: c.telefone }) : el("span", { class: "contato-sem-dado", texto: "Nenhum telefone" }),
+    _canalContato(c.telefone, "telefone"),
   ]));
   tr.appendChild(el("td", { "data-label": "E-mail" }, [
-    c.email ? el("span", { texto: c.email }) : el("span", { class: "contato-sem-dado", texto: "Nenhum email" }),
+    _canalContato(c.email, "email"),
   ]));
-  tr.appendChild(el("td", { "data-label": "Etiquetas" }));
+  const etiquetas = el("td", { "data-label": "Etiquetas" });
+  for (const nome of c.etiquetas || []) etiquetas.appendChild(el("span", { class: "cliente-etiqueta", texto: nome }));
+  if (!(c.etiquetas || []).length) etiquetas.textContent = "Sem etiquetas";
+  tr.appendChild(etiquetas);
 
   const botaoExcluir = el("button", {
-    class: "cds--btn cds--btn--danger--tertiary cds--btn--sm", type: "button", texto: "Excluir",
+    class: "cds--btn cds--btn--danger--tertiary cds--btn--sm contato-excluir-lista", type: "button", texto: "Excluir",
   });
   botaoExcluir.addEventListener("click", () => excluirContato(c.id, c.nome, botaoExcluir));
   tr.appendChild(el("td", { "data-label": "Ações" }, [botaoExcluir]));
   return tr;
+}
+
+function _canalContato(valor, tipo) {
+  const texto = String(valor || "").trim();
+  if (!texto) return el("span", { class: "contato-sem-dado", texto: "Não informado" });
+  let href;
+  if (tipo === "email" && /^[^\s@?&#]+@[^\s@?&#]+\.[^\s@?&#]+$/.test(texto)) href = `mailto:${encodeURIComponent(texto)}`;
+  if (tipo === "telefone" && /^\+?[\d\s().-]+$/.test(texto) && texto.replace(/\D/g, "").length >= 8) {
+    href = `tel:${texto.replace(/[^\d+]/g, "")}`;
+  }
+  return el(href ? "a" : "span", { ...(href ? { href } : {}), texto });
 }
 
 async function excluirContato(clienteId, nome, botao) {
@@ -2453,34 +2460,162 @@ async function excluirContato(clienteId, nome, botao) {
 }
 
 function tabelaContatos(contatos) {
+  const todos = el("input", { type: "checkbox", id: "clientes-selecionar-todos", "aria-label": "Selecionar todos os clientes exibidos" });
+  const todosMobile = el("input", { type: "checkbox", id: "clientes-selecionar-todos-mobile" });
+  const selecionarTodos = evento => {
+    for (const c of contatos) { if (evento.target.checked) _clientesSelecionados.add(c.id); else _clientesSelecionados.delete(c.id); }
+    for (const checkbox of document.querySelectorAll("[data-selecionar-cliente]")) checkbox.checked = _clientesSelecionados.has(checkbox.dataset.selecionarCliente);
+    _atualizarSelecaoClientes();
+  };
+  todos.addEventListener("change", selecionarTodos);
+  todosMobile.addEventListener("change", selecionarTodos);
   const thead = el("thead", {}, [
     el("tr", {}, [
-      el("th", {}),
-      el("th", { texto: "Tipo" }),
-      el("th", { texto: "Nome" }),
-      el("th", { texto: "Telefone" }),
-      el("th", { texto: "E-mail" }),
-      el("th", { texto: "Etiquetas" }),
-      el("th", { texto: "Ações" }),
+      el("th", { scope: "col" }, [todos]),
+      ...["Nome", "Tipo", "Perfil", "Telefone", "E-mail", "Etiquetas", "Ações"].map((texto) => el("th", { scope: "col", texto })),
     ]),
   ]);
   const tbody = el("tbody", {});
   for (const c of contatos) tbody.appendChild(linhaContato(c));
-  return el("div", { class: "tabela-responsiva-wrap" }, [el("table", { class: "tabela-responsiva contatos-tabela" }, [thead, tbody])]);
+  return el("div", { class: "tabela-responsiva-wrap" }, [el("label", { class: "clientes-selecao-mobile" }, [todosMobile, "Selecionar todos os clientes exibidos"]), el("table", { class: "tabela-responsiva contatos-tabela" }, [thead, tbody])]);
 }
 
 let _contatosFiltroLetra = "TODOS";
 let _contatosFiltroBusca = "";
+let _contatoOrigemId = null;
+const _clientesSelecionados = new Set();
+let _clientesLote = null;
+
+function _atualizarSelecaoClientes() {
+  const visiveis = _contatosFiltrados();
+  const ids = new Set(visiveis.map(c => c.id));
+  for (const id of _clientesSelecionados) if (!ids.has(id)) _clientesSelecionados.delete(id);
+  document.getElementById("clientes-lote-barra").hidden = !_clientesSelecionados.size;
+  document.getElementById("clientes-lote-quantidade").textContent = `${_clientesSelecionados.size} cliente(s) selecionado(s)`;
+  for (const todos of document.querySelectorAll("#clientes-selecionar-todos, #clientes-selecionar-todos-mobile")) {
+    todos.checked = visiveis.length > 0 && _clientesSelecionados.size === visiveis.length;
+    todos.indeterminate = _clientesSelecionados.size > 0 && _clientesSelecionados.size < visiveis.length;
+  }
+}
+
+function _limparSelecaoClientes() {
+  const havia = _clientesSelecionados.size > 0;
+  _clientesSelecionados.clear();
+  if (havia) document.getElementById("clientes-lote-aviso").textContent = "Seleção de clientes limpa.";
+}
+
+function abrirClientesLote(tipo) {
+  if (!_clientesSelecionados.size) return;
+  if (_clientesSelecionados.size > 200) { mostrarToast("error", "Seleção", "Selecione no máximo 200 clientes por operação."); return; }
+  _clientesLote = { tipo, ids: [..._clientesSelecionados], pedido: null, previa: null, enviando: false };
+  document.getElementById("clientes-lote-titulo").textContent = tipo === "perfil" ? "Atualizar perfil" : "Gerenciar etiquetas";
+  document.getElementById("clientes-lote-contexto").textContent = `${_clientesLote.ids.length} cliente(s) selecionado(s). Limite de 200 por operação.`;
+  document.getElementById("clientes-lote-config-etiquetas").hidden = tipo === "perfil";
+  document.getElementById("clientes-lote-config-perfil").hidden = tipo !== "perfil";
+  document.getElementById("clientes-lote-operacao").value = "aplicar_etiquetas";
+  document.getElementById("clientes-lote-nova").value = "";
+  document.getElementById("clientes-lote-nova-campo").hidden = false;
+  const opcoes = document.getElementById("clientes-lote-etiquetas-opcoes");
+  limpar(opcoes);
+  const etiquetas = [...new Set(_cache.clientes.flatMap(c => c.etiquetas || []))].sort((a, b) => a.localeCompare(b));
+  for (const nome of etiquetas) opcoes.appendChild(el("label", {}, [el("input", { type: "checkbox", value: nome }), nome]));
+  if (!etiquetas.length) opcoes.appendChild(el("p", { class: "campo-ajuda", texto: "Nenhuma etiqueta aplicada ainda. Digite uma nova etiqueta abaixo." }));
+  _configurarClientesLote();
+  abrirModal("modal-clientes-lote");
+}
+
+function _configurarClientesLote() {
+  _clientesLote.previa = null;
+  document.getElementById("clientes-lote-configurar").hidden = false;
+  document.getElementById("clientes-lote-revisao").hidden = true;
+  document.getElementById("clientes-lote-voltar").hidden = true;
+  document.getElementById("clientes-lote-confirmar").textContent = "Revisar alterações";
+  document.getElementById("clientes-lote-confirmar").disabled = false;
+  limpar(document.getElementById("clientes-lote-resultado"));
+}
+
+async function executarClientesLote() {
+  if (!_clientesLote || _clientesLote.enviando) return;
+  const estado = _clientesLote;
+  const resultado = document.getElementById("clientes-lote-resultado");
+  const modal = document.getElementById("modal-clientes-lote");
+  const confirmar = Boolean(estado.previa);
+  if (!confirmar) {
+    const acao = estado.tipo === "perfil" ? "perfil" : document.getElementById("clientes-lote-operacao").value;
+    const etiquetas = [...document.querySelectorAll("#clientes-lote-etiquetas-opcoes input:checked")].map(input => input.value);
+    const nova = document.getElementById("clientes-lote-nova").value.trim();
+    if (acao === "aplicar_etiquetas" && nova) etiquetas.push(nova);
+    estado.pedido = { ids: estado.ids, acao, ...(acao === "perfil" ? { perfil: document.getElementById("clientes-lote-novo-perfil").value } : { etiquetas }) };
+  }
+  estado.enviando = true;
+  limpar(resultado);
+  const controles = [...modal.querySelectorAll("button, input, select, cds-modal-close-button")];
+  const anteriores = controles.map(controle => controle.disabled);
+  controles.forEach(controle => { controle.disabled = true; });
+  try {
+    const resposta = await _enviarJson("/clientes/acoes-em-massa", { ...estado.pedido, confirmar, ...(confirmar ? { esperado: estado.previa.esperado } : {}) });
+    if (confirmar) {
+      for (const mudanca of resposta.mudancas) {
+        const cliente = _cache.clientes.find(c => c.id === mudanca.id);
+        if (cliente) cliente[estado.pedido.acao === "perfil" ? "perfil" : "etiquetas"] = mudanca.depois;
+      }
+      _limparSelecaoClientes();
+      estado.enviando = false;
+      await fecharModal("modal-clientes-lote");
+      renderizarListaContatos();
+      document.getElementById("contatos-titulo").focus();
+      mostrarToast("success", "Clientes atualizados", `${resposta.alterados} alterado(s); ${resposta.sem_alteracao} sem alteração.`);
+    } else {
+      estado.previa = resposta;
+      const tabela = el("table", { class: "tabela-responsiva clientes-lote-preview" }, [el("thead", {}, [el("tr", {}, ["Cliente", "Atual", "Após confirmar"].map(texto => el("th", { scope: "col", texto })))])]);
+      const corpo = el("tbody");
+      const formatar = valor => Array.isArray(valor) ? valor.join(", ") || "Sem etiquetas" : valor === "cliente" ? "Cliente" : "Contato";
+      for (const m of resposta.mudancas) corpo.appendChild(el("tr", {}, [el("td", { "data-label": "Cliente", texto: m.nome }), el("td", { "data-label": "Atual", texto: formatar(m.atual) }), el("td", { "data-label": "Após confirmar", texto: `${formatar(m.depois)}${m.alterado ? "" : " · Sem alteração"}` })]));
+      tabela.appendChild(corpo);
+      const container = document.getElementById("clientes-lote-mudancas");
+      limpar(container); container.appendChild(el("div", { class: "tabela-responsiva-wrap" }, [tabela]));
+      document.getElementById("clientes-lote-resumo").textContent = `${resposta.alterados} cliente(s) serão alterados; ${resposta.sem_alteracao} sem alteração.`;
+      document.getElementById("clientes-lote-configurar").hidden = true;
+      document.getElementById("clientes-lote-revisao").hidden = false;
+      document.getElementById("clientes-lote-voltar").hidden = false;
+      document.getElementById("clientes-lote-confirmar").textContent = "Confirmar alterações";
+      document.getElementById("clientes-lote-resumo").focus();
+    }
+  } catch (erro) {
+    mostrarErro(resultado, erro.message);
+  } finally {
+    estado.enviando = false;
+    controles.forEach((controle, i) => { controle.disabled = anteriores[i]; });
+    document.getElementById("clientes-lote-confirmar").disabled = Boolean(estado.previa && !estado.previa.alterados);
+  }
+}
+
+function _normalizarConsultaContato(valor) {
+  return String(valor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+}
+
+function limparFiltrosContatos() {
+  _limparSelecaoClientes();
+  _contatosFiltroLetra = "TODOS";
+  _contatosFiltroBusca = "";
+  document.getElementById("contatos-busca").value = "";
+  for (const botao of document.getElementById("contatos-az").children) botao.setAttribute("aria-pressed", String(botao.textContent === "TODOS"));
+  renderizarListaContatos();
+  document.getElementById("contatos-busca").focus();
+}
 
 function _contatosFiltrados() {
+  const consulta = _normalizarConsultaContato(_contatosFiltroBusca);
+  const digitos = consulta.replace(/\D/g, "");
   return _cache.clientes.filter((c) => {
     if (_contatosFiltroLetra !== "TODOS") {
-      const inicial = (c.nome || "").trim().charAt(0).toUpperCase();
+      const inicial = _normalizarConsultaContato(c.nome).charAt(0).toUpperCase();
       if (inicial !== _contatosFiltroLetra) return false;
     }
-    if (_contatosFiltroBusca) {
-      const alvo = `${c.nome || ""} ${c.telefone || ""} ${c.email || ""}`.toLowerCase();
-      if (!alvo.includes(_contatosFiltroBusca.toLowerCase())) return false;
+    if (consulta) {
+      const alvo = _normalizarConsultaContato(`${c.nome || ""} ${c.telefone || ""} ${c.email || ""}`);
+      const telefoneCombina = digitos && /^[+\d\s().-]+$/.test(consulta) && String(c.telefone || "").replace(/\D/g, "").includes(digitos);
+      if (!alvo.includes(consulta) && !telefoneCombina) return false;
     }
     return true;
   });
@@ -2489,17 +2624,24 @@ function _contatosFiltrados() {
 function renderizarListaContatos() {
   const listaContatosEl = document.getElementById("lista-contatos");
   limpar(listaContatosEl);
+  _atualizarSelecaoClientes();
+  const filtrados = _contatosFiltrados();
+  const filtros = [
+    ...(_contatosFiltroLetra !== "TODOS" ? [`Inicial: ${_contatosFiltroLetra}`] : []),
+    ...(_contatosFiltroBusca.trim() ? [`Texto: “${_contatosFiltroBusca.trim()}”`] : []),
+  ];
+  document.getElementById("contatos-status").textContent = `Mostrando ${filtrados.length} de ${_cache.clientes.length} cliente(s). ${filtros.join("; ") || "Sem filtros ativos"}.`;
+  document.getElementById("contatos-limpar-filtros").hidden = !filtros.length;
   if (!_cache.clientes.length) {
     listaContatosEl.appendChild(notificacao("info", "Nenhum cliente cadastrado ainda"));
     return;
   }
-  const filtrados = _contatosFiltrados();
   if (!filtrados.length) {
-    listaContatosEl.appendChild(notificacao("info", "Nenhum cliente encontrado com esse filtro"));
+    listaContatosEl.appendChild(notificacao("info", "Nenhum cliente corresponde aos filtros. Confira o texto ou use Limpar filtros para ver todos os clientes."));
     return;
   }
-  listaContatosEl.appendChild(el("p", { class: "campo-ajuda", texto: `Mostrando ${filtrados.length} de ${_cache.clientes.length} cliente(s)` }));
   listaContatosEl.appendChild(tabelaContatos(filtrados));
+  _atualizarSelecaoClientes();
 }
 
 function _construirBarraAZ() {
@@ -2509,6 +2651,7 @@ function _construirBarraAZ() {
   for (const letra of letras) {
     const botao = el("button", { type: "button", texto: letra, "aria-pressed": String(letra === _contatosFiltroLetra) });
     botao.addEventListener("click", () => {
+      _limparSelecaoClientes();
       _contatosFiltroLetra = letra;
       for (const filho of container.children) filho.setAttribute("aria-pressed", String(filho.textContent === letra));
       renderizarListaContatos();
@@ -2530,6 +2673,7 @@ function _definirModoCadastroContato(modo) {
 // Cadastro de cliente não usa modal: abre a mesma tela de detalhe, em branco, pronta para criar.
 async function abrirNovoContato() {
   if (!(await permitirSaidaEdicao())) return;
+  _contatoOrigemId = null;
   document.getElementById("contatos-vista-lista").hidden = true;
   document.getElementById("contatos-vista-detalhe").hidden = false;
   document.getElementById("contato-detalhe-nome").textContent = "Novo cliente";
@@ -2552,9 +2696,11 @@ async function abrirNovoContato() {
 async function abrirContato(clienteId, tipoFeedback = "pagina") {
   const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("contatos-vista-detalhe") };
   if (!(await permitirSaidaEdicao())) return;
+  _contatoOrigemId = clienteId;
   document.getElementById("contatos-vista-lista").hidden = true;
   document.getElementById("contatos-vista-detalhe").hidden = false;
   document.getElementById("contato-detalhe-nome").textContent = "Carregando…";
+  document.getElementById("contato-detalhe-nome").focus();
   _selecionarSubabaContato("cadastro");
   _definirModoCadastroContato("existente");
   const resultadoContatoCadastro = document.getElementById("resultado-contato-cadastro");
@@ -2583,6 +2729,8 @@ async function voltarParaContatos() {
   document.getElementById("contatos-vista-detalhe").hidden = true;
   document.getElementById("contatos-vista-lista").hidden = false;
   renderizarListaContatos();
+  const origem = [...document.querySelectorAll(".contato-nome-link")].find((botao) => botao.dataset.clienteId === _contatoOrigemId);
+  (origem || document.getElementById("contatos-titulo")).focus();
 }
 
 function _selecionarSubabaContato(nome) {
@@ -3970,17 +4118,20 @@ document.getElementById("casos-busca").addEventListener("input", function () {
 })();
 
 document.getElementById("contato-voltar").addEventListener("click", voltarParaContatos);
+document.getElementById("contatos-limpar-filtros").addEventListener("click", limparFiltrosContatos);
+document.getElementById("clientes-lote-etiquetas").addEventListener("click", () => abrirClientesLote("etiquetas"));
+document.getElementById("clientes-lote-perfil").addEventListener("click", () => abrirClientesLote("perfil"));
+document.getElementById("clientes-lote-cancelar").addEventListener("click", () => { _limparSelecaoClientes(); renderizarListaContatos(); document.getElementById("contatos-titulo").focus(); });
+document.getElementById("clientes-lote-confirmar").addEventListener("click", executarClientesLote);
+document.getElementById("clientes-lote-voltar").addEventListener("click", _configurarClientesLote);
+document.getElementById("clientes-lote-operacao").addEventListener("change", evento => { document.getElementById("clientes-lote-nova-campo").hidden = evento.target.value === "remover_etiquetas"; });
 document.getElementById("contato-subaba-cadastro-botao").addEventListener("click", () => _selecionarSubabaContato("cadastro"));
 document.getElementById("contato-subaba-processos-botao").addEventListener("click", () => _selecionarSubabaContato("processos"));
 document.getElementById("contato-subaba-financeiro-botao").addEventListener("click", () => _selecionarSubabaContato("financeiro"));
 document.getElementById("contato-financeiro-atualizar").addEventListener("click", carregarFinanceiroContato);
 document.getElementById("contatos-busca").addEventListener("input", (evento) => {
+  _limparSelecaoClientes();
   _contatosFiltroBusca = evento.target.value;
-  if (!_contatosFiltroBusca && _contatosFiltroLetra !== "TODOS") {
-    _contatosFiltroLetra = "TODOS";
-    const container = document.getElementById("contatos-az");
-    for (const filho of container.children) filho.setAttribute("aria-pressed", String(filho.textContent === "TODOS"));
-  }
   renderizarListaContatos();
 });
 

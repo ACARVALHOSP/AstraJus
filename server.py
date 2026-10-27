@@ -46,7 +46,7 @@ import db as _db
 import google_integracao
 from _util import _hash_token, hash_origem_djen_valido, origem_djen_legada
 from db import (
-    CacheDataJud, RegistroClientesCasos, RegistroIntegracaoGoogle, RegistroMonitoramentos,
+    CacheDataJud, ConflitoClientesLote, RegistroClientesCasos, RegistroIntegracaoGoogle, RegistroMonitoramentos,
     RegistroPublicacoesOAB, RegistroUsuarios,
 )
 
@@ -3427,6 +3427,9 @@ class _AutenticacaoBearer:
         if caminho == "/responsaveis" and scope.get("method") == "GET":
             await _json(send, 200, {"responsaveis": self.registro.ativos()})
             return
+        if caminho == "/clientes/acoes-em-massa" and self.gestao is not None:
+            await self._clientes_em_massa(scope, receive, send)
+            return
         if caminho == "/clientes" and self.gestao is not None:
             await self._clientes(scope, receive, send)
             return
@@ -3719,6 +3722,25 @@ class _AutenticacaoBearer:
     # faz sentido um agente de IA cadastrar cliente/caso por conta própria. Mesmo token Bearer
     # do resto do app; "todos veem tudo" (sem filtro por usuário), conforme decidido para a
     # Fase 1 da gestão de escritório.
+
+    async def _clientes_em_massa(self, scope, receive, send):
+        if scope.get("method") != "POST":
+            await _responder(send, 405, b"Metodo nao permitido")
+            return
+        corpo = await _ler_corpo(receive)
+        if corpo is None:
+            await _json(send, 413, _erro("Corpo da requisição grande demais."))
+            return
+        try:
+            dados = json.loads(corpo.decode("utf-8") or "{}")
+            resultado = self.gestao.clientes_em_massa(dados)
+        except ConflitoClientesLote as erro:
+            await _json(send, 409, _erro(str(erro)))
+            return
+        except (ValueError, UnicodeDecodeError) as erro:
+            await _json(send, 400, _erro(str(erro)))
+            return
+        await _json(send, 200, resultado)
 
     async def _clientes(self, scope, receive, send):
         metodo = scope.get("method")

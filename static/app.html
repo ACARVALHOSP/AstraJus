@@ -193,15 +193,26 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 .secao-cabecalho { display: flex; flex-wrap: wrap; gap: var(--cds-spacing-04, 0.75rem); align-items: center; justify-content: space-between; margin: 0 0 var(--cds-spacing-03, 0.5rem); }
 .secao-cabecalho .lista-rapida-titulo { margin: 0; }
 .contatos-tabela th:nth-child(1), .contatos-tabela td:nth-child(1) { width: 4%; }
-.contatos-tabela th:nth-child(2), .contatos-tabela td:nth-child(2) { width: 5%; }
-.contatos-tabela th:nth-child(3), .contatos-tabela td:nth-child(3) { width: 29%; }
-.contatos-tabela th:nth-child(4), .contatos-tabela td:nth-child(4) { width: 17%; }
-.contatos-tabela th:nth-child(5), .contatos-tabela td:nth-child(5) { width: 17%; }
-.contatos-tabela th:nth-child(6), .contatos-tabela td:nth-child(6) { width: 12%; }
+.contatos-tabela th:nth-child(2), .contatos-tabela td:nth-child(2) { width: 19%; }
+.contatos-tabela th:nth-child(3), .contatos-tabela td:nth-child(3) { width: 11%; }
+.contatos-tabela th:nth-child(4), .contatos-tabela td:nth-child(4) { width: 9%; }
+.contatos-tabela th:nth-child(5), .contatos-tabela td:nth-child(5) { width: 14%; }
+.contatos-tabela th:nth-child(6), .contatos-tabela td:nth-child(6) { width: 17%; }
 .contatos-tabela th:nth-child(7), .contatos-tabela td:nth-child(7) { width: 16%; }
-.contato-tipo-icone { display: inline-flex; color: var(--cds-text-secondary, #525252); }
+.contatos-tabela th:nth-child(8), .contatos-tabela td:nth-child(8) { width: 10%; }
+.clientes-lote-barra { display: flex; flex-wrap: wrap; align-items: center; gap: var(--cds-spacing-03, 0.5rem); padding: var(--cds-spacing-05, 1rem); background: var(--cds-button-primary, #0f62fe); color: var(--cds-text-on-color, #fff); }
+.clientes-lote-barra strong { margin-inline-end: auto; }
+.clientes-lote-acao { background: transparent; color: var(--cds-text-on-color, #fff); }
+.clientes-lote-acao:hover { background: var(--cds-button-primary-hover, #0353e9); color: var(--cds-text-on-color, #fff); }
+.clientes-lote-acao:focus-visible { outline: 2px solid var(--cds-text-on-color, #fff); outline-offset: -4px; }
+.cliente-etiqueta { display: inline-block; margin: 0 var(--cds-spacing-02, 0.25rem) var(--cds-spacing-02, 0.25rem) 0; padding: 0 var(--cds-spacing-03, 0.5rem); border-radius: 1rem; background: var(--cds-layer-accent-01, #e0e0e0); color: var(--cds-text-primary); font-size: var(--fonte-ajuda); }
+.clientes-lote-opcoes { display: flex; flex-wrap: wrap; gap: var(--cds-spacing-05, 1rem); margin-block: var(--cds-spacing-05, 1rem); }
+.clientes-lote-opcoes label { display: flex; align-items: center; gap: var(--cds-spacing-03, 0.5rem); min-block-size: 2.75rem; }
+.clientes-lote-preview td { overflow-wrap: anywhere; }
+.clientes-selecao-mobile { display: none; }
 .contato-nome-link { color: var(--cds-link-primary, #0f62fe); background: none; border: none; padding: 0; font: inherit; font-size: var(--fonte-base); cursor: pointer; text-align: left; text-decoration: underline; }
 .contato-sem-dado { font-style: italic; color: var(--cds-text-secondary, #525252); }
+.contato-excluir-lista { padding-inline: var(--cds-spacing-05, 1rem); }
 .sub-tabs { display: flex; gap: var(--cds-spacing-06, 1.5rem); border-bottom: 1px solid var(--cds-border-subtle, #e0e0e0); margin: var(--cds-spacing-05, 1rem) 0 var(--cds-spacing-06, 1.5rem); }
 .sub-tab-link { background: none; border: none; border-bottom: 3px solid transparent; padding: var(--cds-spacing-04, 0.75rem) var(--cds-spacing-01, 0.125rem); cursor: pointer; font-size: var(--fonte-base); color: var(--cds-text-secondary, #525252); }
 .sub-tab-link[aria-selected="true"] { color: var(--cds-text-primary, #161616); border-bottom-color: var(--cds-interactive, #0f62fe); font-weight: 600; }
@@ -327,6 +338,7 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 .tabela-casos th:nth-child(5), .tabela-casos td:nth-child(5) { width: 14%; }
 .tabela-casos th:nth-child(6), .tabela-casos td:nth-child(6) { width: 14%; }
 @container (max-width: 40rem) {
+  .clientes-selecao-mobile { display: flex; align-items: center; gap: var(--cds-spacing-03, 0.5rem); min-block-size: 3rem; padding-inline: var(--cds-spacing-05, 1rem); }
   .tabela-responsiva { min-width: 0; }
   .tabela-responsiva thead {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -1482,25 +1494,35 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 
 <div id="contatos-vista-lista">
 <div class="secao-cabecalho">
-<h2 class="lista-rapida-titulo">Clientes</h2>
+<h2 class="lista-rapida-titulo" id="contatos-titulo" tabindex="-1">Clientes</h2>
 <button class="cds--btn cds--btn--primary cds--btn--sm" type="button" id="btn-novo-contato">Novo cliente</button>
 </div>
 <div class="contatos-barra">
-<div class="contatos-az" id="contatos-az"></div>
+<div class="contatos-az" id="contatos-az" role="group" aria-label="Filtrar clientes pela inicial do nome"></div>
 <div class="cds--form-item contatos-busca-campo">
-<input class="cds--text-input" type="search" id="contatos-busca" placeholder="Procure por nome, telefone ou e-mail" aria-label="Buscar clientes" autocomplete="off">
+<label class="cds--label" for="contatos-busca">Consultar clientes</label>
+<input class="cds--text-input" type="search" id="contatos-busca" placeholder="Nome, telefone ou e-mail" autocomplete="off">
 </div>
+</div>
+<p id="contatos-status" class="campo-ajuda" role="status" aria-atomic="true"></p>
+<p id="clientes-lote-aviso" class="campo-ajuda" role="status"></p>
+<button id="contatos-limpar-filtros" class="cds--btn cds--btn--ghost cds--btn--sm" type="button" hidden>Limpar filtros</button>
+<div id="clientes-lote-barra" class="clientes-lote-barra" role="group" aria-label="Ações nos clientes selecionados" hidden>
+<strong id="clientes-lote-quantidade" role="status"></strong>
+<button class="cds--btn cds--btn--ghost cds--btn--sm clientes-lote-acao" id="clientes-lote-etiquetas" type="button">Etiquetas</button>
+<button class="cds--btn cds--btn--ghost cds--btn--sm clientes-lote-acao" id="clientes-lote-perfil" type="button">Atualizar perfil</button>
+<button class="cds--btn cds--btn--ghost cds--btn--sm clientes-lote-acao" id="clientes-lote-cancelar" type="button">Cancelar seleção</button>
 </div>
 <div id="lista-contatos" class="app-resultado"></div>
 </div>
 
 <div id="contatos-vista-detalhe" hidden>
 <button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="contato-voltar">« Voltar para clientes</button>
-<h2 id="contato-detalhe-nome" class="contato-detalhe-titulo"></h2>
+<h2 id="contato-detalhe-nome" class="contato-detalhe-titulo" tabindex="-1"></h2>
 
-<div class="sub-tabs" role="tablist" aria-label="Detalhes do contato">
+<div class="sub-tabs" id="contato-subabas" role="tablist" aria-label="Detalhes do contato">
 <button class="sub-tab-link" id="contato-subaba-cadastro-botao" role="tab" aria-selected="true" aria-controls="contato-subaba-cadastro" type="button">Cadastro</button>
-<button class="sub-tab-link" id="contato-subaba-processos-botao" role="tab" aria-selected="false" aria-controls="contato-subaba-processos" type="button">Processos vinculados</button>
+<button class="sub-tab-link" id="contato-subaba-processos-botao" role="tab" aria-selected="false" aria-controls="contato-subaba-processos" tabindex="-1" type="button">Processos vinculados</button>
 <button class="sub-tab-link" id="contato-subaba-financeiro-botao" role="tab" aria-selected="false" aria-controls="contato-subaba-financeiro" tabindex="-1" type="button">Financeiro</button>
 </div>
 
@@ -1627,7 +1649,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div id="resultado-contato-cadastro" class="app-resultado" aria-live="polite"></div>
 </section>
 
-<section id="contato-subaba-processos" role="tabpanel" aria-labelledby="contato-subaba-processos-botao" hidden>
+<section id="contato-subaba-processos" role="tabpanel" aria-labelledby="contato-subaba-processos-botao" tabindex="0" hidden>
 <div id="contato-processos-vinculados" class="app-resultado"></div>
 </section>
 <section id="contato-subaba-financeiro" role="tabpanel" aria-labelledby="contato-subaba-financeiro-botao" hidden>
@@ -2193,6 +2215,29 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div>
 </div>
 
+<div class="fluxo-pagina" id="modal-clientes-lote" role="region" aria-labelledby="clientes-lote-titulo">
+<div class="fluxo-pagina-container">
+<div class="fluxo-pagina-header">
+<p class="fluxo-pagina-header__heading" id="clientes-lote-titulo">Atualizar clientes</p>
+<button class="fluxo-pagina-close" type="button" data-fechar-modal="modal-clientes-lote" aria-label="Fechar">×</button>
+</div>
+<div class="fluxo-pagina-content">
+<p id="clientes-lote-contexto" class="campo-ajuda"></p>
+<div id="clientes-lote-configurar">
+<div id="clientes-lote-config-etiquetas">
+<label class="cds--label" for="clientes-lote-operacao">Ação nas etiquetas</label>
+<select class="cds--select-input" id="clientes-lote-operacao"><option value="aplicar_etiquetas">Aplicar etiquetas</option><option value="remover_etiquetas">Remover etiquetas</option></select>
+<fieldset><legend>Etiquetas existentes</legend><div id="clientes-lote-etiquetas-opcoes" class="clientes-lote-opcoes"></div></fieldset>
+<div id="clientes-lote-nova-campo" class="cds--form-item"><label class="cds--label" for="clientes-lote-nova">Nova etiqueta (opcional)</label><input class="cds--text-input" id="clientes-lote-nova" maxlength="40" placeholder="Ex.: Revisar documentação"></div>
+<p class="campo-ajuda">As demais etiquetas serão preservadas. Limite de 20 etiquetas por cliente e 40 caracteres por etiqueta.</p>
+</div>
+<div id="clientes-lote-config-perfil" hidden><label class="cds--label" for="clientes-lote-novo-perfil">Novo perfil</label><select class="cds--select-input" id="clientes-lote-novo-perfil"><option value="cliente">Cliente</option><option value="contato">Contato</option></select><p class="campo-ajuda">O tipo de pessoa e os demais dados e vínculos serão preservados.</p></div>
+</div>
+<div id="clientes-lote-revisao" hidden><p id="clientes-lote-resumo" role="status" tabindex="-1"></p><div id="clientes-lote-mudancas"></div><p class="campo-ajuda">Confira os valores antes de confirmar. Nenhuma alteração foi aplicada ainda.</p></div>
+<div id="clientes-lote-resultado" role="status" class="app-resultado"></div>
+</div>
+<div class="fluxo-pagina-footer"><button class="cds--btn cds--btn--secondary" type="button" id="clientes-lote-voltar" hidden>Voltar</button><button class="cds--btn cds--btn--secondary" type="button" data-fechar-modal="modal-clientes-lote">Cancelar</button><button class="cds--btn cds--btn--primary" type="button" id="clientes-lote-confirmar">Revisar alterações</button></div>
+</div></div>
 <script src="/static/carbon/flatpickr.min.js"></script>
 <script src="/static/carbon/flatpickr-l10n-pt.js"></script>
 <script src="/static/carbon/flatpickr-rangePlugin.js"></script>

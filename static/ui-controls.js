@@ -239,13 +239,13 @@
   });
 
   // Preserva IDs e botões usados pelos fluxos de atividade e confirmação.
-  for (const id of ['modal-atividade', 'modal-confirmar', 'modal-edicao-pendente', 'modal-honorario']) {
+  for (const id of ['modal-atividade', 'modal-confirmar', 'modal-edicao-pendente', 'modal-honorario', 'modal-clientes-lote']) {
     const original = document.getElementById(id);
     if (!original) continue;
     const modal = document.createElement('cds-modal');
     modal.id = id;
     modal.className = 'app-modal';
-    modal.setAttribute('size', id === 'modal-confirmar' ? 'xs' : id === 'modal-honorario' ? 'md' : 'sm');
+    modal.setAttribute('size', id === 'modal-clientes-lote' ? 'lg' : id === 'modal-confirmar' ? 'xs' : id === 'modal-honorario' ? 'md' : 'sm');
     if (id === 'modal-honorario') modal.setAttribute('has-scrolling-content', '');
     modal.setAttribute('prevent-close-on-click-outside', '');
     if (id === 'modal-confirmar' || id === 'modal-edicao-pendente') modal.setAttribute('alert', '');
