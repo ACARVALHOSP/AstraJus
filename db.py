@@ -22,8 +22,27 @@ import threading
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
+from datetime import date
+from notificacoes import registrar_evento as _registrar_notificacao
 
-from _util import _hash_token
+from _util import _hash_token, origem_djen_legada
+
+
+_ORIGEM_NAO_INFORMADA = object()
+
+
+class ConflitoAgenda(ValueError):
+    """Mudança incompatível com um vínculo de agenda ativo."""
+
+
+def validar_data_atividade_agenda(data, hora=None) -> None:
+    try:
+        if not isinstance(data, str) or len(data) != 10 or date.fromisoformat(data).isoformat() != data or hora:
+            raise ValueError
+        if data == "9999-12-31":
+            raise ValueError
+    except (ValueError, TypeError):
+        raise ConflitoAgenda("Para vincular à agenda, informe uma data válida e deixe a hora vazia. O evento será de dia inteiro.")
 
 
 def conectar(caminho: Path) -> sqlite3.Connection:
@@ -204,6 +223,43 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 criado_em TEXT NOT NULL
             );
 
+            -- Histórico e operações sobrevivem à exclusão de atividade/processo já cancelados.
+            CREATE TABLE IF NOT EXISTS notificacao_eventos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                usuario TEXT NOT NULL, tipo TEXT NOT NULL, chave TEXT NOT NULL,
+                caso_id TEXT, atividade_id INTEGER, publicacao_hash TEXT,
+                criado_em TEXT NOT NULL, processado_em TEXT, pendencia TEXT,
+                UNIQUE(usuario, tipo, chave)
+            );
+            CREATE INDEX IF NOT EXISTS notificacao_eventos_usuario
+                ON notificacao_eventos(usuario, criado_em DESC, id DESC);
+            CREATE INDEX IF NOT EXISTS notificacao_eventos_pendentes
+                ON notificacao_eventos(usuario, criado_em) WHERE processado_em IS NULL;
+            CREATE TABLE IF NOT EXISTS notificacoes (
+                evento_id INTEGER PRIMARY KEY REFERENCES notificacao_eventos(id), lida_em TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS atividade_agenda (
+                id TEXT PRIMARY KEY, caso_id TEXT NOT NULL, atividade_id INTEGER NOT NULL,
+                calendario_id TEXT NOT NULL, evento_id TEXT NOT NULL,
+                estado TEXT NOT NULL, operacao TEXT, versao INTEGER NOT NULL DEFAULT 1,
+                titulo TEXT NOT NULL, data TEXT NOT NULL,
+                remoto TEXT, aplicado TEXT, forcar_etag TEXT, erro TEXT,
+                execucao TEXT, execucao_ate REAL, criado_em TEXT NOT NULL,
+                UNIQUE(calendario_id, evento_id)
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS atividade_agenda_ativa
+                ON atividade_agenda(caso_id, atividade_id) WHERE estado <> 'cancelado';
+            CREATE TABLE IF NOT EXISTS atividade_agenda_chaves (
+                usuario TEXT NOT NULL, chave TEXT NOT NULL, pedido TEXT NOT NULL,
+                vinculo_id TEXT NOT NULL REFERENCES atividade_agenda(id), PRIMARY KEY(usuario, chave)
+            );
+
+            CREATE TABLE IF NOT EXISTS origem_djen_migracao_pendencias (
+                atividade_id INTEGER PRIMARY KEY REFERENCES caso_atividades(id) ON DELETE CASCADE,
+                motivo TEXT NOT NULL
+            );
+
             -- Subtarefas de uma atividade (lista única de verificação por atividade, sem
             -- agrupamento em múltiplas checklists - a demanda é "progresso da tarefa", não
             -- organizar várias listas dentro da mesma atividade).
@@ -306,6 +362,21 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
         _migrar_remover_calendar_evento_id(conexao)
         _migrar_fk_publicacoes_capturadas(conexao)
         _migrar_processos_individuais(conexao)
+        # Conservar último vínculo conhecido quando publicação é desvinculada.
+        # Assim um evento antes ligado a processo não volta a expor destino global.
+        conexao.execute("""CREATE TRIGGER IF NOT EXISTS notificacao_publicacao_vinculo
+            AFTER UPDATE OF caso_id ON publicacoes_capturadas
+            WHEN NEW.caso_id IS NOT NULL AND NEW.caso_id IS NOT OLD.caso_id
+            BEGIN
+                UPDATE notificacao_eventos SET caso_id=NEW.caso_id
+                WHERE tipo='publicacao_monitorada' AND publicacao_hash=NEW.hash;
+            END""")
+        conexao.execute("""CREATE TRIGGER IF NOT EXISTS notificacao_publicacao_inserida
+            AFTER INSERT ON publicacoes_capturadas WHEN NEW.caso_id IS NOT NULL
+            BEGIN
+                UPDATE notificacao_eventos SET caso_id=NEW.caso_id
+                WHERE tipo='publicacao_monitorada' AND publicacao_hash=NEW.hash;
+            END""")
 
 
 def _migrar_processos_individuais(conexao: sqlite3.Connection) -> None:
@@ -430,9 +501,28 @@ def _migrar_colunas_caso_atividades(conexao: sqlite3.Connection) -> None:
     """Bancos criados antes do campo `responsavel` existir em `caso_atividades` precisam do
     ALTER TABLE manual - CREATE TABLE IF NOT EXISTS não adiciona coluna em tabela já existente."""
     colunas = {linha[1] for linha in conexao.execute("PRAGMA table_info(caso_atividades)")}
-    if "responsavel" not in colunas:
-        with conexao:
+    with conexao:
+        if "responsavel" not in colunas:
             conexao.execute("ALTER TABLE caso_atividades ADD COLUMN responsavel TEXT")
+        if "origem_djen_hash" not in colunas:
+            conexao.execute("ALTER TABLE caso_atividades ADD COLUMN origem_djen_hash TEXT")
+        if "atribuicao_revisao" not in colunas:
+            conexao.execute("ALTER TABLE caso_atividades ADD COLUMN atribuicao_revisao INTEGER NOT NULL DEFAULT 0")
+        if "origem_djen_versao" not in colunas:
+            conexao.execute("ALTER TABLE caso_atividades ADD COLUMN origem_djen_versao INTEGER NOT NULL DEFAULT 0")
+        antigas = conexao.execute(
+            "SELECT id, observacoes FROM caso_atividades WHERE origem_djen_versao = 0"
+        ).fetchall()
+        for aid, observacoes in antigas:
+            origem, motivo = origem_djen_legada(observacoes)
+            if motivo:
+                conexao.execute(
+                    "INSERT OR IGNORE INTO origem_djen_migracao_pendencias VALUES (?, ?)", (aid, motivo),
+                )
+            conexao.execute(
+                "UPDATE caso_atividades SET origem_djen_hash = ?, origem_djen_versao = 1 WHERE id = ?",
+                (origem, aid),
+            )
 
 
 def _migrar_colunas_casos(conexao: sqlite3.Connection) -> None:
@@ -1042,6 +1132,9 @@ class RegistroClientesCasos:
         caso voltam a "não tratada" em vez de serem apagadas - a publicação em si continua
         existindo, só perde o vínculo. Devolve True se excluiu, False se o id não existia."""
         with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute("BEGIN IMMEDIATE")
+            if conexao.execute("SELECT 1 FROM atividade_agenda WHERE caso_id = ? AND estado <> 'cancelado'", (caso_id,)).fetchone():
+                raise ConflitoAgenda("Cancele os vínculos de agenda e aguarde a confirmação antes de excluir o processo.")
             cursor = conexao.execute("SELECT 1 FROM casos WHERE id = ?", (caso_id,))
             if cursor.fetchone() is None:
                 return False
@@ -1139,7 +1232,7 @@ class RegistroClientesCasos:
             )
             return cursor.rowcount > 0
 
-    _COLUNAS_ATIVIDADE = "id, caso_id, tipo, titulo, data, hora, status, observacoes, responsavel, criado_em"
+    _COLUNAS_ATIVIDADE = "id, caso_id, tipo, titulo, data, hora, status, observacoes, responsavel, criado_em, origem_djen_hash"
 
     def listar_atividades(self, caso_id: str) -> list[dict]:
         with _abrir(self.caminho) as conexao:
@@ -1154,15 +1247,21 @@ class RegistroClientesCasos:
         self, caso_id: str, tipo: str, titulo: str,
         data: str | None, hora: str | None, observacoes: str | None, agora,
         responsavel: str | None = None,
+        origem_djen_hash: str | None = None,
+        ator: str | None = None,
     ) -> dict:
         criado_em = agora().isoformat()
         with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute("BEGIN IMMEDIATE")
+            self._validar_origem_djen(conexao, caso_id, origem_djen_hash)
             cursor = conexao.execute(
-                "INSERT INTO caso_atividades (caso_id, tipo, titulo, data, hora, status, observacoes, responsavel, criado_em) "
-                "VALUES (?, ?, ?, ?, ?, 'pendente', ?, ?, ?) RETURNING id",
-                (caso_id, tipo, titulo, data or None, hora or None, observacoes or None, responsavel or None, criado_em),
+                "INSERT INTO caso_atividades (caso_id, tipo, titulo, data, hora, status, observacoes, responsavel, criado_em, origem_djen_hash, origem_djen_versao, atribuicao_revisao) "
+                "VALUES (?, ?, ?, ?, ?, 'pendente', ?, ?, ?, ?, 1, 1) RETURNING id",
+                (caso_id, tipo, titulo, data or None, hora or None, observacoes or None, responsavel or None, criado_em, origem_djen_hash),
             )
             aid = cursor.fetchone()[0]
+            if ator and responsavel and ator != responsavel:
+                _registrar_notificacao(conexao, responsavel, "atividade_delegada", f"{aid}:1", caso_id=caso_id, atividade_id=aid, agora=agora())
         with _abrir(self.caminho) as conexao:
             linha = conexao.execute(
                 f"SELECT {self._COLUNAS_ATIVIDADE} FROM caso_atividades WHERE id = ?", (aid,)
@@ -1173,14 +1272,21 @@ class RegistroClientesCasos:
         self, caso_id: str, aid: int, titulo: str | None = None,
         tipo: str | None = None, data: str | None = None, hora: str | None = None,
         status: str | None = None, observacoes: str | None = None, responsavel: str | None = None,
+        origem_djen_hash=_ORIGEM_NAO_INFORMADA,
+        ator: str | None = None,
+        agora=None,
     ) -> dict | None:
         with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute("BEGIN IMMEDIATE")
             linha = conexao.execute(
                 f"SELECT {self._COLUNAS_ATIVIDADE} FROM caso_atividades WHERE id = ? AND caso_id = ?", (aid, caso_id)
             ).fetchone()
             if linha is None:
                 return None
             atual = _linha_atividade(linha)
+            nova_origem = atual["origem_djen_hash"] if origem_djen_hash is _ORIGEM_NAO_INFORMADA else origem_djen_hash
+            if nova_origem != atual["origem_djen_hash"]:
+                self._validar_origem_djen(conexao, caso_id, nova_origem)
             novo_titulo = titulo if titulo is not None else atual["titulo"]
             novo_tipo = tipo if tipo is not None else atual["tipo"]
             nova_data = data if data is not None else atual["data"]
@@ -1188,17 +1294,45 @@ class RegistroClientesCasos:
             novo_status = status if status is not None else atual["status"]
             novas_obs = observacoes if observacoes is not None else atual["observacoes"]
             novo_responsavel = responsavel if responsavel is not None else atual["responsavel"]
+            vinculo = conexao.execute(
+                "SELECT id, estado, operacao FROM atividade_agenda WHERE caso_id = ? AND atividade_id = ? AND estado <> 'cancelado'",
+                (caso_id, aid),
+            ).fetchone()
+            if vinculo and (novo_titulo, nova_data, nova_hora) != (atual["titulo"], atual["data"], atual["hora"]):
+                validar_data_atividade_agenda(nova_data, nova_hora)
+                if not isinstance(novo_titulo, str) or not novo_titulo.strip():
+                    raise ConflitoAgenda("Informe um título para a atividade vinculada à agenda.")
+                estado, operacao = vinculo[1:]
+                if operacao != "cancelar" and estado != "divergente":
+                    estado, operacao = "pendente", "criar" if operacao == "criar" else "atualizar"
+                conexao.execute(
+                    "UPDATE atividade_agenda SET titulo=?, data=?, estado=?, operacao=?, versao=versao+1, forcar_etag=NULL WHERE id=?",
+                    (novo_titulo, nova_data, estado, operacao, vinculo[0]),
+                )
             conexao.execute(
-                "UPDATE caso_atividades SET titulo=?, tipo=?, data=?, hora=?, status=?, observacoes=?, responsavel=? "
-                "WHERE id=? AND caso_id=?",
+                "UPDATE caso_atividades SET titulo=?, tipo=?, data=?, hora=?, status=?, observacoes=?, responsavel=?, origem_djen_hash=?, "
+                "atribuicao_revisao=atribuicao_revisao+? WHERE id=? AND caso_id=? RETURNING atribuicao_revisao",
                 (novo_titulo, novo_tipo, nova_data or None, nova_hora or None, novo_status, novas_obs or None,
-                 novo_responsavel or None, aid, caso_id),
-            )
+                 novo_responsavel or None, nova_origem, int(novo_responsavel != atual["responsavel"]), aid, caso_id),
+            ).fetchone()
+            if ator and novo_responsavel and ator != novo_responsavel and novo_responsavel != atual["responsavel"]:
+                revisao = conexao.execute("SELECT atribuicao_revisao FROM caso_atividades WHERE id=?", (aid,)).fetchone()[0]
+                _registrar_notificacao(conexao, novo_responsavel, "atividade_delegada", f"{aid}:{revisao}", caso_id=caso_id,
+                                      atividade_id=aid, agora=agora() if agora else None)
+            if origem_djen_hash is not _ORIGEM_NAO_INFORMADA:
+                conexao.execute("DELETE FROM origem_djen_migracao_pendencias WHERE atividade_id = ?", (aid,))
         with _abrir(self.caminho) as conexao:
             linha = conexao.execute(
                 f"SELECT {self._COLUNAS_ATIVIDADE} FROM caso_atividades WHERE id = ?", (aid,)
             ).fetchone()
         return _linha_atividade(linha)
+
+    @staticmethod
+    def _validar_origem_djen(conexao, caso_id: str, origem: str | None) -> None:
+        if origem is not None and not conexao.execute(
+            "SELECT 1 FROM publicacoes_capturadas WHERE hash = ? AND caso_id = ?", (origem, caso_id),
+        ).fetchone():
+            raise ValueError("Publicação de origem indisponível neste processo.")
 
     # Financeiro - Lançamentos
 
@@ -1256,6 +1390,11 @@ class RegistroClientesCasos:
 
     def excluir_atividade(self, caso_id: str, aid: int) -> bool:
         with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute("BEGIN IMMEDIATE")
+            if conexao.execute(
+                "SELECT 1 FROM atividade_agenda WHERE caso_id=? AND atividade_id=? AND estado <> 'cancelado'", (caso_id, aid),
+            ).fetchone():
+                raise ConflitoAgenda("Cancele o vínculo de agenda e aguarde a confirmação antes de excluir a atividade.")
             cursor = conexao.execute(
                 "DELETE FROM caso_atividades WHERE id = ? AND caso_id = ?", (aid, caso_id)
             )
@@ -1571,11 +1710,11 @@ def _linha_caso(linha) -> dict:
 
 
 def _linha_atividade(linha) -> dict:
-    id_, caso_id, tipo, titulo, data, hora, status, observacoes, responsavel, criado_em = linha
+    id_, caso_id, tipo, titulo, data, hora, status, observacoes, responsavel, criado_em, origem_djen_hash = linha
     return {
         "id": id_, "caso_id": caso_id, "tipo": tipo, "titulo": titulo,
         "data": data, "hora": hora, "status": status, "observacoes": observacoes,
-        "responsavel": responsavel, "criado_em": criado_em,
+        "responsavel": responsavel, "criado_em": criado_em, "origem_djen_hash": origem_djen_hash,
     }
 
 
@@ -1601,6 +1740,7 @@ class RegistroPublicacoesOAB:
     def registrar(
         self, hash_publicacao: str, monitoramento_id: str | None, nome_pesquisado: str | None,
         numero_processo: str | None, dados: dict, status: str, caso_id: str | None, agora,
+        usuario_notificacao: str | None = None,
     ) -> bool:
         """INSERT OR IGNORE pelo hash: uma publicação já vista (mesmo hash) não aparece de novo
         nas capturas seguintes. Devolve True se inseriu (publicação nova), False se já existia."""
@@ -1614,7 +1754,12 @@ class RegistroPublicacoesOAB:
                     json.dumps(dados, ensure_ascii=False), status, caso_id, agora().isoformat(),
                 ),
             )
-            return cursor.rowcount > 0
+            inseriu = cursor.rowcount > 0
+            if usuario_notificacao:
+                destino = conexao.execute("SELECT caso_id FROM publicacoes_capturadas WHERE hash=?", (hash_publicacao,)).fetchone()
+                _registrar_notificacao(conexao, usuario_notificacao, "publicacao_monitorada", hash_publicacao,
+                                      caso_id=destino[0], publicacao_hash=hash_publicacao, agora=agora())
+            return inseriu
 
     def listar(self, status: str | None = None, limite: int = 300, deslocamento: int = 0) -> list[dict]:
         with _abrir(self.caminho) as conexao:
@@ -1733,6 +1878,15 @@ class RegistroPublicacoesOAB:
             cursor = conexao.execute(
                 "UPDATE publicacoes_capturadas SET caso_id = ? WHERE hash = ?",
                 (caso_id, hash_publicacao),
+            )
+            return cursor.rowcount > 0
+
+    def desvincular_do_caso(self, hash_publicacao: str, caso_id: str) -> bool:
+        """Remoção condicionada ao vínculo atual, no mesmo UPDATE."""
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            cursor = conexao.execute(
+                "UPDATE publicacoes_capturadas SET caso_id = NULL WHERE hash = ? AND caso_id = ?",
+                (hash_publicacao, caso_id),
             )
             return cursor.rowcount > 0
 
