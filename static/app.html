@@ -878,26 +878,43 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 .lancamento-data { inline-size: 100%; }
 #honorario-carregamento:empty, #resultado-honorario:empty { display: none; }
 
-.pub-oab-cabecalho { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; }
-.pub-oab-cabecalho .lista-rapida-titulo { flex:1; width:auto; }
-#pub-oab-periodo, .pub-oab-calendario-painel h3 { font-size:var(--cds-heading-03-font-size, 1.25rem); line-height:1.4; margin:0 0 .5rem; }
-.pub-oab-layout { display:grid; grid-template-columns:minmax(0, 1fr) 19rem; gap:var(--cds-spacing-05, 1rem); }
+/* Calendário: dimensões do menu Carbon (288px), dias 40px, motion produtivo. */
+.pub-oab-pagina-cabecalho { display:flex; justify-content:space-between; align-items:center; gap:var(--cds-spacing-05, 1rem); flex-wrap:wrap; margin-bottom:var(--cds-spacing-06, 1.5rem); }
+.pub-oab-pagina-cabecalho .lista-rapida-titulo { flex:1; width:auto; margin:0; font-size:var(--cds-heading-04-font-size, 1.75rem); line-height:var(--cds-heading-04-line-height, 1.28572); font-weight:400; }
+.pub-oab-layout { display:grid; grid-template-columns:minmax(0, 1fr) 18rem; gap:var(--cds-spacing-06, 1.5rem); overflow-x:clip; }
 .pub-oab-layout--recolhido { grid-template-columns:minmax(0, 1fr); }
 .pub-oab-principal { min-width:0; }
-.pub-oab-calendario-painel { align-self:start; padding:var(--cds-spacing-05, 1rem); background:var(--cds-layer-01, #fff); border-top:2px solid var(--cds-interactive, #0f62fe); }
-.pub-oab-mes { display:flex; justify-content:space-between; align-items:center; margin-top:1rem; }
-.pub-oab-mes button, .pub-oab-calendario button { min-width:0; min-height:2.5rem; border:0; color:var(--cds-text-primary, #161616); background:transparent; cursor:pointer; font:inherit; }
-.pub-oab-mes button { width:2.5rem; }
-.pub-oab-calendario { display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); gap:2px; margin:1rem 0; }
-.pub-oab-calendario span { text-align:center; font-size:var(--fonte-ajuda); padding:.5rem 0; }
-.pub-oab-calendario button { position:relative; font-size:var(--fonte-base); }
-.pub-oab-calendario button:hover, .pub-oab-mes button:hover { background:var(--cds-layer-hover-01, #e8e8e8); }
-.pub-oab-calendario button[data-publicacoes]::after { content:''; position:absolute; bottom:3px; left:calc(50% - 2px); width:4px; height:4px; border-radius:50%; background:var(--cds-interactive, #0f62fe); }
-.pub-oab-calendario button[aria-pressed="true"] { background:var(--cds-interactive, #0f62fe); color:var(--cds-text-on-color, #fff); }
-.pub-oab-calendario button[aria-pressed="true"]::after { background:var(--cds-text-on-color, #fff); }
-.pub-oab-calendario button:focus-visible, .pub-oab-mes button:focus-visible { outline:2px solid var(--cds-focus, #0f62fe); outline-offset:-2px; }
-@media(max-width:1055px) { .pub-oab-layout { grid-template-columns:minmax(0,1fr) 17.5rem; } .pub-oab-layout--recolhido { grid-template-columns:minmax(0,1fr); } }
-@media(max-width:671px) { .pub-oab-layout { grid-template-columns:minmax(0,1fr); } .pub-oab-calendario-painel { grid-row:1; } }
+#lista-publicacoes-oab { margin-top:0; }
+.pub-oab-topo-lista { display:grid; grid-template-columns:minmax(0,1fr) 10.5rem auto; align-items:end; gap:var(--cds-spacing-05, 1rem); margin-bottom:var(--cds-spacing-05, 1rem); }
+.pub-oab-topo-lista .pub-oab-barra { display:contents; }
+.pub-oab-topo-lista .pub-oab-filtros { min-width:0; display:grid; gap:var(--cds-spacing-03, .5rem); }
+.pub-oab-topo-lista .pub-oab-filtros label { margin:0; }
+.pub-oab-topo-lista .pub-oab-filtros select { height:2.5rem; }
+.pub-oab-topo-lista .pub-oab-acoes-lote { padding-bottom:var(--cds-spacing-02, .25rem); }
+#pub-oab-periodo { font-size:var(--cds-heading-02-font-size, 1rem); line-height:var(--cds-heading-02-line-height, 1.5); font-weight:600; margin:0 0 var(--cds-spacing-02, .25rem); }
+.pub-oab-periodo-resumo .campo-ajuda { margin:0; }
+.pub-oab-calendario-painel { align-self:start; box-sizing:border-box; width:18rem; max-width:100%; padding:var(--cds-spacing-02, .25rem); background:var(--cds-layer); border-inline-start:1px solid var(--cds-border-subtle); transform:translateX(0); opacity:1; transition:transform var(--cds-duration-moderate-01, 150ms) var(--cds-ease-standard), opacity var(--cds-duration-moderate-01, 150ms) var(--cds-ease-standard); }
+.pub-oab-calendario-painel--saindo { transform:translateX(1rem); opacity:0; pointer-events:none; }
+.pub-oab-calendario-painel h3 { font-size:var(--cds-heading-02-font-size, 1rem); line-height:var(--cds-heading-02-line-height, 1.5); font-weight:600; margin:var(--cds-spacing-03, .5rem) var(--cds-spacing-04, .75rem); }
+.pub-oab-mes { display:flex; justify-content:space-between; align-items:center; }
+.pub-oab-mes strong { font-size:var(--cds-body-compact-01-font-size, .875rem); }
+.pub-oab-mes button, .pub-oab-calendario button { border:0; color:var(--cds-text-primary); background:transparent; cursor:pointer; font:inherit; padding:0; }
+.pub-oab-mes button { width:2.5rem; height:2rem; font-size:1.25rem; }
+.pub-oab-calendario { display:grid; grid-template-columns:repeat(7,2.5rem); gap:0; margin:var(--cds-spacing-02, .25rem) 0 var(--cds-spacing-03, .5rem); }
+.pub-oab-calendario span { text-align:center; font-size:var(--cds-label-01-font-size, .75rem); line-height:1rem; height:1.5rem; padding:var(--cds-spacing-02, .25rem) 0; box-sizing:border-box; color:var(--cds-text-secondary); }
+.pub-oab-calendario button { position:relative; box-sizing:border-box; width:2.5rem; height:2.5rem; font-size:var(--cds-body-compact-01-font-size, .875rem); line-height:var(--cds-body-compact-01-line-height, 1.28572); }
+@media(hover:hover) and (pointer:fine) { .pub-oab-calendario button:hover, .pub-oab-mes button:hover { background:var(--cds-layer-hover); } }
+.pub-oab-calendario button[data-publicacoes]::after, .pub-oab-data-indicador { content:''; width:.25rem; height:.25rem; border-radius:50%; background:var(--cds-link-primary); }
+.pub-oab-calendario button[data-publicacoes]::after { position:absolute; bottom:.1875rem; left:calc(50% - .125rem); }
+.pub-oab-calendario button[aria-pressed="true"] { background:var(--cds-background-brand); color:var(--cds-text-on-color); }
+.pub-oab-calendario button[aria-pressed="true"]::after { background:var(--cds-text-on-color); }
+.pub-oab-calendario button:focus-visible, .pub-oab-mes button:focus-visible { outline:2px solid var(--cds-focus); outline-offset:-2px; }
+.pub-oab-calendario-rodape { display:flex; justify-content:space-between; align-items:center; gap:var(--cds-spacing-02, .25rem); border-top:1px solid var(--cds-border-subtle); margin:0 var(--cds-spacing-02, .25rem); padding:var(--cds-spacing-02, .25rem) 0; }
+.pub-oab-calendario-legenda { display:flex; align-items:center; gap:var(--cds-spacing-03, .5rem); margin:0; white-space:nowrap; font-size:var(--cds-label-01-font-size, .75rem); color:var(--cds-text-secondary); }
+.pub-oab-ultimas { min-width:0; padding-inline:var(--cds-spacing-03, .5rem); font-size:var(--cds-label-01-font-size, .75rem); white-space:nowrap; }
+@media(max-width:1055px) { .pub-oab-layout { gap:var(--cds-spacing-05, 1rem); } .pub-oab-topo-lista { grid-template-columns:minmax(0,1fr) 10.5rem; } .pub-oab-topo-lista .pub-oab-acoes-lote { grid-column:1 / -1; justify-self:end; } }
+@media(max-width:671px) { .pub-oab-layout { grid-template-columns:minmax(0,1fr); } .pub-oab-calendario-painel { grid-row:1; justify-self:end; border-inline-start:0; border-bottom:1px solid var(--cds-border-subtle); } .pub-oab-topo-lista { grid-template-columns:minmax(0,1fr); } .pub-oab-pagina-cabecalho { align-items:flex-start; } }
+@media(prefers-reduced-motion:reduce) { .pub-oab-calendario-painel { transition:none; } }
 </style>
 <link rel="stylesheet" href="/static/search-fields.css">
 <script src="/static/theme.js"></script>
@@ -1838,11 +1855,10 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </section>
 
 <section id="aba-publicacoes-oab" role="tabpanel" aria-labelledby="aba-publicacoes-oab-botao" hidden>
-<div class="pub-oab-cabecalho"><h2 class="lista-rapida-titulo">Publicações monitoradas</h2>
-<button class="cds--btn cds--btn--ghost cds--btn--sm" id="pub-oab-calendario-toggle" type="button" aria-expanded="true" aria-controls="pub-oab-calendario-painel">Recolher calendário →</button></div>
+<div class="pub-oab-pagina-cabecalho"><h2 class="lista-rapida-titulo">Publicações monitoradas</h2>
+<button class="cds--btn cds--btn--ghost cds--btn--sm" id="pub-oab-calendario-toggle" type="button" aria-expanded="true" aria-controls="pub-oab-calendario-painel">Ocultar calendário</button></div>
 <div class="pub-oab-layout" id="pub-oab-layout"><div class="pub-oab-principal">
-<h3 id="pub-oab-periodo">Últimas publicações</h3><p class="campo-ajuda">Da mais recente para a mais antiga, pela data de disponibilização no DJEN.</p>
-<p class="campo-ajuda">Selecione publicações na lista para alterar o status em lote.</p>
+<div class="pub-oab-topo-lista"><div class="pub-oab-periodo-resumo"><h3 id="pub-oab-periodo">Últimas publicações</h3><p class="campo-ajuda">Da mais recente para a mais antiga no DJEN.</p></div>
 <div class="pub-oab-barra">
 <div class="pub-oab-filtros">
 <label class="cds--label" for="pub-oab-filtro-status">Status</label>
@@ -1857,7 +1873,8 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="pub-oab-atualizar">Atualizar lista</button>
 </div>
 </div>
-<div id="lista-publicacoes-oab" class="app-resultado"></div>
+</div><div id="lista-publicacoes-oab" class="app-resultado"></div>
+<p class="campo-ajuda">Selecione publicações na lista para alterar o status em lote.</p>
 <div class="cds--accordion pub-oab-ajuda">
 <details class="cds--accordion__item">
 <summary class="cds--accordion__heading"><svg class="cds--accordion__arrow" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 11 3 6l.7-.7L8 9.6l4.3-4.3.7.7z"></path></svg><span class="cds--accordion__title">Como funciona a captura</span></summary>
@@ -1914,11 +1931,11 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 
 </div>
 <aside id="pub-oab-calendario-painel" class="pub-oab-calendario-painel" aria-label="Filtrar publicações por data">
-<h3>Data da publicação</h3><p class="campo-ajuda">Clique em um dia para ver suas publicações.</p>
+<h3>Publicações por dia</h3>
 <div class="pub-oab-mes"><button type="button" id="pub-oab-mes-anterior" aria-label="Mês anterior">‹</button><strong id="pub-oab-mes-titulo"></strong><button type="button" id="pub-oab-mes-proximo" aria-label="Próximo mês">›</button></div>
 <div id="pub-oab-calendario" class="pub-oab-calendario"></div>
-<p class="campo-ajuda">● Datas com publicações</p>
-<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="pub-oab-ultimas">Últimas publicações</button>
+<div class="pub-oab-calendario-rodape"><p class="pub-oab-calendario-legenda"><span class="pub-oab-data-indicador" aria-hidden="true"></span>Com publicações</p>
+<button class="cds--btn cds--btn--ghost cds--btn--sm pub-oab-ultimas" type="button" id="pub-oab-ultimas">Últimas publicações</button></div>
 </aside></div>
 </section>
 

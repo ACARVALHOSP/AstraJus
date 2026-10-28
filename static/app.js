@@ -5467,12 +5467,45 @@ function _renderizarCalendarioPubOab() {
     if (data === diaComFoco) botao.focus();
   }
 }
+let _pubOabRecolhimentoVersao = 0;
+function _definirCalendarioPubOab(recolhido, instantaneo = false) {
+  const painel = document.getElementById("pub-oab-calendario-painel");
+  const layout = document.getElementById("pub-oab-layout");
+  const botao = document.getElementById("pub-oab-calendario-toggle");
+  const versao = ++_pubOabRecolhimentoVersao;
+  instantaneo ||= matchMedia("(prefers-reduced-motion: reduce)").matches;
+  botao.setAttribute("aria-expanded", String(!recolhido));
+  botao.textContent = recolhido ? "Mostrar calendário" : "Ocultar calendário";
+  painel.style.transitionDuration = instantaneo ? "0ms" : "";
+  if (recolhido) {
+    painel.inert = true;
+    if (painel.contains(document.activeElement)) botao.focus();
+    painel.classList.add("pub-oab-calendario-painel--saindo");
+    const concluir = () => {
+      if (versao !== _pubOabRecolhimentoVersao) return;
+      painel.hidden = true;
+      layout.classList.add("pub-oab-layout--recolhido");
+      painel.classList.remove("pub-oab-calendario-painel--saindo");
+    };
+    const duracao = parseFloat(getComputedStyle(painel).transitionDuration) * 1000;
+    if (instantaneo || !duracao) concluir(); else setTimeout(concluir, duracao);
+  } else {
+    const estavaOculto = painel.hidden;
+    painel.hidden = false;
+    layout.classList.remove("pub-oab-layout--recolhido");
+    painel.inert = false;
+    if (estavaOculto && !instantaneo) {
+      painel.classList.add("pub-oab-calendario-painel--saindo");
+      // Aplica a posição inicial antes de iniciar a transição CSS.
+      void painel.offsetWidth;
+    }
+    painel.classList.remove("pub-oab-calendario-painel--saindo");
+  }
+}
 document.getElementById("pub-oab-calendario-toggle").addEventListener("click", (evento) => {
-  const recolhido = document.getElementById("pub-oab-layout").classList.toggle("pub-oab-layout--recolhido");
-  document.getElementById("pub-oab-calendario-painel").hidden = recolhido;
-  evento.currentTarget.setAttribute("aria-expanded", String(!recolhido));
-  evento.currentTarget.textContent = recolhido ? "Calendário ←" : "Recolher calendário →";
+  _definirCalendarioPubOab(evento.currentTarget.getAttribute("aria-expanded") === "true", evento.detail === 0);
 });
+_definirCalendarioPubOab(matchMedia("(max-width: 671px)").matches, true);
 for (const [id, delta] of [["pub-oab-mes-anterior", -1], ["pub-oab-mes-proximo", 1]]) {
   document.getElementById(id).addEventListener("click", () => {
     if (!_pubOabMes) return;
