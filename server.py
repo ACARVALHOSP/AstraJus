@@ -4892,12 +4892,21 @@ class _AutenticacaoBearer:
         except ValueError:
             await _json(send, 400, _erro("Paginação inválida: página deve ser positiva e tamanho entre 1 e 300."))
             return
-        total = self.publicacoes.contar(status)
+        data = parametros.get("data") or None
+        if data:
+            try:
+                if datetime.strptime(data, "%Y-%m-%d").strftime("%Y-%m-%d") != data:
+                    raise ValueError
+            except ValueError:
+                await _json(send, 400, _erro("Data inválida: use AAAA-MM-DD."))
+                return
+        total = self.publicacoes.contar(status, data)
         pagina = min(pagina, max(1, (total + tamanho - 1) // tamanho))
-        publicacoes = self.publicacoes.listar(status, tamanho, (pagina - 1) * tamanho)
+        publicacoes = self.publicacoes.listar(status, tamanho, (pagina - 1) * tamanho, data)
         await _json(send, 200, {"publicacoes": publicacoes, "total": total,
                               "pagina": pagina, "tamanho": tamanho, "campos_djen": self.publicacoes.campos_djen(),
-                              "hashes_disponiveis": self.publicacoes.hashes_disponiveis(status)})
+                              "datas_disponiveis": self.publicacoes.datas_disponiveis(status),
+                              "hashes_disponiveis": self.publicacoes.hashes_disponiveis(status, data)})
 
     async def _publicacoes_oab_status(self, scope, receive, send):
         """POST /publicacoes-oab/status: atualização em lote - {hashes: [...], status: "..."}."""
