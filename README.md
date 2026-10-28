@@ -259,6 +259,9 @@ DELETE /monitoramentos/<id>       Remover monitoramento
 | `CNJ_SMTP_USER` | — | Usuário SMTP |
 | `CNJ_SMTP_PASSWORD` | — | Senha SMTP |
 | `CNJ_SMTP_FROM` | — | E-mail remetente das notificações |
+| `ASAAS_AMBIENTE` | `sandbox` | Ambiente do Asaas (`sandbox` ou `producao`) |
+| `ASAAS_API_KEY_SANDBOX` | — | Chave de API do Asaas (ambiente sandbox) |
+| `ASAAS_API_KEY` | — | Chave de API do Asaas (ambiente produção) |
 
 ## Gestão de Usuários (CLI)
 
@@ -352,6 +355,8 @@ sudo docker run -d --name cnj-processual --restart unless-stopped \
   --env-file /root/apps/cnj-processual/.env \
   cnj-processual
 ```
+
+> **Atenção:** alterar o `.env` não basta reiniciar com `docker restart` — variáveis de ambiente só são lidas na criação do container (`docker run --env-file`). Depois de editar o `.env`, remova e recrie o container com os comandos acima.
 
 ## Licença
 
