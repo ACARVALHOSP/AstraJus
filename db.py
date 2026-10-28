@@ -524,6 +524,8 @@ def _migrar_colunas_lancamentos(conexao: sqlite3.Connection) -> None:
             conexao.execute("ALTER TABLE lancamentos_financeiros ADD COLUMN direcao TEXT NOT NULL DEFAULT 'RECEITA'")
         if "pago" not in colunas:
             conexao.execute("ALTER TABLE lancamentos_financeiros ADD COLUMN pago INTEGER NOT NULL DEFAULT 0")
+        if "asaas_cobranca_id" not in colunas:
+            conexao.execute("ALTER TABLE lancamentos_financeiros ADD COLUMN asaas_cobranca_id TEXT")
 
 
 def _migrar_colunas_caso_atividades(conexao: sqlite3.Connection) -> None:
@@ -1444,7 +1446,7 @@ class RegistroClientesCasos:
 
     _COLUNAS_LANCAMENTO = (
         "id, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, "
-        "criado_em, direcao, pago"
+        "criado_em, direcao, pago, asaas_cobranca_id"
     )
 
     def criar_lancamento(
@@ -1474,10 +1476,36 @@ class RegistroClientesCasos:
             )
             return [_linha_lancamento(linha) for linha in cursor.fetchall()]
 
+    def obter_lancamento(self, lancamento_id: str) -> dict | None:
+        with _abrir(self.caminho) as conexao:
+            linha = conexao.execute(
+                f"SELECT {self._COLUNAS_LANCAMENTO} FROM lancamentos_financeiros WHERE id = ?",
+                (lancamento_id,),
+            ).fetchone()
+        if not linha:
+            return None
+        return _linha_lancamento(linha)
+
     def atualizar_lancamento_pago(self, lancamento_id: str, pago: bool) -> dict | None:
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             cursor = conexao.execute(
                 "UPDATE lancamentos_financeiros SET pago = ? WHERE id = ?", (int(pago), lancamento_id),
+            )
+            if cursor.rowcount == 0:
+                return None
+        with _abrir(self.caminho) as conexao:
+            linha = conexao.execute(
+                f"SELECT {self._COLUNAS_LANCAMENTO} FROM lancamentos_financeiros WHERE id = ?", (lancamento_id,)
+            ).fetchone()
+        return _linha_lancamento(linha)
+
+    def definir_cobranca_lancamento(self, lancamento_id: str, asaas_cobranca_id: str) -> dict | None:
+        """Guarda o id da cobrança criada no Asaas, pra não emitir uma segunda para o mesmo
+        lançamento."""
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            cursor = conexao.execute(
+                "UPDATE lancamentos_financeiros SET asaas_cobranca_id = ? WHERE id = ?",
+                (asaas_cobranca_id, lancamento_id),
             )
             if cursor.rowcount == 0:
                 return None
@@ -1794,12 +1822,12 @@ def _limpar_lista_dicts(itens: list[dict] | None, campos: tuple, campo_obrigator
 
 
 def _linha_lancamento(linha) -> dict:
-    id_, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, criado_em, direcao, pago = linha
+    id_, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, criado_em, direcao, pago, asaas_cobranca_id = linha
     return {
         "id": id_, "tipo": tipo, "vencimento": vencimento, "valor": valor,
         "descricao": descricao, "recorrente": bool(recorrente), "caso_id": caso_id,
         "cliente_id": cliente_id, "responsavel": responsavel, "criado_em": criado_em,
-        "direcao": direcao, "pago": bool(pago),
+        "direcao": direcao, "pago": bool(pago), "asaas_cobranca_id": asaas_cobranca_id,
     }
 
 

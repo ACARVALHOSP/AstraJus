@@ -3503,6 +3503,10 @@ class _AutenticacaoBearer:
         if caminho == "/lancamentos" and self.gestao is not None:
             await self._lancamentos(scope, receive, send)
             return
+        if caminho.startswith("/lancamentos/") and caminho.endswith("/cobranca") and self.gestao is not None:
+            lancamento_id = caminho[len("/lancamentos/"):-len("/cobranca")].rstrip("/")
+            await self._lancamento_cobranca(scope, receive, send, lancamento_id)
+            return
         if caminho.startswith("/lancamentos/") and self.gestao is not None:
             await self._lancamento_detalhe(scope, receive, send, caminho[len("/lancamentos/"):])
             return
@@ -4180,6 +4184,45 @@ class _AutenticacaoBearer:
             await _json(send, 404, _erro("Lançamento não encontrado."))
             return
         await _json(send, 200, lancamento)
+
+    async def _lancamento_cobranca(self, scope, receive, send, lancamento_id: str) -> None:
+        """POST /lancamentos/<id>/cobranca: emite um boleto no Asaas para o lançamento, com o
+        valor/vencimento/descrição já cadastrados, e guarda o id da cobrança gerada."""
+        config = _asaas_config()
+        if config is None:
+            await _json(send, 404, _erro("Integração Asaas não configurada (falta a API key no servidor)."))
+            return
+        if scope.get("method") != "POST":
+            await _responder(send, 405, b"Metodo nao permitido")
+            return
+        url_base, api_key = config
+        lancamento = self.gestao.obter_lancamento(lancamento_id)
+        if lancamento is None:
+            await _json(send, 404, _erro("Lançamento não encontrado."))
+            return
+        if lancamento["pago"]:
+            await _json(send, 400, _erro("Lançamento já está pago; não é possível gerar cobrança."))
+            return
+        if lancamento.get("asaas_cobranca_id"):
+            await _json(send, 409, _erro("Este lançamento já tem uma cobrança gerada."))
+            return
+        cliente_registro = self.gestao.obter_cliente(lancamento["cliente_id"])
+        if cliente_registro is None or not cliente_registro.get("cpf_cnpj"):
+            await _json(send, 400, _erro("Cadastre o CPF/CNPJ do cliente antes de emitir cobrança."))
+            return
+        try:
+            async with _cliente(20) as http_cliente:
+                customer_id = await self._asaas_customer_id(http_cliente, url_base, api_key, cliente_registro)
+                cobranca = await asaas_integracao.criar_cobranca(
+                    http_cliente, url_base, api_key, customer_id, lancamento["vencimento"],
+                    billing_type="BOLETO", descricao=lancamento["descricao"], valor=lancamento["valor"],
+                )
+        except asaas_integracao.ErroAsaas as erro:
+            log.warning("Falha ao criar cobrança Asaas para o lançamento %s: %s", lancamento_id, erro)
+            await _json(send, 400, _erro(f"Falha ao criar cobrança: {erro}"))
+            return
+        self.gestao.definir_cobranca_lancamento(lancamento_id, cobranca["id"])
+        await _json(send, 201, cobranca)
 
     async def _atividades_do_caso(self, scope, receive, send, caso_id: str, aid: int | None):
         """GET /casos/<id>/atividades, POST /casos/<id>/atividades,
