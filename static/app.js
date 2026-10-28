@@ -275,6 +275,13 @@ function limpar(container) {
 }
 
 function notificacao(tipo, titulo, subtitulo) {
+  if (tipo === "success") {
+    // Sem ícone/cor de "concluído" a pedido; mantém o texto informativo.
+    return el("div", { class: "app-notificacao-texto" }, [
+      el("p", { texto: titulo }),
+      subtitulo ? el("p", { class: "campo-ajuda", texto: subtitulo }) : null,
+    ]);
+  }
   const papel = tipo === "error" || tipo === "warning" ? "alert" : "status";
   const textoWrap = el("div", { class: "cds--inline-notification__text-wrapper" }, [
     el("p", { class: "cds--inline-notification__title", texto: titulo }),
@@ -342,6 +349,7 @@ function _animarTooltip(alvo, evento) {
 }
 
 function mostrarToast(tipo, titulo, mensagem, duracao = 5000) {
+  if (tipo === "success") return; // indicador de operação concluída removido a pedido; erros/avisos continuam
   const container = document.getElementById("toast-global");
   if (!container) { console.error(mensagem || titulo); return; }
   const ntf = notificacao(tipo, titulo, mensagem || "");
