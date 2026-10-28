@@ -387,3 +387,12 @@ sudo docker run -d --name cnj-processual --restart unless-stopped \
 ## Licença
 
 Veja [LICENSE.md](LICENSE.md).
+
+
+### Integrações configuráveis no banco
+
+O editor administrativo fica em `/admin/integracoes` e pode ser aberto pela aba Integrações do painel. Credenciais ficam cifradas no SQLite; administradores individuais podem cadastrar candidatos, testar e ativar configurações sem reiniciar o serviço. Drive é institucional, Calendar é individual, Asaas separa homologação/produção e ZapSign é geral do sistema.
+
+Para habilitar o cofre, configurar `CNJ_INTEGRACOES_CHAVE` (Fernet) fora do banco. A primeira inicialização com essa chave importa as variáveis antigas uma vez e cria backup cifrado; sem a chave, mantém-se o modo legado. A chave mestra e o token administrativo de recuperação continuam sendo infraestrutura externa ao banco.
+
+Consulte [operação e migração das integrações](docs/integracoes.md) antes de retirar variáveis antigas ou rotacionar a chave mestra.

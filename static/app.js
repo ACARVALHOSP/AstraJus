@@ -1847,7 +1847,7 @@ async function carregarStatusIntegracoesSemProgresso() {
       : `Falha ao verificar os serviços (HTTP ${resposta.status}). Tente novamente.`);
     const dados = await resposta.json();
     if (typeof dados.google !== "boolean" || typeof dados.asaas !== "boolean") throw new Error("Resposta de configuração inválida. Tente novamente.");
-    for (const [selo, conectado] of [[seloGoogle, dados.google], [seloAsaas, dados.asaas]]) {
+    for (const [selo, conectado] of [[seloGoogle, dados.google], [seloAsaas, dados.asaas], [document.getElementById("integracao-zapsign-status"), dados.zapsign === true]]) {
       if (!selo) continue;
       if (conectado) {
         selo.textContent = "Configurado";
@@ -5712,7 +5712,7 @@ function _controlesAgendaAtividade(casoId, atividade) {
   if (v?.erro) destino.appendChild(el("p", { class: "atividade-meta", texto: v.erro }));
   if (v?.estado === "divergente") destino.appendChild(el("p", { class: "atividade-meta", texto:
     `Na agenda: ${v.titulo_remoto || "Sem título"} · ${v.data_remota ? formatarDataSimples(v.data_remota) : "Evento sem data de dia inteiro"}` }));
-  if (!_casosComAgendaDisponivel.has(casoId)) destino.appendChild(el("p", { class: "atividade-meta", texto: "Google desconectado. Conecte a conta institucional em /admin e atualize as atividades." }));
+  if (!_casosComAgendaDisponivel.has(casoId)) destino.appendChild(el("p", { class: "atividade-meta", texto: "Conecte sua agenda individual em Integrações e atualize as atividades." }));
   const ativo = v && v.estado !== "cancelado";
   if (v?.estado === "cancelado") _chavesAgendaAtividade.delete(chaveLocal);
   const executar = async (botao, metodo, comando) => {
@@ -5723,6 +5723,10 @@ function _controlesAgendaAtividade(casoId, atividade) {
     try {
       let corpo = {}, cabecalhos = {};
       if (metodo === "POST") {
+        if (comando === "reconciliar_institucional") {
+          if (!(await confirmarAcao("Associar o vínculo institucional à sua agenda individual? A conta Google precisa ser a mesma; o evento será preservado."))) return;
+          corpo = {reconciliar_institucional: true};
+        }
         if (!_chavesAgendaAtividade.has(chaveLocal)) _chavesAgendaAtividade.set(chaveLocal, crypto.randomUUID());
         cabecalhos = { "Idempotency-Key": _chavesAgendaAtividade.get(chaveLocal) };
       } else corpo = { vinculo_id: v.id, versao: v.versao, ...(comando ? { comando } : {}) };
@@ -5743,7 +5747,10 @@ function _controlesAgendaAtividade(casoId, atividade) {
     b.addEventListener("click", () => executar(b, metodo, comando));
     acoes.appendChild(b);
   };
-  if (ativo) {
+  if (atividade.agenda_institucional_anterior) {
+    destino.appendChild(el("p", {class:"atividade-meta", texto:"Vínculo institucional anterior preservado. Reconcilie usando a conta Google original."}));
+    if (_casosComAgendaDisponivel.has(casoId)) botao("Reconciliar vínculo institucional", "POST", "reconciliar_institucional");
+  } else if (ativo) {
     botao("Atualizar agenda", "POST");
     if (v.estado === "divergente") {
       botao("Manter dados da atividade", "PATCH", "usar_data_da_atividade");
@@ -6985,3 +6992,23 @@ for (const lista of document.querySelectorAll(".sub-abas[role=tablist], .sub-tab
     if (alvo) { ev.preventDefault(); alvo.click(); alvo.focus(); }
   });
 }
+
+// Consentimento Calendar individual: nunca recebe ou transmite o token de outro usuário.
+async function minhaAgendaGoogle(acao) {
+  const status = document.getElementById('calendar-status');
+  try {
+    const token = cliente && cliente.token;
+    if (!token) throw new Error('Conecte-se na aba Acesso.');
+    const r = await fetch('/integracoes/calendar/' + acao, {method: acao === 'status' ? 'GET' : 'POST', headers: {Authorization: 'Bearer ' + token}});
+    const dados = await r.json();
+    if (!r.ok) throw new Error(dados.erro || 'Não foi possível atualizar a agenda.');
+    if (dados.url) {
+      if (new URL(dados.url).origin !== 'https://accounts.google.com') throw new Error('URL de autorização inválida.');
+      window.open(dados.url, '_blank', 'noopener');
+      status.textContent = 'Conclua o consentimento na aba Google e verifique a conexão ao retornar.';
+    } else status.textContent = dados.conectado ? 'Sua agenda está conectada.' : 'Sua agenda está desconectada.';
+  } catch (erro) { status.textContent = erro.message; }
+}
+document.getElementById('calendar-connect').addEventListener('click', () => minhaAgendaGoogle('conectar'));
+document.getElementById('calendar-disconnect').addEventListener('click', () => minhaAgendaGoogle('desconectar'));
+document.getElementById('calendar-refresh').addEventListener('click', () => minhaAgendaGoogle('status'));
