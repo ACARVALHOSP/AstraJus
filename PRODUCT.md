@@ -10,7 +10,7 @@ web
 
 Advogados membros de pequenos e médios escritórios de advocacia brasileiros (2–10 advogados), que compartilham clientes e processos com colegas de equipe. Uso predominantemente em desktop com tela larga; acesso móvel eventual mas não o cenário principal.
 
-Contexto real de uso: o advogado alterna entre o painel e audiências, petições e o Claude Desktop — o AstraJus é a fonte de verdade do escritório para clientes, casos e publicações do DJEN.
+Contexto real de uso: o advogado alterna entre o painel e audiências, petições e o Claude Desktop — o AstraJus é a fonte de verdade do escritório para clientes, processos e publicações do DJEN.
 
 ## Product Purpose
 
@@ -20,7 +20,7 @@ Sucesso: o escritório acompanha todos os processos ativos, recebe alertas de no
 
 ## Positioning
 
-Plataforma auto-hospedada com controle total dos dados: roda no VPS do próprio escritório, sem SaaS, sem dependência de fornecedor, sem cobrança por assento. O escritório é dono do banco de dados, das credenciais e do servidor — nenhum dado processual de cliente trafega por servidores de terceiros. Nenhum concorrente direto (Themis, Projuris, Lexos) pode afirmar isso enquanto operam como SaaS.
+Plataforma auto-hospedada com controle total dos dados: roda no VPS do próprio escritório, sem SaaS, sem dependência de fornecedor, sem cobrança por assento. O escritório é dono do banco de dados, das credenciais e do servidor — as integrações habilitadas enviam os dados necessários às respectivas APIs externas, como Google Drive e Calendar.
 
 **Undecided:** Evolução para modelo SaaS com subscrição e per-seat pricing está prevista no futuro; não há prazo nem decisões de arquitetura confirmadas para essa transição.
 
@@ -39,8 +39,10 @@ Plataforma auto-hospedada com controle total dos dados: roda no VPS do próprio 
 - Autenticação Bearer token (sem cookies; compatível com MCP)
 - Consulta pontual com histórico local por dispositivo (localStorage, não sincronizado)
 - Favoritos de processo (tribunal + número)
-- CRUD de clientes (pessoa física ou jurídica) com paginação e typeahead
+- CRUD de clientes (pessoa física ou jurídica) com paginação, typeahead e ações em massa de etiquetas e perfil com prévia
 - CRUD de processos vinculados a clientes; sub-abas: Cadastro (capa com partes e advogados automáticos, somente leitura, e seleção de responsável), Atividades, Publicações, Movimentações, Vínculos
+- Atividades com checklist, lançamento em modal e vínculo opcional a evento de dia inteiro no Google Calendar
+- Central individual de notificações com leitura e acesso ao registro de origem
 - Publicações por OAB: painel dedicado, gestão de status em lote, captura manual, vinculação a processo
 - Máximo 5 monitoramentos por usuário; expiração automática após 180 dias sem publicação nova
 
@@ -70,12 +72,12 @@ Plataforma auto-hospedada com controle total dos dados: roda no VPS do próprio 
 - Implementação completa e em produção: `static/app.html`, `static/app.js`, `static/cadastro.js`
 - Glossário de domínio: `CONTEXT.md`
 - Documentação de features e arquitetura: `README.md`
-- Servidor em produção no VPS (porta 8080 local em dev)
+- Porta HTTP padrão 8000; painel disponível com `python server.py --transport http`
 - Sem ativos de branding visual (logo, paleta própria, tipografia customizada) além do Carbon white/g100 theme
 
 ## Product Principles
 
-1. **Dados no controle do escritório** — a plataforma não retém dados em servidores de terceiros; o escritório é dono do banco, das credenciais e do servidor.
+1. **Dados no controle do escritório** — o escritório controla o banco, as credenciais e o servidor, além de escolher quais integrações externas habilitar.
 2. **Consulta como ponto de partida** — o fluxo começa pelos tribunais (DataJud, DJEN), não por preenchimento manual; os dados chegam do judiciário, não são digitados pelo usuário.
 3. **Vocabulário preciso** — Consulta, Monitoramento, Histórico e Favorito têm definições distintas que a interface deve reforçar, não diluir.
 4. **IA sem atrito** — o servidor MCP expõe os mesmos dados do painel ao Claude Desktop; o advogado não precisa copiar e colar entre sistemas.
