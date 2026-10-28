@@ -1897,22 +1897,37 @@ class RegistroPublicacoesOAB:
                                       caso_id=destino[0], publicacao_hash=hash_publicacao, agora=agora())
             return inseriu
 
-    def listar(self, status: str | None = None, limite: int = 300, deslocamento: int = 0) -> list[dict]:
+    @staticmethod
+    def _filtro_data(status=None, data=None):
+        filtros, valores = [], []
+        if status:
+            filtros.append("status = ?")
+            valores.append(status)
+        if data:
+            filtros.append("substr(json_extract(dados, '$.data_disponibilizacao'), 1, 10) = ?")
+            valores.append(data)
+        return (" WHERE " + " AND ".join(filtros) if filtros else ""), valores
+
+    def listar(self, status: str | None = None, limite: int = 300, deslocamento: int = 0,
+               data: str | None = None) -> list[dict]:
+        filtro, valores = self._filtro_data(status, data)
         with _abrir(self.caminho) as conexao:
-            if status:
-                cursor = conexao.execute(
-                    "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, "
-                    "caso_id, criado_em FROM publicacoes_capturadas WHERE status = ? "
-                    "ORDER BY criado_em DESC, hash DESC LIMIT ? OFFSET ?",
-                    (status, limite, deslocamento),
-                )
-            else:
-                cursor = conexao.execute(
-                    "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, "
-                    "caso_id, criado_em FROM publicacoes_capturadas ORDER BY criado_em DESC, hash DESC LIMIT ? OFFSET ?",
-                    (limite, deslocamento),
-                )
+            cursor = conexao.execute(
+                "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, "
+                "caso_id, criado_em FROM publicacoes_capturadas" + filtro +
+                " ORDER BY coalesce(nullif(substr(json_extract(dados, '$.data_disponibilizacao'), 1, 10), ''), "
+                "substr(criado_em, 1, 10)) DESC, criado_em DESC, hash DESC LIMIT ? OFFSET ?",
+                (*valores, limite, deslocamento),
+            )
             return [_linha_publicacao(linha) for linha in cursor.fetchall()]
+
+    def datas_disponiveis(self, status: str | None = None) -> dict[str, int]:
+        filtro, valores = self._filtro_data(status)
+        with _abrir(self.caminho) as conexao:
+            return {data: quantidade for data, quantidade in conexao.execute(
+                "SELECT substr(json_extract(dados, '$.data_disponibilizacao'), 1, 10) AS dia, COUNT(*) "
+                "FROM publicacoes_capturadas" + filtro + " GROUP BY dia", valores
+            ) if data}
 
     def campos_djen(self) -> list[str]:
         """Catálogo completo, independente da página e do filtro atuais."""
@@ -1922,11 +1937,11 @@ class RegistroPublicacoesOAB:
                 "json_each(publicacoes_capturadas.dados) AS campo ORDER BY campo.key"
             )]
 
-    def hashes_disponiveis(self, status: str | None = None) -> list[str]:
+    def hashes_disponiveis(self, status: str | None = None, data: str | None = None) -> list[str]:
+        filtro, valores = self._filtro_data(status, data)
         with _abrir(self.caminho) as conexao:
             return [r[0] for r in conexao.execute(
-                "SELECT hash FROM publicacoes_capturadas" + (" WHERE status = ?" if status else ""),
-                (status,) if status else ())]
+                "SELECT hash FROM publicacoes_capturadas" + filtro, valores)]
 
     def atualizar_status_detalhado(self, hashes: list[str], status: str) -> dict:
         """Atualização atômica com identificação dos registros ausentes."""
@@ -1946,15 +1961,10 @@ class RegistroPublicacoesOAB:
         return {"atualizadas": len(existentes), "hashes_atualizados": existentes,
                 "hashes_falharam": [h for h in hashes if h not in encontrados]}
 
-    def contar(self, status: str | None = None) -> int:
+    def contar(self, status: str | None = None, data: str | None = None) -> int:
+        filtro, valores = self._filtro_data(status, data)
         with _abrir(self.caminho) as conexao:
-            if status:
-                linha = conexao.execute(
-                    "SELECT COUNT(*) FROM publicacoes_capturadas WHERE status = ?", (status,)
-                ).fetchone()
-            else:
-                linha = conexao.execute("SELECT COUNT(*) FROM publicacoes_capturadas").fetchone()
-            return linha[0] if linha else 0
+            return conexao.execute("SELECT COUNT(*) FROM publicacoes_capturadas" + filtro, valores).fetchone()[0]
 
     def obter(self, hash_publicacao: str) -> dict | None:
         with _abrir(self.caminho) as conexao:

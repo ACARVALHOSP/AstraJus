@@ -507,6 +507,30 @@ class InterfaceTest(unittest.TestCase):
         self.page.locator("#lista-publicacoes-oab cds-table").wait_for()
         self.page.wait_for_function("['cds-table', 'cds-toggletip', 'cds-tag', 'cds-icon-button'].every(n => customElements.get(n))")
 
+    def test_publicacoes_calendario_filtra_recolhe_e_reabre_com_ultimas(self):
+        self.open_publicacoes_oab()
+        self.page.evaluate("_pubOabMes = '2026-10'; _pubOabDatas = {'2026-10-28': 2}; _renderizarCalendarioPubOab()")
+        with self.page.expect_request(lambda req: '/publicacoes-oab?' in req.url and 'data=2026-10-28' in req.url):
+            self.page.locator('#pub-oab-calendario button[data-publicacoes]').click()
+        self.page.wait_for_function("!_pubOabCarregando")
+        self.assertIn('28/10/2026', self.page.locator('#pub-oab-periodo').inner_text())
+        self.assertEqual(self.page.evaluate('_pubOabData'), '2026-10-28')
+        self.page.locator('#pub-oab-calendario-toggle').click()
+        self.assertFalse(self.page.locator('#pub-oab-calendario-painel').is_visible())
+        self.page.locator('#pub-oab-calendario-toggle').click()
+        self.assertTrue(self.page.locator('#pub-oab-calendario-painel').is_visible())
+        self.page.locator('#pub-oab-ultimas').click()
+        self.page.wait_for_function("!_pubOabCarregando")
+        self.assertEqual(self.page.locator('#pub-oab-periodo').inner_text(), 'Últimas publicações')
+        self.page.evaluate("_pubOabData='2026-10-23'; _pubOabPagina=3")
+        self.page.locator('#aba-contatos-botao').click()
+        self.page.locator('#aba-publicacoes-oab-botao').click()
+        self.page.wait_for_function("!_pubOabCarregando")
+        self.assertEqual(self.page.evaluate('[_pubOabData, _pubOabPagina]'), ['', 1])
+        self.page.set_viewport_size({'width':390, 'height':844})
+        self.assertLessEqual(self.page.locator('#pub-oab-calendario-painel').bounding_box()['width'], 390)
+        self.assertFalse(self.errors)
+
     def test_dt01_lote_fecha_menu_e_bloqueia_acoes_de_linha(self):
         self.open_publicacoes_oab()
         self.pub_oab_items[0]['dados']['link'] = 'https://example.test/publicacao'

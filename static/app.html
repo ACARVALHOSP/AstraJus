@@ -878,6 +878,26 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 .lancamento-data { inline-size: 100%; }
 #honorario-carregamento:empty, #resultado-honorario:empty { display: none; }
 
+.pub-oab-cabecalho { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; }
+.pub-oab-cabecalho .lista-rapida-titulo { flex:1; width:auto; }
+#pub-oab-periodo, .pub-oab-calendario-painel h3 { font-size:var(--cds-heading-03-font-size, 1.25rem); line-height:1.4; margin:0 0 .5rem; }
+.pub-oab-layout { display:grid; grid-template-columns:minmax(0, 1fr) 19rem; gap:var(--cds-spacing-05, 1rem); }
+.pub-oab-layout--recolhido { grid-template-columns:minmax(0, 1fr); }
+.pub-oab-principal { min-width:0; }
+.pub-oab-calendario-painel { align-self:start; padding:var(--cds-spacing-05, 1rem); background:var(--cds-layer-01, #fff); border-top:2px solid var(--cds-interactive, #0f62fe); }
+.pub-oab-mes { display:flex; justify-content:space-between; align-items:center; margin-top:1rem; }
+.pub-oab-mes button, .pub-oab-calendario button { min-width:0; min-height:2.5rem; border:0; color:var(--cds-text-primary, #161616); background:transparent; cursor:pointer; font:inherit; }
+.pub-oab-mes button { width:2.5rem; }
+.pub-oab-calendario { display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); gap:2px; margin:1rem 0; }
+.pub-oab-calendario span { text-align:center; font-size:var(--fonte-ajuda); padding:.5rem 0; }
+.pub-oab-calendario button { position:relative; font-size:var(--fonte-base); }
+.pub-oab-calendario button:hover, .pub-oab-mes button:hover { background:var(--cds-layer-hover-01, #e8e8e8); }
+.pub-oab-calendario button[data-publicacoes]::after { content:''; position:absolute; bottom:3px; left:calc(50% - 2px); width:4px; height:4px; border-radius:50%; background:var(--cds-interactive, #0f62fe); }
+.pub-oab-calendario button[aria-pressed="true"] { background:var(--cds-interactive, #0f62fe); color:var(--cds-text-on-color, #fff); }
+.pub-oab-calendario button[aria-pressed="true"]::after { background:var(--cds-text-on-color, #fff); }
+.pub-oab-calendario button:focus-visible, .pub-oab-mes button:focus-visible { outline:2px solid var(--cds-focus, #0f62fe); outline-offset:-2px; }
+@media(max-width:1055px) { .pub-oab-layout { grid-template-columns:minmax(0,1fr) 17.5rem; } .pub-oab-layout--recolhido { grid-template-columns:minmax(0,1fr); } }
+@media(max-width:671px) { .pub-oab-layout { grid-template-columns:minmax(0,1fr); } .pub-oab-calendario-painel { grid-row:1; } }
 </style>
 <link rel="stylesheet" href="/static/search-fields.css">
 <script src="/static/theme.js"></script>
@@ -1818,7 +1838,26 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </section>
 
 <section id="aba-publicacoes-oab" role="tabpanel" aria-labelledby="aba-publicacoes-oab-botao" hidden>
-<h2 class="lista-rapida-titulo">Publicações monitoradas</h2>
+<div class="pub-oab-cabecalho"><h2 class="lista-rapida-titulo">Publicações monitoradas</h2>
+<button class="cds--btn cds--btn--ghost cds--btn--sm" id="pub-oab-calendario-toggle" type="button" aria-expanded="true" aria-controls="pub-oab-calendario-painel">Recolher calendário →</button></div>
+<div class="pub-oab-layout" id="pub-oab-layout"><div class="pub-oab-principal">
+<h3 id="pub-oab-periodo">Últimas publicações</h3><p class="campo-ajuda">Da mais recente para a mais antiga, pela data de disponibilização no DJEN.</p>
+<p class="campo-ajuda">Selecione publicações na lista para alterar o status em lote.</p>
+<div class="pub-oab-barra">
+<div class="pub-oab-filtros">
+<label class="cds--label" for="pub-oab-filtro-status">Status</label>
+<select class="cds--select-input" id="pub-oab-filtro-status" autocomplete="off">
+<option value="">Todos</option>
+<option value="nao_tratada">Não tratada</option>
+<option value="tratada">Tratada</option>
+<option value="arquivada">Arquivada</option>
+</select>
+</div>
+<div class="pub-oab-acoes-lote">
+<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="pub-oab-atualizar">Atualizar lista</button>
+</div>
+</div>
+<div id="lista-publicacoes-oab" class="app-resultado"></div>
 <div class="cds--accordion pub-oab-ajuda">
 <details class="cds--accordion__item">
 <summary class="cds--accordion__heading"><svg class="cds--accordion__arrow" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 11 3 6l.7-.7L8 9.6l4.3-4.3.7.7z"></path></svg><span class="cds--accordion__title">Como funciona a captura</span></summary>
@@ -1873,22 +1912,14 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div id="pub-oab-manual-status" class="campo-ajuda" role="status"></div>
 </details>
 
-<p class="campo-ajuda">Selecione publicações na lista para alterar o status em lote.</p>
-<div class="pub-oab-barra">
-<div class="pub-oab-filtros">
-<label class="cds--label" for="pub-oab-filtro-status">Status</label>
-<select class="cds--select-input" id="pub-oab-filtro-status" autocomplete="off">
-<option value="">Todos</option>
-<option value="nao_tratada">Não tratada</option>
-<option value="tratada">Tratada</option>
-<option value="arquivada">Arquivada</option>
-</select>
 </div>
-<div class="pub-oab-acoes-lote">
-<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="pub-oab-atualizar">Atualizar lista</button>
-</div>
-</div>
-<div id="lista-publicacoes-oab" class="app-resultado"></div>
+<aside id="pub-oab-calendario-painel" class="pub-oab-calendario-painel" aria-label="Filtrar publicações por data">
+<h3>Data da publicação</h3><p class="campo-ajuda">Clique em um dia para ver suas publicações.</p>
+<div class="pub-oab-mes"><button type="button" id="pub-oab-mes-anterior" aria-label="Mês anterior">‹</button><strong id="pub-oab-mes-titulo"></strong><button type="button" id="pub-oab-mes-proximo" aria-label="Próximo mês">›</button></div>
+<div id="pub-oab-calendario" class="pub-oab-calendario"></div>
+<p class="campo-ajuda">● Datas com publicações</p>
+<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="pub-oab-ultimas">Últimas publicações</button>
+</aside></div>
 </section>
 
 </main>

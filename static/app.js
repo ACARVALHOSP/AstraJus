@@ -793,7 +793,12 @@ async function selecionarAba(alvo, { registrarHistorico = true } = {}) {
   if (alvo.painel.id === "aba-contatos") { voltarParaContatos(); carregarContatos("pagina"); }
   if (alvo.painel.id === "aba-casos") carregarCasosPagina("pagina");
   if (alvo.painel.id === "aba-atividades") carregarAtividadesAbertas("pagina");
-  if (alvo.painel.id === "aba-publicacoes-oab") carregarPublicacoesOab("pagina");
+  if (alvo.painel.id === "aba-publicacoes-oab") {
+    _pubOabData = ""; _pubOabMes = ""; _pubOabPagina = 1;
+    _publicacoesOabSelecionadas.clear(); _pubOabExpandidas.clear();
+    document.getElementById("pub-oab-filtro-status").value = "";
+    carregarPublicacoesOab("pagina");
+  }
   if (alvo.painel.id === "aba-integracoes") carregarStatusIntegracoes("pagina");
   if (alvo.painel.id === "aba-financeiro") carregarLancamentos("pagina");
   if (alvo.painel.id === "aba-pagamentos") carregarPagamentos("pagina");
@@ -4653,6 +4658,9 @@ const _publicacoesOabSelecionadas = new Set();
 let _pubOabCarregando = false;
 let _pubOabAtualizando = false;
 let _pubOabInlineEnviando = false;
+let _pubOabData = "";
+let _pubOabMes = "";
+let _pubOabDatas = {};
 let _pubOabPagina = 1;
 let _pubOabTamanho = 5;
 let _pubOabRequisicao = 0;
@@ -5375,8 +5383,12 @@ async function carregarPublicacoesOab(tipoFeedback = "interno") {
   try {
     const query = new URLSearchParams({ pagina: String(_pubOabPagina), tamanho: String(_pubOabTamanho) });
     if (filtroStatus) query.set("status", filtroStatus);
+    if (_pubOabData) query.set("data", _pubOabData);
     const dados = await _buscarJson(`/publicacoes-oab?${query}`, feedback);
     if (requisicao !== _pubOabRequisicao) return;
+    _pubOabDatas = dados.datas_disponiveis || {};
+    if (!_pubOabMes) _pubOabMes = Object.keys(_pubOabDatas).sort().at(-1)?.slice(0, 7) || new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" }).slice(0, 7);
+    _renderizarCalendarioPubOab();
     const publicacoes = dados.publicacoes || [], total = dados.total ?? publicacoes.length;
     _pubOabPagina = dados.pagina || Math.min(_pubOabPagina, Math.max(1, Math.ceil(total / _pubOabTamanho)));
     if (dados.hashes_disponiveis) {
@@ -5388,8 +5400,8 @@ async function carregarPublicacoesOab(tipoFeedback = "interno") {
     limpar(container);
     container.appendChild(el("div", { id: "pub-oab-status-geral" }));
     if (!publicacoes.length) {
-      container.appendChild(notificacao("info", filtroStatus ? "Nenhuma publicação com este status" : "Nenhuma publicação encontrada",
-        filtroStatus ? "Selecione Todos no filtro de status para ver as demais publicações." : "Use a captura manual para adicionar publicações à lista."));
+      container.appendChild(notificacao("info", _pubOabData ? "Nenhuma publicação nesta data" : filtroStatus ? "Nenhuma publicação com este status" : "Nenhuma publicação encontrada",
+        _pubOabData ? "Escolha outra data ou clique em Últimas publicações para remover o filtro de data." : filtroStatus ? "Selecione Todos no filtro de status para ver as demais publicações." : "Use a captura manual para adicionar publicações à lista."));
       container.appendChild(_paginacaoPubOab(total));
       return;
     }
@@ -5427,6 +5439,50 @@ async function carregarPublicacoesOab(tipoFeedback = "interno") {
     }
   }
 }
+
+function _filtrarDataPubOab(data) {
+  _pubOabData = data; _pubOabPagina = 1;
+  _publicacoesOabSelecionadas.clear(); _pubOabExpandidas.clear();
+  _atualizarBotoesLotePubOab();
+  carregarPublicacoesOab();
+}
+
+function _renderizarCalendarioPubOab() {
+  const container = document.getElementById("pub-oab-calendario");
+  const diaComFoco = container.contains(document.activeElement) ? document.activeElement.dataset.data : null;
+  limpar(container);
+  document.getElementById("pub-oab-periodo").textContent = _pubOabData ? "Publicações de " + formatarDataSimples(_pubOabData) : "Últimas publicações";
+  const [ano, mes] = _pubOabMes.split("-").map(Number);
+  document.getElementById("pub-oab-mes-titulo").textContent = new Date(ano, mes - 1, 1).toLocaleDateString("pt-BR", {month:"long", year:"numeric"});
+  for (const nome of ["D", "S", "T", "Q", "Q", "S", "S"]) container.appendChild(el("span", {texto:nome, "aria-hidden":"true"}));
+  for (let i = 0; i < new Date(ano, mes - 1, 1).getDay(); i++) container.appendChild(el("span", {"aria-hidden":"true"}));
+  for (let dia = 1; dia <= new Date(ano, mes, 0).getDate(); dia++) {
+    const data = `${_pubOabMes}-${String(dia).padStart(2, "0")}`;
+    const quantidade = _pubOabDatas[data] || 0;
+    const botao = el("button", {type:"button", texto:String(dia), "aria-pressed":String(data === _pubOabData), "aria-label":`${formatarDataSimples(data)}, ${quantidade} publicações`});
+    botao.dataset.data = data;
+    if (quantidade) botao.dataset.publicacoes = String(quantidade);
+    botao.addEventListener("click", () => _filtrarDataPubOab(data));
+    container.appendChild(botao);
+    if (data === diaComFoco) botao.focus();
+  }
+}
+document.getElementById("pub-oab-calendario-toggle").addEventListener("click", (evento) => {
+  const recolhido = document.getElementById("pub-oab-layout").classList.toggle("pub-oab-layout--recolhido");
+  document.getElementById("pub-oab-calendario-painel").hidden = recolhido;
+  evento.currentTarget.setAttribute("aria-expanded", String(!recolhido));
+  evento.currentTarget.textContent = recolhido ? "Calendário ←" : "Recolher calendário →";
+});
+for (const [id, delta] of [["pub-oab-mes-anterior", -1], ["pub-oab-mes-proximo", 1]]) {
+  document.getElementById(id).addEventListener("click", () => {
+    if (!_pubOabMes) return;
+    const [ano, mes] = _pubOabMes.split("-").map(Number);
+    const novo = new Date(ano, mes - 1 + delta, 1);
+    _pubOabMes = `${novo.getFullYear()}-${String(novo.getMonth() + 1).padStart(2, "0")}`;
+    _renderizarCalendarioPubOab();
+  });
+}
+document.getElementById("pub-oab-ultimas").addEventListener("click", () => _filtrarDataPubOab(""));
 
 document.getElementById("pub-oab-filtro-status").addEventListener("change", () => {
   _pubOabPagina = 1;
