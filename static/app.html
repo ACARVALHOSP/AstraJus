@@ -212,6 +212,9 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 .cliente-etiqueta { display: inline-block; margin: 0 var(--cds-spacing-02, 0.25rem) var(--cds-spacing-02, 0.25rem) 0; padding: 0 var(--cds-spacing-03, 0.5rem); border-radius: 1rem; background: var(--cds-layer-accent-01, #e0e0e0); color: var(--cds-text-primary); font-size: var(--fonte-ajuda); }
 .clientes-lote-opcoes { display: flex; flex-wrap: wrap; gap: var(--cds-spacing-05, 1rem); margin-block: var(--cds-spacing-05, 1rem); }
 .clientes-lote-opcoes label { display: flex; align-items: center; gap: var(--cds-spacing-03, 0.5rem); min-block-size: 2.75rem; }
+.busca-resultados { position: relative; z-index: 1; border: 1px solid var(--cds-border-subtle, #e0e0e0); background: var(--cds-background, #fff); max-block-size: 12rem; overflow-y: auto; }
+.busca-resultados button { display: block; inline-size: 100%; text-align: left; padding: var(--cds-spacing-03, 0.5rem) var(--cds-spacing-05, 1rem); background: none; border: none; font: inherit; cursor: pointer; }
+.busca-resultados button:hover, .busca-resultados button:focus-visible { background: var(--cds-layer-accent-01, #e0e0e0); }
 .clientes-lote-preview td { overflow-wrap: anywhere; }
 .clientes-selecao-mobile { display: none; }
 .contato-nome-link { color: var(--cds-link-primary, #0f62fe); background: none; border: none; padding: 0; font: inherit; font-size: var(--fonte-base); cursor: pointer; text-align: left; text-decoration: underline; }
@@ -2148,22 +2151,28 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </div></div>
 </div>
 <label class="checkbox-lembrar"><input type="checkbox" id="honorario-recorrente"> Repetir mensalmente</label>
+<label class="checkbox-lembrar"><input type="checkbox" id="honorario-parcelar"> Parcelar</label>
+<div class="cds--form-item" id="honorario-parcelas-campo" hidden>
+<label class="cds--label" for="honorario-parcelas">Quantidade de parcelas <span aria-hidden="true">*</span></label>
+<input class="cds--text-input" type="number" id="honorario-parcelas" name="parcelas" min="2" max="60" step="1" value="2" autocomplete="off">
+</div>
+<div id="honorario-parcelas-preview" class="app-resultado" hidden></div>
 </section>
 <section class="lancamento-grupo" aria-labelledby="lancamento-vinculos-titulo">
 <h3 class="lancamento-subtitulo" id="lancamento-vinculos-titulo">Vínculos e responsabilidade</h3>
 <div id="honorario-carregamento" class="app-resultado"></div>
 <div class="cds--form-item">
-<label class="cds--label" for="honorario-caso">Processo <span aria-hidden="true">*</span></label>
-<select class="cds--select-input" id="honorario-caso" name="caso_id" autocomplete="off" required>
-<option value="">— selecione o processo —</option>
-</select>
+<label class="cds--label" for="honorario-cliente-busca">Cliente <span aria-hidden="true">*</span></label>
+<input class="cds--text-input" type="text" id="honorario-cliente-busca" placeholder="Busque por nome ou CPF/CNPJ" autocomplete="off">
+<input type="hidden" id="honorario-cliente" name="cliente_id" required>
+<div id="honorario-cliente-resultados" class="busca-resultados" hidden></div>
+<span class="campo-ajuda" id="honorario-cliente-status"></span>
 </div>
-<div class="cds--form-item">
-<label class="cds--label" for="honorario-cliente">Cliente <span aria-hidden="true">*</span></label>
-<select class="cds--select-input" id="honorario-cliente" name="cliente_id" autocomplete="off" required>
-<option value="">— selecione o cliente —</option>
-</select>
-</div>
+<fieldset class="cds--form-item">
+<legend class="cds--label">Processos do cliente <span aria-hidden="true">*</span></legend>
+<div id="honorario-processos-opcoes" class="clientes-lote-opcoes"></div>
+<p class="campo-ajuda" id="honorario-processos-ajuda">Selecione o cliente para ver os processos vinculados.</p>
+</fieldset>
 <div class="cds--form-item">
 <label class="cds--label" for="honorario-responsavel">Responsável <span aria-hidden="true">*</span></label>
 <input class="cds--text-input" type="text" id="honorario-responsavel" name="responsavel" placeholder="Ex.: Dra. Fernanda Reis" autocomplete="off" required>
