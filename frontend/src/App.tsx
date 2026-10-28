@@ -14,6 +14,7 @@ import {
 import { Asleep, Light } from '@carbon/icons-react'
 import { ClienteProvider, useCliente } from './api/ClienteContext'
 import Acesso from './routes/Acesso'
+import Processo from './routes/Processo'
 
 const ABAS = [
   { id: 'acesso', label: 'Acesso' },
@@ -48,6 +49,8 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
   switch (abaAtiva) {
     case 'acesso':
       return <Acesso />
+    case 'processo':
+      return <Processo />
     default:
       return (
         <div>
