@@ -13,9 +13,11 @@ import {
 } from '@carbon/react'
 import { Asleep, Light } from '@carbon/icons-react'
 import { ClienteProvider, useCliente } from './api/ClienteContext'
+import { NavegacaoProvider, useNavegacao } from './api/NavegacaoContext'
 import Acesso from './routes/Acesso'
 import Processo from './routes/Processo'
 import Publicacoes from './routes/Publicacoes'
+import Historico from './routes/Historico'
 
 const ABAS = [
   { id: 'acesso', label: 'Acesso' },
@@ -54,6 +56,8 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
       return <Processo />
     case 'publicacoes':
       return <Publicacoes />
+    case 'historico':
+      return <Historico />
     default:
       return (
         <div>
@@ -64,49 +68,64 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
   }
 }
 
+function SideNavAstraJus() {
+  const { abaAtiva, irPara } = useNavegacao()
+  return (
+    <SideNav aria-label="Navegação principal" expanded isRail>
+      <SideNavItems>
+        {ABAS.map((aba) => (
+          <SideNavLink
+            key={aba.id}
+            href="#"
+            isActive={aba.id === abaAtiva}
+            onClick={(e) => {
+              e.preventDefault()
+              irPara(aba.id)
+            }}
+          >
+            {aba.label}
+          </SideNavLink>
+        ))}
+      </SideNavItems>
+    </SideNav>
+  )
+}
+
+function ConteudoPrincipal() {
+  const { abaAtiva } = useNavegacao()
+  return (
+    <Content>
+      <ConteudoAba abaAtiva={abaAtiva} />
+    </Content>
+  )
+}
+
 export default function App() {
   const [tema, setTema] = useState<'white' | 'g100'>('white')
-  const [abaAtiva, setAbaAtiva] = useState(ABAS[0].id)
 
   return (
     <Theme theme={tema}>
       <ClienteProvider>
-        <Header aria-label="AstraJus">
-          <HeaderName href="#" prefix="">
-            AstraJus
-          </HeaderName>
-          <HeaderGlobalBar>
-            <div style={{ display: 'flex', alignItems: 'center', marginRight: '1rem' }}>
-              <StatusConexaoTag />
-            </div>
-            <HeaderGlobalAction
-              aria-label="Alternar tema"
-              onClick={() => setTema(tema === 'white' ? 'g100' : 'white')}
-            >
-              {tema === 'white' ? <Asleep size={20} /> : <Light size={20} />}
-            </HeaderGlobalAction>
-          </HeaderGlobalBar>
-        </Header>
-        <SideNav aria-label="Navegação principal" expanded isRail>
-          <SideNavItems>
-            {ABAS.map((aba) => (
-              <SideNavLink
-                key={aba.id}
-                href="#"
-                isActive={aba.id === abaAtiva}
-                onClick={(e) => {
-                  e.preventDefault()
-                  setAbaAtiva(aba.id)
-                }}
+        <NavegacaoProvider abaInicial={ABAS[0].id}>
+          <Header aria-label="AstraJus">
+            <HeaderName href="#" prefix="">
+              AstraJus
+            </HeaderName>
+            <HeaderGlobalBar>
+              <div style={{ display: 'flex', alignItems: 'center', marginRight: '1rem' }}>
+                <StatusConexaoTag />
+              </div>
+              <HeaderGlobalAction
+                aria-label="Alternar tema"
+                onClick={() => setTema(tema === 'white' ? 'g100' : 'white')}
               >
-                {aba.label}
-              </SideNavLink>
-            ))}
-          </SideNavItems>
-        </SideNav>
-        <Content>
-          <ConteudoAba abaAtiva={abaAtiva} />
-        </Content>
+                {tema === 'white' ? <Asleep size={20} /> : <Light size={20} />}
+              </HeaderGlobalAction>
+            </HeaderGlobalBar>
+          </Header>
+          <SideNavAstraJus />
+          <ConteudoPrincipal />
+        </NavegacaoProvider>
       </ClienteProvider>
     </Theme>
   )

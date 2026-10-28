@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import {
   Accordion,
   AccordionItem,
@@ -14,9 +14,11 @@ import {
   Tile,
 } from '@carbon/react'
 import { useCliente } from '../api/ClienteContext'
+import { useNavegacao } from '../api/NavegacaoContext'
 import { ErroMCP } from '../api/mcpClient'
 import { TRIBUNAIS } from '../api/tribunais'
 import { formatarDataSimples, formatarNumeroCNJ } from '../utils/formatadores'
+import { adicionarHistorico, alternarFavorito, ehFavorito } from '../utils/listasRapidas'
 
 type Movimento = {
   nome?: string
@@ -43,16 +45,18 @@ type RespostaConsulta = {
   processos?: ProcessoEncontrado[]
 }
 
+export type PayloadProcesso = { tribunal: string; numero_processo: string }
+
 export default function Processo() {
   const { cliente } = useCliente()
+  const { consumirPayload } = useNavegacao()
   const [tribunal, setTribunal] = useState('')
   const [numero, setNumero] = useState('')
   const [consultando, setConsultando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [resultado, setResultado] = useState<RespostaConsulta | null>(null)
 
-  async function aoEnviar(evento: FormEvent) {
-    evento.preventDefault()
+  async function consultar(tribunalValor: string, numeroValor: string) {
     if (!cliente) {
       setErro('Informe o seu token na aba Acesso e clique em Conectar antes de consultar.')
       return
@@ -62,15 +66,36 @@ export default function Processo() {
     setResultado(null)
     try {
       const dados = (await cliente.chamarFerramenta('consultar_processo_datajud', {
-        tribunal: tribunal.trim().toLowerCase(),
-        numero_processo: numero.trim(),
+        tribunal: tribunalValor.trim().toLowerCase(),
+        numero_processo: numeroValor.trim(),
       })) as RespostaConsulta
       setResultado(dados)
+      if (!dados.erro) {
+        adicionarHistorico({
+          tipo: 'processo',
+          args: { tribunal: tribunalValor, numero_processo: numeroValor },
+          resumo: `Processo ${numeroValor} (${tribunalValor.toUpperCase()})`,
+        })
+      }
     } catch (e) {
       setErro(e instanceof ErroMCP ? e.message : 'Falha inesperada ao consultar.')
     } finally {
       setConsultando(false)
     }
+  }
+
+  useEffect(() => {
+    const payload = consumirPayload<PayloadProcesso>('processo')
+    if (!payload) return
+    setTribunal(payload.tribunal)
+    setNumero(payload.numero_processo)
+    consultar(payload.tribunal, payload.numero_processo)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function aoEnviar(evento: FormEvent) {
+    evento.preventDefault()
+    consultar(tribunal, numero)
   }
 
   return (
@@ -133,6 +158,15 @@ export default function Processo() {
 
 function CartaoProcesso({ proc }: { proc: ProcessoEncontrado }) {
   const movimentos = proc.movimentos ?? []
+  const [favorito, setFavorito] = useState(() =>
+    proc.numeroProcesso ? ehFavorito(proc.tribunal ?? '', proc.numeroProcesso) : false,
+  )
+
+  function alternarFavoritoClick() {
+    if (!proc.numeroProcesso) return
+    setFavorito(alternarFavorito(proc.tribunal ?? '', proc.numeroProcesso))
+  }
+
   return (
     <Tile>
       <Stack gap={3}>
@@ -156,6 +190,13 @@ function CartaoProcesso({ proc }: { proc: ProcessoEncontrado }) {
               </Stack>
             </AccordionItem>
           </Accordion>
+        )}
+        {proc.numeroProcesso && (
+          <div>
+            <Button kind="ghost" size="sm" onClick={alternarFavoritoClick}>
+              {favorito ? '★ Favorito' : '☆ Favoritar'}
+            </Button>
+          </div>
         )}
       </Stack>
     </Tile>

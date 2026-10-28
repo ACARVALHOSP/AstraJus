@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import {
   Button,
   DatePicker,
@@ -13,10 +13,12 @@ import {
   TextInput,
 } from '@carbon/react'
 import { useCliente } from '../api/ClienteContext'
+import { useNavegacao } from '../api/NavegacaoContext'
 import { ErroMCP } from '../api/mcpClient'
 import { TRIBUNAIS } from '../api/tribunais'
 import { UFS } from '../api/ufs'
-import { ddmmaaaaParaIso, formatarDdMmAaaa } from '../utils/formatadores'
+import { ddmmaaaaParaIso, formatarDdMmAaaa, formatarNumeroCNJ } from '../utils/formatadores'
+import { adicionarHistorico } from '../utils/listasRapidas'
 import CartaoPublicacao, { type ItemPublicacao } from './publicacoes/CartaoPublicacao'
 
 type ArgsBusca = {
@@ -36,8 +38,11 @@ type RespostaPublicacoes = {
   total?: number
 }
 
+export type PayloadPublicacoes = ArgsBusca
+
 export default function Publicacoes() {
   const { cliente } = useCliente()
+  const { consumirPayload } = useNavegacao()
 
   const [numeroProcesso, setNumeroProcesso] = useState('')
   const [tribunal, setTribunal] = useState('')
@@ -82,7 +87,15 @@ export default function Publicacoes() {
     try {
       const dados = (await cliente.chamarFerramenta('consultar_publicacoes_djen', { ...args, pagina })) as RespostaPublicacoes
       setResultado(dados)
-      if (!dados.erro) setBusca({ args, pagina })
+      if (!dados.erro) {
+        setBusca({ args, pagina })
+        if (pagina === 1) {
+          const resumo = args.numero_processo
+            ? `Publicações do processo ${formatarNumeroCNJ(args.numero_processo)}`
+            : `Publicações da OAB ${args.numero_oab}/${args.uf_oab ?? '?'}`
+          adicionarHistorico({ tipo: 'publicacoes', args, resumo })
+        }
+      }
     } catch (e) {
       setErro(e instanceof ErroMCP ? e.message : 'Falha inesperada ao consultar.')
     } finally {
@@ -96,6 +109,17 @@ export default function Publicacoes() {
     const args = montarArgs()
     if (args) executarBusca(args, 1)
   }
+
+  useEffect(() => {
+    const payload = consumirPayload<PayloadPublicacoes>('publicacoes')
+    if (!payload) return
+    setNumeroProcesso(payload.numero_processo ?? '')
+    setTribunal(payload.sigla_tribunal?.toLowerCase() ?? '')
+    setNumeroOab(payload.numero_oab ?? '')
+    setUfOab(payload.uf_oab ?? '')
+    executarBusca(payload, 1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const itensPorPaginaBusca = busca?.args.itens_por_pagina ?? 20
   const total = resultado?.total ?? 0
