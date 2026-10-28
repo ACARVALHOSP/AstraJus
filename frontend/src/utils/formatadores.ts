@@ -28,9 +28,19 @@ export function formatarReais(valor: number | null | undefined): string {
   return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
+export function formatarMoeda(valor: unknown): string {
+  return (Number(valor) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
 export function formatarPercentual(valor: number | null | undefined): string {
   if (valor === null || valor === undefined) return '-'
   return valor.toLocaleString('pt-BR', { style: 'percent', minimumFractionDigits: 1 })
+}
+
+export function formatarNomeExibicao(valor: unknown): string {
+  return String(valor ?? '')
+    .toLocaleLowerCase('pt-BR')
+    .replace(/(^|[^\p{L}\p{N}])(\p{L})/gu, (_, separador: string, letra: string) => separador + letra.toLocaleUpperCase('pt-BR'))
 }
 
 export function formatarDdMmAaaa(data: Date): string {
