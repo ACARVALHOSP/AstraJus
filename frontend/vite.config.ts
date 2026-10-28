@@ -10,6 +10,7 @@ export default defineConfig({
       '/mcp': 'http://localhost:8000',
       '/integracoes': 'http://localhost:8000',
       '/cep': 'http://localhost:8000',
+      '/static': 'http://localhost:8000',
     },
   },
 })

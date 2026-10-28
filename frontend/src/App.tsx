@@ -20,6 +20,7 @@ import Publicacoes from './routes/Publicacoes'
 import Historico from './routes/Historico'
 import Monitoramentos from './routes/Monitoramentos'
 import Jurimetria from './routes/Jurimetria'
+import Integracoes from './routes/Integracoes'
 
 const ABAS = [
   { id: 'acesso', label: 'Acesso' },
@@ -64,6 +65,8 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
       return <Monitoramentos />
     case 'jurimetria':
       return <Jurimetria />
+    case 'integracoes':
+      return <Integracoes />
     default:
       return (
         <div>
