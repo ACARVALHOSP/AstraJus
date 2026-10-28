@@ -3195,36 +3195,6 @@ const _ROTULOS_STATUS_PAGAMENTO = {
 };
 const _ROTULOS_TIPO_PAGAMENTO = { BOLETO: "Boleto", PIX: "Pix", UNDEFINED: "A definir" };
 
-async function carregarPagamentos(tipoFeedback = "interno") {
-  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-pagamentos") };
-  const container = document.getElementById("lista-pagamentos");
-  const aviso = document.getElementById("pagamentos-aviso-integracao");
-  limpar(aviso);
-  limpar(container);
-  try {
-    if (!_cache.clientes.length) {
-      const { clientes } = await _buscarJson("/clientes", feedback);
-      _cache.clientes = clientes || [];
-    }
-    const params = new URLSearchParams();
-    const status = document.getElementById("pagamentos-filtro-status").value;
-    const clienteId = document.getElementById("pagamentos-filtro-cliente").value;
-    if (status) params.set("status", status);
-    if (clienteId) params.set("cliente_id", clienteId);
-    const url = "/pagamentos" + (params.toString() ? `?${params}` : "");
-    const { cobrancas } = await _buscarJson(url, { ...feedback, tipo: tipoFeedback === "pagina" ? "pagina" : "externo" });
-    limpar(container);
-    _renderizarPagamentos(cobrancas || []);
-  } catch (erro) {
-    if (erro.status === 404) {
-      limpar(container);
-      aviso.appendChild(notificacao("info", "Integração Asaas não configurada", erro.message));
-    } else {
-      mostrarErro(container, erro.message);
-    }
-  }
-}
-
 // Campo de cliente por CPF/CNPJ: mascara, resolve contra _cache.clientes e mantém um input
 // hidden com o cliente_id (o que os formulários/filtros de fato enviam). `aoResolver` roda a
 // cada digitação, já com o cliente encontrado (ou null).
@@ -3245,9 +3215,59 @@ function _ligarCampoClientePorCpf(idTexto, idHidden, idStatus, aoResolver) {
   });
 }
 
-_ligarCampoClientePorCpf(
-  "pagamentos-filtro-cliente-cpf", "pagamentos-filtro-cliente", "pagamentos-filtro-cliente-status",
-  () => carregarPagamentos(),
+let _pagamentosOffset = 0;
+let _pagamentosAcumuladas = [];
+let _pagamentosTemMais = false;
+
+async function carregarPagamentos(tipoFeedback = "interno") {
+  _pagamentosOffset = 0;
+  _pagamentosAcumuladas = [];
+  await _buscarPaginaPagamentos(tipoFeedback);
+}
+
+async function _buscarPaginaPagamentos(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-pagamentos") };
+  const container = document.getElementById("lista-pagamentos");
+  const aviso = document.getElementById("pagamentos-aviso-integracao");
+  const botaoMais = document.getElementById("pagamentos-carregar-mais");
+  limpar(aviso);
+  if (_pagamentosOffset === 0) limpar(container);
+  try {
+    if (!_cache.clientes.length) {
+      const { clientes } = await _buscarJson("/clientes", feedback);
+      _cache.clientes = clientes || [];
+    }
+    const params = new URLSearchParams();
+    const status = document.getElementById("pagamentos-filtro-status").value;
+    const clienteId = document.getElementById("pagamentos-filtro-cliente").value;
+    if (status) params.set("status", status);
+    if (clienteId) params.set("cliente_id", clienteId);
+    if (_pagamentosOffset) params.set("offset", _pagamentosOffset);
+    const url = "/pagamentos" + (params.toString() ? `?${params}` : "");
+    const dados = await _buscarJson(url, { ...feedback, tipo: tipoFeedback === "pagina" ? "pagina" : "externo" });
+    const cobrancas = dados.cobrancas || [];
+    _pagamentosAcumuladas = _pagamentosAcumuladas.concat(cobrancas);
+    _pagamentosTemMais = Boolean(dados.hasMore);
+    _pagamentosOffset += cobrancas.length;
+    limpar(container);
+    _renderizarPagamentos(_pagamentosAcumuladas);
+    botaoMais.hidden = !_pagamentosTemMais;
+  } catch (erro) {
+    botaoMais.hidden = true;
+    if (erro.status === 404) {
+      limpar(container);
+      aviso.appendChild(notificacao("info", "Integração Asaas não configurada"));
+    } else {
+      mostrarErro(container, erro.message);
+    }
+  }
+}
+
+document.getElementById("pagamentos-carregar-mais").addEventListener("click", () => _buscarPaginaPagamentos());
+
+_ligarBuscaCliente(
+  "pagamentos-filtro-cliente-busca", "pagamentos-filtro-cliente", "pagamentos-filtro-cliente-resultados",
+  "pagamentos-filtro-cliente-status", () => carregarPagamentos(),
 );
 
 function _renderizarPagamentos(cobrancas) {
@@ -3509,30 +3529,27 @@ function _renderizarProcessosDoCliente(clienteId) {
   }
 }
 
-function _selecionarClienteHonorario(cliente) {
-  const campoBusca = document.getElementById("honorario-cliente-busca");
-  const campoHidden = document.getElementById("honorario-cliente");
-  const status = document.getElementById("honorario-cliente-status");
-  const resultados = document.getElementById("honorario-cliente-resultados");
-  campoBusca.value = formatarNomeExibicao(cliente.nome);
-  campoHidden.value = cliente.id;
-  status.textContent = `Cliente selecionado: ${formatarNomeExibicao(cliente.nome)}`;
-  limpar(resultados);
-  resultados.hidden = true;
-  _renderizarProcessosDoCliente(cliente.id);
-}
-
-(function () {
-  const campoBusca = document.getElementById("honorario-cliente-busca");
-  const campoHidden = document.getElementById("honorario-cliente");
-  const status = document.getElementById("honorario-cliente-status");
-  const resultados = document.getElementById("honorario-cliente-resultados");
+// Liga um campo de busca de cliente por nome ou CPF/CNPJ (com dropdown de resultados) a um
+// input hidden com o cliente_id. `aoSelecionar(cliente|null)` roda ao escolher um resultado ou
+// ao limpar o campo (nesse caso com `null`).
+function _ligarBuscaCliente(idBusca, idHidden, idResultados, idStatus, aoSelecionar) {
+  const campoBusca = document.getElementById(idBusca);
+  const campoHidden = document.getElementById(idHidden);
+  const status = document.getElementById(idStatus);
+  const resultados = document.getElementById(idResultados);
+  const selecionar = (cliente) => {
+    campoBusca.value = formatarNomeExibicao(cliente.nome);
+    campoHidden.value = cliente.id;
+    status.textContent = `Cliente selecionado: ${formatarNomeExibicao(cliente.nome)}`;
+    limpar(resultados);
+    resultados.hidden = true;
+    aoSelecionar(cliente);
+  };
   campoBusca.addEventListener("input", () => {
     campoHidden.value = "";
-    _renderizarProcessosDoCliente("");
     const termo = campoBusca.value.trim();
     limpar(resultados);
-    if (!termo) { resultados.hidden = true; status.textContent = ""; return; }
+    if (!termo) { resultados.hidden = true; status.textContent = ""; aoSelecionar(null); return; }
     const termoNormalizado = _normalizarTexto(termo);
     const digitos = termo.replace(/\D/g, "");
     const encontrados = _cache.clientes.filter((cliente) => (
@@ -3549,13 +3566,18 @@ function _selecionarClienteHonorario(cliente) {
       resultados.appendChild(el("button", {
         type: "button",
         texto: `${formatarNomeExibicao(cliente.nome)}${cliente.cpf_cnpj ? ` — ${cliente.cpf_cnpj}` : ""}`,
-        onclick: () => _selecionarClienteHonorario(cliente),
+        onclick: () => selecionar(cliente),
       }));
     }
     resultados.hidden = false;
   });
   campoBusca.addEventListener("blur", () => setTimeout(() => { resultados.hidden = true; }, 150));
-})();
+}
+
+_ligarBuscaCliente(
+  "honorario-cliente-busca", "honorario-cliente", "honorario-cliente-resultados", "honorario-cliente-status",
+  (cliente) => _renderizarProcessosDoCliente(cliente ? cliente.id : ""),
+);
 
 function _atualizarPreviewParcelasHonorario() {
   const preview = document.getElementById("honorario-parcelas-preview");
