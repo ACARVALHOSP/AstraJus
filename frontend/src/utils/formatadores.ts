@@ -23,6 +23,16 @@ export function ddmmaaaaParaIso(valor: string): string {
   return m ? `${m[3]}-${m[2]}-${m[1]}` : ''
 }
 
+export function formatarReais(valor: number | null | undefined): string {
+  if (valor === null || valor === undefined) return '-'
+  return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+export function formatarPercentual(valor: number | null | undefined): string {
+  if (valor === null || valor === undefined) return '-'
+  return valor.toLocaleString('pt-BR', { style: 'percent', minimumFractionDigits: 1 })
+}
+
 export function formatarDdMmAaaa(data: Date): string {
   const dia = String(data.getDate()).padStart(2, '0')
   const mes = String(data.getMonth() + 1).padStart(2, '0')
