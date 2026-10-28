@@ -116,12 +116,24 @@ export class ClienteMCP {
 
   async chamarFerramenta(nome: string, args: Record<string, unknown> = {}): Promise<unknown> {
     if (!this.sessionId) await this.iniciar()
-    return this.enviar({
+    const resultado = (await this.enviar({
       jsonrpc: '2.0',
       id: this.proximoId++,
       method: 'tools/call',
       params: { name: nome, arguments: args },
-    })
+    })) as { isError?: boolean; content?: Array<{ type: string; text?: string }> } | null
+    if (resultado?.isError) {
+      throw new ErroMCP(200, resultado.content?.[0]?.text || 'Não foi possível concluir a solicitação.')
+    }
+    const item = resultado?.content?.[0]
+    if (!item || typeof item.text !== 'string') {
+      throw new ErroMCP(200, 'Resposta vazia do servidor.')
+    }
+    try {
+      return JSON.parse(item.text)
+    } catch {
+      throw new ErroMCP(200, item.text)
+    }
   }
 }
 
