@@ -2081,6 +2081,91 @@ class AsaasIntegracaoTest(unittest.TestCase):
             _rodar(ir())
 
 
+class CobrancaLancamentoHttpTest(_Simulado, unittest.TestCase):
+    """POST /lancamentos/<id>/cobranca: emite o boleto direto no Asaas, com os dados do
+    lançamento, e guarda o id da cobrança para não emitir uma segunda."""
+
+    def setUp(self):
+        super().setUp()
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.gestao = db.RegistroClientesCasos(Path(self._dir.name) / "teste.db")
+        self.agora = lambda: datetime(2026, 1, 1)
+        self.cliente = self.gestao.criar_cliente("Cliente Teste", "12345678909", None, self.agora)
+        self.caso = self.gestao.criar_caso(self.cliente["id"], "Caso Teste", None, [], self.agora)
+        self.lancamento = self._criar_lancamento(self.cliente["id"])
+        self.mw = server._AutenticacaoBearer(app=None, registro=None, gestao=self.gestao)
+        config = mock.patch.object(
+            server, "_asaas_config", return_value=(asaas_integracao.URL_BASE_SANDBOX, "chave-teste"),
+        )
+        config.start()
+        self.addCleanup(config.stop)
+
+    def _criar_lancamento(self, cliente_id):
+        return self.gestao.criar_lancamento(
+            tipo="HONORARIO", vencimento="2026-02-10", valor=1500.0, descricao="Honorários iniciais",
+            recorrente=False, caso_id=self.caso["id"], cliente_id=cliente_id, responsavel="ana",
+            agora=self.agora,
+        )
+
+    def _chamar(self, metodo="POST", lancamento_id=None):
+        enviados = []
+
+        async def send(mensagem):
+            enviados.append(mensagem)
+
+        async def receive():
+            return {"type": "http.request", "body": b"{}", "more_body": False}
+
+        _rodar(self.mw._lancamento_cobranca(
+            {"method": metodo}, receive, send, lancamento_id or self.lancamento["id"],
+        ))
+        inicio = next(m for m in enviados if m["type"] == "http.response.start")
+        corpo_bytes = b"".join(m.get("body", b"") for m in enviados if m["type"] == "http.response.body")
+        return inicio["status"], json.loads(corpo_bytes or b"{}")
+
+    def test_cria_cobranca_com_os_dados_do_lancamento_e_guarda_o_id(self):
+        self.gestao.definir_asaas_customer_id(self.cliente["id"], "cus_123")
+        self.responder(_json(200, {
+            "id": "pay_123", "bankSlipUrl": "https://asaas.example/boleto/123",
+            "invoiceUrl": "https://asaas.example/i/123",
+        }))
+
+        status, resultado = self._chamar()
+
+        self.assertEqual(status, 201)
+        self.assertEqual(resultado["id"], "pay_123")
+        self.assertEqual(resultado["bankSlipUrl"], "https://asaas.example/boleto/123")
+        enviado = json.loads(self.chamadas[0].content)
+        self.assertEqual(enviado["customer"], "cus_123")
+        self.assertEqual(enviado["billingType"], "BOLETO")
+        self.assertEqual(enviado["dueDate"], "2026-02-10")
+        self.assertEqual(enviado["value"], 1500.0)
+        self.assertEqual(enviado["description"], "Honorários iniciais")
+        self.assertEqual(
+            self.gestao.obter_lancamento(self.lancamento["id"])["asaas_cobranca_id"], "pay_123",
+        )
+
+    def test_cliente_sem_cpf_cnpj_e_erro_400(self):
+        sem_cpf = self.gestao.criar_cliente("Cliente sem CPF", None, None, self.agora)
+        lancamento = self._criar_lancamento(sem_cpf["id"])
+
+        status, resultado = self._chamar(lancamento_id=lancamento["id"])
+
+        self.assertEqual(status, 400)
+        self.assertIn("CPF/CNPJ", resultado["mensagem"])
+        self.assertEqual(self.chamadas, [])
+
+    def test_lancamento_com_cobranca_gerada_e_erro_409(self):
+        self.gestao.definir_cobranca_lancamento(self.lancamento["id"], "pay_existente")
+
+        status, resultado = self._chamar()
+
+        self.assertEqual(status, 409)
+        self.assertIn("já tem uma cobrança", resultado["mensagem"])
+        self.assertEqual(self.chamadas, [])
+
+
 class PublicacaoCadastroInlineTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

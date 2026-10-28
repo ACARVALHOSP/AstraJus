@@ -3127,13 +3127,19 @@ function _renderizarLancamentos(lancamentos) {
     ]);
     tr.appendChild(celulaDirecao);
 
-    const botaoCobranca = el("button", { class: "cds--btn cds--btn--tertiary cds--btn--sm", type: "button", texto: "Gerar cobrança" });
-    botaoCobranca.addEventListener("click", () => _abrirModalNovaCobranca({
-      cliente_id: lanc.cliente_id, valor: lanc.valor, vencimento: lanc.vencimento, descricao: lanc.descricao,
-    }));
+    const acoesLancamento = [];
+    if (lanc.asaas_cobranca_id) {
+      acoesLancamento.push(el("span", {
+        class: "texto-auxiliar", texto: "Cobrança gerada", title: `Cobrança ${lanc.asaas_cobranca_id}`,
+      }));
+    } else if (!lanc.pago) {
+      const botaoCobranca = el("button", { class: "cds--btn cds--btn--tertiary cds--btn--sm", type: "button", texto: "Gerar cobrança" });
+      botaoCobranca.addEventListener("click", () => _gerarCobrancaLancamento(lanc.id, botaoCobranca));
+      acoesLancamento.push(botaoCobranca);
+    }
     const botaoExcluir = el("button", { class: "cds--btn cds--btn--danger--tertiary cds--btn--sm", type: "button", texto: "Excluir" });
     botaoExcluir.addEventListener("click", () => _excluirLancamento(lanc.id, lanc.descricao, botaoExcluir));
-    tr.appendChild(el("td", { "data-label": "Ações" }, [botaoCobranca, botaoExcluir]));
+    tr.appendChild(el("td", { "data-label": "Ações" }, [...acoesLancamento, botaoExcluir]));
     tbody.appendChild(tr);
   }
   container.appendChild(el("div", { class: "tabela-responsiva-wrap" }, [el("table", { class: "tabela-responsiva tabela-lancamentos" }, [thead, tbody])]));
@@ -3148,6 +3154,18 @@ async function _alternarLancamentoPago(id, checkbox) {
     mostrarToast("error", "Erro", erro.message);
   } finally {
     checkbox.disabled = false;
+  }
+}
+
+async function _gerarCobrancaLancamento(id, botao) {
+  botao.disabled = true;
+  try {
+    await _enviarJson(`/lancamentos/${id}/cobranca`, {});
+    mostrarToast("success", "Cobrança gerada", "Boleto emitido no Asaas.");
+    await carregarLancamentos();
+  } catch (erro) {
+    mostrarToast("error", "Erro", erro.message);
+    botao.disabled = false;
   }
 }
 
