@@ -17,3 +17,14 @@ export function formatarDataSimples(valor: unknown): string {
 export function formatarNumeroCNJ(valor: unknown): string {
   return String(valor || '').replace(/^(\d{7})(\d{2})(\d{4})(\d)(\d{2})(\d{4})$/, '$1-$2.$3.$4.$5.$6')
 }
+
+export function ddmmaaaaParaIso(valor: string): string {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec((valor || '').trim())
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : ''
+}
+
+export function formatarDdMmAaaa(data: Date): string {
+  const dia = String(data.getDate()).padStart(2, '0')
+  const mes = String(data.getMonth() + 1).padStart(2, '0')
+  return `${dia}/${mes}/${data.getFullYear()}`
+}
