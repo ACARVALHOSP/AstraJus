@@ -36,3 +36,14 @@ com vínculo ao original. Capa, eventos e publicações identificados pelo CNJ a
 o cadastro correspondente. Clientes adicionais são copiados. Atividades, financeiro,
 eventos sem CNJ e vínculos prévios ficam no original, evitando duplicação de obrigações.
 A pasta Drive existente continua acessível pelos cadastros derivados.
+
+
+**Atividade**:
+Tarefa ou evento associado a um processo, com tipo, status, data, hora,
+observações e checklist. Pode ter vínculo opcional com um evento de dia inteiro
+no Google Calendar; a reconciliação desse vínculo é persistida no servidor.
+
+**Notificação**:
+Item do feed individual do usuário no painel, com estado de leitura e referência
+ao registro de origem. Tem retenção de 180 dias e não armazena inteiro teor ou tokens.
+Não se confunde com o Monitoramento, que configura a verificação recorrente no DJEN.

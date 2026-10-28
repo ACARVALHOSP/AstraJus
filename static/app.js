@@ -3457,26 +3457,16 @@ async function _carregarVinculosHonorario() {
   limpar(resultado);
   const falhas = [];
   await Promise.all(["clientes", "casos"].map(async (tipo) => {
-    const select = document.getElementById(tipo === "casos" ? "honorario-caso" : "honorario-cliente");
-    const selecionado = select.value;
-    select.disabled = true;
     try {
       if (!_cache[tipo].length) {
         const dados = await _buscarJson(`/${tipo}`);
         _cache[tipo] = dados[tipo] || [];
       }
-      limpar(select);
       const nome = tipo === "casos" ? "processo" : "cliente";
-      select.appendChild(el("option", { value: "", texto: `— selecione o ${nome} —` }));
-      for (const item of _cache[tipo]) {
-        const titulo = tipo === "casos" ? `${item.numero ? `Processo ${item.numero}` : item.id} — ${formatarNomeExibicao(item.titulo || "Sem título")}` : formatarNomeExibicao(item.nome);
-        select.appendChild(el("option", { value: item.id, texto: titulo }));
-      }
-      if ([...select.options].some((opcao) => opcao.value === selecionado)) select.value = selecionado;
       if (!_cache[tipo].length) falhas.push(`Nenhum ${nome} cadastrado. Cadastre um ${nome} para continuar.`);
     } catch {
       falhas.push(`Não foi possível carregar ${tipo === "casos" ? "os processos" : "os clientes"}. Tente novamente.`);
-    } finally { select.disabled = false; }
+    }
   }));
   if (falhas.length) {
     mostrarErro(resultado, falhas.join(" "));
@@ -3486,12 +3476,132 @@ async function _carregarVinculosHonorario() {
   _honorarioCarregando = false;
 }
 
+// Remove acentos e caixa pra comparar texto digitado contra nomes cadastrados.
+function _normalizarTexto(texto) {
+  return String(texto || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+function _renderizarProcessosDoCliente(clienteId) {
+  const opcoes = document.getElementById("honorario-processos-opcoes");
+  const ajuda = document.getElementById("honorario-processos-ajuda");
+  const selecionados = new Set([...opcoes.querySelectorAll("input:checked")].map((input) => input.value));
+  limpar(opcoes);
+  if (!clienteId) {
+    ajuda.textContent = "Selecione o cliente para ver os processos vinculados.";
+    return;
+  }
+  const processos = _cache.casos.filter((caso) => caso.cliente_id === clienteId || (caso.clientes_adicionais || []).includes(clienteId));
+  if (!processos.length) {
+    ajuda.textContent = "Esse cliente não tem processos cadastrados.";
+    return;
+  }
+  ajuda.textContent = "Selecione um ou mais processos.";
+  for (const caso of processos) {
+    const titulo = `${caso.numero ? `Processo ${caso.numero}` : caso.id} — ${formatarNomeExibicao(caso.titulo || "Sem título")}`;
+    opcoes.appendChild(el("label", {}, [
+      el("input", { type: "checkbox", value: caso.id, checked: selecionados.has(caso.id) ? "checked" : null }),
+      titulo,
+    ]));
+  }
+}
+
+function _selecionarClienteHonorario(cliente) {
+  const campoBusca = document.getElementById("honorario-cliente-busca");
+  const campoHidden = document.getElementById("honorario-cliente");
+  const status = document.getElementById("honorario-cliente-status");
+  const resultados = document.getElementById("honorario-cliente-resultados");
+  campoBusca.value = formatarNomeExibicao(cliente.nome);
+  campoHidden.value = cliente.id;
+  status.textContent = `Cliente selecionado: ${formatarNomeExibicao(cliente.nome)}`;
+  limpar(resultados);
+  resultados.hidden = true;
+  _renderizarProcessosDoCliente(cliente.id);
+}
+
+(function () {
+  const campoBusca = document.getElementById("honorario-cliente-busca");
+  const campoHidden = document.getElementById("honorario-cliente");
+  const status = document.getElementById("honorario-cliente-status");
+  const resultados = document.getElementById("honorario-cliente-resultados");
+  campoBusca.addEventListener("input", () => {
+    campoHidden.value = "";
+    _renderizarProcessosDoCliente("");
+    const termo = campoBusca.value.trim();
+    limpar(resultados);
+    if (!termo) { resultados.hidden = true; status.textContent = ""; return; }
+    const termoNormalizado = _normalizarTexto(termo);
+    const digitos = termo.replace(/\D/g, "");
+    const encontrados = _cache.clientes.filter((cliente) => (
+      _normalizarTexto(cliente.nome).includes(termoNormalizado)
+      || (digitos.length >= 3 && (cliente.cpf_cnpj || "").replace(/\D/g, "").includes(digitos))
+    )).slice(0, 8);
+    if (!encontrados.length) {
+      status.textContent = "Nenhum cliente encontrado.";
+      resultados.hidden = true;
+      return;
+    }
+    status.textContent = "";
+    for (const cliente of encontrados) {
+      resultados.appendChild(el("button", {
+        type: "button",
+        texto: `${formatarNomeExibicao(cliente.nome)}${cliente.cpf_cnpj ? ` — ${cliente.cpf_cnpj}` : ""}`,
+        onclick: () => _selecionarClienteHonorario(cliente),
+      }));
+    }
+    resultados.hidden = false;
+  });
+  campoBusca.addEventListener("blur", () => setTimeout(() => { resultados.hidden = true; }, 150));
+})();
+
+function _atualizarPreviewParcelasHonorario() {
+  const preview = document.getElementById("honorario-parcelas-preview");
+  const parcelando = document.getElementById("honorario-parcelar").checked;
+  limpar(preview);
+  if (!parcelando) { preview.hidden = true; return; }
+  const total = _valorLancamentoEmReais(document.getElementById("honorario-valor").value);
+  const quantidade = parseInt(document.getElementById("honorario-parcelas").value, 10);
+  const vencimento = _ddmmaaaaParaIso(document.getElementById("honorario-vencimento").value);
+  if (!total || !(quantidade >= 2) || !vencimento) { preview.hidden = true; return; }
+  preview.hidden = false;
+  const valoresCentavos = _calcularValoresParcelas(Math.round(total * 100), quantidade);
+  const thead = el("thead", {}, [el("tr", {}, [
+    el("th", { texto: "Parcela" }), el("th", { texto: "Vencimento" }), el("th", { texto: "Valor" }),
+  ])]);
+  const tbody = el("tbody", {});
+  valoresCentavos.forEach((centavos, indice) => {
+    tbody.appendChild(el("tr", {}, [
+      el("td", { "data-label": "Parcela", texto: `${indice + 1}/${quantidade}` }),
+      el("td", { "data-label": "Vencimento", texto: formatarDataSimples(_somarMeses(vencimento, indice)) }),
+      el("td", { "data-label": "Valor", texto: formatarMoeda(centavos / 100) }),
+    ]));
+  });
+  preview.appendChild(el("p", { class: "campo-ajuda", texto: "Prévia das parcelas:" }));
+  preview.appendChild(el("div", { class: "tabela-responsiva-wrap" }, [el("table", { class: "tabela-responsiva" }, [thead, tbody])]));
+}
+
+document.getElementById("honorario-parcelar").addEventListener("change", (evento) => {
+  const parcelando = evento.target.checked;
+  document.getElementById("honorario-parcelas-campo").hidden = !parcelando;
+  _atualizarPreviewParcelasHonorario();
+});
+for (const id of ["honorario-valor", "honorario-parcelas", "honorario-vencimento"]) {
+  document.getElementById(id).addEventListener("input", _atualizarPreviewParcelasHonorario);
+}
+
 async function _abrirModalHonorario() {
   document.getElementById("form-honorario").reset();
   document.getElementById("honorario-valor").setCustomValidity("");
+  document.getElementById("honorario-cliente").value = "";
+  document.getElementById("honorario-cliente-status").textContent = "";
+  limpar(document.getElementById("honorario-cliente-resultados"));
+  document.getElementById("honorario-cliente-resultados").hidden = true;
+  document.getElementById("honorario-parcelas-campo").hidden = true;
+  limpar(document.getElementById("honorario-parcelas-preview"));
+  document.getElementById("honorario-parcelas-preview").hidden = true;
   limpar(document.getElementById("resultado-honorario"));
   // Preencher opções antes de registrar a base de alterações pendentes.
   await _carregarVinculosHonorario();
+  _renderizarProcessosDoCliente("");
   abrirModal("modal-honorario");
 }
 
@@ -6357,19 +6467,47 @@ registrarSalvamento(document.getElementById("form-honorario"), async (evento) =>
     campoValor.reportValidity();
     return;
   }
-  const corpo = {
-    vencimento: _ddmmaaaaParaIso(document.getElementById("honorario-vencimento").value),
-    valor: _valorLancamentoEmReais(document.getElementById("honorario-valor").value),
-    descricao: document.getElementById("honorario-descricao").value.trim(),
-    recorrente: document.getElementById("honorario-recorrente").checked,
-    caso_id: document.getElementById("honorario-caso").value,
-    cliente_id: document.getElementById("honorario-cliente").value,
-    responsavel: document.getElementById("honorario-responsavel").value.trim(),
-    direcao: document.getElementById("honorario-direcao").value,
-  };
+  const clienteId = document.getElementById("honorario-cliente").value;
+  if (!clienteId) {
+    mostrarErro(resultado, "Busque e selecione um cliente cadastrado.");
+    return;
+  }
+  const casoIds = [...document.querySelectorAll("#honorario-processos-opcoes input:checked")].map((input) => input.value);
+  if (!casoIds.length) {
+    mostrarErro(resultado, "Selecione ao menos um processo do cliente.");
+    return;
+  }
+  const descricao = document.getElementById("honorario-descricao").value.trim();
+  const vencimento = _ddmmaaaaParaIso(document.getElementById("honorario-vencimento").value);
+  const valorTotal = _valorLancamentoEmReais(campoValor.value);
+  const recorrente = document.getElementById("honorario-recorrente").checked;
+  const responsavel = document.getElementById("honorario-responsavel").value.trim();
+  const direcao = document.getElementById("honorario-direcao").value;
+  const parcelando = document.getElementById("honorario-parcelar").checked;
+  const quantidadeParcelas = parcelando ? parseInt(document.getElementById("honorario-parcelas").value, 10) : 1;
+  const parcelas = parcelando
+    ? _calcularValoresParcelas(Math.round(valorTotal * 100), quantidadeParcelas).map((centavos, indice) => ({
+      valor: centavos / 100,
+      vencimento: _somarMeses(vencimento, indice),
+      descricao: `${descricao} (parcela ${indice + 1}/${quantidadeParcelas})`,
+    }))
+    : [{ valor: valorTotal, vencimento, descricao }];
   const pararEspera = mostrarEspera(resultado, botao, "Salvando");
   try {
-    await _enviarJson("/lancamentos", corpo);
+    for (const casoId of casoIds) {
+      for (const parcela of parcelas) {
+        await _enviarJson("/lancamentos", {
+          vencimento: parcela.vencimento,
+          valor: parcela.valor,
+          descricao: parcela.descricao,
+          recorrente,
+          caso_id: casoId,
+          cliente_id: clienteId,
+          responsavel,
+          direcao,
+        });
+      }
+    }
     marcarFormularioSalvo(document.getElementById("form-honorario"));
     await fecharModal("modal-honorario");
     mostrarToast("success", "Lançamento salvo");
