@@ -1486,7 +1486,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <button class="cds--btn cds--btn--primary cds--btn--sm" type="button" id="btn-nova-cobranca">Nova cobrança</button>
 </div>
 <p class="campo-ajuda">Cobranças (boleto ou Pix) emitidas via Asaas para os clientes cadastrados.</p>
-<div id="pagamentos-aviso-integracao" class="app-resultado"></div>
+<div id="pagamentos-aviso-integracao" class="app-resultado" aria-live="polite"></div>
 <div class="contatos-barra">
 <div class="cds--form-item">
 <label class="cds--label" for="pagamentos-filtro-status">Status</label>
@@ -1500,13 +1500,15 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </select>
 </div>
 <div class="cds--form-item">
-<label class="cds--label" for="pagamentos-filtro-cliente-cpf">Cliente (CPF/CNPJ)</label>
-<input class="cds--text-input" type="text" id="pagamentos-filtro-cliente-cpf" inputmode="numeric" placeholder="Ex.: 123.456.789-00" autocomplete="off">
+<label class="cds--label" for="pagamentos-filtro-cliente-busca">Cliente</label>
+<input class="cds--text-input" type="text" id="pagamentos-filtro-cliente-busca" placeholder="Busque por nome ou CPF/CNPJ" autocomplete="off">
 <input type="hidden" id="pagamentos-filtro-cliente">
+<div id="pagamentos-filtro-cliente-resultados" class="busca-resultados" hidden></div>
 <span class="campo-ajuda" id="pagamentos-filtro-cliente-status"></span>
 </div>
 </div>
-<div id="lista-pagamentos" class="app-resultado"></div>
+<div id="lista-pagamentos" class="app-resultado" aria-live="polite"></div>
+<button class="cds--btn cds--btn--tertiary cds--btn--sm" type="button" id="pagamentos-carregar-mais" hidden>Carregar mais</button>
 </section>
 
 <section id="aba-contatos" role="tabpanel" aria-labelledby="aba-contatos-botao" hidden>
