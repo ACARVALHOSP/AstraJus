@@ -386,6 +386,8 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
             conexao.execute("ALTER TABLE caso_processo_capa ADD COLUMN orgao_julgador TEXT")
         _migrar_colunas_casos(conexao)
         _migrar_colunas_caso_atividades(conexao)
+        if 'usuario' not in {r[1] for r in conexao.execute('PRAGMA table_info(atividade_agenda)')}:
+            conexao.execute('ALTER TABLE atividade_agenda ADD COLUMN usuario TEXT')
         _migrar_colunas_clientes(conexao)
         _migrar_colunas_lancamentos(conexao)
         _migrar_remover_calendar_evento_id(conexao)

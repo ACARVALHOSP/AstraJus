@@ -56,8 +56,14 @@ def resumo(v):
 
 
 class Repositorio:
-    def __init__(self, caminho):
+    def __init__(self, caminho, usuario=None):
         self.caminho = caminho
+        self.usuario = usuario
+
+    def conferir_dono(self, linha):
+        if linha and self.usuario is not None and linha['usuario'] != self.usuario:
+            raise ErroAgenda('Este vínculo pertence a outra conta ou à agenda institucional anterior.', 403)
+        return linha
 
     @contextmanager
     def transacao(self):
@@ -77,7 +83,7 @@ class Repositorio:
 
     def por_chave(self, usuario, chave, pedido):
         with self.transacao() as c:
-            return self._chave(c, usuario, chave, pedido)
+            return self.conferir_dono(self._chave(c, usuario, chave, pedido))
 
     def obter(self, caso_id, aid, vinculo_id=None):
         with self.transacao() as c:
@@ -87,6 +93,7 @@ class Repositorio:
                 sql += " AND id=?"
                 args.append(vinculo_id)
             linha = c.execute(sql + " ORDER BY rowid DESC LIMIT 1", args).fetchone()
+            self.conferir_dono(linha)
             return dict(linha) if linha else None
 
     def listar(self, caso_id=None):
@@ -95,7 +102,7 @@ class Repositorio:
                 linhas = c.execute("SELECT * FROM atividade_agenda WHERE estado <> 'cancelado'").fetchall()
             else:
                 linhas = c.execute("SELECT * FROM atividade_agenda WHERE caso_id=? ORDER BY rowid", (caso_id,)).fetchall()
-            return [dict(linha) for linha in linhas]
+            return [dict(linha) for linha in linhas if self.usuario is None or linha['usuario'] == self.usuario]
 
     def reservar(self, caso_id, aid, calendario, usuario, chave, pedido):
         with self.transacao() as c:
@@ -110,6 +117,7 @@ class Repositorio:
                 raise db.ConflitoAgenda("Informe um título para a atividade.")
             linha = c.execute("SELECT * FROM atividade_agenda WHERE caso_id=? AND atividade_id=? AND estado <> 'cancelado'", (caso_id, aid)).fetchone()
             if linha:
+                self.conferir_dono(linha)
                 if linha["calendario_id"] != calendario:
                     raise ErroAgenda("Este vínculo pertence a outro calendário. Reconecte a conta original.")
                 identificador = linha["id"]
@@ -120,17 +128,31 @@ class Repositorio:
                     "VALUES (?, ?, ?, ?, ?, 'pendente', 'criar', ?, ?, ?)",
                     (identificador, caso_id, aid, calendario, uuid.uuid4().hex, a["titulo"], a["data"], agora_iso()),
                 )
+                if self.usuario is not None:
+                    c.execute('UPDATE atividade_agenda SET usuario=? WHERE id=?', (self.usuario, identificador))
             c.execute("INSERT INTO atividade_agenda_chaves VALUES (?, ?, ?, ?)", (usuario, chave, pedido, identificador))
             return dict(c.execute("SELECT * FROM atividade_agenda WHERE id=?", (identificador,)).fetchone())
 
     def adquirir(self, identificador):
         with self.transacao() as c:
             linha = c.execute("SELECT * FROM atividade_agenda WHERE id=?", (identificador,)).fetchone()
+            self.conferir_dono(linha)
             if not linha or linha["estado"] == "cancelado" or (linha["execucao_ate"] or 0) > time.time():
                 return None
             token = uuid.uuid4().hex
             c.execute("UPDATE atividade_agenda SET execucao=?, execucao_ate=? WHERE id=?", (token, time.time() + 120, identificador))
             return {**dict(linha), "execucao": token}
+
+    def reconciliar_institucional(self, caso_id, aid, calendario):
+        """Adoção explícita sem recriar evento e somente pela mesma conta Google."""
+        if self.usuario is None:
+            raise ErroAgenda('Reconciliação exige uma conta individual.', 403)
+        with self.transacao() as c:
+            v = c.execute("SELECT * FROM atividade_agenda WHERE caso_id=? AND atividade_id=? AND estado<>'cancelado'", (caso_id, aid)).fetchone()
+            if not v or v['usuario'] is not None or v['calendario_id'] != calendario or (v['execucao_ate'] or 0) > time.time():
+                raise ErroAgenda('Use a mesma conta da agenda institucional original para reconciliar este vínculo.')
+            c.execute('UPDATE atividade_agenda SET usuario=?,versao=versao+1 WHERE id=?', (self.usuario, v['id']))
+            return dict(c.execute('SELECT * FROM atividade_agenda WHERE id=?', (v['id'],)).fetchone())
 
     def concluir(self, snapshot, estado, remoto=None, aplicado=False, erro=None):
         with self.transacao() as c:
@@ -167,11 +189,11 @@ class Repositorio:
             c.execute("UPDATE atividade_agenda SET estado='cancelamento_pendente', operacao='cancelar', versao=versao+1, erro=NULL, forcar_etag=NULL WHERE id=?", (identificador,))
             return dict(c.execute("SELECT * FROM atividade_agenda WHERE id=?", (identificador,)).fetchone())
 
-    @staticmethod
-    def _para_comando(c, caso_id, aid, identificador):
+    def _para_comando(self, c, caso_id, aid, identificador):
         v = c.execute("SELECT * FROM atividade_agenda WHERE caso_id=? AND atividade_id=? AND id=?", (caso_id, aid, identificador)).fetchone()
         if not v:
             raise ErroAgenda("Vínculo não encontrado.", 404)
+        self.conferir_dono(v)
         return v
 
     def resolver(self, caso_id, aid, identificador, versao, comando, remoto):
@@ -286,6 +308,6 @@ async def processar(repo, vinculo_id, registro_google, client_id, client_secret,
 
 
 async def sincronizar(registro_google, gestao, client_id, client_secret, cliente):
-    repo = Repositorio(gestao.caminho)
+    repo = Repositorio(gestao.caminho, getattr(registro_google, 'dono', None))
     for v in repo.listar():
         await processar(repo, v["id"], registro_google, client_id, client_secret, cliente)

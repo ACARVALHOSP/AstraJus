@@ -44,6 +44,8 @@ import agenda_atividades
 import notificacoes
 import db as _db
 import google_integracao
+import integracoes
+import integracoes_http
 from _util import _hash_token, hash_origem_djen_valido, origem_djen_legada
 from db import (
     CacheDataJud, ConflitoClientesLote, RegistroClientesCasos, RegistroIntegracaoGoogle, RegistroMonitoramentos,
@@ -116,6 +118,11 @@ _DESCRICAO_GRAU = {
 # Transporte HTTP injetável para testes (httpx.MockTransport). Em produção fica None,
 # e o httpx usa a rede normalmente.
 _TRANSPORTE_HTTP: httpx.AsyncBaseTransport | None = None
+_COFRE_INTEGRACOES = None
+
+
+def _config_integracao(nome, padrao=''):
+    return _COFRE_INTEGRACOES.valor(nome, padrao) if _COFRE_INTEGRACOES else os.environ.get(nome, padrao)
 
 
 def _cliente(timeout: float, **kwargs) -> httpx.AsyncClient:
@@ -123,17 +130,19 @@ def _cliente(timeout: float, **kwargs) -> httpx.AsyncClient:
 
 
 def _datajud_api_key() -> str:
-    return os.environ.get("DATAJUD_API_KEY", "").strip() or DATAJUD_API_KEY_PADRAO
+    if _COFRE_INTEGRACOES:
+        return _config_integracao("DATAJUD_API_KEY", "").strip()
+    return _config_integracao("DATAJUD_API_KEY", "").strip() or DATAJUD_API_KEY_PADRAO
 
 
 def _asaas_config() -> tuple[str, str] | None:
     """URL base + API key do Asaas para o ambiente configurado em ASAAS_AMBIENTE
     ('sandbox', padrão, ou 'producao'). None se a chave do ambiente atual não estiver definida
     no servidor (ASAAS_API_KEY_SANDBOX ou ASAAS_API_KEY)."""
-    if (os.environ.get("ASAAS_AMBIENTE") or "sandbox").strip().lower() == "producao":
-        chave = os.environ.get("ASAAS_API_KEY", "").strip()
+    if (_config_integracao("ASAAS_AMBIENTE") or "sandbox").strip().lower() == "producao":
+        chave = _config_integracao("ASAAS_API_KEY", "").strip()
         return (asaas_integracao.URL_BASE_PRODUCAO, chave) if chave else None
-    chave = os.environ.get("ASAAS_API_KEY_SANDBOX", "").strip()
+    chave = _config_integracao("ASAAS_API_KEY_SANDBOX", "").strip()
     return (asaas_integracao.URL_BASE_SANDBOX, chave) if chave else None
 
 
@@ -1811,6 +1820,10 @@ class ConfiguracaoSMTP:
 
 def _enviar_token_por_email(cfg: ConfiguracaoSMTP, destino: str, token: str) -> None:
     """Envia o token ao e-mail do próprio usuário. Porta 465 usa SSL direto; as demais usam STARTTLS."""
+    if _COFRE_INTEGRACOES:
+        cfg = _smtp_do_ambiente()
+        if cfg is None:
+            raise ValueError("SMTP não configurado.")
     mensagem = EmailMessage()
     mensagem["Subject"] = "Seu token de acesso ao cnj-processual"
     mensagem["From"] = cfg.remetente
@@ -1933,6 +1946,10 @@ def _enviar_aviso_monitoramento(cfg: ConfiguracaoSMTP, destino: str, criterio: d
         'Para parar de receber estes avisos, remova o monitoramento em "Meus monitoramentos".',
     ]
 
+    if _COFRE_INTEGRACOES:
+        cfg = _smtp_do_ambiente()
+        if cfg is None:
+            raise ValueError("SMTP não configurado.")
     mensagem = EmailMessage()
     mensagem["Subject"] = f"cnj-processual: {len(itens)} publicação(ões) nova(s) para {descricao}"
     mensagem["From"] = cfg.remetente
@@ -1957,6 +1974,10 @@ def _enviar_aviso_expiracao(cfg: ConfiguracaoSMTP, destino: str, criterio: dict,
     url_base = os.environ.get("CNJ_MCP_URL_PUBLICA", "").strip().rstrip("/")
     link = f"{url_base}/app" if url_base else "/app"
 
+    if _COFRE_INTEGRACOES:
+        cfg = _smtp_do_ambiente()
+        if cfg is None:
+            raise ValueError("SMTP não configurado.")
     mensagem = EmailMessage()
     mensagem["Subject"] = f"cnj-processual: monitoramento de {descricao} expira em {dias_restantes} dia(s)"
     mensagem["From"] = cfg.remetente
@@ -1984,6 +2005,10 @@ def _enviar_aviso_atividade_delegada(cfg: ConfiguracaoSMTP, destino: str, ativid
     url_base = os.environ.get("CNJ_MCP_URL_PUBLICA", "").strip().rstrip("/")
     link = f"{url_base}/app" if url_base else "/app"
 
+    if _COFRE_INTEGRACOES:
+        cfg = _smtp_do_ambiente()
+        if cfg is None:
+            raise ValueError("SMTP não configurado.")
     mensagem = EmailMessage()
     mensagem["Subject"] = f"cnj-processual: nova atividade delegada - {atividade.get('titulo', '')}"
     mensagem["From"] = cfg.remetente
@@ -2269,6 +2294,8 @@ async def _verificar_monitoramentos_pendentes(
     """Confere todos os Monitoramentos ativos e avisa por e-mail quem tiver publicação nova.
     Chamada pelo job do APScheduler a cada MONITORAMENTO_INTERVALO_HORAS; os testes chamam direto,
     com um relógio e um 'enviar' injetados."""
+    if _COFRE_INTEGRACOES:
+        smtp = _smtp_do_ambiente()
     if smtp is None:
         return
     if not _CIRCUIT_DJEN.pode_tentar():
@@ -2322,19 +2349,22 @@ async def _sincronizar_calendar_google(
         status = evento.get("status")
         nova_data = (evento.get("start") or {}).get("date") or (evento.get("start") or {}).get("dateTime")
         anterior = gestao.obter_evento_calendar(caso_id, evento_id)
+        dono = getattr(registro_google, 'dono', None)
+        if dono is not None and (not anterior or anterior.get('usuario') != dono):
+            continue  # vínculos institucionais antigos não mudam de dono silenciosamente
 
         if status == "cancelled":
             if anterior and anterior.get("status") != "cancelled":
                 gestao.registrar_evento_no_caso(
                     caso_id, None, "evento_agenda_alterado",
-                    {"evento_id": evento_id, "status": "cancelled"}, agora,
+                    {"evento_id": evento_id, "status": "cancelled", **({'usuario': dono} if dono else {})}, agora,
                 )
             continue
 
         if not anterior or anterior.get("data") != nova_data:
             gestao.registrar_evento_no_caso(
                 caso_id, None, "evento_agenda_alterado",
-                {"evento_id": evento_id, "data": nova_data, "titulo": evento.get("summary"), "status": status}, agora,
+                {"evento_id": evento_id, "data": nova_data, "titulo": evento.get("summary"), "status": status, **({'usuario': dono} if dono else {})}, agora,
             )
 
     if novo_sync_token:
@@ -2347,6 +2377,21 @@ async def _sincronizar_calendar_google_job(
     """Wrapper chamado pelo APScheduler: abre sua própria conexão HTTP (o job não recebe uma
     injetada, diferente de _sincronizar_calendar_google, que os testes chamam direto com mock)."""
     try:
+        if _COFRE_INTEGRACOES:
+            client_id = _COFRE_INTEGRACOES.valor('CNJ_GOOGLE_CLIENT_ID')
+            client_secret = _COFRE_INTEGRACOES.valor('CNJ_GOOGLE_CLIENT_SECRET')
+            with _COFRE_INTEGRACOES.abrir() as c:
+                ativos = set(RegistroUsuarios(_COFRE_INTEGRACOES.caminho).ativos())
+                donos = [r[0] for r in c.execute("SELECT dono FROM integracoes_google WHERE finalidade='calendar'") if r[0] in ativos]
+            async with _cliente(20) as http_cliente:
+                for dono in donos:
+                    registro_pessoal = _COFRE_INTEGRACOES.google('calendar', dono)
+                    try:
+                        await agenda_atividades.sincronizar(registro_pessoal, gestao, client_id, client_secret, http_cliente)
+                        await _sincronizar_calendar_google(registro_pessoal, gestao, client_id, client_secret, http_cliente)
+                    except Exception:
+                        log.warning('Conexão Calendar indisponível para %s; reconecte a conta.', _mascarar_email(dono))
+            return
         async with _cliente(20) as http_cliente:
             await agenda_atividades.sincronizar(registro_google, gestao, client_id, client_secret, http_cliente)
             await _sincronizar_calendar_google(registro_google, gestao, client_id, client_secret, http_cliente)
@@ -2392,6 +2437,8 @@ def _estado_e_usuario_ou_erro(ctx: Context, exigir_smtp: bool = False) -> "tuple
     com e-mail quando exigir_smtp) e identifica o usuário autenticado. Devolve (estado, usuario) em
     caso de sucesso, ou um dicionário de erro já pronto para a tool devolver direto."""
     estado = _ESTADO_MONITORAMENTO
+    if estado is not None and _COFRE_INTEGRACOES:
+        estado.smtp = _smtp_do_ambiente()
     if estado is None or (exigir_smtp and estado.smtp is None):
         mensagem = "Monitoramento só está disponível no servidor hospedado"
         mensagem += ", com e-mail configurado." if exigir_smtp else "."
@@ -2514,7 +2561,7 @@ class CadastroPublico:
         self.cfg = cfg
         self.limitador_ip = limitador_ip
         self.limitador_email = limitador_email
-        self._enviar = enviar or (lambda destino, token: _enviar_token_por_email(cfg, destino, token))
+        self._enviar = enviar or (lambda destino, token: _enviar_token_por_email(self.cfg, destino, token))
 
     async def solicitar(self, email_bruto: str, ip: str, aceite_termos: bool = False) -> str:
         if not aceite_termos:
@@ -2557,6 +2604,7 @@ class CadastroPublico:
                 "criado_em": agora,
                 "revogado": False,
                 "origem": "cadastro",
+                **({'administrador_integracoes': True} if atual and atual.get('administrador_integracoes') is True else {}),
                 "termos": {"versao": TERMOS_VERSAO, "aceito_em": agora},
             }
             gravado["ok"] = True
@@ -3238,6 +3286,10 @@ class _AutenticacaoBearer:
         # Em memória só: perde-se num restart do servidor, o que só obriga a pessoa a clicar
         # "Conectar" de novo - sem risco de segurança.
         self._google_estados_pendentes: dict[str, datetime] = {}
+        self.integracoes = _COFRE_INTEGRACOES
+        self._google_fluxos = {}
+        self._integracoes_google_candidatos = {}
+        self._integracoes_limites = {}
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":  # lifespan e afins passam direto
@@ -3245,6 +3297,22 @@ class _AutenticacaoBearer:
             return
 
         caminho = scope.get("path", "")
+        if self.integracoes:
+            self.google_client_id = self.integracoes.valor('CNJ_GOOGLE_CLIENT_ID') or None
+            self.google_client_secret = self.integracoes.valor('CNJ_GOOGLE_CLIENT_SECRET') or None
+            self.registro_google = self.integracoes.google()
+            self.captcha_site_key = self.integracoes.valor('CNJ_RECAPTCHA_SITE_KEY') or None
+            segredo = self.integracoes.valor('CNJ_RECAPTCHA_SECRET')
+            self.captcha = VerificadorRecaptcha(segredo, urlsplit(os.environ.get('CNJ_MCP_URL_PUBLICA', '')).hostname) if segredo else None
+            if self.cadastro:
+                self.cadastro.cfg = _smtp_do_ambiente()
+        if caminho.startswith('/admin/integracoes') or caminho == '/integracoes/google/callback':
+            await integracoes_http.tratar(self, scope, receive, send)
+            return
+        if caminho in ('/static/integracoes.js', '/static/integracoes.css') and scope.get('method') == 'GET':
+            arquivo = Path(__file__).parent / caminho.lstrip('/')
+            await _responder(send, 200, arquivo.read_bytes(), tipo='text/css; charset=utf-8' if caminho.endswith('.css') else 'application/javascript; charset=utf-8', cabecalhos_extra=[(b'cache-control', b'no-store')])
+            return
         if caminho == "/healthz":
             await _healthz(send)
             return
@@ -3396,6 +3464,21 @@ class _AutenticacaoBearer:
 
         scope["usuario"] = usuario
 
+        if caminho.startswith('/integracoes/calendar') and self.integracoes:
+            if caminho == '/integracoes/calendar/status' and scope.get('method') == 'GET':
+                await _json(send, 200, {'conectado': bool(self.integracoes.google('calendar', usuario).obter_conexao())})
+            elif caminho == '/integracoes/calendar/conectar' and scope.get('method') == 'POST':
+                try:
+                    await integracoes_http.iniciar_google(self, scope, send, sys.modules[__name__], 'calendar', usuario)
+                except ValueError:
+                    await _json(send, 400, _erro('O administrador precisa configurar o OAuth Google.'))
+            elif caminho == '/integracoes/calendar/desconectar' and scope.get('method') == 'POST':
+                self.integracoes.google('calendar', usuario).desconectar()
+                await _json(send, 200, {'desconectado': True})
+            else:
+                await _json(send, 405, _erro('Método não permitido.'))
+            return
+
         if caminho == "/notificacoes" or caminho.startswith("/notificacoes/"):
             await self._notificacoes(scope, receive, send, caminho)
             return
@@ -3421,7 +3504,8 @@ class _AutenticacaoBearer:
             return
 
         if caminho == "/integracoes/status" and scope.get("method") == "GET":
-            await _json(send, 200, {"google": self._google_configurado(), "asaas": _asaas_config() is not None})
+            await _json(send, 200, {"google": self._google_configurado(), "asaas": _asaas_config() is not None,
+                                   'zapsign': bool(self.integracoes and self.integracoes.ativo('zapsign'))})
             return
 
         if caminho == "/responsaveis" and scope.get("method") == "GET":
@@ -3539,7 +3623,7 @@ class _AutenticacaoBearer:
     # --- Cadastro público ------------------------------------------------------
 
     async def _cadastro_http(self, scope, receive, send):
-        if self.cadastro is None:
+        if self.cadastro is None or (self.integracoes and _smtp_do_ambiente() is None):
             await _responder(send, 404, b"Nao encontrado")
             return
         if scope.get("method") == "GET":
@@ -3672,7 +3756,7 @@ class _AutenticacaoBearer:
         state = secrets.token_urlsafe(24)
         self._google_estados_pendentes[state] = datetime.now(timezone.utc) + timedelta(minutes=10)
         redirect_uri = f"{_base_publica(scope)}/admin/google/callback"
-        url = google_integracao.url_autorizacao(self.google_client_id, redirect_uri, state)
+        url = google_integracao.url_autorizacao(self.google_client_id, redirect_uri, state, escopos=['https://www.googleapis.com/auth/drive.file'] if self.integracoes else None)
         await _responder(send, 302, b"", cabecalhos_extra=[(b"location", url.encode("utf-8"))])
 
     async def _google_callback(self, scope, send) -> None:
@@ -3829,7 +3913,8 @@ class _AutenticacaoBearer:
     ) -> str:
         """Devolve o customer_id Asaas do cliente, cadastrando-o lá na primeira cobrança
         (e guardando o id com db.definir_asaas_customer_id para não recriá-lo depois)."""
-        customer_id = cliente_registro.get("asaas_customer_id")
+        ambiente = 'producao' if url_base == asaas_integracao.URL_BASE_PRODUCAO else 'sandbox'
+        customer_id = self.integracoes.asaas_cliente(cliente_registro['id'], ambiente) if self.integracoes else cliente_registro.get('asaas_customer_id')
         if customer_id:
             return customer_id
         criado = await asaas_integracao.criar_cliente(
@@ -3838,7 +3923,10 @@ class _AutenticacaoBearer:
             telefone=cliente_registro.get("telefone"),
         )
         customer_id = criado["id"]
-        self.gestao.definir_asaas_customer_id(cliente_registro["id"], customer_id)
+        if self.integracoes:
+            self.integracoes.asaas_cliente(cliente_registro['id'], ambiente, customer_id)
+        else:
+            self.gestao.definir_asaas_customer_id(cliente_registro['id'], customer_id)
         return customer_id
 
     async def _pagamentos(self, scope, receive, send) -> None:
@@ -3928,7 +4016,7 @@ class _AutenticacaoBearer:
             if cliente_registro is None:
                 await _json(send, 400, _erro("Cliente não encontrado."))
                 return
-            customer_id = cliente_registro.get("asaas_customer_id")
+            customer_id = self.integracoes.asaas_cliente(cliente_registro['id'], 'producao' if url_base == asaas_integracao.URL_BASE_PRODUCAO else 'sandbox') if self.integracoes else cliente_registro.get('asaas_customer_id')
             if not customer_id:
                 await _json(send, 200, {"cobrancas": [], "totalCount": 0, "hasMore": False})
                 return
@@ -3947,8 +4035,11 @@ class _AutenticacaoBearer:
             await _json(send, 502, _erro(f"Falha ao consultar o Asaas: {erro}"))
             return
         cobrancas = resultado.get("data") or []
+        clientes = self.gestao.listar_clientes()
+        if self.integracoes:
+            clientes = [{**c, 'asaas_customer_id': self.integracoes.asaas_cliente(c['id'], 'producao' if url_base == asaas_integracao.URL_BASE_PRODUCAO else 'sandbox')} for c in clientes]
         clientes_por_asaas_id = {
-            c["asaas_customer_id"]: c for c in self.gestao.listar_clientes() if c.get("asaas_customer_id")
+            c["asaas_customer_id"]: c for c in clientes if c.get("asaas_customer_id")
         }
         for cobranca in cobrancas:
             vinculado = clientes_por_asaas_id.get(cobranca.get("customer"))
@@ -4019,7 +4110,7 @@ class _AutenticacaoBearer:
         cliente_do_caso = self.gestao.obter_cliente(caso["cliente_id"])
         nome_cliente = cliente_do_caso["nome"] if cliente_do_caso else caso["cliente_id"]
         nome_pasta = f"{nome_cliente} - {caso.get('titulo') or ', '.join(caso.get('processos') or []) or caso['id']}"
-        pasta_raiz = os.environ.get("CNJ_GOOGLE_DRIVE_PASTA_RAIZ", "").strip() or None
+        pasta_raiz = _config_integracao("CNJ_GOOGLE_DRIVE_PASTA_RAIZ", "").strip() or None
         async with _cliente(20) as http_cliente:
             access_token = await google_integracao.obter_access_token(
                 http_cliente, self.google_client_id, self.google_client_secret, conexao_google["refresh_token"],
@@ -4227,10 +4318,12 @@ class _AutenticacaoBearer:
             return
         if aid is None:
             if metodo == "GET":
-                vinculos = {v["atividade_id"]: agenda_atividades.resumo(v) for v in agenda_atividades.Repositorio(self.gestao.caminho).listar(caso_id)}
-                atividades = [{**a, "agenda": vinculos.get(a["id"])} for a in self.gestao.listar_atividades(caso_id)]
+                todos = agenda_atividades.Repositorio(self.gestao.caminho).listar(caso_id)
+                vinculos = {v['atividade_id']: agenda_atividades.resumo(v) for v in todos if not self.integracoes or v['usuario'] == scope['usuario']}
+                legados = {v['atividade_id'] for v in todos if self.integracoes and v['usuario'] is None}
+                atividades = [{**a, 'agenda': vinculos.get(a['id']), 'agenda_institucional_anterior': a['id'] in legados} for a in self.gestao.listar_atividades(caso_id)]
                 await _json(send, 200, {"atividades": atividades, "origem_djen_estruturada": True,
-                                       "agenda_disponivel": bool(self._google_conectado()) and self._google_configurado()})
+                                       "agenda_disponivel": bool(self.integracoes.google('calendar', scope['usuario']).obter_conexao() if self.integracoes else self._google_conectado()) and self._google_configurado()})
                 return
             if metodo == "POST":
                 corpo = await _ler_corpo(receive)
@@ -4378,8 +4471,9 @@ class _AutenticacaoBearer:
             await _json(send, 400, _erro(str(erro)))
 
     async def _agenda_da_atividade(self, scope, receive, send, caso_id, aid):
-        """Mesma coleção autenticada de atividades; nenhuma autorização extra por vínculo."""
-        repo = agenda_atividades.Repositorio(self.gestao.caminho)
+        """Agenda individual autenticada, com propriedade verificada em cada vínculo."""
+        repo = agenda_atividades.Repositorio(self.gestao.caminho, scope['usuario'] if self.integracoes else None)
+        registro_calendar = self.integracoes.google('calendar', scope['usuario']) if self.integracoes else self.registro_google
         metodo = scope.get("method")
         try:
             if metodo == "GET":
@@ -4401,6 +4495,16 @@ class _AutenticacaoBearer:
             if not isinstance(dados, dict):
                 raise agenda_atividades.ErroAgenda("Informe um objeto JSON.", 400)
             async with _cliente(20) as http_cliente:
+                if metodo == 'POST' and dados == {'reconciliar_institucional': True} and self.integracoes:
+                    token, calendario = await agenda_atividades.conectar(registro_calendar, self.google_client_id, self.google_client_secret, http_cliente)
+                    antigo = agenda_atividades.Repositorio(self.gestao.caminho).obter(caso_id, aid)
+                    if not antigo or antigo['usuario'] is not None or antigo['calendario_id'] != calendario:
+                        raise agenda_atividades.ErroAgenda('A conta conectada não corresponde ao vínculo institucional original.')
+                    remoto = await google_integracao.obter_evento_vinculado(http_cliente, token, calendario, antigo['evento_id'])
+                    agenda_atividades.conferir_identidade(antigo, remoto)
+                    atual = repo.reconciliar_institucional(caso_id, aid, calendario)
+                    await _json(send, 200, {'agenda': agenda_atividades.resumo(atual)})
+                    return
                 if metodo == "POST":
                     chave = dict(scope.get("headers") or []).get(b"idempotency-key", b"").decode("latin-1")
                     if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", chave):
@@ -4416,9 +4520,9 @@ class _AutenticacaoBearer:
                             raise agenda_atividades.ErroAgenda("Atividade não encontrada.", 404)
                         _db.validar_data_atividade_agenda(atividade["data"], atividade["hora"])
                         # Ler a identidade não cria recurso remoto; reservar antes do INSERT.
-                        conexao = await agenda_atividades.conectar(self.registro_google, self.google_client_id, self.google_client_secret, http_cliente)
+                        conexao = await agenda_atividades.conectar(registro_calendar, self.google_client_id, self.google_client_secret, http_cliente)
                         v = repo.reservar(caso_id, aid, conexao[1], scope["usuario"], chave, pedido)
-                    await agenda_atividades.processar(repo, v["id"], self.registro_google, self.google_client_id, self.google_client_secret, http_cliente, conexao)
+                    await agenda_atividades.processar(repo, v["id"], registro_calendar, self.google_client_id, self.google_client_secret, http_cliente, conexao)
                 else:
                     identificador = dados.get("vinculo_id")
                     versao = dados.get("versao")
@@ -4432,13 +4536,13 @@ class _AutenticacaoBearer:
                     else:
                         if dados.get("comando") not in ("usar_data_da_atividade", "aceitar_data_da_agenda"):
                             raise agenda_atividades.ErroAgenda("Comando de agenda inválido.", 400)
-                        token, calendario = await agenda_atividades.conectar(self.registro_google, self.google_client_id, self.google_client_secret, http_cliente)
+                        token, calendario = await agenda_atividades.conectar(registro_calendar, self.google_client_id, self.google_client_secret, http_cliente)
                         if calendario != v["calendario_id"]:
                             raise agenda_atividades.ErroAgenda("Reconecte o calendário original para resolver o vínculo.")
                         remoto = await google_integracao.obter_evento_vinculado(http_cliente, token, calendario, v["evento_id"])
                         agenda_atividades.conferir_identidade(v, remoto)
                         repo.resolver(caso_id, aid, identificador, versao, dados["comando"], remoto)
-                    await agenda_atividades.processar(repo, v["id"], self.registro_google, self.google_client_id, self.google_client_secret, http_cliente)
+                    await agenda_atividades.processar(repo, v["id"], registro_calendar, self.google_client_id, self.google_client_secret, http_cliente)
                 atual = repo.obter(caso_id, aid, v["id"])
                 status = 202 if atual["estado"] in ("pendente", "cancelamento_pendente", "falha") else 200
                 await _json(send, status, {"agenda": agenda_atividades.resumo(atual)})
@@ -4637,9 +4741,9 @@ class _AutenticacaoBearer:
         if caso is None:
             await _json(send, 404, _erro("Caso não encontrado."))
             return
-        conexao_google = self._google_conectado()
+        conexao_google = (self.integracoes.google('calendar', scope['usuario']).obter_conexao() if self.integracoes else self._google_conectado())
         if not conexao_google:
-            await _json(send, 400, _erro("Google não conectado. Conecte em /admin antes de criar eventos na agenda."))
+            await _json(send, 400, _erro("Conecte sua agenda individual na página Integrações antes de criar eventos."))
             return
         corpo = await _ler_corpo(receive)
         try:
@@ -4669,10 +4773,10 @@ class _AutenticacaoBearer:
         self.gestao.registrar_evento_no_caso(
             caso_id=caso_id, numero_processo=(caso.get("processos") or [None])[0], tipo="prazo_agenda",
             conteudo={"titulo": titulo, "data": data_iso, "evento_id": resultado.get("id"),
-                      "link": resultado.get("htmlLink")},
+                      "link": resultado.get("htmlLink"), "usuario": scope["usuario"]},
             agora=lambda: datetime.now(timezone.utc),
         )
-        await _json(send, 201, {"evento_id": resultado.get("id"), "link": resultado.get("htmlLink")})
+        await _json(send, 201, {"evento_id": resultado.get("id"), "link": resultado.get("htmlLink"), "usuario": scope["usuario"]})
 
     # --- Publicações vinculadas a um caso -------------------------------------
 
@@ -5557,16 +5661,16 @@ def _inteiro_env(nome: str, padrao: int) -> int:
 
 
 def _smtp_do_ambiente() -> ConfiguracaoSMTP | None:
-    """Lê CNJ_SMTP_*. Sem CNJ_SMTP_HOST, o cadastro público fica desligado."""
-    host = os.environ.get("CNJ_SMTP_HOST", "").strip()
+    """Resolve SMTP no cofre; modo legado usa CNJ_SMTP_*. Sem host, cadastro desligado."""
+    host = _config_integracao("CNJ_SMTP_HOST", "").strip()
     if not host:
         return None
-    remetente = os.environ.get("CNJ_SMTP_REMETENTE", "").strip() or os.environ.get("CNJ_SMTP_USUARIO", "").strip()
+    remetente = _config_integracao("CNJ_SMTP_REMETENTE", "").strip() or _config_integracao("CNJ_SMTP_USUARIO", "").strip()
     return ConfiguracaoSMTP(
         host=host,
-        porta=_inteiro_env("CNJ_SMTP_PORTA", 587),
-        usuario=os.environ.get("CNJ_SMTP_USUARIO", "").strip(),
-        senha=os.environ.get("CNJ_SMTP_SENHA", ""),
+        porta=int(_config_integracao("CNJ_SMTP_PORTA", "587")),
+        usuario=_config_integracao("CNJ_SMTP_USUARIO", "").strip(),
+        senha=_config_integracao("CNJ_SMTP_SENHA", ""),
         remetente=remetente,
     )
 
@@ -5621,7 +5725,7 @@ def _montar_agendador(
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
     agendador = AsyncIOScheduler()
-    if smtp is not None:
+    if smtp is not None or _COFRE_INTEGRACOES:
         agendador.add_job(
             _verificar_monitoramentos_pendentes,
             "interval",
@@ -5630,14 +5734,14 @@ def _montar_agendador(
             kwargs={"gestao": gestao},
         )
         log.info("Monitoramento: verificação periódica a cada %dh.", MONITORAMENTO_INTERVALO_HORAS)
-    if google_configurado:
+    if google_configurado or _COFRE_INTEGRACOES:
         agendador.add_job(
             _sincronizar_calendar_google_job,
             "interval",
             hours=1,
             args=[registro_google, gestao, google_client_id, google_client_secret],
         )
-        log.info("Google Calendar: sincronização periódica a cada 1h (se conectado em /admin).")
+        log.info("Google Calendar: sincronização periódica a cada 1h para as contas conectadas.")
     agendador.add_job(
         _capturar_publicacoes_oab,
         "interval",
@@ -5680,6 +5784,27 @@ def _principal() -> int:
     banco_caminho = dados_dir / os.environ.get("CNJ_MCP_BANCO", "cnj.db")
     _db.migrar_de_json_se_necessario(banco_caminho, dados_dir)
     registro = RegistroUsuarios(banco_caminho)
+    global _COFRE_INTEGRACOES
+    chave_integracoes = os.environ.get('CNJ_INTEGRACOES_CHAVE', '').strip()
+    if chave_integracoes:
+        _COFRE_INTEGRACOES = integracoes.Cofre(banco_caminho, chave_integracoes, [k.strip() for k in os.environ.get('CNJ_INTEGRACOES_CHAVES_ANTERIORES', '').split(',') if k.strip()])
+        ambiente_importacao = dict(os.environ)
+        ambiente_importacao.setdefault('DATAJUD_API_KEY', DATAJUD_API_KEY_PADRAO)
+        _COFRE_INTEGRACOES.importar_ambiente(ambiente_importacao)
+        with _COFRE_INTEGRACOES.abrir() as c:
+            if not c.execute("SELECT 1 FROM integracoes_meta WHERE nome='asaas_clientes_importados'").fetchone():
+                c.execute("INSERT OR IGNORE INTO integracoes_asaas_clientes SELECT id,?,asaas_customer_id FROM clientes WHERE asaas_customer_id IS NOT NULL", (_COFRE_INTEGRACOES.ambiente_asaas(),))
+                c.execute("INSERT INTO integracoes_meta VALUES ('asaas_clientes_importados','sim')")
+        # Migrar somente para Drive; não atribuir agenda institucional a um usuário.
+        legado = RegistroIntegracaoGoogle(banco_caminho)
+        conexao = legado.obter_conexao()
+        if conexao and not _COFRE_INTEGRACOES.google().obter_conexao():
+            _COFRE_INTEGRACOES.google().salvar_conexao(conexao['refresh_token'], lambda: datetime.now(timezone.utc))
+        if conexao:
+            legado.desconectar()
+            # Eliminar cópias residuais do token antigo nas páginas livres do SQLite.
+            with _COFRE_INTEGRACOES.abrir() as c:
+                c.execute('VACUUM')
 
     if args.criar_usuario:
         return _criar_usuario(registro, args.criar_usuario.strip().lower())
@@ -5709,7 +5834,7 @@ def _principal() -> int:
         return 0
 
     smtp = _smtp_do_ambiente()
-    if not registro.ativos() and smtp is None:
+    if not registro.ativos() and smtp is None and not (_COFRE_INTEGRACOES and os.environ.get('CNJ_MCP_ADMIN_TOKEN')):
         print(
             "Erro: nenhum usuário ativo e cadastro público desligado (sem CNJ_SMTP_HOST). "
             "Crie um usuário com --criar-usuario NOME ou configure o SMTP.",
@@ -5725,7 +5850,7 @@ def _principal() -> int:
         por_dia=_inteiro_env("CNJ_MCP_LIMITE_DIARIO", 300),
     )
     cadastro = None
-    if smtp is not None:
+    if smtp is not None or _COFRE_INTEGRACOES:
         cadastro = CadastroPublico(
             registro,
             smtp,
@@ -5741,8 +5866,8 @@ def _principal() -> int:
 
     import uvicorn
 
-    segredo_captcha = os.environ.get("CNJ_RECAPTCHA_SECRET", "").strip()
-    site_captcha = os.environ.get("CNJ_RECAPTCHA_SITE_KEY", "").strip()
+    segredo_captcha = _config_integracao("CNJ_RECAPTCHA_SECRET", "").strip()
+    site_captcha = _config_integracao("CNJ_RECAPTCHA_SITE_KEY", "").strip()
     if bool(segredo_captcha) != bool(site_captcha):
         sys.exit("Erro: defina CNJ_RECAPTCHA_SITE_KEY e CNJ_RECAPTCHA_SECRET juntos.")
     url_publica = os.environ.get("CNJ_MCP_URL_PUBLICA", "").strip()
@@ -5763,8 +5888,8 @@ def _principal() -> int:
     publicacoes = RegistroPublicacoesOAB(banco_caminho)
     global _CACHE_DATAJUD
     _CACHE_DATAJUD = CacheDataJud(banco_caminho, ttl_s=DATAJUD_CACHE_TTL_S)
-    google_client_id = os.environ.get("CNJ_GOOGLE_CLIENT_ID", "").strip() or None
-    google_client_secret = os.environ.get("CNJ_GOOGLE_CLIENT_SECRET", "").strip() or None
+    google_client_id = _config_integracao("CNJ_GOOGLE_CLIENT_ID", "").strip() or None
+    google_client_secret = _config_integracao("CNJ_GOOGLE_CLIENT_SECRET", "").strip() or None
     global _ESTADO_MONITORAMENTO
     _ESTADO_MONITORAMENTO = _EstadoMonitoramento(
         registro_usuarios=registro, oauth=oauth, registro_monitoramentos=registro_monitoramentos, smtp=smtp,

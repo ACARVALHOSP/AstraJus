@@ -1,12 +1,9 @@
-"""Integração Google (Calendar + Drive), conta institucional única do escritório.
+"""APIs Google para Drive institucional e Calendar individual.
 
-Fase 4 da gestão de escritório: um só OAuth (não por usuário, ver Q13), guardado como
-refresh_token no banco (db.RegistroIntegracaoGoogle). Este módulo só fala com as APIs do
-Google - não sabe nada de caso/cliente nem de como o token é guardado; quem chama (server.py)
-passa o httpx.AsyncClient (para poder injetar _TRANSPORTE_HTTP nos testes) e o refresh_token.
-
-Escopos pedidos: calendar (criar/ler eventos) e drive.file (só os arquivos/pastas que o
-próprio app cria - não todo o Drive da conta, por privacidade).
+O cofre guarda conexões separadas por finalidade e titular; este módulo recebe as
+credenciais do chamador, sem conhecer armazenamento ou permissões da aplicação.
+RegistroIntegracaoGoogle é mantido como armazenamento legado para migração.
+O chamador seleciona calendar ou drive.file conforme o consentimento solicitado.
 """
 
 from typing import Any
@@ -101,7 +98,7 @@ async def cancelar_evento_vinculado(cliente, token, vinculo, etag):
     ))
 
 
-def url_autorizacao(client_id: str, redirect_uri: str, state: str) -> str:
+def url_autorizacao(client_id: str, redirect_uri: str, state: str, escopos=None) -> str:
     """Monta o link de consentimento do Google. access_type=offline + prompt=consent garantem
     um refresh_token mesmo que essa conta já tenha autorizado o app antes (senão o Google só
     manda o refresh_token na primeira vez)."""
@@ -109,7 +106,7 @@ def url_autorizacao(client_id: str, redirect_uri: str, state: str) -> str:
         "client_id": client_id,
         "redirect_uri": redirect_uri,
         "response_type": "code",
-        "scope": " ".join(ESCOPOS),
+        "scope": " ".join(ESCOPOS if escopos is None else escopos),
         "access_type": "offline",
         "prompt": "consent",
         "state": state,
