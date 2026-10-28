@@ -1,5 +1,7 @@
 # Tarefa: construir servidor MCP "cnj-processual"
 
+> Registro histórico do escopo inicial. Para instalação, funcionalidades e arquitetura atuais, consulte [README.md](README.md); para regras de domínio, [CONTEXT.md](CONTEXT.md).
+
 Construa um servidor MCP (Model Context Protocol) em Python que expõe duas tools para consulta processual judicial brasileira via APIs públicas do CNJ. Use o SDK oficial `mcp` (pacote PyPI `mcp`, também conhecido como `modelcontextprotocol`). Transporte: stdio.
 
 ## Tool 1: `consultar_processo_datajud`

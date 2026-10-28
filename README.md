@@ -1,14 +1,14 @@
 # AstraJus
 
-Sistema de gestão processual para escritórios de advocacia brasileiros, combinando um **servidor MCP** (Model Context Protocol) para consulta judicial e um **painel web** completo para gerenciamento de clientes, casos e atividades.
+Sistema de gestão processual para escritórios de advocacia brasileiros, combinando um **servidor MCP** (Model Context Protocol) para consulta judicial e um **painel web** completo para gerenciamento de clientes, processos e atividades.
 
 ## Visão Geral
 
-Plataforma integrada que conecta as APIs públicas do CNJ (DataJud e DJEN) a um fluxo de trabalho jurídico completo. Permite consultar processos, monitorar publicações no Diário da Justiça Eletrônico, gerenciar clientes e casos, e integrar com Google Drive e Google Calendar — tudo em um único servidor Python leve, implantável via Docker.
+Plataforma integrada que conecta as APIs públicas do CNJ (DataJud e DJEN) a um fluxo de trabalho jurídico completo. Permite consultar processos, monitorar publicações no Diário da Justiça Eletrônico, gerenciar clientes e processos, e integrar com Google Drive e Google Calendar — tudo em um único servidor Python leve, implantável via Docker.
 
 ## Status de Implementação
 
-### ✅ Funcionalidades Concluídas (Produção)
+### Funcionalidades implementadas
 
 **Servidor MCP — Consulta Processual**
 
@@ -36,18 +36,29 @@ Plataforma integrada que conecta as APIs públicas do CNJ (DataJud e DJEN) a um 
 - CRUD completo com busca e paginação
 - Abertura em seção na própria página com Carbon Design System
 - Typeahead para seleção de clientes em formulários
+- Seleção de clientes e ações em massa para etiquetas e perfil, com prévia antes de aplicar
 
-**Gestão de Casos**
+**Gestão de Processos**
 
-- CRUD completo com vínculo a cliente
-- Preenchimento automático de responsável (usuário logado) ao criar caso
-- Busca de ação/tipo e foro/vara via DataJud na seção de criação e na vista de detalhe
-- Vista de detalhe com sub-abas: Cadastro | Partes | Atividades | Publicações | Movimentações
-- Edição inline de título, responsável, ação, foro e números de processo
-- Partes processuais: autor, réu e advogados; auto-preenchimento a partir de dados do DJEN
-- Gerenciamento de atividades (tarefas) por caso com tipo, status, data, hora e observações
-- Linha do tempo de movimentações via DataJud (sub-aba Movimentações)
-- Publicações do DJEN vinculadas ao caso (sub-aba Publicações)
+- CRUD com vínculo a cliente e responsável
+- Zero ou um número CNJ por cadastro; recursos, apensos e execuções podem ser relacionados por vínculos
+- Preenchimento de ação/tipo e foro/vara via DataJud
+- Detalhe com sub-abas Cadastro, Atividades, Publicações, Movimentações e Vínculos
+- Capa com partes e advogados automáticos, somente leitura, e seleção de responsável
+- Atividades com tipo, status, data, hora, observações e checklist
+- Formulário de lançamento em modal Carbon
+- Linha do tempo de movimentações via DataJud e publicações do DJEN vinculadas ao processo
+
+Os nomes físicos `casos`, `caso_id` e as rotas `/casos` permanecem por compatibilidade.
+Cada cadastro aceita no máximo um item em `numeros_processo`; consulte [CONTEXT.md](CONTEXT.md)
+para as regras de migração de cadastros antigos com múltiplos números.
+
+**Agenda e notificações**
+
+- Vínculo opcional entre atividade e evento de dia inteiro no Google Calendar
+- Reconciliação persistida da agenda, com tratamento de conflitos
+- Central individual de notificações com filtro, paginação e marcação de leitura
+- Notificações guardam referências aos registros; retenção de 180 dias
 
 **Publicações por OAB**
 
@@ -84,7 +95,7 @@ Plataforma integrada que conecta as APIs públicas do CNJ (DataJud e DJEN) a um 
 |---|---|
 | Backend | Python 3.12, asyncio, ASGI puro |
 | Protocolo IA | MCP 1.30+ (Streamable HTTP + stdio) |
-| Frontend | HTML/JS vanilla, Carbon Design System (white theme) |
+| Frontend | HTML/JS vanilla, Carbon Design System (white e g100) |
 | Banco de dados | SQLite (ephemeral connections) |
 | Agendamento | APScheduler 3.x (monitoramentos) |
 | HTTP client | httpx |
@@ -113,10 +124,12 @@ pip install -e .
 python server.py --criar-usuario meu-usuario
 
 # 4. Iniciar servidor
-python server.py
+python server.py --transport http
 # Painel web disponível em http://localhost:8000/app
 # Servidor MCP disponível em http://localhost:8000/mcp
 ```
+
+Sem `--transport http`, o padrão é `stdio`, destinado a clientes MCP locais.
 
 ### Docker (Produção)
 
@@ -158,6 +171,8 @@ cnj-processual/
 ├── server.py              # Servidor MCP + ASGI web, roteamento, autenticação
 ├── db.py                  # Camada de dados: SQLite, migrações, CRUD
 ├── google_integracao.py   # Integração Google Drive e Calendar
+├── agenda_atividades.py   # Vínculos e reconciliação de atividades com Calendar
+├── notificacoes.py       # Outbox e feed individual de notificações
 ├── static/
 │   ├── app.html           # Painel web (Carbon Design System)
 │   ├── app.js             # Lógica frontend (MCP client, casos, clientes, pub. OAB)
@@ -206,7 +221,7 @@ PATCH  /clientes/<id>             Atualizar cliente
 DELETE /clientes/<id>             Excluir cliente
 ```
 
-### Casos
+### Processos (rotas legadas `/casos`)
 
 ```
 GET    /casos                     Listar casos (paginado)
@@ -216,13 +231,21 @@ PATCH  /casos/<id>                Atualizar caso (cadastro ou partes)
 DELETE /casos/<id>                Excluir caso
 ```
 
-### Atividades de Caso
+### Atividades de processo
 
 ```
 GET    /casos/<id>/atividades          Listar atividades
 POST   /casos/<id>/atividades          Criar atividade
 PATCH  /casos/<id>/atividades/<aid>    Atualizar atividade
 DELETE /casos/<id>/atividades/<aid>    Excluir atividade
+```
+
+### Notificações
+
+```
+GET   /notificacoes                  Listar (limite, estado, cursor)
+GET   /notificacoes/<id>/destino     Resolver destino da notificação
+PATCH /notificacoes/<id>             Marcar como lida {"lida": true}
 ```
 
 ### Publicações por OAB
@@ -246,7 +269,7 @@ DELETE /monitoramentos/<id>       Remover monitoramento
 
 | Variável | Padrão | Descrição |
 |---|---|---|
-| `CNJ_MCP_TRANSPORT` | `http` | Transporte MCP (`http` ou `stdio`) |
+| `CNJ_MCP_TRANSPORT` | `stdio` | Transporte MCP (`http` ou `stdio`) |
 | `CNJ_MCP_HOST` | `0.0.0.0` | Host de escuta |
 | `CNJ_MCP_PORT` | `8000` | Porta de escuta |
 | `CNJ_MCP_USUARIOS` | `./usuarios.json` | Caminho do arquivo de usuários |
@@ -309,9 +332,12 @@ Claude Desktop / qualquer cliente MCP
 
 ```bash
 # Testes unitários
-python -m pytest test_unit.py
+python -m pytest test_unit.py test_processos.py test_origem_djen.py test_agenda_atividades.py test_notificacoes.py test_clientes_lote.py
 
-# Testes manuais de integração
+# Testes de interface exigem servidor e ambiente de navegador configurados;
+# consulte os arquivos test_*interface.py e test_interface.py.
+
+# Testes manuais de integração (acessam APIs externas)
 python test_manual.py
 ```
 
