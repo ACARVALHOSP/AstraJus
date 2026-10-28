@@ -8,11 +8,15 @@ import {
   SideNav,
   SideNavItems,
   SideNavLink,
+  Tag,
   Theme,
 } from '@carbon/react'
 import { Asleep, Light } from '@carbon/icons-react'
+import { ClienteProvider, useCliente } from './api/ClienteContext'
+import Acesso from './routes/Acesso'
 
 const ABAS = [
+  { id: 'acesso', label: 'Acesso' },
   { id: 'processo', label: 'Processo' },
   { id: 'publicacoes', label: 'Publicações' },
   { id: 'historico', label: 'Histórico' },
@@ -27,46 +31,77 @@ const ABAS = [
   { id: 'publicacoes-oab', label: 'Publicações OAB' },
 ]
 
+const TOM_STATUS = {
+  'sem-token': { texto: 'Sem token', tom: 'gray' as const },
+  verificando: { texto: 'Verificando…', tom: 'gray' as const },
+  conectado: { texto: 'Conectado', tom: 'green' as const },
+  'nao-conectado': { texto: 'Não conectado', tom: 'red' as const },
+}
+
+function StatusConexaoTag() {
+  const { status } = useCliente()
+  const { texto, tom } = TOM_STATUS[status]
+  return <Tag type={tom}>{texto}</Tag>
+}
+
+function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
+  switch (abaAtiva) {
+    case 'acesso':
+      return <Acesso />
+    default:
+      return (
+        <div>
+          <h1>Aba: {ABAS.find((a) => a.id === abaAtiva)?.label}</h1>
+          <p>Ainda não migrada — pendente conforme docs/migracao-react-carbon.md.</p>
+        </div>
+      )
+  }
+}
+
 export default function App() {
   const [tema, setTema] = useState<'white' | 'g100'>('white')
   const [abaAtiva, setAbaAtiva] = useState(ABAS[0].id)
 
   return (
     <Theme theme={tema}>
-      <Header aria-label="AstraJus">
-        <HeaderName href="#" prefix="">
-          AstraJus
-        </HeaderName>
-        <HeaderGlobalBar>
-          <HeaderGlobalAction
-            aria-label="Alternar tema"
-            onClick={() => setTema(tema === 'white' ? 'g100' : 'white')}
-          >
-            {tema === 'white' ? <Asleep size={20} /> : <Light size={20} />}
-          </HeaderGlobalAction>
-        </HeaderGlobalBar>
-      </Header>
-      <SideNav aria-label="Navegação principal" expanded isRail>
-        <SideNavItems>
-          {ABAS.map((aba) => (
-            <SideNavLink
-              key={aba.id}
-              href="#"
-              isActive={aba.id === abaAtiva}
-              onClick={(e) => {
-                e.preventDefault()
-                setAbaAtiva(aba.id)
-              }}
+      <ClienteProvider>
+        <Header aria-label="AstraJus">
+          <HeaderName href="#" prefix="">
+            AstraJus
+          </HeaderName>
+          <HeaderGlobalBar>
+            <div style={{ display: 'flex', alignItems: 'center', marginRight: '1rem' }}>
+              <StatusConexaoTag />
+            </div>
+            <HeaderGlobalAction
+              aria-label="Alternar tema"
+              onClick={() => setTema(tema === 'white' ? 'g100' : 'white')}
             >
-              {aba.label}
-            </SideNavLink>
-          ))}
-        </SideNavItems>
-      </SideNav>
-      <Content>
-        <h1>Aba: {ABAS.find((a) => a.id === abaAtiva)?.label}</h1>
-        <p>Scaffold de migração — conteúdo real vira componente por aba.</p>
-      </Content>
+              {tema === 'white' ? <Asleep size={20} /> : <Light size={20} />}
+            </HeaderGlobalAction>
+          </HeaderGlobalBar>
+        </Header>
+        <SideNav aria-label="Navegação principal" expanded isRail>
+          <SideNavItems>
+            {ABAS.map((aba) => (
+              <SideNavLink
+                key={aba.id}
+                href="#"
+                isActive={aba.id === abaAtiva}
+                onClick={(e) => {
+                  e.preventDefault()
+                  setAbaAtiva(aba.id)
+                }}
+              >
+                {aba.label}
+              </SideNavLink>
+            ))}
+          </SideNavItems>
+        </SideNav>
+        <Content>
+          <ConteudoAba abaAtiva={abaAtiva} />
+        </Content>
+      </ClienteProvider>
     </Theme>
   )
 }
