@@ -47,3 +47,10 @@ no Google Calendar; a reconciliação desse vínculo é persistida no servidor.
 Item do feed individual do usuário no painel, com estado de leitura e referência
 ao registro de origem. Tem retenção de 180 dias e não armazena inteiro teor ou tokens.
 Não se confunde com o Monitoramento, que configura a verificação recorrente no DJEN.
+
+
+**Configuração de integração**:
+Credenciais e parâmetros versionados de um serviço externo. Uma versão candidata não substitui a ativa até passar por teste e ativação administrativa. Credenciais são cifradas no banco e mascaradas nas APIs de leitura. Configurações gerais pertencem ao sistema; Asaas e Drive pertencem ao escritório institucional desta implantação.
+
+**Conexão Google individual**:
+Consentimento OAuth de um usuário ativo para o próprio Calendar. É separado da conexão institucional do Drive, inclusive tokens e cursores. Conectar a agenda não concede permissão de administrar APIs. Vínculos institucionais anteriores exigem reconciliação explícita pela conta original e nunca são atribuídos automaticamente a outro usuário.

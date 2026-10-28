@@ -1443,14 +1443,14 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <h2 class="lista-rapida-titulo">Integrações</h2>
 <p class="campo-ajuda">Conexões com serviços externos usados pelo escritório.</p>
 <button class="cds--btn cds--btn--tertiary cds--btn--sm" type="button" id="integracoes-atualizar">Verificar novamente</button>
-<p class="campo-ajuda">A configuração é mantida pelo administrador do servidor. “Configurado” indica credenciais cadastradas; não confirma a disponibilidade do serviço externo.</p>
+<p class="campo-ajuda">A configuração é mantida pelo administrador. “Configurado” indica credenciais cadastradas; não confirma a disponibilidade do serviço externo.</p><p><a class="cds--btn cds--btn--tertiary cds--btn--sm" href="/admin/integracoes" target="_blank" rel="noopener">Administrar integrações</a></p>
 <div id="integracoes-resultado" aria-live="polite"></div>
 <div class="grade-integracoes">
 
 <div class="cds--tile">
 <div class="integracao-icone"><img src="/static/icons/google.svg" alt="" width="40" height="40"></div>
 <h3>Google</h3>
-<p>Agenda e Drive do escritório (conta institucional).</p>
+<p>Drive do escritório (conta institucional).</p>
 <span class="cds--tag cds--tag--sm" id="integracao-google-status">Acesso necessário</span>
 </div>
 
@@ -1465,9 +1465,10 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div class="integracao-icone"><img src="/static/icons/zapsign.svg" alt="" width="40" height="40"></div>
 <h3>ZapSign</h3>
 <p>Assinatura digital de documentos.</p>
-<span class="cds--tag cds--tag--gray cds--tag--sm">Em breve</span>
+<span class="cds--tag cds--tag--gray cds--tag--sm" id="integracao-zapsign-status">Acesso necessário</span>
 </div>
 
+<div class="cds--tile"><h3>Minha agenda Google</h3><p>Conecte sua conta individual para criar eventos no seu calendário.</p><p id="calendar-status" role="status">Verifique a conexão antes de usar.</p><button id="calendar-connect" class="cds--btn cds--btn--tertiary cds--btn--sm" type="button">Conectar minha agenda</button><button id="calendar-disconnect" class="cds--btn cds--btn--ghost cds--btn--sm" type="button">Desconectar minha agenda</button><button id="calendar-refresh" class="cds--btn cds--btn--ghost cds--btn--sm" type="button">Verificar conexão</button></div>
 </div>
 </section>
 

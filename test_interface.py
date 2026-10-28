@@ -1794,7 +1794,7 @@ class InterfaceTest(unittest.TestCase):
         disponivel[0] = False
         atividade['agenda'] = {'id': 'vinculo-antigo', 'estado': 'falha', 'versao': 2, 'erro': 'Reconecte a conta original.'}
         self.page.evaluate('_carregarAtividades("caso-1")')
-        self.page.get_by_text('Google desconectado. Conecte a conta institucional em /admin e atualize as atividades.', exact=True).wait_for()
+        self.page.get_by_text('Conecte sua agenda individual em Integrações e atualize as atividades.', exact=True).wait_for()
         self.assertEqual(self.page.get_by_role('button', name='Atualizar agenda: Atividade com hora', exact=True).count(), 1)
         self.assertFalse(self.errors)
 
