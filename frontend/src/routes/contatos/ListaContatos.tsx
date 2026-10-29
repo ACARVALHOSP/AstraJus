@@ -1,9 +1,32 @@
 import { useEffect, useState } from 'react'
-import { Button, Checkbox, InlineNotification, Modal, Stack, Tag, TextInput } from '@carbon/react'
+import {
+  Button,
+  DataTable,
+  InlineNotification,
+  Modal,
+  Stack,
+  Table,
+  TableBatchAction,
+  TableBatchActions,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TableSelectAll,
+  TableSelectRow,
+  TableToolbar,
+  TableToolbarContent,
+  Tag,
+  TextInput,
+} from '@carbon/react'
+import { Edit, Tag as TagIcon } from '@carbon/icons-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarNomeExibicao } from '../../utils/formatadores'
+import { traduzirTabela } from '../../utils/tabela'
 import ClientesLoteModal from './ClientesLoteModal'
 
 export type ClienteItem = {
@@ -29,7 +52,7 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
   const [letra, setLetra] = useState('TODOS')
   const [paraExcluir, setParaExcluir] = useState<ClienteItem | null>(null)
   const [excluindo, setExcluindo] = useState(false)
-  const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
+  const [idsLote, setIdsLote] = useState<string[]>([])
   const [loteAberto, setLoteAberto] = useState<'etiquetas' | 'perfil' | null>(null)
 
   const carregar = () => {
@@ -68,19 +91,6 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
   })
   const filtrosAtivos = [...(letra !== 'TODOS' ? [`Inicial: ${letra}`] : []), ...(busca.trim() ? [`Texto: "${busca.trim()}"`] : [])]
 
-  function alternarSelecao(id: string, marcado: boolean) {
-    setSelecionados((atual) => {
-      const novo = new Set(atual)
-      if (marcado) novo.add(id)
-      else novo.delete(id)
-      return novo
-    })
-  }
-
-  function alternarSelecionarTodos(marcado: boolean) {
-    setSelecionados(marcado ? new Set(filtrados.map((c) => c.id)) : new Set())
-  }
-
   const etiquetasExistentes = [...new Set((clientes ?? []).flatMap((c) => c.etiquetas ?? []))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
 
   return (
@@ -103,20 +113,6 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
         <p>
           Mostrando {filtrados.length} de {clientes.length} cliente(s). {filtrosAtivos.join('; ') || 'Sem filtros ativos'}.
         </p>
-      )}
-      {selecionados.size > 0 && (
-        <div className="clientes-lote-barra" role="group" aria-label="Ações nos clientes selecionados" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <strong role="status">{selecionados.size} cliente(s) selecionado(s)</strong>
-          <Button kind="ghost" size="sm" onClick={() => setLoteAberto('etiquetas')}>
-            Etiquetas
-          </Button>
-          <Button kind="ghost" size="sm" onClick={() => setLoteAberto('perfil')}>
-            Atualizar perfil
-          </Button>
-          <Button kind="ghost" size="sm" onClick={() => setSelecionados(new Set())}>
-            Cancelar seleção
-          </Button>
-        </div>
       )}
       {filtrosAtivos.length > 0 && (
         <Button
@@ -145,63 +141,15 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
           />
         )}
         {!carregando && filtrados.length > 0 && (
-          <div className="tabela-responsiva-wrap">
-            <table className="tabela-responsiva contatos-tabela">
-              <thead>
-                <tr>
-                  <th>
-                    <Checkbox
-                      id="clientes-selecionar-todos"
-                      labelText=""
-                      hideLabel
-                      checked={filtrados.length > 0 && filtrados.every((c) => selecionados.has(c.id))}
-                      indeterminate={filtrados.some((c) => selecionados.has(c.id)) && !filtrados.every((c) => selecionados.has(c.id))}
-                      onChange={(_e, { checked }) => alternarSelecionarTodos(checked)}
-                    />
-                  </th>
-                  <th>Nome</th>
-                  <th>Tipo</th>
-                  <th>Perfil</th>
-                  <th>Telefone</th>
-                  <th>E-mail</th>
-                  <th>Etiquetas</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtrados.map((c) => (
-                  <tr key={c.id}>
-                    <td>
-                      <Checkbox
-                        id={`selecionar-cliente-${c.id}`}
-                        labelText=""
-                        hideLabel
-                        checked={selecionados.has(c.id)}
-                        onChange={(_e, { checked }) => alternarSelecao(c.id, checked)}
-                      />
-                    </td>
-                    <td data-label="Nome">
-                      <button type="button" className="contato-nome-link" onClick={() => onAbrir(c.id)}>
-                        {formatarNomeExibicao(c.nome)}
-                      </button>
-                    </td>
-                    <td data-label="Tipo">{{ fisica: 'Pessoa física', juridica: 'Pessoa jurídica' }[c.tipo_pessoa ?? ''] ?? 'Não informado'}</td>
-                    <td data-label="Perfil">{c.perfil === 'contato' ? 'Contato' : c.perfil === 'cliente' ? 'Cliente' : 'Não informado'}</td>
-                    <td data-label="Telefone">{c.telefone || 'Não informado'}</td>
-                    <td data-label="E-mail">{c.email || 'Não informado'}</td>
-                    <td data-label="Etiquetas">
-                      {(c.etiquetas ?? []).length ? (c.etiquetas ?? []).map((et) => <Tag key={et} size="sm">{et}</Tag>) : 'Sem etiquetas'}
-                    </td>
-                    <td data-label="Ações">
-                      <Button kind="danger--tertiary" size="sm" onClick={() => setParaExcluir(c)}>
-                        Excluir
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <TabelaContatos
+            clientes={filtrados}
+            onAbrir={onAbrir}
+            onExcluir={setParaExcluir}
+            onLote={(tipo, ids) => {
+              setIdsLote(ids)
+              setLoteAberto(tipo)
+            }}
+          />
         )}
       </div>
       <Modal
@@ -220,16 +168,124 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
         <ClientesLoteModal
           open
           tipo={loteAberto}
-          ids={[...selecionados]}
+          ids={idsLote}
           etiquetasExistentes={etiquetasExistentes}
           onClose={() => setLoteAberto(null)}
           onConcluido={() => {
             setLoteAberto(null)
-            setSelecionados(new Set())
+            setIdsLote([])
             carregar()
           }}
         />
       )}
     </Stack>
+  )
+}
+
+const CABECALHOS_CONTATOS = [
+  { key: 'nome', header: 'Nome' },
+  { key: 'tipo', header: 'Tipo' },
+  { key: 'perfil', header: 'Perfil' },
+  { key: 'telefone', header: 'Telefone' },
+  { key: 'email', header: 'E-mail' },
+  { key: 'etiquetas', header: 'Etiquetas' },
+]
+
+function TabelaContatos({
+  clientes,
+  onAbrir,
+  onExcluir,
+  onLote,
+}: {
+  clientes: ClienteItem[]
+  onAbrir: (id: string) => void
+  onExcluir: (c: ClienteItem) => void
+  onLote: (tipo: 'etiquetas' | 'perfil', ids: string[]) => void
+}) {
+  const porId = new Map(clientes.map((c) => [c.id, c]))
+  const linhas = clientes.map((c) => ({
+    id: c.id,
+    nome: formatarNomeExibicao(c.nome),
+    tipo: { fisica: 'Pessoa física', juridica: 'Pessoa jurídica' }[c.tipo_pessoa ?? ''] ?? 'Não informado',
+    perfil: c.perfil === 'contato' ? 'Contato' : c.perfil === 'cliente' ? 'Cliente' : 'Não informado',
+    telefone: c.telefone || 'Não informado',
+    email: c.email || 'Não informado',
+    etiquetas: (c.etiquetas ?? []).join(', ') || 'Sem etiquetas',
+  }))
+
+  return (
+    <DataTable rows={linhas} headers={CABECALHOS_CONTATOS} isSortable>
+      {({ rows, headers, getHeaderProps, getRowProps, getSelectionProps, getToolbarProps, getBatchActionProps, selectedRows, getTableProps }) => {
+        const batchActionProps = getBatchActionProps()
+        return (
+          <TableContainer>
+            <TableToolbar {...getToolbarProps()}>
+              <TableBatchActions {...batchActionProps} translateWithId={traduzirTabela}>
+                <TableBatchAction
+                  tabIndex={batchActionProps.shouldShowBatchActions ? 0 : -1}
+                  renderIcon={TagIcon}
+                  onClick={() => onLote('etiquetas', selectedRows.map((r) => r.id))}
+                >
+                  Etiquetas
+                </TableBatchAction>
+                <TableBatchAction
+                  tabIndex={batchActionProps.shouldShowBatchActions ? 0 : -1}
+                  renderIcon={Edit}
+                  onClick={() => onLote('perfil', selectedRows.map((r) => r.id))}
+                >
+                  Atualizar perfil
+                </TableBatchAction>
+              </TableBatchActions>
+              <TableToolbarContent aria-hidden={batchActionProps.shouldShowBatchActions}>{null}</TableToolbarContent>
+            </TableToolbar>
+            <Table {...getTableProps()} aria-label="Clientes">
+              <TableHead>
+                <TableRow>
+                  <TableSelectAll {...getSelectionProps()} aria-label="Selecionar todas as linhas" />
+                  {headers.map((header) => (
+                    <TableHeader {...getHeaderProps({ header })}>
+                      {header.header}
+                    </TableHeader>
+                  ))}
+                  <TableHeader>Ações</TableHeader>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {rows.map((row) => {
+                  const c = porId.get(row.id)
+                  return (
+                    <TableRow {...getRowProps({ row })}>
+                      <TableSelectRow {...getSelectionProps({ row })} aria-label="Selecionar linha" />
+                      {row.cells.map((cell) =>
+                        cell.info.header === 'nome' && c ? (
+                          <TableCell key={cell.id}>
+                            <button type="button" className="contato-nome-link" onClick={() => onAbrir(c.id)}>
+                              {cell.value}
+                            </button>
+                          </TableCell>
+                        ) : cell.info.header === 'etiquetas' && c ? (
+                          <TableCell key={cell.id}>
+                            {(c.etiquetas ?? []).length ? (c.etiquetas ?? []).map((et) => <Tag key={et} size="sm">{et}</Tag>) : 'Sem etiquetas'}
+                          </TableCell>
+                        ) : (
+                          <TableCell key={cell.id}>{cell.value}</TableCell>
+                        ),
+                      )}
+                      <TableCell>
+                        {c && (
+                          <Button kind="danger--tertiary" size="sm" onClick={() => onExcluir(c)}>
+                            Excluir
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )
+      }}
+    </DataTable>
   )
 }

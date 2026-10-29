@@ -1,5 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Checkbox, InlineLoading, InlineNotification, Modal, Stack, Tag } from '@carbon/react'
+import {
+  Button,
+  Checkbox,
+  DataTable,
+  InlineLoading,
+  InlineNotification,
+  Modal,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tag,
+} from '@carbon/react'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 import { buscarJson, enviarJson } from '../api/rest'
@@ -108,70 +124,14 @@ export default function Financeiro() {
           <InlineNotification kind="info" title="Nenhum lançamento cadastrado" lowContrast hideCloseButton />
         )}
         {!carregando && lancamentos && lancamentos.length > 0 && (
-          <div className="tabela-responsiva-wrap">
-            <table className="tabela-responsiva tabela-lancamentos">
-              <thead>
-                <tr>
-                  <th>Vencimento</th>
-                  <th>Valor</th>
-                  <th>Descrição</th>
-                  <th>Cliente</th>
-                  <th>Processo</th>
-                  <th>Responsável</th>
-                  <th>Direção</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lancamentos.map((lanc) => {
-                  const rotuloDirecao = lanc.direcao === 'DESPESA' ? 'A pagar' : 'A receber'
-                  const rotuloPago = lanc.direcao === 'DESPESA' ? 'Pago' : 'Recebido'
-                  return (
-                    <tr key={lanc.id}>
-                      <td data-label="Vencimento">{formatarDataSimples(lanc.vencimento)}</td>
-                      <td data-label="Valor">{formatarMoeda(lanc.valor)}</td>
-                      <td data-label="Descrição">
-                        {lanc.descricao}
-                        {lanc.recorrente ? ' (mensal)' : ''}
-                      </td>
-                      <td data-label="Cliente">{formatarNomeExibicao(nomeCliente(lanc.cliente_id))}</td>
-                      <td data-label="Processo">{formatarNomeExibicao(tituloCaso(lanc.caso_id))}</td>
-                      <td data-label="Responsável">{formatarNomeExibicao(lanc.responsavel)}</td>
-                      <td data-label="Direção">
-                        <Tag type={lanc.direcao === 'DESPESA' ? 'red' : 'green'} size="sm">
-                          {rotuloDirecao}
-                        </Tag>
-                        <div>
-                          <Checkbox
-                            id={`pago-${lanc.id}`}
-                            labelText={rotuloPago}
-                            checked={lanc.pago}
-                            onChange={(_e, { checked }) => alternarPago(lanc, checked)}
-                          />
-                        </div>
-                      </td>
-                      <td data-label="Ações">
-                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                          {lanc.asaas_cobranca_id ? (
-                            <span title={`Cobrança ${lanc.asaas_cobranca_id}`}>Cobrança gerada</span>
-                          ) : (
-                            !lanc.pago && (
-                              <Button kind="tertiary" size="sm" onClick={() => gerarCobranca(lanc)}>
-                                Gerar cobrança
-                              </Button>
-                            )
-                          )}
-                          <Button kind="danger--tertiary" size="sm" onClick={() => setParaExcluir(lanc)}>
-                            Excluir
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <TabelaLancamentos
+            lancamentos={lancamentos}
+            nomeCliente={nomeCliente}
+            tituloCaso={tituloCaso}
+            onAlternarPago={alternarPago}
+            onGerarCobranca={gerarCobranca}
+            onExcluir={setParaExcluir}
+          />
         )}
       </div>
       <Modal
@@ -197,5 +157,110 @@ export default function Financeiro() {
         }}
       />
     </Stack>
+  )
+}
+
+const CABECALHOS_LANCAMENTOS = [
+  { key: 'vencimento', header: 'Vencimento' },
+  { key: 'valor', header: 'Valor' },
+  { key: 'descricao', header: 'Descrição' },
+  { key: 'cliente', header: 'Cliente' },
+  { key: 'processo', header: 'Processo' },
+  { key: 'responsavel', header: 'Responsável' },
+  { key: 'direcao', header: 'Direção' },
+]
+
+function TabelaLancamentos({
+  lancamentos,
+  nomeCliente,
+  tituloCaso,
+  onAlternarPago,
+  onGerarCobranca,
+  onExcluir,
+}: {
+  lancamentos: Lancamento[]
+  nomeCliente: (id?: string) => string
+  tituloCaso: (id?: string) => string
+  onAlternarPago: (lanc: Lancamento, pago: boolean) => void
+  onGerarCobranca: (lanc: Lancamento) => void
+  onExcluir: (lanc: Lancamento) => void
+}) {
+  const porId = new Map(lancamentos.map((l) => [l.id, l]))
+  const linhas = lancamentos.map((lanc) => ({
+    id: lanc.id,
+    vencimento: formatarDataSimples(lanc.vencimento),
+    valor: formatarMoeda(lanc.valor),
+    descricao: lanc.descricao + (lanc.recorrente ? ' (mensal)' : ''),
+    cliente: formatarNomeExibicao(nomeCliente(lanc.cliente_id)),
+    processo: formatarNomeExibicao(tituloCaso(lanc.caso_id)),
+    responsavel: formatarNomeExibicao(lanc.responsavel),
+    direcao: lanc.direcao === 'DESPESA' ? 'A pagar' : 'A receber',
+  }))
+
+  return (
+    <DataTable rows={linhas} headers={CABECALHOS_LANCAMENTOS} isSortable>
+      {({ rows, headers, getHeaderProps, getRowProps, getTableProps }) => (
+        <TableContainer>
+          <Table {...getTableProps()} aria-label="Lançamentos">
+            <TableHead>
+              <TableRow>
+                {headers.map((header) => (
+                  <TableHeader {...getHeaderProps({ header })}>
+                    {header.header}
+                  </TableHeader>
+                ))}
+                <TableHeader>Ações</TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {rows.map((row) => {
+                const lanc = porId.get(row.id)
+                if (!lanc) return null
+                const rotuloPago = lanc.direcao === 'DESPESA' ? 'Pago' : 'Recebido'
+                return (
+                  <TableRow {...getRowProps({ row })}>
+                    {row.cells.map((cell) =>
+                      cell.info.header === 'direcao' ? (
+                        <TableCell key={cell.id}>
+                          <Tag type={lanc.direcao === 'DESPESA' ? 'red' : 'green'} size="sm">
+                            {cell.value}
+                          </Tag>
+                          <div>
+                            <Checkbox
+                              id={`pago-${lanc.id}`}
+                              labelText={rotuloPago}
+                              checked={lanc.pago}
+                              onChange={(_e, { checked }) => onAlternarPago(lanc, checked)}
+                            />
+                          </div>
+                        </TableCell>
+                      ) : (
+                        <TableCell key={cell.id}>{cell.value}</TableCell>
+                      ),
+                    )}
+                    <TableCell>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        {lanc.asaas_cobranca_id ? (
+                          <span title={`Cobrança ${lanc.asaas_cobranca_id}`}>Cobrança gerada</span>
+                        ) : (
+                          !lanc.pago && (
+                            <Button kind="tertiary" size="sm" onClick={() => onGerarCobranca(lanc)}>
+                              Gerar cobrança
+                            </Button>
+                          )
+                        )}
+                        <Button kind="danger--tertiary" size="sm" onClick={() => onExcluir(lanc)}>
+                          Excluir
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+    </DataTable>
   )
 }

@@ -1,5 +1,25 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Column, Grid, InlineNotification, Link, Modal, Select, SelectItem, Stack, Tag, TextInput } from '@carbon/react'
+import {
+  Button,
+  Column,
+  DataTable,
+  Grid,
+  InlineNotification,
+  Link,
+  Modal,
+  Select,
+  SelectItem,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tag,
+  TextInput,
+} from '@carbon/react'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 import { buscarJson, enviarJson } from '../api/rest'
@@ -156,55 +176,7 @@ export default function Pagamentos() {
         {!carregando && cobrancas && cobrancas.length === 0 && (
           <InlineNotification kind="info" title="Nenhuma cobrança encontrada" lowContrast hideCloseButton />
         )}
-        {!carregando && cobrancas && cobrancas.length > 0 && (
-          <div className="tabela-responsiva-wrap">
-            <table className="tabela-responsiva tabela-pagamentos">
-              <thead>
-                <tr>
-                  <th>Cliente</th>
-                  <th>Valor</th>
-                  <th>Vencimento</th>
-                  <th>Tipo</th>
-                  <th>Status</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cobrancas.map((cobranca) => {
-                  const [rotuloStatus, corStatus] = ROTULOS_STATUS[cobranca.status ?? ''] || [cobranca.status ?? '?', 'gray']
-                  const link = cobranca.bankSlipUrl || cobranca.invoiceUrl
-                  return (
-                    <tr key={cobranca.id}>
-                      <td data-label="Cliente">{cobranca.cliente_nome || '(cliente sem cadastro local)'}</td>
-                      <td data-label="Valor">{formatarMoeda(cobranca.value)}</td>
-                      <td data-label="Vencimento">{formatarDataSimples(cobranca.dueDate)}</td>
-                      <td data-label="Tipo">{ROTULOS_TIPO[cobranca.billingType ?? ''] ?? cobranca.billingType}</td>
-                      <td data-label="Status">
-                        <Tag type={corStatus} size="sm">
-                          {rotuloStatus}
-                        </Tag>
-                      </td>
-                      <td data-label="Ações">
-                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                          {link && (
-                            <Link href={link} target="_blank" rel="noopener">
-                              Ver cobrança
-                            </Link>
-                          )}
-                          {!STATUS_FINALIZADOS.has(cobranca.status ?? '') && (
-                            <Button kind="danger--tertiary" size="sm" onClick={() => setParaCancelar(cobranca)}>
-                              Cancelar
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {!carregando && cobrancas && cobrancas.length > 0 && <TabelaCobrancas cobrancas={cobrancas} onCancelar={setParaCancelar} />}
       </div>
       <Modal
         open={paraCancelar !== null}
@@ -228,5 +200,83 @@ export default function Pagamentos() {
         }}
       />
     </Stack>
+  )
+}
+
+const CABECALHOS_COBRANCAS = [
+  { key: 'cliente', header: 'Cliente' },
+  { key: 'valor', header: 'Valor' },
+  { key: 'vencimento', header: 'Vencimento' },
+  { key: 'tipo', header: 'Tipo' },
+  { key: 'status', header: 'Status' },
+]
+
+function TabelaCobrancas({ cobrancas, onCancelar }: { cobrancas: Cobranca[]; onCancelar: (c: Cobranca) => void }) {
+  const porId = new Map(cobrancas.map((c) => [c.id, c]))
+  const linhas = cobrancas.map((cobranca) => ({
+    id: cobranca.id,
+    cliente: cobranca.cliente_nome || '(cliente sem cadastro local)',
+    valor: formatarMoeda(cobranca.value),
+    vencimento: formatarDataSimples(cobranca.dueDate),
+    tipo: ROTULOS_TIPO[cobranca.billingType ?? ''] ?? cobranca.billingType ?? '—',
+    status: (ROTULOS_STATUS[cobranca.status ?? ''] || [cobranca.status ?? '?', 'gray'])[0],
+  }))
+
+  return (
+    <DataTable rows={linhas} headers={CABECALHOS_COBRANCAS} isSortable>
+      {({ rows, headers, getHeaderProps, getRowProps, getTableProps }) => (
+        <TableContainer>
+          <Table {...getTableProps()} aria-label="Cobranças">
+            <TableHead>
+              <TableRow>
+                {headers.map((header) => (
+                  <TableHeader {...getHeaderProps({ header })}>
+                    {header.header}
+                  </TableHeader>
+                ))}
+                <TableHeader>Ações</TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {rows.map((row) => {
+                const cobranca = porId.get(row.id)
+                if (!cobranca) return null
+                const [, corStatus] = ROTULOS_STATUS[cobranca.status ?? ''] || [cobranca.status ?? '?', 'gray']
+                const link = cobranca.bankSlipUrl || cobranca.invoiceUrl
+                return (
+                  <TableRow {...getRowProps({ row })}>
+                    {row.cells.map((cell) =>
+                      cell.info.header === 'status' ? (
+                        <TableCell key={cell.id}>
+                          <Tag type={corStatus} size="sm">
+                            {cell.value}
+                          </Tag>
+                        </TableCell>
+                      ) : (
+                        <TableCell key={cell.id}>{cell.value}</TableCell>
+                      ),
+                    )}
+                    <TableCell>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        {link && (
+                          <Link href={link} target="_blank" rel="noopener">
+                            Ver cobrança
+                          </Link>
+                        )}
+                        {!STATUS_FINALIZADOS.has(cobranca.status ?? '') && (
+                          <Button kind="danger--tertiary" size="sm" onClick={() => onCancelar(cobranca)}>
+                            Cancelar
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+    </DataTable>
   )
 }
