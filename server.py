@@ -3417,6 +3417,35 @@ class _AutenticacaoBearer:
             else:
                 await _responder(send, 404, b"Nao encontrado")
             return
+        if caminho == "/novo" and scope.get("method") == "GET":
+            # nova interface (React + Carbon), em rota separada da /app original até a migração
+            # ser validada em produção. Página pública, igual à /app: o token é colado no navegador.
+            pagina = Path(__file__).resolve().parent / "frontend-dist" / "index.html"
+            if pagina.is_file():
+                await _responder(
+                    send, 200, pagina.read_bytes(), tipo="text/html; charset=utf-8",
+                    cabecalhos_extra=[(b"cache-control", b"no-store")],
+                )
+            else:
+                await _responder(send, 404, b"Nao encontrado")
+            return
+        if caminho.startswith("/novo/assets/") and scope.get("method") == "GET":
+            # JS/CSS do build do React (nomes com hash de conteúdo: cache longo é seguro)
+            nome = caminho[len("/novo/assets/"):]
+            if "/" in nome or ".." in nome:
+                await _responder(send, 404, b"Nao encontrado")
+                return
+            arquivo = Path(__file__).resolve().parent / "frontend-dist" / "assets" / nome
+            tipos = {".js": "application/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
+            tipo = tipos.get(arquivo.suffix.lower())
+            if tipo and arquivo.is_file():
+                await _responder(
+                    send, 200, arquivo.read_bytes(), tipo=tipo,
+                    cabecalhos_extra=[(b"cache-control", b"public, max-age=31536000, immutable")],
+                )
+            else:
+                await _responder(send, 404, b"Nao encontrado")
+            return
         if caminho == "/guia" and scope.get("method") == "GET":
             # guia público para usuários finais: não tem dados sensíveis, por isso não exige token
             guia = Path(__file__).resolve().parent / "guia-do-usuario.html"
