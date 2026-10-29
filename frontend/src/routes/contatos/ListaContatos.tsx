@@ -25,6 +25,7 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
   const [erro, setErro] = useState<string | null>(null)
   const [clientes, setClientes] = useState<ClienteItem[] | null>(null)
   const [busca, setBusca] = useState('')
+  const [letra, setLetra] = useState('TODOS')
   const [paraExcluir, setParaExcluir] = useState<ClienteItem | null>(null)
   const [excluindo, setExcluindo] = useState(false)
 
@@ -56,11 +57,13 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
   const consulta = normalizar(busca)
   const digitos = consulta.replace(/\D/g, '')
   const filtrados = (clientes ?? []).filter((c) => {
+    if (letra !== 'TODOS' && normalizar(c.nome).charAt(0).toUpperCase() !== letra) return false
     if (!consulta) return true
     const alvo = normalizar(`${c.nome || ''} ${c.telefone || ''} ${c.email || ''}`)
     const telefoneCombina = digitos && /^[+\d\s().-]+$/.test(consulta) && String(c.telefone || '').replace(/\D/g, '').includes(digitos)
     return alvo.includes(consulta) || telefoneCombina
   })
+  const filtrosAtivos = [...(letra !== 'TODOS' ? [`Inicial: ${letra}`] : []), ...(busca.trim() ? [`Texto: "${busca.trim()}"`] : [])]
 
   return (
     <Stack gap={6}>
@@ -70,11 +73,30 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
           Novo cliente
         </Button>
       </div>
+      <div role="group" aria-label="Filtrar clientes pela inicial do nome" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+        {['TODOS', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((l) => (
+          <Button key={l} kind={l === letra ? 'primary' : 'ghost'} size="sm" onClick={() => setLetra(l)}>
+            {l}
+          </Button>
+        ))}
+      </div>
       <TextInput id="contatos-busca" labelText="Consultar clientes" placeholder="Nome, telefone ou e-mail" autoComplete="off" value={busca} onChange={(e) => setBusca(e.target.value)} />
       {clientes && (
         <p>
-          Mostrando {filtrados.length} de {clientes.length} cliente(s). {busca.trim() ? `Texto: "${busca.trim()}".` : 'Sem filtros ativos.'}
+          Mostrando {filtrados.length} de {clientes.length} cliente(s). {filtrosAtivos.join('; ') || 'Sem filtros ativos'}.
         </p>
+      )}
+      {filtrosAtivos.length > 0 && (
+        <Button
+          kind="ghost"
+          size="sm"
+          onClick={() => {
+            setLetra('TODOS')
+            setBusca('')
+          }}
+        >
+          Limpar filtros
+        </Button>
       )}
       <div aria-live="polite">
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
