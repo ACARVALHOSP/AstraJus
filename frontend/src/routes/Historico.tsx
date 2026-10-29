@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Button,
   DataTable,
@@ -11,23 +11,47 @@ import {
   TableHeader,
   TableRow,
 } from '@carbon/react'
+import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
+import { buscarJson } from '../api/rest'
 import type { PayloadProcesso } from './Processo'
 import type { PayloadPublicacoes } from './Publicacoes'
 import {
+  alternarCasoFavorito,
   formatarData,
+  lerCasosFavoritos,
   lerFavoritos,
   lerHistorico,
   removerFavorito,
   type Favorito,
   type ItemHistorico,
 } from '../utils/listasRapidas'
-import { formatarNumeroCNJ } from '../utils/formatadores'
+import { formatarNomeExibicao, formatarNumeroCNJ } from '../utils/formatadores'
+
+type CasoFavorito = { id: string; titulo?: string }
 
 export default function Historico() {
+  const { cliente } = useCliente()
   const { irPara } = useNavegacao()
   const [favoritos, setFavoritos] = useState<Favorito[]>(() => lerFavoritos())
   const [historico] = useState<ItemHistorico[]>(() => lerHistorico())
+  const [casosFavoritos, setCasosFavoritos] = useState<CasoFavorito[]>([])
+
+  useEffect(() => {
+    const ids = lerCasosFavoritos()
+    if (!ids.length || !cliente) {
+      setCasosFavoritos([])
+      return
+    }
+    buscarJson<{ casos: CasoFavorito[] }>(cliente, '/casos')
+      .then((r) => setCasosFavoritos((r.casos ?? []).filter((c) => ids.includes(c.id))))
+      .catch(() => setCasosFavoritos([]))
+  }, [cliente])
+
+  function removerCasoFavorito(id: string) {
+    alternarCasoFavorito(id)
+    setCasosFavoritos((atual) => atual.filter((c) => c.id !== id))
+  }
 
   function remover(fav: Favorito) {
     removerFavorito(fav.tribunal, fav.numero)
@@ -52,6 +76,30 @@ export default function Historico() {
       <div>
         <h2>Histórico e favoritos</h2>
       </div>
+
+      <section>
+        <h3>Casos favoritos</h3>
+        <p>Casos marcados com ★ na lista de Casos. Abrir pula direto para o caso.</p>
+        {casosFavoritos.length === 0 ? (
+          <p>Nenhum caso favorito ainda.</p>
+        ) : (
+          <Stack gap={3}>
+            {casosFavoritos.map((caso) => (
+              <div key={caso.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+                <span>{caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)'}</span>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <Button kind="ghost" size="sm" onClick={() => irPara('casos', { id: caso.id })}>
+                    Abrir
+                  </Button>
+                  <Button kind="ghost" size="sm" onClick={() => removerCasoFavorito(caso.id)}>
+                    Remover
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </Stack>
+        )}
+      </section>
 
       <section>
         <h3>Favoritos de consulta</h3>

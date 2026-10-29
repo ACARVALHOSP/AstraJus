@@ -5,6 +5,7 @@ import { ErroMCP } from '../../api/mcpClient'
 import { useNavegacao } from '../../api/NavegacaoContext'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarDataSimples, formatarNomeExibicao, formatarNumeroCNJ } from '../../utils/formatadores'
+import { alternarCasoFavorito, ehCasoFavorito } from '../../utils/listasRapidas'
 import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
 import NovoProcessoModal from './NovoProcessoModal'
 
@@ -80,6 +81,11 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
       .finally(() => setCarregando(false))
   }
 
+  function favoritar(casoId: string) {
+    alternarCasoFavorito(casoId)
+    setCasos((atual) => (atual ? [...atual] : atual))
+  }
+
   useEffect(carregar, [cliente])
 
   const nomeCliente = (id?: string) => clientes.find((c) => c.id === id)?.nome ?? id ?? ''
@@ -147,6 +153,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
             <table className="tabela-responsiva tabela-casos">
               <thead>
                 <tr>
+                  <th>Favorito</th>
                   <th>Título</th>
                   <th>Cliente/Pasta</th>
                   <th>Ação/Foro</th>
@@ -157,8 +164,20 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
               <tbody>
                 {ordenados.map((caso) => {
                   const nomes = [caso.cliente_id, ...(caso.clientes_adicionais ?? [])].map(nomeCliente).filter(Boolean).map(formatarNomeExibicao)
+                  const favoritado = ehCasoFavorito(caso.id)
                   return (
                     <tr key={caso.id}>
+                      <td data-label="Favorito">
+                        <Button
+                          kind="ghost"
+                          size="sm"
+                          hasIconOnly
+                          iconDescription={favoritado ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}
+                          onClick={() => favoritar(caso.id)}
+                        >
+                          {favoritado ? '★' : '☆'}
+                        </Button>
+                      </td>
                       <td data-label="Título">
                         <button type="button" className="contato-nome-link" onClick={() => onAbrir(caso.id)}>
                           {caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)'}

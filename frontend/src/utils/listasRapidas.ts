@@ -1,5 +1,6 @@
 const CHAVE_HISTORICO = 'cnj_historico'
 const CHAVE_FAVORITOS = 'cnj_favoritos'
+const CHAVE_FAVORITOS_CASOS = 'cnj_favoritos_casos'
 const HISTORICO_MAX = 10
 
 export type Favorito = { tribunal: string; numero: string }
@@ -68,6 +69,23 @@ export function removerFavorito(tribunal: string, numero: string): void {
     CHAVE_FAVORITOS,
     lerFavoritos().filter((f) => chaveFavorito(f.tribunal, f.numero) !== chave),
   )
+}
+
+export function lerCasosFavoritos(): string[] {
+  return lerLista<string>(CHAVE_FAVORITOS_CASOS)
+}
+
+export function ehCasoFavorito(casoId: string): boolean {
+  return lerCasosFavoritos().includes(casoId)
+}
+
+export function alternarCasoFavorito(casoId: string): boolean {
+  const lista = lerCasosFavoritos()
+  const index = lista.indexOf(casoId)
+  if (index === -1) lista.unshift(casoId)
+  else lista.splice(index, 1)
+  if (!salvarLista(CHAVE_FAVORITOS_CASOS, lista)) return index !== -1
+  return index === -1 // true = acabou de favoritar
 }
 
 export function formatarData(valor: string | undefined): string {
