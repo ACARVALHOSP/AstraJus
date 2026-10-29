@@ -202,3 +202,6 @@ pyrightconfig.json
 
 # Backups cifrados operacionais: mantidos junto ao volume de dados
 backups-integracoes/
+
+# Artefatos de depuração/testes manuais (logs, previews, patches)
+output/
