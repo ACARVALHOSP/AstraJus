@@ -1,5 +1,16 @@
 import { useState } from 'react'
-import { Button, Stack, Tile } from '@carbon/react'
+import {
+  Button,
+  DataTable,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@carbon/react'
 import { useNavegacao } from '../api/NavegacaoContext'
 import type { PayloadProcesso } from './Processo'
 import type { PayloadPublicacoes } from './Publicacoes'
@@ -45,46 +56,112 @@ export default function Historico() {
       <section>
         <h3>Favoritos de consulta</h3>
         <p>Favoritos deste navegador, sem sincronização. Use Consultar para repetir a consulta ao DataJud.</p>
-        <Stack gap={3}>
-          {favoritos.length === 0 && <p>Nenhum favorito ainda.</p>}
-          {favoritos.map((fav) => (
-            <Tile key={`${fav.tribunal}:${fav.numero}`}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
-                <span>
-                  {(fav.tribunal || '?').toUpperCase()} · {formatarNumeroCNJ(fav.numero)}
-                </span>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <Button kind="ghost" size="sm" onClick={() => consultarFavorito(fav)}>
-                    Consultar
-                  </Button>
-                  <Button kind="ghost" size="sm" onClick={() => remover(fav)}>
-                    Remover
-                  </Button>
-                </div>
-              </div>
-            </Tile>
-          ))}
-        </Stack>
+        {favoritos.length === 0 ? (
+          <p>Nenhum favorito ainda.</p>
+        ) : (
+          <DataTable
+            rows={favoritos.map((fav) => ({ id: `${fav.tribunal}:${fav.numero}`, tribunal: (fav.tribunal || '?').toUpperCase(), numero: formatarNumeroCNJ(fav.numero) }))}
+            headers={[
+              { key: 'tribunal', header: 'Tribunal' },
+              { key: 'numero', header: 'Número do processo' },
+            ]}
+            isSortable
+          >
+            {({ rows, headers, getHeaderProps, getRowProps, getTableProps }) => (
+              <TableContainer>
+                <Table {...getTableProps()} aria-label="Favoritos de consulta">
+                  <TableHead>
+                    <TableRow>
+                      {headers.map((header) => (
+                        <TableHeader {...getHeaderProps({ header })}>
+                          {header.header}
+                        </TableHeader>
+                      ))}
+                      <TableHeader>Ações</TableHeader>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {rows.map((row) => {
+                      const fav = favoritos.find((f) => `${f.tribunal}:${f.numero}` === row.id)
+                      return (
+                        <TableRow {...getRowProps({ row })}>
+                          {row.cells.map((cell) => (
+                            <TableCell key={cell.id}>{cell.value}</TableCell>
+                          ))}
+                          <TableCell>
+                            {fav && (
+                              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <Button kind="ghost" size="sm" onClick={() => consultarFavorito(fav)}>
+                                  Consultar
+                                </Button>
+                                <Button kind="ghost" size="sm" onClick={() => remover(fav)}>
+                                  Remover
+                                </Button>
+                              </div>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </DataTable>
+        )}
       </section>
 
       <section>
         <h3>Histórico recente</h3>
         <p>Últimas consultas feitas neste navegador. Clique para repetir.</p>
-        <Stack gap={3}>
-          {historico.length === 0 && <p>Nenhuma consulta recente.</p>}
-          {historico.map((item, i) => (
-            <Tile key={i}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
-                <span>
-                  {item.resumo} · {formatarData(item.quando)}
-                </span>
-                <Button kind="ghost" size="sm" onClick={() => repetirItem(item)}>
-                  Repetir
-                </Button>
-              </div>
-            </Tile>
-          ))}
-        </Stack>
+        {historico.length === 0 ? (
+          <p>Nenhuma consulta recente.</p>
+        ) : (
+          <DataTable
+            rows={historico.map((item, i) => ({ id: String(i), resumo: item.resumo, quando: formatarData(item.quando) }))}
+            headers={[
+              { key: 'resumo', header: 'Consulta' },
+              { key: 'quando', header: 'Quando' },
+            ]}
+            isSortable
+          >
+            {({ rows, headers, getHeaderProps, getRowProps, getTableProps }) => (
+              <TableContainer>
+                <Table {...getTableProps()} aria-label="Histórico recente">
+                  <TableHead>
+                    <TableRow>
+                      {headers.map((header) => (
+                        <TableHeader {...getHeaderProps({ header })}>
+                          {header.header}
+                        </TableHeader>
+                      ))}
+                      <TableHeader>Ações</TableHeader>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {rows.map((row) => {
+                      const item = historico[Number(row.id)]
+                      return (
+                        <TableRow {...getRowProps({ row })}>
+                          {row.cells.map((cell) => (
+                            <TableCell key={cell.id}>{cell.value}</TableCell>
+                          ))}
+                          <TableCell>
+                            {item && (
+                              <Button kind="ghost" size="sm" onClick={() => repetirItem(item)}>
+                                Repetir
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </DataTable>
+        )}
       </section>
     </Stack>
   )

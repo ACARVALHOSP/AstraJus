@@ -1,7 +1,8 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { Fragment, useEffect, useState, type FormEvent } from 'react'
 import {
   Button,
   Column,
+  DataTable,
   DatePicker,
   DatePickerInput,
   Form,
@@ -12,6 +13,16 @@ import {
   Select,
   SelectItem,
   Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableExpandedRow,
+  TableExpandHeader,
+  TableExpandRow,
+  TableHead,
+  TableHeader,
+  TableRow,
   TextInput,
 } from '@carbon/react'
 import { useCliente } from '../api/ClienteContext'
@@ -19,7 +30,7 @@ import { useNavegacao } from '../api/NavegacaoContext'
 import { ErroMCP } from '../api/mcpClient'
 import { TRIBUNAIS } from '../api/tribunais'
 import { UFS } from '../api/ufs'
-import { ddmmaaaaParaIso, formatarDdMmAaaa, formatarNumeroCNJ } from '../utils/formatadores'
+import { ddmmaaaaParaIso, formatarDataSimples, formatarDdMmAaaa, formatarNumeroCNJ } from '../utils/formatadores'
 import { adicionarHistorico } from '../utils/listasRapidas'
 import CartaoPublicacao, { type ItemPublicacao } from './publicacoes/CartaoPublicacao'
 
@@ -224,9 +235,7 @@ export default function Publicacoes() {
               lowContrast
               hideCloseButton
             />
-            {(resultado.itens ?? []).map((item, i) => (
-              <CartaoPublicacao key={item.hash ?? i} item={item} />
-            ))}
+            <TabelaPublicacoes itens={resultado.itens ?? []} />
           </Stack>
         )}
       </div>
@@ -247,5 +256,62 @@ export default function Publicacoes() {
         </nav>
       )}
     </Stack>
+  )
+}
+
+const CABECALHOS_PUBLICACOES = [
+  { key: 'tribunal', header: 'Tribunal' },
+  { key: 'tipo', header: 'Tipo' },
+  { key: 'classe', header: 'Classe' },
+  { key: 'processo', header: 'Processo' },
+  { key: 'data', header: 'Disponibilizado em' },
+]
+
+function TabelaPublicacoes({ itens }: { itens: ItemPublicacao[] }) {
+  if (itens.length === 0) return null
+  const linhas = itens.map((item, i) => ({
+    id: item.hash ?? String(i),
+    tribunal: item.siglaTribunal ?? '?',
+    tipo: item.tipoComunicacao ?? '—',
+    classe: item.nomeClasse ?? 'Classe não informada',
+    processo: item.numeroprocessocommascara ?? 'não informado',
+    data: formatarDataSimples(item.data_disponibilizacao) || '—',
+  }))
+  const porId = new Map(itens.map((item, i) => [item.hash ?? String(i), item]))
+
+  return (
+    <DataTable rows={linhas} headers={CABECALHOS_PUBLICACOES} isSortable>
+      {({ rows, headers, getHeaderProps, getRowProps, getTableProps, getExpandHeaderProps }) => (
+        <TableContainer>
+          <Table {...getTableProps()} aria-label="Publicações encontradas">
+            <TableHead>
+              <TableRow>
+                <TableExpandHeader {...getExpandHeaderProps()} />
+                {headers.map((header) => (
+                  <TableHeader {...getHeaderProps({ header })}>
+                    {header.header}
+                  </TableHeader>
+                ))}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {rows.map((row) => {
+                const item = porId.get(row.id)
+                return (
+                  <Fragment key={row.id}>
+                    <TableExpandRow {...getRowProps({ row })}>
+                      {row.cells.map((cell) => (
+                        <TableCell key={cell.id}>{cell.value}</TableCell>
+                      ))}
+                    </TableExpandRow>
+                    <TableExpandedRow colSpan={headers.length + 1}>{item && <CartaoPublicacao item={item} />}</TableExpandedRow>
+                  </Fragment>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+    </DataTable>
   )
 }

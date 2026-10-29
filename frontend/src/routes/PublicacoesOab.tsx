@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   Accordion,
   AccordionItem,
   Button,
-  Checkbox,
   Column,
+  DataTable,
   DatePicker,
   DatePickerInput,
   Grid,
@@ -13,15 +13,32 @@ import {
   Select,
   SelectItem,
   Stack,
+  Table,
+  TableBatchAction,
+  TableBatchActions,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableExpandedRow,
+  TableExpandHeader,
+  TableExpandRow,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TableSelectAll,
+  TableSelectRow,
+  TableToolbar,
+  TableToolbarContent,
   Tag,
   TextInput,
-  Tile,
 } from '@carbon/react'
+import { Archive, Checkmark, Undo } from '@carbon/icons-react'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 import { buscarJson, enviarJson } from '../api/rest'
 import { formatarDataSimples, formatarDdMmAaaa, formatarNomeExibicao, formatarNumeroCNJ } from '../utils/formatadores'
 import { formatarData } from '../utils/listasRapidas'
+import { traduzirTabela } from '../utils/tabela'
 
 type DadosDjen = {
   data_disponibilizacao?: string
@@ -57,7 +74,6 @@ export default function PublicacoesOab() {
   const [erro, setErro] = useState<string | null>(null)
   const [publicacoes, setPublicacoes] = useState<PublicacaoOab[] | null>(null)
   const [total, setTotal] = useState(0)
-  const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set())
   const [aplicandoLote, setAplicandoLote] = useState(false)
 
   const carregar = useCallback(async () => {
@@ -102,22 +118,11 @@ export default function PublicacoesOab() {
     }
   }
 
-  function alternarSelecao(hash: string, marcado: boolean) {
-    setSelecionadas((atual) => {
-      const novo = new Set(atual)
-      if (marcado) novo.add(hash)
-      else novo.delete(hash)
-      return novo
-    })
-  }
-
-  async function aplicarStatusLote(novoStatus: string) {
-    const hashes = [...selecionadas]
+  async function aplicarStatusLote(hashes: string[], novoStatus: string) {
     if (!hashes.length) return
     setAplicandoLote(true)
     try {
       await enviarJson(cliente, '/publicacoes-oab/status', { hashes, status: novoStatus })
-      setSelecionadas(new Set())
       carregar()
     } catch (e) {
       setErro(e instanceof ErroMCP ? e.message : 'Falha ao atualizar em lote.')
@@ -165,23 +170,6 @@ export default function PublicacoesOab() {
           Atualizar lista
         </Button>
       </div>
-      {selecionadas.size > 0 && (
-        <div className="clientes-lote-barra" role="group" aria-label="Ações nas publicações selecionadas" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <strong role="status">{selecionadas.size} selecionada(s)</strong>
-          <Button size="sm" kind="ghost" disabled={aplicandoLote} onClick={() => aplicarStatusLote('nao_tratada')}>
-            Marcar como Não tratada
-          </Button>
-          <Button size="sm" kind="ghost" disabled={aplicandoLote} onClick={() => aplicarStatusLote('tratada')}>
-            Marcar como Tratada
-          </Button>
-          <Button size="sm" kind="ghost" disabled={aplicandoLote} onClick={() => aplicarStatusLote('arquivada')}>
-            Marcar como Arquivada
-          </Button>
-          <Button size="sm" kind="ghost" disabled={aplicandoLote} onClick={() => setSelecionadas(new Set())}>
-            Cancelar seleção
-          </Button>
-        </div>
-      )}
       <div aria-live="polite">
         {carregando && <InlineLoading description="Carregando…" />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
@@ -195,17 +183,7 @@ export default function PublicacoesOab() {
           />
         )}
         {!carregando && publicacoes && publicacoes.length > 0 && (
-          <Stack gap={4}>
-            {publicacoes.map((p) => (
-              <CartaoPubOab
-                key={p.hash}
-                p={p}
-                selecionada={selecionadas.has(p.hash)}
-                onAlterarStatus={(status) => alterarStatus(p, status)}
-                onAlterarSelecao={(marcado) => alternarSelecao(p.hash, marcado)}
-              />
-            ))}
-          </Stack>
+          <TabelaPublicacoesOab publicacoes={publicacoes} onAlterarStatus={alterarStatus} onAplicarLote={aplicarStatusLote} aplicandoLote={aplicandoLote} />
         )}
       </div>
       {total > TAMANHO_PAGINA && (
@@ -225,77 +203,146 @@ export default function PublicacoesOab() {
   )
 }
 
-function CartaoPubOab({
-  p,
-  selecionada,
+const CABECALHOS_OAB = [
+  { key: 'tribunal', header: 'Tribunal' },
+  { key: 'tipo', header: 'Tipo' },
+  { key: 'classe', header: 'Classe' },
+  { key: 'processo', header: 'Processo' },
+  { key: 'divulgado', header: 'Divulgado em' },
+  { key: 'status', header: 'Status' },
+]
+
+function TabelaPublicacoesOab({
+  publicacoes,
   onAlterarStatus,
-  onAlterarSelecao,
+  onAplicarLote,
+  aplicandoLote,
 }: {
-  p: PublicacaoOab
-  selecionada: boolean
-  onAlterarStatus: (status: string) => void
-  onAlterarSelecao: (marcado: boolean) => void
+  publicacoes: PublicacaoOab[]
+  onAlterarStatus: (p: PublicacaoOab, status: string) => void
+  onAplicarLote: (hashes: string[], status: string) => void
+  aplicandoLote: boolean
 }) {
-  const d = p.dados ?? {}
-  const destinatarios = (d.destinatarios ?? []).map((x) => formatarNomeExibicao(x.nome)).filter(Boolean)
-  const advogados = (d.destinatarioadvogados ?? []).map((a) => `${formatarNomeExibicao(a.nome)} OAB ${a.numero_oab ?? '?'}/${a.uf_oab ?? '?'}`)
+  const porHash = new Map(publicacoes.map((p) => [p.hash, p]))
+  const linhas = publicacoes.map((p) => {
+    const d = p.dados ?? {}
+    return {
+      id: p.hash,
+      tribunal: (d.siglaTribunal ?? '?').toUpperCase(),
+      tipo: d.tipoComunicacao ?? '—',
+      classe: d.nomeClasse ?? 'Classe não informada',
+      processo: formatarNumeroCNJ(d.numeroprocessocommascara ?? p.numero_processo) || 'não informado',
+      divulgado: formatarDataSimples(d.data_disponibilizacao) || '—',
+      status: ROTULO_STATUS[p.status] ?? p.status,
+    }
+  })
 
   return (
-    <Tile>
-      <Stack gap={3}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Checkbox
-              id={`selecionar-${p.hash}`}
-              labelText=""
-              hideLabel
-              checked={selecionada}
-              onChange={(_e, { checked }) => onAlterarSelecao(checked)}
-            />
-            <Tag type="blue">{(d.siglaTribunal ?? '?').toUpperCase()}</Tag>{' '}
-            {d.tipoComunicacao && <Tag type="teal">{d.tipoComunicacao}</Tag>}{' '}
-            <Tag type={TAG_STATUS[p.status] ?? 'gray'}>{ROTULO_STATUS[p.status] ?? p.status}</Tag>
-          </div>
-          <div style={{ maxWidth: 'calc(11ch + 3.5rem)' }}>
-            <Select
-              id={`status-${p.hash}`}
-              labelText=""
-              hideLabel
-              size="sm"
-              value={p.status}
-              onChange={(e) => onAlterarStatus(e.target.value)}
-            >
-              <SelectItem value="nao_tratada" text="Não tratada" />
-              <SelectItem value="tratada" text="Tratada" />
-              <SelectItem value="arquivada" text="Arquivada" />
-            </Select>
-          </div>
-        </div>
-        <h3>{d.nomeClasse ?? 'Classe não informada'}</h3>
-        <p>Processo: {formatarNumeroCNJ(d.numeroprocessocommascara ?? p.numero_processo) || 'não informado'}</p>
-        <p>
-          {d.nomeOrgao ?? 'Órgão não informado'} · divulgado em {formatarDataSimples(d.data_disponibilizacao)} · capturado em{' '}
-          {formatarData(p.criado_em)}
-        </p>
-        {p.nome_pesquisado && <p>Referência: {formatarNomeExibicao(p.nome_pesquisado)}</p>}
-        {destinatarios.length > 0 && <p>Partes: {destinatarios.join(' · ')}</p>}
-        {advogados.length > 0 && <p>Advogados: {advogados.join(' · ')}</p>}
-        {d.texto && (
-          <Accordion>
-            <AccordionItem title="Texto da publicação">
-              <p>{d.texto}</p>
-            </AccordionItem>
-          </Accordion>
-        )}
-        {d.link && (
-          <div>
-            <a href={d.link} target="_blank" rel="noopener noreferrer">
-              Ver no sistema do tribunal
-            </a>
-          </div>
-        )}
-      </Stack>
-    </Tile>
+    <DataTable rows={linhas} headers={CABECALHOS_OAB} isSortable>
+      {({ rows, headers, getHeaderProps, getRowProps, getSelectionProps, getToolbarProps, getBatchActionProps, selectedRows, getTableProps, getExpandHeaderProps }) => {
+        const batchActionProps = getBatchActionProps()
+        return (
+          <TableContainer>
+            <TableToolbar {...getToolbarProps()}>
+              <TableBatchActions {...batchActionProps} translateWithId={traduzirTabela}>
+                <TableBatchAction
+                  tabIndex={batchActionProps.shouldShowBatchActions ? 0 : -1}
+                  renderIcon={Undo}
+                  disabled={aplicandoLote}
+                  onClick={() => onAplicarLote(selectedRows.map((r) => r.id), 'nao_tratada')}
+                >
+                  Marcar como não tratada
+                </TableBatchAction>
+                <TableBatchAction
+                  tabIndex={batchActionProps.shouldShowBatchActions ? 0 : -1}
+                  renderIcon={Checkmark}
+                  disabled={aplicandoLote}
+                  onClick={() => onAplicarLote(selectedRows.map((r) => r.id), 'tratada')}
+                >
+                  Marcar como tratada
+                </TableBatchAction>
+                <TableBatchAction
+                  tabIndex={batchActionProps.shouldShowBatchActions ? 0 : -1}
+                  renderIcon={Archive}
+                  disabled={aplicandoLote}
+                  onClick={() => onAplicarLote(selectedRows.map((r) => r.id), 'arquivada')}
+                >
+                  Marcar como arquivada
+                </TableBatchAction>
+              </TableBatchActions>
+              <TableToolbarContent aria-hidden={batchActionProps.shouldShowBatchActions}>{null}</TableToolbarContent>
+            </TableToolbar>
+            <Table {...getTableProps()} aria-label="Publicações monitoradas">
+              <TableHead>
+                <TableRow>
+                  <TableExpandHeader {...getExpandHeaderProps()} />
+                  <TableSelectAll {...getSelectionProps()} aria-label="Selecionar todas as linhas" />
+                  {headers.map((header) => (
+                    <TableHeader {...getHeaderProps({ header })}>
+                      {header.header}
+                    </TableHeader>
+                  ))}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {rows.map((row) => {
+                  const p = porHash.get(row.id)
+                  const d = p?.dados ?? {}
+                  const destinatarios = (d.destinatarios ?? []).map((x) => formatarNomeExibicao(x.nome)).filter(Boolean)
+                  const advogados = (d.destinatarioadvogados ?? []).map((a) => `${formatarNomeExibicao(a.nome)} OAB ${a.numero_oab ?? '?'}/${a.uf_oab ?? '?'}`)
+                  return (
+                    <Fragment key={row.id}>
+                      <TableExpandRow {...getRowProps({ row })}>
+                        <TableSelectRow {...getSelectionProps({ row })} aria-label="Selecionar linha" />
+                        {row.cells.map((cell) =>
+                          cell.info.header === 'status' && p ? (
+                            <TableCell key={cell.id}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <Tag type={TAG_STATUS[p.status] ?? 'gray'}>{cell.value}</Tag>
+                                <div style={{ maxWidth: 'calc(11ch + 3.5rem)' }}>
+                                  <Select
+                                    id={`status-${p.hash}`}
+                                    labelText=""
+                                    hideLabel
+                                    size="sm"
+                                    value={p.status}
+                                    onChange={(e) => onAlterarStatus(p, e.target.value)}
+                                  >
+                                    <SelectItem value="nao_tratada" text="Não tratada" />
+                                    <SelectItem value="tratada" text="Tratada" />
+                                    <SelectItem value="arquivada" text="Arquivada" />
+                                  </Select>
+                                </div>
+                              </div>
+                            </TableCell>
+                          ) : (
+                            <TableCell key={cell.id}>{cell.value}</TableCell>
+                          ),
+                        )}
+                      </TableExpandRow>
+                      <TableExpandedRow colSpan={headers.length + 2}>
+                        <Stack gap={3}>
+                          {p?.nome_pesquisado && <p>Referência: {formatarNomeExibicao(p.nome_pesquisado)}</p>}
+                          {destinatarios.length > 0 && <p>Partes: {destinatarios.join(' · ')}</p>}
+                          {advogados.length > 0 && <p>Advogados: {advogados.join(' · ')}</p>}
+                          <p>capturado em {formatarData(p?.criado_em)}</p>
+                          {d.texto && <p>{d.texto}</p>}
+                          {d.link && (
+                            <a href={d.link} target="_blank" rel="noopener noreferrer">
+                              Ver no sistema do tribunal
+                            </a>
+                          )}
+                        </Stack>
+                      </TableExpandedRow>
+                    </Fragment>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )
+      }}
+    </DataTable>
   )
 }
 
