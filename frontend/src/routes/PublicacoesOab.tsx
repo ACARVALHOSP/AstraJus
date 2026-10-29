@@ -3,6 +3,7 @@ import {
   Accordion,
   AccordionItem,
   Button,
+  Checkbox,
   DatePicker,
   DatePickerInput,
   InlineLoading,
@@ -54,6 +55,8 @@ export default function PublicacoesOab() {
   const [erro, setErro] = useState<string | null>(null)
   const [publicacoes, setPublicacoes] = useState<PublicacaoOab[] | null>(null)
   const [total, setTotal] = useState(0)
+  const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set())
+  const [aplicandoLote, setAplicandoLote] = useState(false)
 
   const carregar = useCallback(async () => {
     setCarregando(true)
@@ -97,6 +100,30 @@ export default function PublicacoesOab() {
     }
   }
 
+  function alternarSelecao(hash: string, marcado: boolean) {
+    setSelecionadas((atual) => {
+      const novo = new Set(atual)
+      if (marcado) novo.add(hash)
+      else novo.delete(hash)
+      return novo
+    })
+  }
+
+  async function aplicarStatusLote(novoStatus: string) {
+    const hashes = [...selecionadas]
+    if (!hashes.length) return
+    setAplicandoLote(true)
+    try {
+      await enviarJson(cliente, '/publicacoes-oab/status', { hashes, status: novoStatus })
+      setSelecionadas(new Set())
+      carregar()
+    } catch (e) {
+      setErro(e instanceof ErroMCP ? e.message : 'Falha ao atualizar em lote.')
+    } finally {
+      setAplicandoLote(false)
+    }
+  }
+
   const totalPaginas = Math.max(1, Math.ceil(total / TAMANHO_PAGINA))
 
   return (
@@ -134,6 +161,23 @@ export default function PublicacoesOab() {
           Atualizar lista
         </Button>
       </div>
+      {selecionadas.size > 0 && (
+        <div className="clientes-lote-barra" role="group" aria-label="Ações nas publicações selecionadas" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <strong role="status">{selecionadas.size} selecionada(s)</strong>
+          <Button size="sm" kind="ghost" disabled={aplicandoLote} onClick={() => aplicarStatusLote('nao_tratada')}>
+            Marcar como Não tratada
+          </Button>
+          <Button size="sm" kind="ghost" disabled={aplicandoLote} onClick={() => aplicarStatusLote('tratada')}>
+            Marcar como Tratada
+          </Button>
+          <Button size="sm" kind="ghost" disabled={aplicandoLote} onClick={() => aplicarStatusLote('arquivada')}>
+            Marcar como Arquivada
+          </Button>
+          <Button size="sm" kind="ghost" disabled={aplicandoLote} onClick={() => setSelecionadas(new Set())}>
+            Cancelar seleção
+          </Button>
+        </div>
+      )}
       <div aria-live="polite">
         {carregando && <InlineLoading description="Carregando…" />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
@@ -149,7 +193,13 @@ export default function PublicacoesOab() {
         {!carregando && publicacoes && publicacoes.length > 0 && (
           <Stack gap={4}>
             {publicacoes.map((p) => (
-              <CartaoPubOab key={p.hash} p={p} onAlterarStatus={(status) => alterarStatus(p, status)} />
+              <CartaoPubOab
+                key={p.hash}
+                p={p}
+                selecionada={selecionadas.has(p.hash)}
+                onAlterarStatus={(status) => alterarStatus(p, status)}
+                onAlterarSelecao={(marcado) => alternarSelecao(p.hash, marcado)}
+              />
             ))}
           </Stack>
         )}
@@ -171,7 +221,17 @@ export default function PublicacoesOab() {
   )
 }
 
-function CartaoPubOab({ p, onAlterarStatus }: { p: PublicacaoOab; onAlterarStatus: (status: string) => void }) {
+function CartaoPubOab({
+  p,
+  selecionada,
+  onAlterarStatus,
+  onAlterarSelecao,
+}: {
+  p: PublicacaoOab
+  selecionada: boolean
+  onAlterarStatus: (status: string) => void
+  onAlterarSelecao: (marcado: boolean) => void
+}) {
   const d = p.dados ?? {}
   const destinatarios = (d.destinatarios ?? []).map((x) => formatarNomeExibicao(x.nome)).filter(Boolean)
   const advogados = (d.destinatarioadvogados ?? []).map((a) => `${formatarNomeExibicao(a.nome)} OAB ${a.numero_oab ?? '?'}/${a.uf_oab ?? '?'}`)
@@ -180,7 +240,14 @@ function CartaoPubOab({ p, onAlterarStatus }: { p: PublicacaoOab; onAlterarStatu
     <Tile>
       <Stack gap={3}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Checkbox
+              id={`selecionar-${p.hash}`}
+              labelText=""
+              hideLabel
+              checked={selecionada}
+              onChange={(_e, { checked }) => onAlterarSelecao(checked)}
+            />
             <Tag type="blue">{(d.siglaTribunal ?? '?').toUpperCase()}</Tag>{' '}
             {d.tipoComunicacao && <Tag type="teal">{d.tipoComunicacao}</Tag>}{' '}
             <Tag type={TAG_STATUS[p.status] ?? 'gray'}>{ROTULO_STATUS[p.status] ?? p.status}</Tag>
