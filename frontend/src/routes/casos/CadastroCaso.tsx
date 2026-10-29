@@ -1,3 +1,4 @@
+import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
 import { Button, Column, Grid, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
@@ -81,7 +82,7 @@ export default function CadastroCaso({
     }
   }
 
-  if (carregando) return <p>Carregando…</p>
+  if (carregando) return <Carregamento tipo="detalhe" />
   if (erroCarregar) return <InlineNotification kind="error" title="Erro ao carregar processo" subtitle={erroCarregar} lowContrast hideCloseButton />
 
   const opcoesResponsavel = [...new Set([...responsaveis, caso?.responsavel].filter((v): v is string => Boolean(v)))]

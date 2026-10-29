@@ -1,9 +1,9 @@
+import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
 import {
   Button,
   Checkbox,
   DataTable,
-  InlineLoading,
   InlineNotification,
   Modal,
   Stack,
@@ -118,7 +118,7 @@ export default function Financeiro() {
         </Button>
       </div>
       <div aria-live="polite">
-        {carregando && <InlineLoading description="Carregando…" />}
+        {carregando && <Carregamento tipo="tabela" descricao="Carregando…" />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
         {!carregando && lancamentos && lancamentos.length === 0 && (
           <InlineNotification kind="info" title="Nenhum lançamento cadastrado" lowContrast hideCloseButton />

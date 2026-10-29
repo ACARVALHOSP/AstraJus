@@ -1,3 +1,4 @@
+import Carregamento from '../../Carregamento'
 import { Star, StarFilled } from '@carbon/icons-react'
 import { useEffect, useState } from 'react'
 import { ActionableNotification, Button, InlineNotification, Modal, Stack, Tag, TextInput } from '@carbon/react'
@@ -144,6 +145,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
         onChange={(e) => setBusca(e.target.value)}
       />
       <div aria-live="polite">
+        {carregando && <Carregamento colunas={6} />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
         {!carregando && casos && casos.length === 0 && <InlineNotification kind="info" title="Nenhum processo cadastrado ainda" lowContrast hideCloseButton />}
         {!carregando && casos && casos.length > 0 && ordenados.length === 0 && (

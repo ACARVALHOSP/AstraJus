@@ -1,3 +1,4 @@
+import Carregamento from '../Carregamento'
 import { useEffect, useState } from 'react'
 import {
   Button,
@@ -37,15 +38,22 @@ export default function Historico() {
   const [historico] = useState<ItemHistorico[]>(() => lerHistorico())
   const [casosFavoritos, setCasosFavoritos] = useState<CasoFavorito[]>([])
 
+  const [carregandoFavoritos, setCarregandoFavoritos] = useState(() => !!cliente && lerCasosFavoritos().length > 0)
+
   useEffect(() => {
+    let atual = true
     const ids = lerCasosFavoritos()
     if (!ids.length || !cliente) {
       setCasosFavoritos([])
+      setCarregandoFavoritos(false)
       return
     }
+    setCarregandoFavoritos(true)
     buscarJson<{ casos: CasoFavorito[] }>(cliente, '/casos')
-      .then((r) => setCasosFavoritos((r.casos ?? []).filter((c) => ids.includes(c.id))))
-      .catch(() => setCasosFavoritos([]))
+      .then((r) => { if (atual) setCasosFavoritos((r.casos ?? []).filter((c) => ids.includes(c.id))) })
+      .catch(() => { if (atual) setCasosFavoritos([]) })
+      .finally(() => { if (atual) setCarregandoFavoritos(false) })
+    return () => { atual = false }
   }, [cliente])
 
   function removerCasoFavorito(id: string) {
@@ -80,7 +88,7 @@ export default function Historico() {
       <section>
         <h3>Processos favoritos</h3>
         <p>Processos marcados como favoritos na lista de Processos. Abrir leva diretamente ao processo.</p>
-        {casosFavoritos.length === 0 ? (
+        {carregandoFavoritos ? <Carregamento descricao="Carregando processos favoritos…" /> : casosFavoritos.length === 0 ? (
           <p>Nenhum processo favorito ainda.</p>
         ) : (
           <Stack gap={3}>

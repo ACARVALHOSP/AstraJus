@@ -1,3 +1,4 @@
+import Carregamento from '../../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Column, Grid, InlineNotification, Select, SelectItem, Stack, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
@@ -122,7 +123,7 @@ export default function VinculosCaso({ casoId, onAbrirCaso }: { casoId: string; 
     <Stack gap={5}>
       <h3>Processos vinculados</h3>
       <div aria-live="polite">
-        {carregando && <p>Carregando…</p>}
+        {carregando && <Carregamento />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
         {!carregando && vinculos && vinculos.length === 0 && <InlineNotification kind="info" title="Nenhum processo vinculado" lowContrast hideCloseButton />}
         {!carregando && vinculos && vinculos.length > 0 && (

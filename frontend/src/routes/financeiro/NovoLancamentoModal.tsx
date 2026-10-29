@@ -1,3 +1,4 @@
+import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
 import { Checkbox, Column, DatePicker, DatePickerInput, Grid, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
@@ -241,6 +242,7 @@ export default function NovoLancamentoModal({ open, onClose, onSalvo }: { open: 
         )}
 
         <h4>Vínculos e responsabilidade</h4>
+        {carregandoBase ? <Carregamento tipo="detalhe" descricao="Carregando clientes e processos…" /> : <>
         <TextInput
           id="honorario-cliente-busca"
           labelText="Cliente *"
@@ -288,6 +290,7 @@ export default function NovoLancamentoModal({ open, onClose, onSalvo }: { open: 
         </fieldset>
         <TextInput id="honorario-responsavel" labelText="Responsável *" placeholder="Ex.: Dra. Fernanda Reis" autoComplete="off" value={responsavel} onChange={(e) => setResponsavel(e.target.value)} />
 
+        </>}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
       </Stack>
     </Modal>

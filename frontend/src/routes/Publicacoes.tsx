@@ -1,3 +1,4 @@
+import Carregamento from '../Carregamento'
 import { Fragment, useEffect, useState, type FormEvent } from 'react'
 import {
   Button,
@@ -7,7 +8,6 @@ import {
   DatePickerInput,
   Form,
   Grid,
-  InlineLoading,
   InlineNotification,
   NumberInput,
   Select,
@@ -217,12 +217,12 @@ export default function Publicacoes() {
         </Stack>
       </Form>
       <div aria-live="polite">
-        {consultando && <InlineLoading description="Consultando o DJEN…" />}
+        {consultando && <Carregamento tipo="tabela" descricao="Consultando o DJEN…" />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
         {resultado?.erro && (
           <InlineNotification kind="error" title="Erro na consulta ao DJEN" subtitle={resultado.mensagem} lowContrast hideCloseButton />
         )}
-        {resultado && !resultado.erro && (
+        {!consultando && resultado && !resultado.erro && (
           <Stack gap={5}>
             <InlineNotification
               kind={(resultado.itens ?? []).length ? 'success' : 'info'}

@@ -1,3 +1,4 @@
+import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
 import { Button, Column, Grid, InlineNotification, Modal, Select, SelectItem, Stack, Tab, TabList, TabPanel, TabPanels, Tabs, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
@@ -170,7 +171,7 @@ export default function CadastroContato({
     }
   }
 
-  if (carregando) return <p>Carregando…</p>
+  if (carregando) return <Carregamento tipo="detalhe" />
   if (erroCarregar) return <InlineNotification kind="error" title="Erro ao carregar cliente" subtitle={erroCarregar} lowContrast hideCloseButton />
 
   return (

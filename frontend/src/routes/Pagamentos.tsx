@@ -1,3 +1,4 @@
+import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
 import {
   Button,
@@ -172,6 +173,7 @@ export default function Pagamentos() {
         </Column>
       </Grid>
       <div aria-live="polite">
+        {carregando && <Carregamento />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
         {!carregando && cobrancas && cobrancas.length === 0 && (
           <InlineNotification kind="info" title="Nenhuma cobrança encontrada" lowContrast hideCloseButton />

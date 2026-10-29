@@ -1,5 +1,6 @@
+import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
-import { Button, InlineLoading, InlineNotification, Modal, Stack, Tile } from '@carbon/react'
+import { Button, InlineNotification, Modal, Stack, Tile } from '@carbon/react'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 import { formatarNumeroCNJ } from '../utils/formatadores'
@@ -96,7 +97,7 @@ export default function Monitoramentos() {
         </Button>
       </div>
       <div aria-live="polite">
-        {carregando && <InlineLoading description="Carregando…" />}
+        {carregando && <Carregamento tipo="cartoes" descricao="Carregando…" />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
         {!carregando && !erro && lista && (
           <Stack gap={5}>

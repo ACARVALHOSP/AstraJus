@@ -1,3 +1,4 @@
+import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
 import { Button, InlineNotification, Link, Stack, Tag, Tile } from '@carbon/react'
 import { useCliente } from '../api/ClienteContext'
@@ -13,6 +14,7 @@ const TOM_SELO: Record<StatusSelo, { texto: string; tom: 'blue' | 'green' | 'gra
 }
 
 function Selo({ status }: { status: StatusSelo }) {
+  if (status === 'verificando') return <Carregamento tipo="texto" descricao="Verificando integração…" />
   const { texto, tom } = TOM_SELO[status]
   return <Tag type={tom}>{texto}</Tag>
 }
@@ -39,6 +41,7 @@ export default function Integracoes() {
     }
     setGoogleStatus('verificando')
     setAsaasStatus('verificando')
+    setZapsignStatus('verificando')
     try {
       const resposta = await fetch('/integracoes/status', { headers: { Authorization: `Bearer ${cliente.token}` } })
       if (!resposta.ok) {
@@ -60,6 +63,7 @@ export default function Integracoes() {
       setErro(mensagem)
       setGoogleStatus('falha')
       setAsaasStatus('falha')
+      setZapsignStatus('falha')
     }
   }, [cliente])
 
