@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import { ActionableNotification, Button, InlineNotification, Modal, Stack, Tag, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
+import { useNavegacao } from '../../api/NavegacaoContext'
 import { buscarJson, enviarJson } from '../../api/rest'
-import { formatarDataSimples, formatarNomeExibicao } from '../../utils/formatadores'
+import { formatarDataSimples, formatarNomeExibicao, formatarNumeroCNJ } from '../../utils/formatadores'
+import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
 import NovoProcessoModal from './NovoProcessoModal'
 
 export type Caso = {
@@ -52,6 +54,7 @@ function formatarClasse(valor?: string): string {
 
 export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void }) {
   const { cliente } = useCliente()
+  const { irPara } = useNavegacao()
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [casos, setCasos] = useState<Caso[] | null>(null)
@@ -166,7 +169,22 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                             {ROTULO_DESFECHO[caso.desfecho]}
                           </Tag>
                         )}
-                        <div>{(caso.processos ?? []).join(', ')}</div>
+                        <div>
+                          {(caso.processos ?? []).map((numero, i) => (
+                            <span key={numero}>
+                              {i > 0 && ', '}
+                              <button
+                                type="button"
+                                className="contato-nome-link"
+                                onClick={() =>
+                                  irPara('processo', { tribunal: siglaTribunalPorNumero(numero) ?? '', numero_processo: numero })
+                                }
+                              >
+                                {formatarNumeroCNJ(numero)}
+                              </button>
+                            </span>
+                          ))}
+                        </div>
                       </td>
                       <td data-label="Cliente/Pasta">
                         {nomes.join(', ') || 'Sem cliente vinculado'}

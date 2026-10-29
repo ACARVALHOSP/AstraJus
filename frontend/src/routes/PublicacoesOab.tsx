@@ -36,9 +36,11 @@ import { Archive, Checkmark, Undo } from '@carbon/icons-react'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 import { buscarJson, enviarJson } from '../api/rest'
+import { useNavegacao } from '../api/NavegacaoContext'
 import { formatarDataSimples, formatarDdMmAaaa, formatarNomeExibicao, formatarNumeroCNJ } from '../utils/formatadores'
 import { formatarData } from '../utils/listasRapidas'
 import { traduzirTabela } from '../utils/tabela'
+import { siglaTribunalPorNumero } from '../utils/tribunalPorNumero'
 
 type DadosDjen = {
   data_disponibilizacao?: string
@@ -223,6 +225,7 @@ function TabelaPublicacoesOab({
   onAplicarLote: (hashes: string[], status: string) => void
   aplicandoLote: boolean
 }) {
+  const { irPara } = useNavegacao()
   const porHash = new Map(publicacoes.map((p) => [p.hash, p]))
   const linhas = publicacoes.map((p) => {
     const d = p.dados ?? {}
@@ -314,6 +317,19 @@ function TabelaPublicacoesOab({
                                   </Select>
                                 </div>
                               </div>
+                            </TableCell>
+                          ) : cell.info.header === 'processo' && p && !p.numero_processo ? (
+                            <TableCell key={cell.id}>
+                              <button
+                                type="button"
+                                className="contato-nome-link"
+                                onClick={() => {
+                                  const numero = d.numeroprocessocommascara ?? ''
+                                  irPara('processo', { tribunal: siglaTribunalPorNumero(numero) ?? '', numero_processo: numero })
+                                }}
+                              >
+                                Consultar processo
+                              </button>
                             </TableCell>
                           ) : (
                             <TableCell key={cell.id}>{cell.value}</TableCell>
