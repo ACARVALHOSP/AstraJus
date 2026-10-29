@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, InlineNotification, Modal, Select, SelectItem, Stack, Tab, TabList, TabPanel, TabPanels, Tabs, TextInput } from '@carbon/react'
+import { Button, Column, Grid, InlineNotification, Modal, Select, SelectItem, Stack, Tab, TabList, TabPanel, TabPanels, Tabs, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -179,18 +179,20 @@ export default function CadastroContato({
         <TabPanels>
           <TabPanel>
             <Stack gap={5}>
-              <div style={{ maxWidth: 'calc(15ch + 3.5rem)' }}>
-                <Select id="contato-tipo-pessoa" labelText="Pessoa física ou jurídica" value={registro.tipo_pessoa} onChange={(e) => atualizar('tipo_pessoa', e.target.value)}>
-                  <SelectItem value="fisica" text="Pessoa física" />
-                  <SelectItem value="juridica" text="Pessoa jurídica" />
-                </Select>
-              </div>
-              <div style={{ maxWidth: 'calc(7ch + 3.5rem)' }}>
-                <Select id="contato-perfil" labelText="Perfil" value={registro.perfil} onChange={(e) => atualizar('perfil', e.target.value)}>
-                  <SelectItem value="contato" text="Contato" />
-                  <SelectItem value="cliente" text="Cliente" />
-                </Select>
-              </div>
+              <Grid narrow fullWidth>
+                <Column sm={4} md={4} lg={5}>
+                  <Select id="contato-tipo-pessoa" labelText="Pessoa física ou jurídica" value={registro.tipo_pessoa} onChange={(e) => atualizar('tipo_pessoa', e.target.value)}>
+                    <SelectItem value="fisica" text="Pessoa física" />
+                    <SelectItem value="juridica" text="Pessoa jurídica" />
+                  </Select>
+                </Column>
+                <Column sm={4} md={2} lg={3}>
+                  <Select id="contato-perfil" labelText="Perfil" value={registro.perfil} onChange={(e) => atualizar('perfil', e.target.value)}>
+                    <SelectItem value="contato" text="Contato" />
+                    <SelectItem value="cliente" text="Cliente" />
+                  </Select>
+                </Column>
+              </Grid>
               <TextInput
                 id="contato-nome"
                 labelText="Nome"
@@ -258,39 +260,63 @@ export default function CadastroContato({
             </Stack>
           </TabPanel>
           <TabPanel>
-            <Stack gap={5}>
-              <TextInput
-                id="contato-cpf-cnpj"
-                labelText={registro.tipo_pessoa === 'juridica' ? 'CNPJ' : 'CPF'}
-                placeholder={registro.tipo_pessoa === 'juridica' ? 'Ex.: 12.345.678/0001-90' : 'Ex.: 123.456.789-00'}
-                value={registro.cpf_cnpj}
-                onChange={(e) => atualizar('cpf_cnpj', mascaraCpfCnpj(e.target.value))}
-              />
-              <TextInput id="contato-rg-numero" labelText="RG — Número" value={registro.rg_numero} onChange={(e) => atualizar('rg_numero', e.target.value)} />
-              <TextInput id="contato-rg-emissao" type="date" labelText="RG — Emissão" value={registro.rg_emissao} onChange={(e) => atualizar('rg_emissao', e.target.value)} />
-              <TextInput id="contato-rg-emissor" labelText="RG — Órgão emissor" placeholder="Ex.: SSP/SP" value={registro.rg_emissor} onChange={(e) => atualizar('rg_emissor', e.target.value)} />
-              <TextInput id="contato-ctps-numero" labelText="CTPS — Número" value={registro.ctps_numero} onChange={(e) => atualizar('ctps_numero', e.target.value)} />
-              <TextInput id="contato-ctps-serie" labelText="CTPS — Série" value={registro.ctps_serie} onChange={(e) => atualizar('ctps_serie', e.target.value)} />
-              <TextInput id="contato-ctps-emissao" type="date" labelText="CTPS — Emissão" value={registro.ctps_emissao} onChange={(e) => atualizar('ctps_emissao', e.target.value)} />
-              <TextInput id="contato-ctps-uf" labelText="CTPS — UF" maxLength={2} value={registro.ctps_uf} onChange={(e) => atualizar('ctps_uf', e.target.value)} />
-              <TextInput id="contato-pis" labelText="PIS" value={registro.pis} onChange={(e) => atualizar('pis', e.target.value)} />
-            </Stack>
+            <Grid narrow fullWidth>
+              <Column sm={4} md={3} lg={5}>
+                <TextInput
+                  id="contato-cpf-cnpj"
+                  labelText={registro.tipo_pessoa === 'juridica' ? 'CNPJ' : 'CPF'}
+                  placeholder={registro.tipo_pessoa === 'juridica' ? 'Ex.: 12.345.678/0001-90' : 'Ex.: 123.456.789-00'}
+                  value={registro.cpf_cnpj}
+                  onChange={(e) => atualizar('cpf_cnpj', mascaraCpfCnpj(e.target.value))}
+                />
+              </Column>
+              <Column sm={4} md={3} lg={4}>
+                <TextInput id="contato-rg-numero" labelText="RG — Número" value={registro.rg_numero} onChange={(e) => atualizar('rg_numero', e.target.value)} />
+              </Column>
+              <Column sm={4} md={2} lg={3}>
+                <TextInput id="contato-rg-emissao" type="date" labelText="RG — Emissão" value={registro.rg_emissao} onChange={(e) => atualizar('rg_emissao', e.target.value)} />
+              </Column>
+              <Column sm={4} md={4} lg={4}>
+                <TextInput id="contato-rg-emissor" labelText="RG — Órgão emissor" placeholder="Ex.: SSP/SP" value={registro.rg_emissor} onChange={(e) => atualizar('rg_emissor', e.target.value)} />
+              </Column>
+              <Column sm={4} md={3} lg={4}>
+                <TextInput id="contato-ctps-numero" labelText="CTPS — Número" value={registro.ctps_numero} onChange={(e) => atualizar('ctps_numero', e.target.value)} />
+              </Column>
+              <Column sm={4} md={2} lg={3}>
+                <TextInput id="contato-ctps-serie" labelText="CTPS — Série" value={registro.ctps_serie} onChange={(e) => atualizar('ctps_serie', e.target.value)} />
+              </Column>
+              <Column sm={4} md={2} lg={3}>
+                <TextInput id="contato-ctps-emissao" type="date" labelText="CTPS — Emissão" value={registro.ctps_emissao} onChange={(e) => atualizar('ctps_emissao', e.target.value)} />
+              </Column>
+              <Column sm={4} md={1} lg={2}>
+                <TextInput id="contato-ctps-uf" labelText="CTPS — UF" maxLength={2} value={registro.ctps_uf} onChange={(e) => atualizar('ctps_uf', e.target.value)} />
+              </Column>
+              <Column sm={4} md={4} lg={4}>
+                <TextInput id="contato-pis" labelText="PIS" value={registro.pis} onChange={(e) => atualizar('pis', e.target.value)} />
+              </Column>
+            </Grid>
           </TabPanel>
           <TabPanel>
             <Stack gap={5}>
-              <div style={{ maxWidth: 'calc(25ch + 3.5rem)' }}>
-                <Select id="contato-estado-civil" labelText="Estado civil" value={registro.estado_civil} onChange={(e) => atualizar('estado_civil', e.target.value)}>
-                  <SelectItem value="" text="— Selecione —" />
-                  <SelectItem value="solteiro" text="Solteiro(a)" />
-                  <SelectItem value="casado" text="Casado(a)" />
-                  <SelectItem value="uniao_estavel" text="União estável" />
-                  <SelectItem value="divorciado" text="Divorciado(a)" />
-                  <SelectItem value="separado" text="Separado(a) judicialmente" />
-                  <SelectItem value="viuvo" text="Viúvo(a)" />
-                </Select>
-              </div>
-              <TextInput id="contato-nacionalidade" labelText="Nacionalidade" placeholder="Ex.: Brasileira" value={registro.nacionalidade} onChange={(e) => atualizar('nacionalidade', e.target.value)} />
-              <TextInput id="contato-profissao" labelText="Profissão" placeholder="Ex.: Engenheira civil" value={registro.profissao} onChange={(e) => atualizar('profissao', e.target.value)} />
+              <Grid narrow fullWidth>
+                <Column sm={4} md={4} lg={6}>
+                  <Select id="contato-estado-civil" labelText="Estado civil" value={registro.estado_civil} onChange={(e) => atualizar('estado_civil', e.target.value)}>
+                    <SelectItem value="" text="— Selecione —" />
+                    <SelectItem value="solteiro" text="Solteiro(a)" />
+                    <SelectItem value="casado" text="Casado(a)" />
+                    <SelectItem value="uniao_estavel" text="União estável" />
+                    <SelectItem value="divorciado" text="Divorciado(a)" />
+                    <SelectItem value="separado" text="Separado(a) judicialmente" />
+                    <SelectItem value="viuvo" text="Viúvo(a)" />
+                  </Select>
+                </Column>
+                <Column sm={4} md={4} lg={5}>
+                  <TextInput id="contato-nacionalidade" labelText="Nacionalidade" placeholder="Ex.: Brasileira" value={registro.nacionalidade} onChange={(e) => atualizar('nacionalidade', e.target.value)} />
+                </Column>
+                <Column sm={4} md={4} lg={5}>
+                  <TextInput id="contato-profissao" labelText="Profissão" placeholder="Ex.: Engenheira civil" value={registro.profissao} onChange={(e) => atualizar('profissao', e.target.value)} />
+                </Column>
+              </Grid>
               <TextInput id="contato-observacoes" labelText="Observações" placeholder="Ex.: indicação de cliente antigo" value={registro.observacoes} onChange={(e) => atualizar('observacoes', e.target.value)} />
             </Stack>
           </TabPanel>

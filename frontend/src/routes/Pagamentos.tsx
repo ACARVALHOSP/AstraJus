@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Button, InlineNotification, Link, Modal, Select, SelectItem, Stack, Tag, TextInput } from '@carbon/react'
+import { Button, Column, Grid, InlineNotification, Link, Modal, Select, SelectItem, Stack, Tag, TextInput } from '@carbon/react'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 import { buscarJson, enviarJson } from '../api/rest'
@@ -128,8 +128,8 @@ export default function Pagamentos() {
       {avisoIntegracao && (
         <InlineNotification kind="info" title="Integração Asaas não configurada" subtitle={avisoIntegracao} lowContrast hideCloseButton />
       )}
-      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-        <div style={{ maxWidth: 'calc(10ch + 3.5rem)' }}>
+      <Grid narrow fullWidth>
+        <Column sm={4} md={3} lg={3}>
           <Select id="pagamentos-filtro-status" labelText="Status" value={status} onChange={(e) => setStatus(e.target.value)}>
             <SelectItem value="" text="— todos —" />
             <SelectItem value="PENDING" text="Pendente" />
@@ -138,17 +138,19 @@ export default function Pagamentos() {
             <SelectItem value="CONFIRMED" text="Confirmado" />
             <SelectItem value="REFUNDED" text="Estornado" />
           </Select>
-        </div>
-        <TextInput
-          id="pagamentos-filtro-cliente-cpf"
-          labelText="Cliente (CPF/CNPJ)"
-          placeholder="Ex.: 123.456.789-00"
-          autoComplete="off"
-          helperText={statusCpfCnpj()}
-          value={cpfCnpj}
-          onChange={(e) => aoDigitarCpfCnpj(e.target.value)}
-        />
-      </div>
+        </Column>
+        <Column sm={4} md={4} lg={4}>
+          <TextInput
+            id="pagamentos-filtro-cliente-cpf"
+            labelText="Cliente (CPF/CNPJ)"
+            placeholder="Ex.: 123.456.789-00"
+            autoComplete="off"
+            helperText={statusCpfCnpj()}
+            value={cpfCnpj}
+            onChange={(e) => aoDigitarCpfCnpj(e.target.value)}
+          />
+        </Column>
+      </Grid>
       <div aria-live="polite">
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
         {!carregando && cobrancas && cobrancas.length === 0 && (

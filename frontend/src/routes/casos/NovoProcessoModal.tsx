@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ComboBox, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
+import { Column, ComboBox, Grid, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { enviarJson } from '../../api/rest'
@@ -95,34 +95,46 @@ export default function NovoProcessoModal({
           onChange={({ selectedItem }) => setClienteSelecionado(selectedItem ?? null)}
         />
         <TextInput id="caso-titulo" labelText="Título" placeholder="Ex.: Cobrança de honorários" autoComplete="off" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
-        <TextInput id="caso-responsavel" labelText="Responsável" placeholder="Ex.: Dra. Fernanda Reis" autoComplete="off" value={responsavel} onChange={(e) => setResponsavel(e.target.value)} />
-        <TextInput id="caso-acao" labelText="Ação" placeholder="Ex.: Cumprimento de sentença" autoComplete="off" value={acao} onChange={(e) => setAcao(e.target.value)} />
-        <TextInput id="caso-foro" labelText="Foro" placeholder="Ex.: 3ª Vara Cível" autoComplete="off" value={foro} onChange={(e) => setForo(e.target.value)} />
-        <TextInput
-          id="caso-pasta"
-          labelText="Pasta (opcional)"
-          placeholder="Ex.: Trabalhista 2026"
-          helperText="Só para organizar e facilitar a busca - não cria pastas de verdade no sistema."
-          autoComplete="off"
-          value={pasta}
-          onChange={(e) => setPasta(e.target.value)}
-        />
-        <div style={{ maxWidth: 'calc(7ch + 3.5rem)' }}>
-          <Select id="caso-acesso" labelText="Acesso" helperText="Só para organizar - o sistema ainda não restringe quem vê o processo pelo acesso escolhido." value={acesso} onChange={(e) => setAcesso(e.target.value)}>
-            <SelectItem value="equipe" text="Equipe" />
-            <SelectItem value="publico" text="Público" />
-            <SelectItem value="privado" text="Privado" />
-          </Select>
-        </div>
-        <TextInput
-          id="caso-processos"
-          labelText="Número CNJ (opcional)"
-          placeholder="1006314-27.2023.8.26.0005"
-          helperText="Informe um único número ou deixe em branco se ainda não existir."
-          autoComplete="off"
-          value={processos}
-          onChange={(e) => setProcessos(e.target.value)}
-        />
+        <Grid narrow fullWidth>
+          <Column sm={4} md={4} lg={8}>
+            <TextInput id="caso-responsavel" labelText="Responsável" placeholder="Ex.: Dra. Fernanda Reis" autoComplete="off" value={responsavel} onChange={(e) => setResponsavel(e.target.value)} />
+          </Column>
+          <Column sm={4} md={4} lg={8}>
+            <TextInput id="caso-acao" labelText="Ação" placeholder="Ex.: Cumprimento de sentença" autoComplete="off" value={acao} onChange={(e) => setAcao(e.target.value)} />
+          </Column>
+          <Column sm={4} md={4} lg={8}>
+            <TextInput id="caso-foro" labelText="Foro" placeholder="Ex.: 3ª Vara Cível" autoComplete="off" value={foro} onChange={(e) => setForo(e.target.value)} />
+          </Column>
+          <Column sm={4} md={4} lg={8}>
+            <TextInput
+              id="caso-pasta"
+              labelText="Pasta (opcional)"
+              placeholder="Ex.: Trabalhista 2026"
+              helperText="Só para organizar e facilitar a busca - não cria pastas de verdade no sistema."
+              autoComplete="off"
+              value={pasta}
+              onChange={(e) => setPasta(e.target.value)}
+            />
+          </Column>
+          <Column sm={4} md={2} lg={4}>
+            <Select id="caso-acesso" labelText="Acesso" helperText="Só para organizar - o sistema ainda não restringe quem vê o processo pelo acesso escolhido." value={acesso} onChange={(e) => setAcesso(e.target.value)}>
+              <SelectItem value="equipe" text="Equipe" />
+              <SelectItem value="publico" text="Público" />
+              <SelectItem value="privado" text="Privado" />
+            </Select>
+          </Column>
+          <Column sm={4} md={6} lg={12}>
+            <TextInput
+              id="caso-processos"
+              labelText="Número CNJ (opcional)"
+              placeholder="1006314-27.2023.8.26.0005"
+              helperText="Informe um único número ou deixe em branco se ainda não existir."
+              autoComplete="off"
+              value={processos}
+              onChange={(e) => setProcessos(e.target.value)}
+            />
+          </Column>
+        </Grid>
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
       </Stack>
     </Modal>

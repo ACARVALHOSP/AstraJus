@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
+import { Column, Grid, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -87,24 +87,30 @@ export default function AtividadeModal({
       onRequestSubmit={salvar}
     >
       <Stack gap={5}>
-        <div style={{ maxWidth: 'calc(9ch + 3.5rem)' }}>
-          <Select id="atividade-tipo" labelText="Tipo" value={tipo} onChange={(e) => setTipo(e.target.value)}>
-            {Object.entries(ROTULO_TIPO).map(([valor, rotulo]) => (
-              <SelectItem key={valor} value={valor} text={rotulo} />
-            ))}
-          </Select>
-        </div>
         <TextInput id="atividade-titulo" labelText="Título" autoComplete="off" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
-        <TextInput id="atividade-data" type="date" labelText="Data" value={data} onChange={(e) => setData(e.target.value)} />
-        <TextInput id="atividade-hora" type="time" labelText="Hora" value={hora} onChange={(e) => setHora(e.target.value)} />
-        <div style={{ maxWidth: 'calc(8ch + 3.5rem)' }}>
-          <Select id="atividade-responsavel" labelText="Responsável" value={responsavel} onChange={(e) => setResponsavel(e.target.value)}>
-            <SelectItem value="" text="Eu mesmo" />
-            {opcoesResponsavel.map((nome) => (
-              <SelectItem key={nome} value={nome} text={nome} />
-            ))}
-          </Select>
-        </div>
+        <Grid narrow fullWidth>
+          <Column sm={4} md={2} lg={4}>
+            <Select id="atividade-tipo" labelText="Tipo" value={tipo} onChange={(e) => setTipo(e.target.value)}>
+              {Object.entries(ROTULO_TIPO).map(([valor, rotulo]) => (
+                <SelectItem key={valor} value={valor} text={rotulo} />
+              ))}
+            </Select>
+          </Column>
+          <Column sm={4} md={2} lg={4}>
+            <TextInput id="atividade-data" type="date" labelText="Data" value={data} onChange={(e) => setData(e.target.value)} />
+          </Column>
+          <Column sm={4} md={2} lg={4}>
+            <TextInput id="atividade-hora" type="time" labelText="Hora" value={hora} onChange={(e) => setHora(e.target.value)} />
+          </Column>
+          <Column sm={4} md={2} lg={4}>
+            <Select id="atividade-responsavel" labelText="Responsável" value={responsavel} onChange={(e) => setResponsavel(e.target.value)}>
+              <SelectItem value="" text="Eu mesmo" />
+              {opcoesResponsavel.map((nome) => (
+                <SelectItem key={nome} value={nome} text={nome} />
+              ))}
+            </Select>
+          </Column>
+        </Grid>
         <TextInput id="atividade-observacoes" labelText="Observações" autoComplete="off" value={observacoes} onChange={(e) => setObservacoes(e.target.value)} />
         {atividade && <ChecklistAtividade casoId={casoId} atividadeId={atividade.id} />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}

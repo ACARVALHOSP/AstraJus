@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Checkbox, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
+import { Checkbox, Column, Grid, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { enviarJson } from '../../api/rest'
@@ -107,42 +107,50 @@ export default function NovaCobrancaModal({
           value={cpfCnpj}
           onChange={(e) => aoDigitarCpfCnpj(e.target.value)}
         />
-        <div style={{ maxWidth: 'calc(6ch + 3.5rem)' }}>
-          <Select id="cobranca-tipo" labelText="Tipo de cobrança *" value={tipo} onChange={(e) => setTipo(e.target.value as 'BOLETO' | 'PIX')}>
-            <SelectItem value="BOLETO" text="Boleto" />
-            <SelectItem value="PIX" text="Pix" />
-          </Select>
-        </div>
         <Checkbox id="cobranca-parcelar" labelText="Parcelar" checked={parcelar} onChange={(_e, { checked }) => setParcelar(checked)} />
-        {parcelar && (
-          <TextInput
-            id="cobranca-parcelas"
-            type="number"
-            labelText="Quantidade de parcelas *"
-            min={2}
-            max={60}
-            value={String(parcelas)}
-            onChange={(e) => setParcelas(Number(e.target.value) || 2)}
-          />
-        )}
-        <TextInput
-          id="cobranca-valor"
-          type="number"
-          labelText={parcelar ? 'Valor total *' : 'Valor *'}
-          placeholder="Ex.: 1500.00"
-          min="0.01"
-          step="0.01"
-          value={valor}
-          onChange={(e) => setValor(e.target.value)}
-        />
-        <TextInput
-          id="cobranca-vencimento"
-          labelText="Vencimento *"
-          placeholder="aaaa-mm-dd"
-          autoComplete="off"
-          value={vencimento}
-          onChange={(e) => setVencimento(e.target.value)}
-        />
+        <Grid narrow fullWidth>
+          <Column sm={4} md={2} lg={3}>
+            <Select id="cobranca-tipo" labelText="Tipo de cobrança *" value={tipo} onChange={(e) => setTipo(e.target.value as 'BOLETO' | 'PIX')}>
+              <SelectItem value="BOLETO" text="Boleto" />
+              <SelectItem value="PIX" text="Pix" />
+            </Select>
+          </Column>
+          {parcelar && (
+            <Column sm={4} md={2} lg={4}>
+              <TextInput
+                id="cobranca-parcelas"
+                type="number"
+                labelText="Quantidade de parcelas *"
+                min={2}
+                max={60}
+                value={String(parcelas)}
+                onChange={(e) => setParcelas(Number(e.target.value) || 2)}
+              />
+            </Column>
+          )}
+          <Column sm={4} md={2} lg={4}>
+            <TextInput
+              id="cobranca-valor"
+              type="number"
+              labelText={parcelar ? 'Valor total *' : 'Valor *'}
+              placeholder="Ex.: 1500.00"
+              min="0.01"
+              step="0.01"
+              value={valor}
+              onChange={(e) => setValor(e.target.value)}
+            />
+          </Column>
+          <Column sm={4} md={2} lg={4}>
+            <TextInput
+              id="cobranca-vencimento"
+              labelText="Vencimento *"
+              placeholder="aaaa-mm-dd"
+              autoComplete="off"
+              value={vencimento}
+              onChange={(e) => setVencimento(e.target.value)}
+            />
+          </Column>
+        </Grid>
         <PreviaParcelas parcelar={parcelar} valor={valor} parcelas={parcelas} vencimento={vencimento} />
         <TextInput
           id="cobranca-descricao"

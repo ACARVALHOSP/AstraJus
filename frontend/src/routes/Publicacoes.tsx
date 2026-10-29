@@ -1,9 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import {
   Button,
+  Column,
   DatePicker,
   DatePickerInput,
   Form,
+  Grid,
   InlineLoading,
   InlineNotification,
   NumberInput,
@@ -132,61 +134,69 @@ export default function Publicacoes() {
       </div>
       <Form onSubmit={aoEnviar}>
         <Stack gap={5}>
-          <TextInput
-            id="pub-numero-processo"
-            labelText="Número do processo"
-            placeholder="1006314-27.2023.8.26.0005"
-            autoComplete="off"
-            value={numeroProcesso}
-            onChange={(e) => setNumeroProcesso(e.target.value)}
-          />
-          <div style={{ maxWidth: 'calc(9ch + 3.5rem)' }}>
-            <Select id="pub-sigla-tribunal" labelText="Tribunal" value={tribunal} onChange={(e) => setTribunal(e.target.value)}>
-              <SelectItem value="" text="— todos —" />
-              {TRIBUNAIS.map((t) => (
-                <SelectItem key={t} value={t} text={t.toUpperCase()} />
-              ))}
-            </Select>
-          </div>
-          <div style={{ maxWidth: 'calc(6ch + 1.5rem)' }}>
-            <TextInput
-              id="pub-numero-oab"
-              labelText="Número da OAB"
-              placeholder="330659"
-              maxLength={6}
-              autoComplete="off"
-              value={numeroOab}
-              onChange={(e) => setNumeroOab(e.target.value)}
-            />
-          </div>
-          <div style={{ maxWidth: 'calc(9ch + 3.5rem)' }}>
-            <Select id="pub-uf-oab" labelText="UF da OAB" value={ufOab} onChange={(e) => setUfOab(e.target.value)}>
-              <SelectItem value="" text="— todas —" />
-              {UFS.map((uf) => (
-                <SelectItem key={uf} value={uf} text={uf} />
-              ))}
-            </Select>
-          </div>
-          <DatePicker
-            datePickerType="range"
-            dateFormat="d/m/Y"
-            onChange={(datas: Date[]) => {
-              const [inicio, fim] = datas
-              setDataInicio(inicio ? formatarDdMmAaaa(inicio) : '')
-              setDataFim(fim ? formatarDdMmAaaa(fim) : '')
-            }}
-          >
-            <DatePickerInput id="pub-data-inicio" labelText="Publicado a partir de" placeholder="dd/mm/aaaa" />
-            <DatePickerInput id="pub-data-fim" labelText="Publicado até" placeholder="dd/mm/aaaa" />
-          </DatePicker>
-          <NumberInput
-            id="pub-itens"
-            label="Itens por página"
-            min={1}
-            max={100}
-            value={itensPorPagina}
-            onChange={(_e, { value }) => setItensPorPagina(Number(value) || 20)}
-          />
+          <Grid narrow fullWidth>
+            <Column sm={4} md={4} lg={6}>
+              <TextInput
+                id="pub-numero-processo"
+                labelText="Número do processo"
+                placeholder="1006314-27.2023.8.26.0005"
+                autoComplete="off"
+                value={numeroProcesso}
+                onChange={(e) => setNumeroProcesso(e.target.value)}
+              />
+            </Column>
+            <Column sm={4} md={3} lg={3}>
+              <Select id="pub-sigla-tribunal" labelText="Tribunal" value={tribunal} onChange={(e) => setTribunal(e.target.value)}>
+                <SelectItem value="" text="— todos —" />
+                {TRIBUNAIS.map((t) => (
+                  <SelectItem key={t} value={t} text={t.toUpperCase()} />
+                ))}
+              </Select>
+            </Column>
+            <Column sm={4} md={2} lg={2}>
+              <TextInput
+                id="pub-numero-oab"
+                labelText="Número da OAB"
+                placeholder="330659"
+                maxLength={6}
+                autoComplete="off"
+                value={numeroOab}
+                onChange={(e) => setNumeroOab(e.target.value)}
+              />
+            </Column>
+            <Column sm={4} md={2} lg={2}>
+              <Select id="pub-uf-oab" labelText="UF da OAB" value={ufOab} onChange={(e) => setUfOab(e.target.value)}>
+                <SelectItem value="" text="— todas —" />
+                {UFS.map((uf) => (
+                  <SelectItem key={uf} value={uf} text={uf} />
+                ))}
+              </Select>
+            </Column>
+            <Column sm={4} md={5} lg={8}>
+              <DatePicker
+                datePickerType="range"
+                dateFormat="d/m/Y"
+                onChange={(datas: Date[]) => {
+                  const [inicio, fim] = datas
+                  setDataInicio(inicio ? formatarDdMmAaaa(inicio) : '')
+                  setDataFim(fim ? formatarDdMmAaaa(fim) : '')
+                }}
+              >
+                <DatePickerInput id="pub-data-inicio" labelText="Publicado a partir de" placeholder="dd/mm/aaaa" />
+                <DatePickerInput id="pub-data-fim" labelText="Publicado até" placeholder="dd/mm/aaaa" />
+              </DatePicker>
+            </Column>
+            <Column sm={4} md={3} lg={3}>
+              <NumberInput
+                id="pub-itens"
+                label="Itens por página"
+                min={1}
+                max={100}
+                value={itensPorPagina}
+                onChange={(_e, { value }) => setItensPorPagina(Number(value) || 20)}
+              />
+            </Column>
+          </Grid>
           <p>Informe o número do processo ou a OAB. Os demais campos são opcionais.</p>
           <div>
             <Button type="submit" disabled={consultando}>
