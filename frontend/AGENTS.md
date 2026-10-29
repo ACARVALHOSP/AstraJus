@@ -1,5 +1,9 @@
 ## Agent skills
 
+### VPS
+
+O usuário SSH do VPS `191.252.110.22` é `admin`. Usar esse usuário nos próximos acessos; não tentar `root` como padrão. O deploy independente do React está documentado em `deploy/README.md`.
+
 ### Ícones e movimento Carbon
 
 Sempre usar ícones oficiais do Carbon Design System; não substituir ícones por emojis, caracteres Unicode ou desenhos improvisados. Verificar os nomes e imports dos ícones antes de utilizá-los.
