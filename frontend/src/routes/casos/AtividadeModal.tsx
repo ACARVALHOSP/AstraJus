@@ -4,6 +4,7 @@ import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
 import type { Atividade } from './AtividadesCaso'
+import ChecklistAtividade from './ChecklistAtividade'
 
 const ROTULO_TIPO: Record<string, string> = { tarefa: 'Tarefa', prazo: 'Prazo', audiencia: 'Audiência', reuniao: 'Reunião', outro: 'Outro' }
 
@@ -101,6 +102,7 @@ export default function AtividadeModal({
           ))}
         </Select>
         <TextInput id="atividade-observacoes" labelText="Observações" autoComplete="off" value={observacoes} onChange={(e) => setObservacoes(e.target.value)} />
+        {atividade && <ChecklistAtividade casoId={casoId} atividadeId={atividade.id} />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
       </Stack>
     </Modal>
