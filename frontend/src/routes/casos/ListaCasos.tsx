@@ -2,8 +2,11 @@ import { useEffect, useState } from 'react'
 import { ActionableNotification, Button, InlineNotification, Modal, Stack, Tag, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
+import { useNavegacao } from '../../api/NavegacaoContext'
 import { buscarJson, enviarJson } from '../../api/rest'
-import { formatarDataSimples, formatarNomeExibicao } from '../../utils/formatadores'
+import { formatarDataSimples, formatarNomeExibicao, formatarNumeroCNJ } from '../../utils/formatadores'
+import { alternarCasoFavorito, ehCasoFavorito } from '../../utils/listasRapidas'
+import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
 import NovoProcessoModal from './NovoProcessoModal'
 
 export type Caso = {
@@ -52,6 +55,7 @@ function formatarClasse(valor?: string): string {
 
 export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void }) {
   const { cliente } = useCliente()
+  const { irPara } = useNavegacao()
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [casos, setCasos] = useState<Caso[] | null>(null)
@@ -75,6 +79,11 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
       })
       .catch((e) => setErro(e instanceof ErroMCP ? e.message : 'Falha ao carregar.'))
       .finally(() => setCarregando(false))
+  }
+
+  function favoritar(casoId: string) {
+    alternarCasoFavorito(casoId)
+    setCasos((atual) => (atual ? [...atual] : atual))
   }
 
   useEffect(carregar, [cliente])
@@ -144,6 +153,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
             <table className="tabela-responsiva tabela-casos">
               <thead>
                 <tr>
+                  <th>Favorito</th>
                   <th>Título</th>
                   <th>Cliente/Pasta</th>
                   <th>Ação/Foro</th>
@@ -154,8 +164,20 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
               <tbody>
                 {ordenados.map((caso) => {
                   const nomes = [caso.cliente_id, ...(caso.clientes_adicionais ?? [])].map(nomeCliente).filter(Boolean).map(formatarNomeExibicao)
+                  const favoritado = ehCasoFavorito(caso.id)
                   return (
                     <tr key={caso.id}>
+                      <td data-label="Favorito">
+                        <Button
+                          kind="ghost"
+                          size="sm"
+                          hasIconOnly
+                          iconDescription={favoritado ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}
+                          onClick={() => favoritar(caso.id)}
+                        >
+                          {favoritado ? '★' : '☆'}
+                        </Button>
+                      </td>
                       <td data-label="Título">
                         <button type="button" className="contato-nome-link" onClick={() => onAbrir(caso.id)}>
                           {caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)'}
@@ -166,7 +188,22 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                             {ROTULO_DESFECHO[caso.desfecho]}
                           </Tag>
                         )}
-                        <div>{(caso.processos ?? []).join(', ')}</div>
+                        <div>
+                          {(caso.processos ?? []).map((numero, i) => (
+                            <span key={numero}>
+                              {i > 0 && ', '}
+                              <button
+                                type="button"
+                                className="contato-nome-link"
+                                onClick={() =>
+                                  irPara('processo', { tribunal: siglaTribunalPorNumero(numero) ?? '', numero_processo: numero })
+                                }
+                              >
+                                {formatarNumeroCNJ(numero)}
+                              </button>
+                            </span>
+                          ))}
+                        </div>
                       </td>
                       <td data-label="Cliente/Pasta">
                         {nomes.join(', ') || 'Sem cliente vinculado'}
