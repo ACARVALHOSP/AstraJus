@@ -1,3 +1,5 @@
+import { Add } from '@carbon/icons-react'
+import { Close } from '@carbon/icons-react'
 import { Button, Column, Grid, Select, SelectItem, TextInput } from '@carbon/react'
 
 export type OpcaoTipo = { valor: string; rotulo: string }
@@ -33,7 +35,7 @@ export default function CampoRepetivel<T extends Record<string, string>>({
   return (
     <div>
       <span className="cds--label">{titulo}</span>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
+      <div className="aj-layout-29">
         {itens.map((item, indice) => {
           const selectSpans = campos.filter((c) => c.tipo === 'select').reduce((soma, c) => soma + spanSelect(c.opcoes), 0)
           const textos = campos.filter((c) => c.tipo === 'texto')
@@ -66,17 +68,17 @@ export default function CampoRepetivel<T extends Record<string, string>>({
                   </Column>
                 ),
               )}
-              <Column sm={4} md={1} lg={1} style={{ display: 'flex', alignItems: 'flex-end' }}>
+              <Column sm={4} md={1} lg={1} className="aj-layout-30">
                 <Button kind="ghost" size="sm" hasIconOnly iconDescription="Remover" onClick={() => onRemover(indice)}>
-                  ✕
+                  <Close size={16} />
                 </Button>
               </Column>
             </Grid>
           )
         })}
       </div>
-      <Button kind="ghost" size="sm" onClick={onAdicionar} style={{ marginTop: '0.5rem' }}>
-        + Adicionar {titulo.toLowerCase()}
+      <Button kind="ghost" size="sm" onClick={onAdicionar} renderIcon={Add} className="aj-layout-31">
+        Adicionar {titulo.toLowerCase()}
       </Button>
     </div>
   )

@@ -60,7 +60,7 @@ export default function PublicacoesCaso({ casoId }: { casoId: string }) {
               const texto = pub.dados?.texto || pub.dados?.teor || pub.dados?.conteudo || ''
               return (
                 <Tile key={pub.hash}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+                  <div className="aj-layout-25">
                     <div>
                       <strong>{pub.numero_processo || pub.nome_pesquisado || 'Publicação'}</strong>{' '}
                       <span>{(pub.criado_em ?? '').substring(0, 10)}</span>
@@ -76,7 +76,7 @@ export default function PublicacoesCaso({ casoId }: { casoId: string }) {
           </Stack>
         )}
       </div>
-      <Modal
+      <Modal closeButtonLabel="Fechar"
         open={paraDesvincular !== null}
         danger
         modalHeading="Desvincular publicação"

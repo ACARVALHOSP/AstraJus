@@ -1,3 +1,4 @@
+import { ArrowLeft } from '@carbon/icons-react'
 import { useState } from 'react'
 import { Button, Stack } from '@carbon/react'
 import { useNavegacao } from '../api/NavegacaoContext'
@@ -32,10 +33,10 @@ export default function Contatos() {
 
   return (
     <Stack gap={6}>
-      <Button kind="ghost" size="sm" onClick={() => setVisao({ tipo: 'lista' })}>
-        « Voltar para clientes
+      <Button kind="ghost" size="sm" renderIcon={ArrowLeft} onClick={() => setVisao({ tipo: 'lista' })}>
+        Voltar para clientes
       </Button>
-      <h2>{nomeDetalhe}</h2>
+      <h1>{nomeDetalhe}</h1>
       <CadastroContato
         clienteId={visao.clienteId}
         onCarregado={(cliente) => setNomeDetalhe(cliente.nome ? formatarNomeExibicao(cliente.nome) : '(sem nome)')}

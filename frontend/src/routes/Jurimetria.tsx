@@ -174,7 +174,7 @@ export default function Jurimetria() {
   return (
     <Stack gap={6}>
       <div>
-        <h2>Jurimetria</h2>
+        <h1>Jurimetria</h1>
         <p>
           Preencha os filtros abaixo e escolha a análise - todas usam a mesma busca no CJPG (julgados de 1º grau do
           TJSP). As demais ideias ao final ainda são só conceitos de próximos passos.
@@ -219,7 +219,7 @@ export default function Jurimetria() {
             value={paginas}
             onChange={(_e, { value }) => setPaginas(Number(value) || 1)}
           />
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div className="aj-layout-49">
             <Button type="submit" disabled={consultando}>
               Benchmark de valor
             </Button>
@@ -279,13 +279,13 @@ export default function Jurimetria() {
 }
 
 function Grade({ children }: { children: React.ReactNode }) {
-  return <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>{children}</div>
+  return <div className="aj-layout-50">{children}</div>
 }
 
 function CeluaResumo({ rotulo, valor }: { rotulo: string; valor: string }) {
   return (
-    <Tile style={{ minWidth: '10rem' }}>
-      <div style={{ fontSize: '1.5rem', fontWeight: 600 }}>{valor}</div>
+    <Tile className="aj-layout-51">
+      <div className="aj-layout-52">{valor}</div>
       <div>{rotulo}</div>
     </Tile>
   )

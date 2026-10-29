@@ -72,7 +72,7 @@ export default function NovoProcessoModal({
   }
 
   return (
-    <Modal
+    <Modal closeButtonLabel="Fechar"
       open={open}
       modalHeading="Novo processo"
       primaryButtonText="Cadastrar processo"

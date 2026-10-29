@@ -118,8 +118,8 @@ export default function Atividades() {
 
   return (
     <Stack gap={6}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>Atividades abertas</h2>
+      <div className="aj-layout-14">
+        <h1>Atividades abertas</h1>
         <Button kind="tertiary" size="sm" onClick={carregar} disabled={carregando}>
           Atualizar atividades
         </Button>
@@ -182,7 +182,7 @@ export default function Atividades() {
                 {ROTULO_TIPO[atividade.tipo] ?? atividade.tipo} · {atividade.data ? formatarDataSimples(atividade.data) : 'Sem data'}
                 {atividade.hora ? ` · ${atividade.hora}` : ''}
               </p>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <div className="aj-layout-15">
                 <Button kind="ghost" size="sm" onClick={() => irPara('casos', { abrirCasoId: caso.id })}>
                   Abrir processo
                 </Button>

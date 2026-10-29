@@ -95,13 +95,13 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
 
   return (
     <Stack gap={6}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="aj-layout-36">
         <h2>Clientes</h2>
         <Button size="sm" onClick={onNovo}>
           Novo cliente
         </Button>
       </div>
-      <div role="group" aria-label="Filtrar clientes pela inicial do nome" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+      <div role="group" aria-label="Filtrar clientes pela inicial do nome" className="aj-layout-37">
         {['TODOS', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((l) => (
           <Button key={l} kind={l === letra ? 'primary' : 'ghost'} size="sm" onClick={() => setLetra(l)}>
             {l}
@@ -152,7 +152,7 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
           />
         )}
       </div>
-      <Modal
+      <Modal closeButtonLabel="Fechar"
         open={paraExcluir !== null}
         danger
         modalHeading="Excluir cliente"

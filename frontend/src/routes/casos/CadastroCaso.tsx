@@ -96,7 +96,7 @@ export default function CadastroCaso({
         ))}
       </div>
       <Grid narrow fullWidth>
-        <Column sm={4} md={4} lg={6}>
+        <Column sm={4} md={4} lg={8} xlg={6}>
           <Select id="editar-caso-responsavel" labelText="Responsável" value={responsavel} onChange={(e) => setResponsavel(e.target.value)}>
             <SelectItem value="" text="Selecione um responsável" />
             {opcoesResponsavel.map((nome) => (
@@ -104,10 +104,10 @@ export default function CadastroCaso({
             ))}
           </Select>
         </Column>
-        <Column sm={4} md={4} lg={6}>
+        <Column sm={4} md={4} lg={8} xlg={6}>
           <TextInput id="editar-caso-pasta" labelText="Pasta" autoComplete="off" value={pasta} onChange={(e) => setPasta(e.target.value)} />
         </Column>
-        <Column sm={4} md={4} lg={4}>
+        <Column sm={4} md={4} lg={8} xlg={4}>
           <Select id="editar-caso-acesso" labelText="Acesso" value={acesso} onChange={(e) => setAcesso(e.target.value)}>
             <SelectItem value="equipe" text="Equipe" />
             <SelectItem value="publico" text="Público" />
@@ -115,7 +115,7 @@ export default function CadastroCaso({
           </Select>
         </Column>
       </Grid>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div className="aj-layout-20">
           <Button size="sm" onClick={salvar} disabled={salvando}>
             Salvar
           </Button>
@@ -134,7 +134,7 @@ export default function CadastroCaso({
             />
           )}
         </div>
-      <Modal
+      <Modal closeButtonLabel="Fechar"
         open={paraExcluir}
         danger
         modalHeading="Excluir processo"

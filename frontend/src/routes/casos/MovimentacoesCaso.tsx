@@ -73,7 +73,7 @@ export default function MovimentacoesCaso({ casoId }: { casoId: string }) {
 
   return (
     <Stack gap={5}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="aj-layout-24">
         <h3>Movimentações</h3>
         <Button kind="secondary" size="sm" onClick={buscar} disabled={carregando}>
           Buscar no DataJud

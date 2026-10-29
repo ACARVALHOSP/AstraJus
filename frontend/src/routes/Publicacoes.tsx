@@ -141,7 +141,7 @@ export default function Publicacoes() {
   return (
     <Stack gap={6}>
       <div>
-        <h2>Consultar publicações</h2>
+        <h1>Consultar publicações</h1>
       </div>
       <Form onSubmit={aoEnviar}>
         <Stack gap={5}>
@@ -240,9 +240,9 @@ export default function Publicacoes() {
         )}
       </div>
       {temPaginacao && busca && (
-        <nav aria-label="Páginas de publicações" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+        <nav aria-label="Páginas de publicações" className="aj-layout-56">
           <Button kind="ghost" size="sm" disabled={busca.pagina <= 1} onClick={() => executarBusca(busca.args, busca.pagina - 1)}>
-            « Anterior
+            Anterior
           </Button>
           <span>Página {busca.pagina}</span>
           <Button
@@ -251,7 +251,7 @@ export default function Publicacoes() {
             disabled={busca.pagina * itensPorPaginaBusca >= total}
             onClick={() => executarBusca(busca.args, busca.pagina + 1)}
           >
-            Próxima »
+            Próxima
           </Button>
         </nav>
       )}

@@ -79,7 +79,7 @@ export default function ClientesLoteModal({
   }
 
   return (
-    <Modal
+    <Modal closeButtonLabel="Fechar"
       open={open}
       modalHeading={tipo === 'perfil' ? 'Atualizar perfil' : 'Gerenciar etiquetas'}
       primaryButtonText={previa ? 'Confirmar alterações' : 'Revisar alterações'}
@@ -141,7 +141,7 @@ export default function ClientesLoteModal({
         )}
         {!previa && tipo === 'perfil' && (
           <>
-            <div style={{ maxWidth: 'calc(7ch + 3.5rem)' }}>
+            <div className="aj-layout-32">
               <Select id="clientes-lote-novo-perfil" labelText="Novo perfil" value={novoPerfil} onChange={(e) => setNovoPerfil(e.target.value)}>
                 <SelectItem value="cliente" text="Cliente" />
                 <SelectItem value="contato" text="Contato" />

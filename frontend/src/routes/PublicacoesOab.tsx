@@ -100,9 +100,9 @@ export default function PublicacoesOab() {
   }, [cliente, filtroStatus, pagina])
 
   useEffect(() => {
-    carregar()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtroStatus, pagina])
+    if (cliente) void carregar()
+    else setCarregando(false)
+  }, [cliente, carregar])
 
   function aoMudarFiltro(valor: string) {
     setFiltroStatus(valor)
@@ -138,7 +138,7 @@ export default function PublicacoesOab() {
   return (
     <Stack gap={6}>
       <div>
-        <h2>Publicações monitoradas</h2>
+        <h1>Publicações monitoradas</h1>
       </div>
       <Accordion>
         <AccordionItem title="Como funciona a captura">
@@ -159,8 +159,8 @@ export default function PublicacoesOab() {
         </AccordionItem>
       </Accordion>
       <CapturaManual onCapturado={carregar} />
-      <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-        <div style={{ maxWidth: 'calc(11ch + 3.5rem)' }}>
+      <div className="aj-layout-57">
+        <div className="aj-layout-58">
           <Select id="pub-oab-filtro-status" labelText="Status" value={filtroStatus} onChange={(e) => aoMudarFiltro(e.target.value)}>
             <SelectItem value="" text="Todos" />
             <SelectItem value="nao_tratada" text="Não tratada" />
@@ -189,15 +189,15 @@ export default function PublicacoesOab() {
         )}
       </div>
       {total > TAMANHO_PAGINA && (
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+        <div className="aj-layout-59">
           <Button kind="ghost" size="sm" disabled={pagina <= 1} onClick={() => setPagina((p) => p - 1)}>
-            « Anterior
+            Anterior
           </Button>
           <span>
             Página {pagina} de {totalPaginas}
           </span>
           <Button kind="ghost" size="sm" disabled={pagina >= totalPaginas} onClick={() => setPagina((p) => p + 1)}>
-            Próxima »
+            Próxima
           </Button>
         </div>
       )}
@@ -241,11 +241,11 @@ function TabelaPublicacoesOab({
   })
 
   return (
-    <DataTable rows={linhas} headers={CABECALHOS_OAB} isSortable>
+    <DataTable rows={linhas} headers={CABECALHOS_OAB} size="md" isSortable>
       {({ rows, headers, getHeaderProps, getRowProps, getSelectionProps, getToolbarProps, getBatchActionProps, selectedRows, getTableProps, getExpandHeaderProps }) => {
         const batchActionProps = getBatchActionProps()
         return (
-          <TableContainer>
+          <TableContainer className="oab-table">
             <TableToolbar {...getToolbarProps()}>
               <TableBatchActions {...batchActionProps} translateWithId={traduzirTabela}>
                 <TableBatchAction
@@ -278,7 +278,7 @@ function TabelaPublicacoesOab({
             <Table {...getTableProps()} aria-label="Publicações monitoradas">
               <TableHead>
                 <TableRow>
-                  <TableExpandHeader {...getExpandHeaderProps()} />
+                  <TableExpandHeader {...getExpandHeaderProps()} aria-label="Expandir todas as publicações" />
                   <TableSelectAll {...getSelectionProps()} aria-label="Selecionar todas as linhas" />
                   {headers.map((header) => (
                     <TableHeader {...getHeaderProps({ header })}>
@@ -295,17 +295,17 @@ function TabelaPublicacoesOab({
                   const advogados = (d.destinatarioadvogados ?? []).map((a) => `${formatarNomeExibicao(a.nome)} OAB ${a.numero_oab ?? '?'}/${a.uf_oab ?? '?'}`)
                   return (
                     <Fragment key={row.id}>
-                      <TableExpandRow {...getRowProps({ row })}>
+                      <TableExpandRow {...getRowProps({ row })} ariaLabel={row.isExpanded ? 'Recolher publicação' : 'Expandir publicação'}>
                         <TableSelectRow {...getSelectionProps({ row })} aria-label="Selecionar linha" />
                         {row.cells.map((cell) =>
                           cell.info.header === 'status' && p ? (
                             <TableCell key={cell.id}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <div className="aj-layout-60">
                                 <Tag type={TAG_STATUS[p.status] ?? 'gray'}>{cell.value}</Tag>
-                                <div style={{ maxWidth: 'calc(11ch + 3.5rem)' }}>
+                                <div className="aj-layout-61">
                                   <Select
                                     id={`status-${p.hash}`}
-                                    labelText=""
+                                    labelText={`Status da publicação ${p.numero_processo || p.hash}`}
                                     hideLabel
                                     size="sm"
                                     value={p.status}
@@ -342,7 +342,7 @@ function TabelaPublicacoesOab({
                           {destinatarios.length > 0 && <p>Partes: {destinatarios.join(' · ')}</p>}
                           {advogados.length > 0 && <p>Advogados: {advogados.join(' · ')}</p>}
                           <p>capturado em {formatarData(p?.criado_em)}</p>
-                          {d.texto && <p>{d.texto}</p>}
+                          {d.texto && <p className="oab-inteiro-teor">{d.texto}</p>}
                           {d.link && (
                             <a href={d.link} target="_blank" rel="noopener noreferrer">
                               Ver no sistema do tribunal

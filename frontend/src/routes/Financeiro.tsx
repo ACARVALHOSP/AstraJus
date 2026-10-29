@@ -111,8 +111,8 @@ export default function Financeiro() {
 
   return (
     <Stack gap={6}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>Lançamentos</h2>
+      <div className="aj-layout-38">
+        <h1>Lançamentos</h1>
         <Button size="sm" onClick={() => setModalNovoAberto(true)}>
           Novo lançamento
         </Button>
@@ -134,7 +134,7 @@ export default function Financeiro() {
           />
         )}
       </div>
-      <Modal
+      <Modal closeButtonLabel="Fechar"
         open={paraExcluir !== null}
         danger
         modalHeading="Excluir lançamento"
@@ -239,7 +239,7 @@ function TabelaLancamentos({
                       ),
                     )}
                     <TableCell>
-                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <div className="aj-layout-39">
                         {lanc.asaas_cobranca_id ? (
                           <span title={`Cobrança ${lanc.asaas_cobranca_id}`}>Cobrança gerada</span>
                         ) : (

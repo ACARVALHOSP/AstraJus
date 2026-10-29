@@ -147,7 +147,7 @@ export default function NovoLancamentoModal({ open, onClose, onSalvo }: { open: 
   }
 
   return (
-    <Modal
+    <Modal closeButtonLabel="Fechar"
       open={open}
       modalHeading="Adicionar lançamento"
       primaryButtonText="Salvar lançamento"

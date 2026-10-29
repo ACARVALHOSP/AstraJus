@@ -138,8 +138,8 @@ export default function Pagamentos() {
 
   return (
     <Stack gap={6}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>Pagamentos</h2>
+      <div className="aj-layout-53">
+        <h1>Pagamentos</h1>
         <Button size="sm" onClick={() => setModalNovaAberto(true)}>
           Nova cobrança
         </Button>
@@ -178,7 +178,7 @@ export default function Pagamentos() {
         )}
         {!carregando && cobrancas && cobrancas.length > 0 && <TabelaCobrancas cobrancas={cobrancas} onCancelar={setParaCancelar} />}
       </div>
-      <Modal
+      <Modal closeButtonLabel="Fechar"
         open={paraCancelar !== null}
         danger
         modalHeading="Cancelar cobrança"
@@ -257,7 +257,7 @@ function TabelaCobrancas({ cobrancas, onCancelar }: { cobrancas: Cobranca[]; onC
                       ),
                     )}
                     <TableCell>
-                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <div className="aj-layout-54">
                         {link && (
                           <Link href={link} target="_blank" rel="noopener">
                             Ver cobrança

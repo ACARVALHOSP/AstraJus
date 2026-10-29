@@ -1,3 +1,4 @@
+import { Close } from '@carbon/icons-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Checkbox, Stack, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
@@ -58,7 +59,7 @@ export default function ChecklistAtividade({ casoId, atividadeId }: { casoId: st
       <p role="status">{itens.length ? `${concluidos} de ${itens.length} concluído(s)` : 'Nenhum item ainda'}</p>
       {erro && <p>{erro}</p>}
       {itens.map((item) => (
-        <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+        <div key={item.id} className="aj-layout-21">
           <Checkbox
             id={`checklist-${item.id}`}
             labelText={item.texto}
@@ -66,14 +67,14 @@ export default function ChecklistAtividade({ casoId, atividadeId }: { casoId: st
             onChange={(_e, { checked }) => alternarConcluido(item, checked)}
           />
           <Button kind="ghost" size="sm" hasIconOnly iconDescription="Excluir item" onClick={() => excluirItem(item)}>
-            ✕
+            <Close size={16} />
           </Button>
         </div>
       ))}
-      <div style={{ display: 'flex', gap: '0.5rem' }}>
+      <div className="aj-layout-22">
         <TextInput
           id="atividade-checklist-novo"
-          labelText=""
+          labelText="Novo item do checklist"
           hideLabel
           placeholder="Novo item"
           value={novoTexto}

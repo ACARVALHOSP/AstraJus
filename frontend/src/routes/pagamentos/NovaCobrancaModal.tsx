@@ -85,7 +85,7 @@ export default function NovaCobrancaModal({
   }
 
   return (
-    <Modal
+    <Modal closeButtonLabel="Fechar"
       open={open}
       modalHeading="Nova cobrança"
       primaryButtonText="Criar cobrança"

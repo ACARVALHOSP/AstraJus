@@ -124,6 +124,11 @@ export default function CadastroContato({
   }
 
   async function salvar() {
+    if (!(registro.nome ?? '').trim()) {
+      setMensagem({ tipo: 'erro', texto: 'Informe o nome antes de salvar.' })
+      document.getElementById('contato-nome')?.focus()
+      return
+    }
     setSalvando(true)
     setMensagem(null)
     const corpo = {
@@ -322,7 +327,7 @@ export default function CadastroContato({
           </TabPanel>
         </TabPanels>
       </Tabs>
-      <div style={{ display: 'flex', gap: '0.5rem' }}>
+      <div className="aj-layout-28">
         <Button onClick={salvar} disabled={salvando}>
           {criando ? 'Cadastrar cliente' : 'Salvar alterações'}
         </Button>
@@ -343,7 +348,7 @@ export default function CadastroContato({
           />
         )}
       </div>
-      <Modal
+      <Modal closeButtonLabel="Fechar"
         open={paraExcluir}
         danger
         modalHeading="Excluir cliente"

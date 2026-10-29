@@ -83,7 +83,7 @@ export default function Monitoramentos() {
   return (
     <Stack gap={6}>
       <div>
-        <h2>Monitoramentos</h2>
+        <h1>Monitoramentos</h1>
         <p>
           Os avisos por e-mail são verificados a cada 6 horas, quando o envio de e-mail está configurado no servidor. A
           captura de publicações por OAB para o painel "Publicações monitoradas" ocorre separadamente, a cada 24 horas.
@@ -127,7 +127,7 @@ export default function Monitoramentos() {
           </Stack>
         )}
       </div>
-      <Modal
+      <Modal closeButtonLabel="Fechar"
         open={paraRemover !== null}
         danger
         modalHeading="Remover monitoramento"
