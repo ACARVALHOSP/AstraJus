@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Button, InlineNotification, Modal, Stack, Tag, TextInput } from '@carbon/react'
+import { Button, Checkbox, InlineNotification, Modal, Stack, Tag, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarNomeExibicao } from '../../utils/formatadores'
+import ClientesLoteModal from './ClientesLoteModal'
 
 export type ClienteItem = {
   id: string
@@ -28,6 +29,8 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
   const [letra, setLetra] = useState('TODOS')
   const [paraExcluir, setParaExcluir] = useState<ClienteItem | null>(null)
   const [excluindo, setExcluindo] = useState(false)
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
+  const [loteAberto, setLoteAberto] = useState<'etiquetas' | 'perfil' | null>(null)
 
   const carregar = () => {
     setCarregando(true)
@@ -65,6 +68,21 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
   })
   const filtrosAtivos = [...(letra !== 'TODOS' ? [`Inicial: ${letra}`] : []), ...(busca.trim() ? [`Texto: "${busca.trim()}"`] : [])]
 
+  function alternarSelecao(id: string, marcado: boolean) {
+    setSelecionados((atual) => {
+      const novo = new Set(atual)
+      if (marcado) novo.add(id)
+      else novo.delete(id)
+      return novo
+    })
+  }
+
+  function alternarSelecionarTodos(marcado: boolean) {
+    setSelecionados(marcado ? new Set(filtrados.map((c) => c.id)) : new Set())
+  }
+
+  const etiquetasExistentes = [...new Set((clientes ?? []).flatMap((c) => c.etiquetas ?? []))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+
   return (
     <Stack gap={6}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -85,6 +103,20 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
         <p>
           Mostrando {filtrados.length} de {clientes.length} cliente(s). {filtrosAtivos.join('; ') || 'Sem filtros ativos'}.
         </p>
+      )}
+      {selecionados.size > 0 && (
+        <div className="clientes-lote-barra" role="group" aria-label="Ações nos clientes selecionados" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <strong role="status">{selecionados.size} cliente(s) selecionado(s)</strong>
+          <Button kind="ghost" size="sm" onClick={() => setLoteAberto('etiquetas')}>
+            Etiquetas
+          </Button>
+          <Button kind="ghost" size="sm" onClick={() => setLoteAberto('perfil')}>
+            Atualizar perfil
+          </Button>
+          <Button kind="ghost" size="sm" onClick={() => setSelecionados(new Set())}>
+            Cancelar seleção
+          </Button>
+        </div>
       )}
       {filtrosAtivos.length > 0 && (
         <Button
@@ -117,6 +149,16 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
             <table className="tabela-responsiva contatos-tabela">
               <thead>
                 <tr>
+                  <th>
+                    <Checkbox
+                      id="clientes-selecionar-todos"
+                      labelText=""
+                      hideLabel
+                      checked={filtrados.length > 0 && filtrados.every((c) => selecionados.has(c.id))}
+                      indeterminate={filtrados.some((c) => selecionados.has(c.id)) && !filtrados.every((c) => selecionados.has(c.id))}
+                      onChange={(_e, { checked }) => alternarSelecionarTodos(checked)}
+                    />
+                  </th>
                   <th>Nome</th>
                   <th>Tipo</th>
                   <th>Perfil</th>
@@ -129,6 +171,15 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
               <tbody>
                 {filtrados.map((c) => (
                   <tr key={c.id}>
+                    <td>
+                      <Checkbox
+                        id={`selecionar-cliente-${c.id}`}
+                        labelText=""
+                        hideLabel
+                        checked={selecionados.has(c.id)}
+                        onChange={(_e, { checked }) => alternarSelecao(c.id, checked)}
+                      />
+                    </td>
                     <td data-label="Nome">
                       <button type="button" className="contato-nome-link" onClick={() => onAbrir(c.id)}>
                         {formatarNomeExibicao(c.nome)}
@@ -165,6 +216,20 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
       >
         <p>Excluir o cliente "{paraExcluir?.nome}"? Essa ação não pode ser desfeita.</p>
       </Modal>
+      {loteAberto && (
+        <ClientesLoteModal
+          open
+          tipo={loteAberto}
+          ids={[...selecionados]}
+          etiquetasExistentes={etiquetasExistentes}
+          onClose={() => setLoteAberto(null)}
+          onConcluido={() => {
+            setLoteAberto(null)
+            setSelecionados(new Set())
+            carregar()
+          }}
+        />
+      )}
     </Stack>
   )
 }
