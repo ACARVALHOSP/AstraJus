@@ -140,26 +140,33 @@ export default function Publicacoes() {
             value={numeroProcesso}
             onChange={(e) => setNumeroProcesso(e.target.value)}
           />
-          <Select id="pub-sigla-tribunal" labelText="Tribunal" value={tribunal} onChange={(e) => setTribunal(e.target.value)}>
-            <SelectItem value="" text="— todos —" />
-            {TRIBUNAIS.map((t) => (
-              <SelectItem key={t} value={t} text={t.toUpperCase()} />
-            ))}
-          </Select>
-          <TextInput
-            id="pub-numero-oab"
-            labelText="Número da OAB"
-            placeholder="330659"
-            autoComplete="off"
-            value={numeroOab}
-            onChange={(e) => setNumeroOab(e.target.value)}
-          />
-          <Select id="pub-uf-oab" labelText="UF da OAB" value={ufOab} onChange={(e) => setUfOab(e.target.value)}>
-            <SelectItem value="" text="— todas —" />
-            {UFS.map((uf) => (
-              <SelectItem key={uf} value={uf} text={uf} />
-            ))}
-          </Select>
+          <div style={{ maxWidth: 'calc(9ch + 3.5rem)' }}>
+            <Select id="pub-sigla-tribunal" labelText="Tribunal" value={tribunal} onChange={(e) => setTribunal(e.target.value)}>
+              <SelectItem value="" text="— todos —" />
+              {TRIBUNAIS.map((t) => (
+                <SelectItem key={t} value={t} text={t.toUpperCase()} />
+              ))}
+            </Select>
+          </div>
+          <div style={{ maxWidth: 'calc(6ch + 1.5rem)' }}>
+            <TextInput
+              id="pub-numero-oab"
+              labelText="Número da OAB"
+              placeholder="330659"
+              maxLength={6}
+              autoComplete="off"
+              value={numeroOab}
+              onChange={(e) => setNumeroOab(e.target.value)}
+            />
+          </div>
+          <div style={{ maxWidth: 'calc(9ch + 3.5rem)' }}>
+            <Select id="pub-uf-oab" labelText="UF da OAB" value={ufOab} onChange={(e) => setUfOab(e.target.value)}>
+              <SelectItem value="" text="— todas —" />
+              {UFS.map((uf) => (
+                <SelectItem key={uf} value={uf} text={uf} />
+              ))}
+            </Select>
+          </div>
           <DatePicker
             datePickerType="range"
             dateFormat="d/m/Y"

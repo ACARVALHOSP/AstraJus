@@ -177,11 +177,13 @@ export default function VinculosCaso({ casoId, onAbrirCaso }: { casoId: string; 
             value={numeroProcesso}
             onChange={(e) => aoDigitarNumero(e.target.value)}
           />
-          <Select id="vinculos-tipo-select" labelText="Tipo de vínculo" value={tipo} onChange={(e) => setTipo(e.target.value)}>
-            {Object.entries(ROTULO_TIPO).map(([valor, rotulo]) => (
-              <SelectItem key={valor} value={valor} text={rotulo} />
-            ))}
-          </Select>
+          <div style={{ maxWidth: 'calc(21ch + 3.5rem)' }}>
+            <Select id="vinculos-tipo-select" labelText="Tipo de vínculo" value={tipo} onChange={(e) => setTipo(e.target.value)}>
+              {Object.entries(ROTULO_TIPO).map(([valor, rotulo]) => (
+                <SelectItem key={valor} value={valor} text={rotulo} />
+              ))}
+            </Select>
+          </div>
           {erroForm && <InlineNotification kind="error" title="Erro" subtitle={erroForm} lowContrast hideCloseButton />}
           <div>
             <Button size="sm" onClick={adicionarVinculo} disabled={enviando}>

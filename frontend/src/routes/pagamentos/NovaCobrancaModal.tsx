@@ -107,10 +107,12 @@ export default function NovaCobrancaModal({
           value={cpfCnpj}
           onChange={(e) => aoDigitarCpfCnpj(e.target.value)}
         />
-        <Select id="cobranca-tipo" labelText="Tipo de cobrança *" value={tipo} onChange={(e) => setTipo(e.target.value as 'BOLETO' | 'PIX')}>
-          <SelectItem value="BOLETO" text="Boleto" />
-          <SelectItem value="PIX" text="Pix" />
-        </Select>
+        <div style={{ maxWidth: 'calc(6ch + 3.5rem)' }}>
+          <Select id="cobranca-tipo" labelText="Tipo de cobrança *" value={tipo} onChange={(e) => setTipo(e.target.value as 'BOLETO' | 'PIX')}>
+            <SelectItem value="BOLETO" text="Boleto" />
+            <SelectItem value="PIX" text="Pix" />
+          </Select>
+        </div>
         <Checkbox id="cobranca-parcelar" labelText="Parcelar" checked={parcelar} onChange={(_e, { checked }) => setParcelar(checked)} />
         {parcelar && (
           <TextInput

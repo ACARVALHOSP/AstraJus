@@ -129,14 +129,16 @@ export default function Pagamentos() {
         <InlineNotification kind="info" title="Integração Asaas não configurada" subtitle={avisoIntegracao} lowContrast hideCloseButton />
       )}
       <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-        <Select id="pagamentos-filtro-status" labelText="Status" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <SelectItem value="" text="— todos —" />
-          <SelectItem value="PENDING" text="Pendente" />
-          <SelectItem value="OVERDUE" text="Vencido" />
-          <SelectItem value="RECEIVED" text="Recebido" />
-          <SelectItem value="CONFIRMED" text="Confirmado" />
-          <SelectItem value="REFUNDED" text="Estornado" />
-        </Select>
+        <div style={{ maxWidth: 'calc(10ch + 3.5rem)' }}>
+          <Select id="pagamentos-filtro-status" labelText="Status" value={status} onChange={(e) => setStatus(e.target.value)}>
+            <SelectItem value="" text="— todos —" />
+            <SelectItem value="PENDING" text="Pendente" />
+            <SelectItem value="OVERDUE" text="Vencido" />
+            <SelectItem value="RECEIVED" text="Recebido" />
+            <SelectItem value="CONFIRMED" text="Confirmado" />
+            <SelectItem value="REFUNDED" text="Estornado" />
+          </Select>
+        </div>
         <TextInput
           id="pagamentos-filtro-cliente-cpf"
           labelText="Cliente (CPF/CNPJ)"

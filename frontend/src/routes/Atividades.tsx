@@ -129,24 +129,30 @@ export default function Atividades() {
         são as cadastradas, sem cálculo de prazo.
       </p>
       <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-        <Select id="atividades-executor" labelText="Responsável pela atividade" value={filtroExecutor} onChange={(e) => setFiltroExecutor(e.target.value)}>
-          <SelectItem value="" text="Todos" />
-          {opcoesExecutor.map((o) => (
-            <SelectItem key={o.valor} value={o.valor} text={o.nome} />
-          ))}
-        </Select>
-        <Select id="atividades-responsavel" labelText="Responsável pelo processo" value={filtroResponsavel} onChange={(e) => setFiltroResponsavel(e.target.value)}>
-          <SelectItem value="" text="Todos" />
-          {opcoesResponsavel.map((nome) => (
-            <SelectItem key={nome} value={nome} text={nome === 'Sem responsável' ? nome : formatarNomeExibicao(nome)} />
-          ))}
-        </Select>
-        <Select id="atividades-tipo" labelText="Tipo" value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
-          <SelectItem value="" text="Todos" />
-          {Object.entries(ROTULO_TIPO).map(([valor, rotulo]) => (
-            <SelectItem key={valor} value={valor} text={rotulo} />
-          ))}
-        </Select>
+        <div style={{ maxWidth: 'calc(14ch + 3.5rem)' }}>
+          <Select id="atividades-executor" labelText="Responsável pela atividade" value={filtroExecutor} onChange={(e) => setFiltroExecutor(e.target.value)}>
+            <SelectItem value="" text="Todos" />
+            {opcoesExecutor.map((o) => (
+              <SelectItem key={o.valor} value={o.valor} text={o.nome} />
+            ))}
+          </Select>
+        </div>
+        <div style={{ maxWidth: 'calc(16ch + 3.5rem)' }}>
+          <Select id="atividades-responsavel" labelText="Responsável pelo processo" value={filtroResponsavel} onChange={(e) => setFiltroResponsavel(e.target.value)}>
+            <SelectItem value="" text="Todos" />
+            {opcoesResponsavel.map((nome) => (
+              <SelectItem key={nome} value={nome} text={nome === 'Sem responsável' ? nome : formatarNomeExibicao(nome)} />
+            ))}
+          </Select>
+        </div>
+        <div style={{ maxWidth: 'calc(9ch + 3.5rem)' }}>
+          <Select id="atividades-tipo" labelText="Tipo" value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
+            <SelectItem value="" text="Todos" />
+            {Object.entries(ROTULO_TIPO).map(([valor, rotulo]) => (
+              <SelectItem key={valor} value={valor} text={rotulo} />
+            ))}
+          </Select>
+        </div>
       </div>
       <div aria-live="polite">
         {statusTexto && (

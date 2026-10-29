@@ -107,11 +107,13 @@ export default function NovoProcessoModal({
           value={pasta}
           onChange={(e) => setPasta(e.target.value)}
         />
-        <Select id="caso-acesso" labelText="Acesso" helperText="Só para organizar - o sistema ainda não restringe quem vê o processo pelo acesso escolhido." value={acesso} onChange={(e) => setAcesso(e.target.value)}>
-          <SelectItem value="equipe" text="Equipe" />
-          <SelectItem value="publico" text="Público" />
-          <SelectItem value="privado" text="Privado" />
-        </Select>
+        <div style={{ maxWidth: 'calc(7ch + 3.5rem)' }}>
+          <Select id="caso-acesso" labelText="Acesso" helperText="Só para organizar - o sistema ainda não restringe quem vê o processo pelo acesso escolhido." value={acesso} onChange={(e) => setAcesso(e.target.value)}>
+            <SelectItem value="equipe" text="Equipe" />
+            <SelectItem value="publico" text="Público" />
+            <SelectItem value="privado" text="Privado" />
+          </Select>
+        </div>
         <TextInput
           id="caso-processos"
           labelText="Número CNJ (opcional)"

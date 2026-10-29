@@ -33,17 +33,18 @@ export default function CampoRepetivel<T extends Record<string, string>>({
           <div key={indice} style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
             {campos.map((campo) =>
               campo.tipo === 'select' ? (
-                <Select
-                  key={campo.chave}
-                  id={`${titulo}-${indice}-${campo.chave}`}
-                  labelText={campo.rotulo}
-                  value={item[campo.chave] ?? ''}
-                  onChange={(e) => onAlterar(indice, campo.chave, e.target.value)}
-                >
-                  {campo.opcoes?.map((o) => (
-                    <SelectItem key={o.valor} value={o.valor} text={o.rotulo} />
-                  ))}
-                </Select>
+                <div key={campo.chave} style={{ maxWidth: `calc(${Math.max(...(campo.opcoes?.map((o) => o.rotulo.length) ?? [8]))}ch + 3.5rem)` }}>
+                  <Select
+                    id={`${titulo}-${indice}-${campo.chave}`}
+                    labelText={campo.rotulo}
+                    value={item[campo.chave] ?? ''}
+                    onChange={(e) => onAlterar(indice, campo.chave, e.target.value)}
+                  >
+                    {campo.opcoes?.map((o) => (
+                      <SelectItem key={o.valor} value={o.valor} text={o.rotulo} />
+                    ))}
+                  </Select>
+                </div>
               ) : (
                 <TextInput
                   key={campo.chave}
