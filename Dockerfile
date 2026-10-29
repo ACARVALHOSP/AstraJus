@@ -1,3 +1,10 @@
+FROM node:20-slim AS frontend-build
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -7,6 +14,7 @@ WORKDIR /app
 
 COPY pyproject.toml README.md server.py db.py _util.py google_integracao.py agenda_atividades.py notificacoes.py asaas_integracao.py integracoes.py integracoes_http.py guia-do-usuario.html ./
 COPY static/ ./static/
+COPY --from=frontend-build /frontend/dist/ ./frontend-dist/
 RUN pip install --no-cache-dir . \
     && useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app \
     && mkdir -p /data && chown app:app /data
