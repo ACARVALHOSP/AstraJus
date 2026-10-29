@@ -163,10 +163,12 @@ export default function NovoLancamentoModal({ open, onClose, onSalvo }: { open: 
         <p>Registre um valor a receber ou a pagar. Os campos com * são obrigatórios.</p>
         {erroBase && <InlineNotification kind="error" title="Erro" subtitle={erroBase} lowContrast hideCloseButton />}
 
-        <Select id="honorario-direcao" labelText="Tipo de lançamento *" value={direcao} onChange={(e) => setDirecao(e.target.value as 'RECEITA' | 'DESPESA')}>
-          <SelectItem value="RECEITA" text="A receber" />
-          <SelectItem value="DESPESA" text="A pagar" />
-        </Select>
+        <div style={{ maxWidth: 'calc(9ch + 3.5rem)' }}>
+          <Select id="honorario-direcao" labelText="Tipo de lançamento *" value={direcao} onChange={(e) => setDirecao(e.target.value as 'RECEITA' | 'DESPESA')}>
+            <SelectItem value="RECEITA" text="A receber" />
+            <SelectItem value="DESPESA" text="A pagar" />
+          </Select>
+        </div>
         <TextInput
           id="honorario-descricao"
           labelText="Descrição *"

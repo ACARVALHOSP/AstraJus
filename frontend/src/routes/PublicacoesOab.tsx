@@ -151,12 +151,14 @@ export default function PublicacoesOab() {
       </Accordion>
       <CapturaManual onCapturado={carregar} />
       <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-        <Select id="pub-oab-filtro-status" labelText="Status" value={filtroStatus} onChange={(e) => aoMudarFiltro(e.target.value)}>
-          <SelectItem value="" text="Todos" />
-          <SelectItem value="nao_tratada" text="Não tratada" />
-          <SelectItem value="tratada" text="Tratada" />
-          <SelectItem value="arquivada" text="Arquivada" />
-        </Select>
+        <div style={{ maxWidth: 'calc(11ch + 3.5rem)' }}>
+          <Select id="pub-oab-filtro-status" labelText="Status" value={filtroStatus} onChange={(e) => aoMudarFiltro(e.target.value)}>
+            <SelectItem value="" text="Todos" />
+            <SelectItem value="nao_tratada" text="Não tratada" />
+            <SelectItem value="tratada" text="Tratada" />
+            <SelectItem value="arquivada" text="Arquivada" />
+          </Select>
+        </div>
         <Button kind="ghost" size="sm" onClick={carregar} disabled={carregando}>
           Atualizar lista
         </Button>
@@ -252,18 +254,20 @@ function CartaoPubOab({
             {d.tipoComunicacao && <Tag type="teal">{d.tipoComunicacao}</Tag>}{' '}
             <Tag type={TAG_STATUS[p.status] ?? 'gray'}>{ROTULO_STATUS[p.status] ?? p.status}</Tag>
           </div>
-          <Select
-            id={`status-${p.hash}`}
-            labelText=""
-            hideLabel
-            size="sm"
-            value={p.status}
-            onChange={(e) => onAlterarStatus(e.target.value)}
-          >
-            <SelectItem value="nao_tratada" text="Não tratada" />
-            <SelectItem value="tratada" text="Tratada" />
-            <SelectItem value="arquivada" text="Arquivada" />
-          </Select>
+          <div style={{ maxWidth: 'calc(11ch + 3.5rem)' }}>
+            <Select
+              id={`status-${p.hash}`}
+              labelText=""
+              hideLabel
+              size="sm"
+              value={p.status}
+              onChange={(e) => onAlterarStatus(e.target.value)}
+            >
+              <SelectItem value="nao_tratada" text="Não tratada" />
+              <SelectItem value="tratada" text="Tratada" />
+              <SelectItem value="arquivada" text="Arquivada" />
+            </Select>
+          </div>
         </div>
         <h3>{d.nomeClasse ?? 'Classe não informada'}</h3>
         <p>Processo: {formatarNumeroCNJ(d.numeroprocessocommascara ?? p.numero_processo) || 'não informado'}</p>
@@ -332,24 +336,29 @@ function CapturaManual({ onCapturado }: { onCapturado: () => void }) {
       <AccordionItem title="Capturar publicações por OAB">
         <form onSubmit={aoEnviar}>
           <Stack gap={5}>
-            <TextInput
-              id="pub-oab-manual-numero"
-              labelText="Número da OAB"
-              placeholder="Ex.: 330659"
-              autoComplete="off"
-              required
-              value={numeroOab}
-              onChange={(e) => setNumeroOab(e.target.value)}
-            />
-            <TextInput
-              id="pub-oab-manual-uf"
-              labelText="UF da OAB (opcional)"
-              placeholder="Ex.: SP"
-              maxLength={2}
-              autoComplete="off"
-              value={ufOab}
-              onChange={(e) => setUfOab(e.target.value)}
-            />
+            <div style={{ maxWidth: 'calc(6ch + 1.5rem)' }}>
+              <TextInput
+                id="pub-oab-manual-numero"
+                labelText="Número da OAB"
+                placeholder="Ex.: 330659"
+                maxLength={6}
+                autoComplete="off"
+                required
+                value={numeroOab}
+                onChange={(e) => setNumeroOab(e.target.value)}
+              />
+            </div>
+            <div style={{ maxWidth: 'calc(2ch + 1.5rem)' }}>
+              <TextInput
+                id="pub-oab-manual-uf"
+                labelText="UF da OAB (opcional)"
+                placeholder="Ex.: SP"
+                maxLength={2}
+                autoComplete="off"
+                value={ufOab}
+                onChange={(e) => setUfOab(e.target.value)}
+              />
+            </div>
             <TextInput
               id="pub-oab-manual-nome"
               labelText="Nome para identificar os registros (opcional)"

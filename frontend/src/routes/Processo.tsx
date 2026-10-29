@@ -105,12 +105,14 @@ export default function Processo() {
       </div>
       <Form onSubmit={aoEnviar}>
         <Stack gap={5}>
-          <Select id="tribunal" labelText="Tribunal" value={tribunal} onChange={(e) => setTribunal(e.target.value)} required>
-            <SelectItem value="" text="— selecione o tribunal —" />
-            {TRIBUNAIS.map((t) => (
-              <SelectItem key={t} value={t} text={t.toUpperCase()} />
-            ))}
-          </Select>
+          <div style={{ maxWidth: 'calc(24ch + 3.5rem)' }}>
+            <Select id="tribunal" labelText="Tribunal" value={tribunal} onChange={(e) => setTribunal(e.target.value)} required>
+              <SelectItem value="" text="— selecione o tribunal —" />
+              {TRIBUNAIS.map((t) => (
+                <SelectItem key={t} value={t} text={t.toUpperCase()} />
+              ))}
+            </Select>
+          </div>
           <TextInput
             id="numero-processo"
             labelText="Número do processo"

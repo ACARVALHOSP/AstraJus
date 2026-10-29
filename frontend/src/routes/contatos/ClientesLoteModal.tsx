@@ -141,10 +141,12 @@ export default function ClientesLoteModal({
         )}
         {!previa && tipo === 'perfil' && (
           <>
-            <Select id="clientes-lote-novo-perfil" labelText="Novo perfil" value={novoPerfil} onChange={(e) => setNovoPerfil(e.target.value)}>
-              <SelectItem value="cliente" text="Cliente" />
-              <SelectItem value="contato" text="Contato" />
-            </Select>
+            <div style={{ maxWidth: 'calc(7ch + 3.5rem)' }}>
+              <Select id="clientes-lote-novo-perfil" labelText="Novo perfil" value={novoPerfil} onChange={(e) => setNovoPerfil(e.target.value)}>
+                <SelectItem value="cliente" text="Cliente" />
+                <SelectItem value="contato" text="Contato" />
+              </Select>
+            </div>
             <p>O tipo de pessoa e os demais dados e vínculos serão preservados.</p>
           </>
         )}

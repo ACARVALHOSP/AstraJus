@@ -109,13 +109,15 @@ function CardEndereco({
   return (
     <div className="endereco-card">
       <div className="endereco-card-topo" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
-        <Select id={`endereco-tipo-${indice}`} labelText="Tipo" value={item.tipo} onChange={(e) => onAlterar({ tipo: e.target.value })}>
-          <SelectItem value="" text="Tipo" />
-          <SelectItem value="residencial" text="Residencial" />
-          <SelectItem value="comercial" text="Comercial" />
-          <SelectItem value="cobranca" text="Cobrança" />
-          <SelectItem value="outro" text="Outro" />
-        </Select>
+        <div style={{ maxWidth: 'calc(11ch + 3.5rem)' }}>
+          <Select id={`endereco-tipo-${indice}`} labelText="Tipo" value={item.tipo} onChange={(e) => onAlterar({ tipo: e.target.value })}>
+            <SelectItem value="" text="Tipo" />
+            <SelectItem value="residencial" text="Residencial" />
+            <SelectItem value="comercial" text="Comercial" />
+            <SelectItem value="cobranca" text="Cobrança" />
+            <SelectItem value="outro" text="Outro" />
+          </Select>
+        </div>
         <TextInput
           id={`endereco-cep-${indice}`}
           labelText="CEP"

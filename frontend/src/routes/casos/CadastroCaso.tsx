@@ -96,18 +96,22 @@ export default function CadastroCaso({
         ))}
       </div>
       <Stack gap={5}>
-        <Select id="editar-caso-responsavel" labelText="Responsável" value={responsavel} onChange={(e) => setResponsavel(e.target.value)}>
-          <SelectItem value="" text="Selecione um responsável" />
-          {opcoesResponsavel.map((nome) => (
-            <SelectItem key={nome} value={nome} text={nome} />
-          ))}
-        </Select>
+        <div style={{ maxWidth: 'calc(25ch + 3.5rem)' }}>
+          <Select id="editar-caso-responsavel" labelText="Responsável" value={responsavel} onChange={(e) => setResponsavel(e.target.value)}>
+            <SelectItem value="" text="Selecione um responsável" />
+            {opcoesResponsavel.map((nome) => (
+              <SelectItem key={nome} value={nome} text={nome} />
+            ))}
+          </Select>
+        </div>
         <TextInput id="editar-caso-pasta" labelText="Pasta" autoComplete="off" value={pasta} onChange={(e) => setPasta(e.target.value)} />
-        <Select id="editar-caso-acesso" labelText="Acesso" value={acesso} onChange={(e) => setAcesso(e.target.value)}>
-          <SelectItem value="equipe" text="Equipe" />
-          <SelectItem value="publico" text="Público" />
-          <SelectItem value="privado" text="Privado" />
-        </Select>
+        <div style={{ maxWidth: 'calc(7ch + 3.5rem)' }}>
+          <Select id="editar-caso-acesso" labelText="Acesso" value={acesso} onChange={(e) => setAcesso(e.target.value)}>
+            <SelectItem value="equipe" text="Equipe" />
+            <SelectItem value="publico" text="Público" />
+            <SelectItem value="privado" text="Privado" />
+          </Select>
+        </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <Button size="sm" onClick={salvar} disabled={salvando}>
             Salvar

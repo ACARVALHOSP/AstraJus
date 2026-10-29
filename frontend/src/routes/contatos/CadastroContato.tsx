@@ -179,14 +179,18 @@ export default function CadastroContato({
         <TabPanels>
           <TabPanel>
             <Stack gap={5}>
-              <Select id="contato-tipo-pessoa" labelText="Pessoa física ou jurídica" value={registro.tipo_pessoa} onChange={(e) => atualizar('tipo_pessoa', e.target.value)}>
-                <SelectItem value="fisica" text="Pessoa física" />
-                <SelectItem value="juridica" text="Pessoa jurídica" />
-              </Select>
-              <Select id="contato-perfil" labelText="Perfil" value={registro.perfil} onChange={(e) => atualizar('perfil', e.target.value)}>
-                <SelectItem value="contato" text="Contato" />
-                <SelectItem value="cliente" text="Cliente" />
-              </Select>
+              <div style={{ maxWidth: 'calc(15ch + 3.5rem)' }}>
+                <Select id="contato-tipo-pessoa" labelText="Pessoa física ou jurídica" value={registro.tipo_pessoa} onChange={(e) => atualizar('tipo_pessoa', e.target.value)}>
+                  <SelectItem value="fisica" text="Pessoa física" />
+                  <SelectItem value="juridica" text="Pessoa jurídica" />
+                </Select>
+              </div>
+              <div style={{ maxWidth: 'calc(7ch + 3.5rem)' }}>
+                <Select id="contato-perfil" labelText="Perfil" value={registro.perfil} onChange={(e) => atualizar('perfil', e.target.value)}>
+                  <SelectItem value="contato" text="Contato" />
+                  <SelectItem value="cliente" text="Cliente" />
+                </Select>
+              </div>
               <TextInput
                 id="contato-nome"
                 labelText="Nome"
@@ -274,15 +278,17 @@ export default function CadastroContato({
           </TabPanel>
           <TabPanel>
             <Stack gap={5}>
-              <Select id="contato-estado-civil" labelText="Estado civil" value={registro.estado_civil} onChange={(e) => atualizar('estado_civil', e.target.value)}>
-                <SelectItem value="" text="— Selecione —" />
-                <SelectItem value="solteiro" text="Solteiro(a)" />
-                <SelectItem value="casado" text="Casado(a)" />
-                <SelectItem value="uniao_estavel" text="União estável" />
-                <SelectItem value="divorciado" text="Divorciado(a)" />
-                <SelectItem value="separado" text="Separado(a) judicialmente" />
-                <SelectItem value="viuvo" text="Viúvo(a)" />
-              </Select>
+              <div style={{ maxWidth: 'calc(25ch + 3.5rem)' }}>
+                <Select id="contato-estado-civil" labelText="Estado civil" value={registro.estado_civil} onChange={(e) => atualizar('estado_civil', e.target.value)}>
+                  <SelectItem value="" text="— Selecione —" />
+                  <SelectItem value="solteiro" text="Solteiro(a)" />
+                  <SelectItem value="casado" text="Casado(a)" />
+                  <SelectItem value="uniao_estavel" text="União estável" />
+                  <SelectItem value="divorciado" text="Divorciado(a)" />
+                  <SelectItem value="separado" text="Separado(a) judicialmente" />
+                  <SelectItem value="viuvo" text="Viúvo(a)" />
+                </Select>
+              </div>
               <TextInput id="contato-nacionalidade" labelText="Nacionalidade" placeholder="Ex.: Brasileira" value={registro.nacionalidade} onChange={(e) => atualizar('nacionalidade', e.target.value)} />
               <TextInput id="contato-profissao" labelText="Profissão" placeholder="Ex.: Engenheira civil" value={registro.profissao} onChange={(e) => atualizar('profissao', e.target.value)} />
               <TextInput id="contato-observacoes" labelText="Observações" placeholder="Ex.: indicação de cliente antigo" value={registro.observacoes} onChange={(e) => atualizar('observacoes', e.target.value)} />
