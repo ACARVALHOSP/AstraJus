@@ -1,6 +1,7 @@
+import Carregamento from '../../Carregamento'
 import { Close } from '@carbon/icons-react'
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Checkbox, InlineLoading, InlineNotification, Modal, Stack } from '@carbon/react'
+import { Button, Checkbox, InlineNotification, Modal, Stack } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -88,7 +89,7 @@ export default function AtividadesCaso({ casoId }: { casoId: string }) {
         </Button>
       </div>
       <div aria-live="polite">
-        {carregando && <InlineLoading description="Carregando…" />}
+        {carregando && <Carregamento tipo="cartoes" descricao="Carregando…" />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
         {!carregando && atividades && atividades.length === 0 && <InlineNotification kind="info" title="Nenhuma atividade cadastrada" lowContrast hideCloseButton />}
         {!carregando && atividades && atividades.length > 0 && (

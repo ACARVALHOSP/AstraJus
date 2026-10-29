@@ -1,3 +1,4 @@
+import Carregamento from './Carregamento'
 import { usePainelShell } from './usePainelShell'
 import { useState } from 'react'
 import { Button, HeaderGlobalAction, Search } from '@carbon/react'
@@ -80,7 +81,7 @@ export default function BuscaGlobal() {
             autoFocus
           />
           <div className="aj-layout-1">
-            {carregando && <p role="status">Carregando…</p>}
+            {carregando && <Carregamento tipo="texto" descricao="Consultando…" />}
             {erro && <div role="alert"><p>{erro}</p><Button kind="ghost" size="sm" onClick={carregar}>Tentar novamente</Button></div>}
             {!erro && !carregando && consulta && clientesFiltrados.length === 0 && casosFiltrados.length === 0 && <p>Nenhum resultado.</p>}
             {clientesFiltrados.map((c) => (

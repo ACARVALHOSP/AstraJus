@@ -1,3 +1,4 @@
+import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
 import {
   Button,
@@ -127,6 +128,7 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
         </Button>
       )}
       <div aria-live="polite">
+        {carregando && <Carregamento colunas={8} />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
         {!carregando && clientes && clientes.length === 0 && (
           <InlineNotification kind="info" title="Nenhum cliente cadastrado ainda" lowContrast hideCloseButton />

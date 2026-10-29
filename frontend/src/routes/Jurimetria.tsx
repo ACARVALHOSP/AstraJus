@@ -1,3 +1,4 @@
+import Carregamento from '../Carregamento'
 import { useState, type FormEvent } from 'react'
 import {
   Accordion,
@@ -6,7 +7,6 @@ import {
   DatePicker,
   DatePickerInput,
   Form,
-  InlineLoading,
   InlineNotification,
   NumberInput,
   Stack,
@@ -230,10 +230,10 @@ export default function Jurimetria() {
         </Stack>
       </Form>
       <div aria-live="polite">
-        {consultando && <InlineLoading description="Consultando o CJPG — pode levar alguns segundos por página pedida…" />}
+        {consultando && <Carregamento tipo="cartoes" descricao="Consultando o CJPG — pode levar alguns segundos por página pedida…" />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
         {resultado?.erro && <InlineNotification kind="error" title="Erro" subtitle={resultado.mensagem} lowContrast hideCloseButton />}
-        {resultado && !resultado.erro && analiseAtual && (
+        {!consultando && resultado && !resultado.erro && analiseAtual && (
           <Stack gap={5}>
             <h3>Resultado: {TITULO_ANALISE[analiseAtual]}</h3>
             {(resultado.avisos ?? []).map((aviso, i) => (

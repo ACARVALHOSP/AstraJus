@@ -1,3 +1,4 @@
+import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Column, Grid, InlineNotification, Select, SelectItem, Stack } from '@carbon/react'
 import { useCliente } from '../api/ClienteContext'
@@ -41,6 +42,7 @@ export default function Atividades() {
 
   const carregar = useCallback(async () => {
     if (!cliente) {
+      setCarregando(false)
       setStatusTexto({ tipo: 'erro', texto: 'Informe o seu token na aba Acesso e clique em Conectar antes de consultar.' })
       return
     }
@@ -166,10 +168,11 @@ export default function Atividades() {
         )}
       </div>
       <Stack gap={4}>
+        {carregando && <Carregamento tipo="cartoes" descricao="Carregando atividades…" />}
         {!carregando && itensFiltrados.length === 0 && (
           <InlineNotification kind="info" title="Nenhuma atividade aberta nos processos carregados com estes filtros" lowContrast hideCloseButton />
         )}
-        {itensFiltrados.map(({ caso, atividade }) => (
+        {!carregando && itensFiltrados.map(({ caso, atividade }) => (
           <div key={`${caso.id}-${atividade.id}`} className="cds--tile">
             <Stack gap={2}>
               <h3>{formatarNomeExibicao(atividade.titulo)}</h3>

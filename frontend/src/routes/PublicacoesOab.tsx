@@ -1,3 +1,4 @@
+import Carregamento from '../Carregamento'
 import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   Accordion,
@@ -8,7 +9,6 @@ import {
   DatePicker,
   DatePickerInput,
   Grid,
-  InlineLoading,
   InlineNotification,
   Select,
   SelectItem,
@@ -173,7 +173,7 @@ export default function PublicacoesOab() {
         </Button>
       </div>
       <div aria-live="polite">
-        {carregando && <InlineLoading description="Carregando…" />}
+        {carregando && <Carregamento tipo="tabela" descricao="Carregando…" />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
         {!carregando && publicacoes && publicacoes.length === 0 && (
           <InlineNotification

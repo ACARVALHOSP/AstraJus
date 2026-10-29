@@ -1,3 +1,4 @@
+import Carregamento from './Carregamento'
 import { usePainelShell } from './usePainelShell'
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Checkbox, HeaderGlobalAction } from '@carbon/react'
@@ -124,6 +125,7 @@ export default function CentralNotificacoes() {
           <div className="aj-layout-6">
             {erro && <p className="aj-layout-7">{erro}</p>}
             {!erro && !carregando && itens.length === 0 && <p>Nenhuma notificação nos últimos 180 dias.</p>}
+            {carregando && <Carregamento tipo="texto" descricao="Carregando notificações…" />}
             <ul className="aj-layout-8">
               {itens.map((item) => (
                 <li key={item.id} className="aj-layout-9">

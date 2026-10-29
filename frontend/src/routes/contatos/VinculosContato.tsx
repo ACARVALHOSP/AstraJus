@@ -1,3 +1,4 @@
+import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
 import { Button, InlineNotification, Stack } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
@@ -70,7 +71,7 @@ export default function VinculosContato({ clienteId, tipo }: { clienteId: string
       <Button kind="ghost" size="sm" onClick={() => irPara('financeiro')}>Acessar Lançamentos para cadastrar ou alterar valores e pagamentos</Button>
     </div>}
     <div aria-live="polite" aria-busy={carregando}>
-      {carregando && <p>Carregando…</p>}
+      {carregando && <Carregamento />}
       {erro && <InlineNotification kind="error" title="Erro ao carregar" subtitle={erro} lowContrast hideCloseButton />}
       {!carregando && dados && (tipo === 'processos' ? (
         casos.length ? <div className="contato-vinculos-tabela" tabIndex={0} role="region" aria-label="Processos vinculados">
