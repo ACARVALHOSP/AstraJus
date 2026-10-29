@@ -1,5 +1,9 @@
 ## Agent skills
 
+### PR e merge
+
+Ao concluir alterações neste projeto, sempre criar um pull request e fazer o merge após as validações aplicáveis. Somente deixar de criar o PR ou de fazer o merge quando o usuário disser explicitamente que não deseja essa etapa.
+
 ### VPS
 
 O usuário SSH do VPS `191.252.110.22` é `admin`. Usar esse usuário nos próximos acessos; não tentar `root` como padrão. O deploy independente do React está documentado em `deploy/README.md`.
