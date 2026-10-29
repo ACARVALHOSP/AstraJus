@@ -4,6 +4,8 @@ import { formatarNomeExibicao } from '../utils/formatadores'
 import ListaCasos from './casos/ListaCasos'
 import CadastroCaso from './casos/CadastroCaso'
 import AtividadesCaso from './casos/AtividadesCaso'
+import PublicacoesCaso from './casos/PublicacoesCaso'
+import MovimentacoesCaso from './casos/MovimentacoesCaso'
 import VinculosCaso from './casos/VinculosCaso'
 
 export default function Casos() {
@@ -31,6 +33,8 @@ export default function Casos() {
         <TabList aria-label="Detalhes do processo">
           <Tab>Cadastro</Tab>
           <Tab>Atividades</Tab>
+          <Tab>Publicações</Tab>
+          <Tab>Movimentações</Tab>
           <Tab>Vínculos</Tab>
         </TabList>
         <TabPanels>
@@ -44,6 +48,12 @@ export default function Casos() {
           </TabPanel>
           <TabPanel>
             <AtividadesCaso casoId={casoId} />
+          </TabPanel>
+          <TabPanel>
+            <PublicacoesCaso casoId={casoId} />
+          </TabPanel>
+          <TabPanel>
+            <MovimentacoesCaso casoId={casoId} />
           </TabPanel>
           <TabPanel>
             <VinculosCaso casoId={casoId} onAbrirCaso={abrir} />
