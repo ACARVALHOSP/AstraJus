@@ -25,6 +25,7 @@ import Financeiro from './routes/Financeiro'
 import Pagamentos from './routes/Pagamentos'
 import Atividades from './routes/Atividades'
 import PublicacoesOab from './routes/PublicacoesOab'
+import Contatos from './routes/Contatos'
 
 const ABAS = [
   { id: 'acesso', label: 'Acesso' },
@@ -79,6 +80,8 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
       return <Atividades />
     case 'publicacoes-oab':
       return <PublicacoesOab />
+    case 'contatos':
+      return <Contatos />
     default:
       return (
         <div>
