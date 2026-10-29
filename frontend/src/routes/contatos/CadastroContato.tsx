@@ -5,6 +5,7 @@ import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { mascaraCpfCnpj } from '../../utils/mascaras'
 import CampoRepetivel from './CampoRepetivel'
+import EnderecosRepetivel, { type Endereco } from './EnderecosRepetivel'
 
 type Telefone = { tipo: string; telefone: string; operadora: string }
 type Email = { tipo: string; email: string }
@@ -20,9 +21,17 @@ type ClienteRegistro = {
   telefones?: Telefone[]
   emails?: Email[]
   sites?: Site[]
+  enderecos?: Endereco[]
   telefone?: string
   email?: string
   site?: string
+  endereco_rua?: string
+  endereco_numero?: string
+  endereco_bairro?: string
+  endereco_complemento?: string
+  endereco_cidade?: string
+  endereco_estado?: string
+  endereco_pais?: string
   rg_numero?: string
   rg_emissao?: string
   rg_emissor?: string
@@ -43,7 +52,7 @@ const CAMPOS_EXTRA: Array<keyof ClienteRegistro> = [
 
 const vazio = (): ClienteRegistro => ({
   nome: '', cpf_cnpj: '', observacoes: '', tipo_pessoa: 'fisica', perfil: 'cliente',
-  telefones: [], emails: [], sites: [],
+  telefones: [], emails: [], sites: [], enderecos: [],
   rg_numero: '', rg_emissao: '', rg_emissor: '', ctps_numero: '', ctps_serie: '', ctps_emissao: '', ctps_uf: '',
   pis: '', estado_civil: '', nacionalidade: '', profissao: '',
 })
@@ -86,6 +95,23 @@ export default function CadastroContato({
           telefones: dados.telefones?.length ? dados.telefones : dados.telefone ? [{ tipo: '', telefone: dados.telefone, operadora: '' }] : [],
           emails: dados.emails?.length ? dados.emails : dados.email ? [{ tipo: '', email: dados.email }] : [],
           sites: dados.sites?.length ? dados.sites : dados.site ? [{ site: dados.site }] : [],
+          enderecos: dados.enderecos?.length
+            ? dados.enderecos
+            : dados.endereco_rua
+              ? [
+                  {
+                    tipo: '',
+                    cep: '',
+                    rua: dados.endereco_rua ?? '',
+                    numero: dados.endereco_numero ?? '',
+                    bairro: dados.endereco_bairro ?? '',
+                    complemento: dados.endereco_complemento ?? '',
+                    cidade: dados.endereco_cidade ?? '',
+                    estado: dados.endereco_estado ?? '',
+                    pais: dados.endereco_pais ?? 'Brasil',
+                  },
+                ]
+              : [],
         })
         onCarregado?.(dados)
       })
@@ -109,6 +135,7 @@ export default function CadastroContato({
       telefones: (registro.telefones ?? []).filter((t) => t.telefone.trim()),
       emails: (registro.emails ?? []).filter((e) => e.email.trim()),
       sites: (registro.sites ?? []).filter((s) => s.site.trim()),
+      enderecos: (registro.enderecos ?? []).filter((e) => e.rua.trim() || e.cep.trim()),
       ...Object.fromEntries(CAMPOS_EXTRA.map((campo) => [campo, (registro[campo] as string | undefined)?.trim() ?? ''])),
     }
     try {
@@ -209,6 +236,19 @@ export default function CadastroContato({
                 onRemover={(i) => atualizar('sites', (registro.sites ?? []).filter((_, idx) => idx !== i))}
                 onAlterar={(i, chave, valor) =>
                   atualizar('sites', (registro.sites ?? []).map((s, idx) => (idx === i ? { ...s, [chave]: valor } : s)))
+                }
+              />
+              <EnderecosRepetivel
+                itens={registro.enderecos ?? []}
+                onAdicionar={() =>
+                  atualizar('enderecos', [
+                    ...(registro.enderecos ?? []),
+                    { tipo: '', cep: '', rua: '', numero: '', bairro: '', complemento: '', cidade: '', estado: '', pais: 'Brasil' },
+                  ])
+                }
+                onRemover={(i) => atualizar('enderecos', (registro.enderecos ?? []).filter((_, idx) => idx !== i))}
+                onAlterar={(i, alteracoes) =>
+                  atualizar('enderecos', (registro.enderecos ?? []).map((end, idx) => (idx === i ? { ...end, ...alteracoes } : end)))
                 }
               />
             </Stack>
