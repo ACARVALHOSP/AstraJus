@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { CHAVE_TOKEN, ClienteMCP } from './mcpClient'
 
 type StatusConexao = 'sem-token' | 'verificando' | 'conectado' | 'nao-conectado'
@@ -40,6 +40,17 @@ export function ClienteProvider({ children }: { children: ReactNode }) {
       }
       throw erro
     }
+  }, [])
+
+  useEffect(() => {
+    let salvo: string | null = null
+    try {
+      salvo = localStorage.getItem(CHAVE_TOKEN)
+    } catch {
+      // armazenamento indisponível: segue sem token salvo
+    }
+    if (salvo) conectar(salvo, true).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const esquecer = useCallback(() => {

@@ -138,3 +138,4 @@ export class ClienteMCP {
 }
 
 export const CHAVE_TOKEN = 'cnj_token'
+export const CHAVE_TEMA = 'cnj_tema'

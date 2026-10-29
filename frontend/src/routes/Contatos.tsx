@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Button, Stack } from '@carbon/react'
+import { useNavegacao } from '../api/NavegacaoContext'
 import { formatarNomeExibicao } from '../utils/formatadores'
 import ListaContatos from './contatos/ListaContatos'
 import CadastroContato from './contatos/CadastroContato'
@@ -7,8 +8,12 @@ import CadastroContato from './contatos/CadastroContato'
 type Visao = { tipo: 'lista' } | { tipo: 'detalhe'; clienteId: string | null }
 
 export default function Contatos() {
-  const [visao, setVisao] = useState<Visao>({ tipo: 'lista' })
-  const [nomeDetalhe, setNomeDetalhe] = useState('Novo cliente')
+  const { consumirPayload } = useNavegacao()
+  const [visao, setVisao] = useState<Visao>(() => {
+    const payload = consumirPayload<{ id: string }>('contatos')
+    return payload?.id ? { tipo: 'detalhe', clienteId: payload.id } : { tipo: 'lista' }
+  })
+  const [nomeDetalhe, setNomeDetalhe] = useState('Carregando…')
 
   if (visao.tipo === 'lista') {
     return (
