@@ -75,7 +75,8 @@
 }
 .shell-notification-count { color: var(--cds-text-on-color); }
 @media (max-width: 1055px) {
-  .app-content.cds--content { margin-inline-start: 0; padding: spacing.$spacing-05; }
+  // O menu móvel sobrepõe o conteúdo; não reserva os 256 px da navegação desktop.
+  #main-content { margin-inline-start: 0; padding: spacing.$spacing-05; }
   .shell-status { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {

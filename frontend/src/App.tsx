@@ -9,11 +9,17 @@ import {
   HeaderMenuButton,
   SideNav,
   SideNavItems,
-  SideNavLink,
+  SideNavMenu,
+  SideNavMenuItem,
   Tag,
   Theme,
 } from '@carbon/react'
 import { Asleep, Light } from '@carbon/icons-react'
+import { Enterprise } from "@carbon/icons-react";
+import { Search } from "@carbon/icons-react";
+import { Notification } from "@carbon/icons-react";
+import { Currency } from "@carbon/icons-react";
+import { Settings } from "@carbon/icons-react";
 import { ClienteProvider, useCliente } from './api/ClienteContext'
 import { CHAVE_TEMA } from './api/mcpClient'
 import BuscaGlobal from './BuscaGlobal'
@@ -33,21 +39,47 @@ import PublicacoesOab from './routes/PublicacoesOab'
 import Contatos from './routes/Contatos'
 import Casos from './routes/Casos'
 
-const ABAS = [
-  { id: 'acesso', label: 'Acesso' },
-  { id: 'processo', label: 'Processo' },
-  { id: 'publicacoes', label: 'Publicações' },
-  { id: 'historico', label: 'Histórico' },
-  { id: 'monitoramentos', label: 'Monitoramentos' },
-  { id: 'jurimetria', label: 'Jurimetria' },
-  { id: 'integracoes', label: 'Integrações' },
-  { id: 'financeiro', label: 'Lançamentos' },
-  { id: 'pagamentos', label: 'Pagamentos' },
-  { id: 'contatos', label: 'Contatos' },
-  { id: 'atividades', label: 'Atividades' },
-  { id: 'casos', label: 'Processos' },
-  { id: 'publicacoes-oab', label: 'Publicações OAB' },
+const GRUPOS_NAVEGACAO = [
+  {
+    id: 'escritorio', label: 'Escritório', icone: Enterprise,
+    abas: [
+      { id: 'casos', label: 'Processos' },
+      { id: 'contatos', label: 'Contatos' },
+      { id: 'atividades', label: 'Atividades' },
+    ],
+  },
+  {
+    id: 'consultas', label: 'Consultas', icone: Search,
+    abas: [
+      { id: 'processo', label: 'Consultar processo' },
+      { id: 'publicacoes', label: 'Consultar publicações' },
+      { id: 'jurimetria', label: 'Jurimetria' },
+      { id: 'historico', label: 'Histórico' },
+    ],
+  },
+  {
+    id: 'acompanhamento', label: 'Acompanhamento', icone: Notification,
+    abas: [
+      { id: 'monitoramentos', label: 'Monitoramentos' },
+      { id: 'publicacoes-oab', label: 'Publicações OAB' },
+    ],
+  },
+  {
+    id: 'financeiro', label: 'Financeiro', icone: Currency,
+    abas: [
+      { id: 'financeiro', label: 'Lançamentos' },
+      { id: 'pagamentos', label: 'Pagamentos' },
+    ],
+  },
+  {
+    id: 'configuracoes', label: 'Configurações', icone: Settings,
+    abas: [
+      { id: 'acesso', label: 'Acesso' },
+      { id: 'integracoes', label: 'Integrações' },
+    ],
+  },
 ]
+const ABAS = GRUPOS_NAVEGACAO.flatMap((grupo) => grupo.abas)
 
 const TOM_STATUS = {
   'sem-token': { texto: 'Sem token', tom: 'gray' as const },
@@ -104,21 +136,32 @@ function SideNavAstraJus({ expandida, fechar }: { expandida: boolean; fechar: ()
   const { abaAtiva, irPara } = useNavegacao()
   return (
     <SideNav aria-label="Navegação principal" expanded={expandida} isPersistent={false} onOverlayClick={fechar}>
-      <SideNavItems>
-        {ABAS.map((aba) => (
-          <SideNavLink
-            key={aba.id}
-            href="#"
-            isActive={aba.id === abaAtiva}
-            onClick={(e) => {
-              e.preventDefault()
-              irPara(aba.id)
-              fechar()
-            }}
-          >
-            {aba.label}
-          </SideNavLink>
-        ))}
+      {/* Reabre o grupo de destino também ao navegar por links internos ou pela hash. */}
+      <SideNavItems key={abaAtiva}>
+        {GRUPOS_NAVEGACAO.map((grupo) => {
+          const ativo = grupo.abas.some((aba) => aba.id === abaAtiva)
+          return (
+            <SideNavMenu key={grupo.id} title={grupo.label} renderIcon={grupo.icone} defaultExpanded={ativo} isActive={ativo}>
+              {grupo.abas.map((aba) => (
+                <SideNavMenuItem
+                  key={aba.id}
+                  href={`#/${aba.id}`}
+                  isActive={aba.id === abaAtiva}
+                  aria-current={aba.id === abaAtiva ? 'page' : undefined}
+                  onClick={(e) => {
+                    // Preserva abrir em nova aba/janela com os atalhos nativos do navegador.
+                    if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return
+                    e.preventDefault()
+                    irPara(aba.id)
+                    fechar()
+                  }}
+                >
+                  {aba.label}
+                </SideNavMenuItem>
+              ))}
+            </SideNavMenu>
+          )
+        })}
       </SideNavItems>
     </SideNav>
   )
@@ -170,7 +213,7 @@ export default function App() {
   return (
     <Theme theme={tema} className="app-theme">
       <ClienteProvider>
-        <NavegacaoProvider abaInicial={ABAS[0].id}>
+        <NavegacaoProvider abaInicial="acesso">
           <Header aria-label="AstraJus">
             <SkipToContent href="#main-content">Pular para o conteúdo</SkipToContent>
             <HeaderMenuButton
