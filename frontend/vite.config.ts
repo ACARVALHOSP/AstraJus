@@ -18,6 +18,7 @@ export default defineConfig({
       '/pagamentos': 'http://localhost:8000',
       '/pendentes': 'http://localhost:8000',
       '/publicacoes-oab': 'http://localhost:8000',
+      '/responsaveis': 'http://localhost:8000',
     },
   },
 })
