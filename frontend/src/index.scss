@@ -4,6 +4,24 @@
 @use '@carbon/motion' as motion;
 @use './interface';
 
+.contato-vinculos-resumo {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: spacing.$spacing-02;
+  > div { padding: spacing.$spacing-05; background: var(--cds-layer); }
+  dt { @include type.type-style('label-01'); }
+  dd { @include type.type-style('heading-03'); margin: spacing.$spacing-04 0 0; }
+}
+.contato-vinculos-tabela {
+  overflow-x: auto;
+  &:focus-visible { outline: 2px solid var(--cds-focus); outline-offset: 2px; }
+  table { border-collapse: collapse; inline-size: 100%; min-inline-size: 48rem; }
+  caption { text-align: start; padding-block-end: spacing.$spacing-04; }
+  th, td { text-align: start; padding: spacing.$spacing-05; border-block-end: 1px solid var(--cds-border-subtle); }
+  th { background: var(--cds-layer-accent); @include type.type-style('heading-compact-01'); }
+  td { background: var(--cds-layer); @include type.type-style('body-compact-01'); }
+}
+
 .app-theme { min-block-size: 100dvh; background: var(--cds-background); color: var(--cds-text-primary); }
 .app-content {
   @include type.type-style('body-01');

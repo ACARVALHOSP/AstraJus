@@ -41,7 +41,7 @@ const ABAS = [
   { id: 'monitoramentos', label: 'Monitoramentos' },
   { id: 'jurimetria', label: 'Jurimetria' },
   { id: 'integracoes', label: 'Integrações' },
-  { id: 'financeiro', label: 'Financeiro' },
+  { id: 'financeiro', label: 'Lançamentos' },
   { id: 'pagamentos', label: 'Pagamentos' },
   { id: 'contatos', label: 'Contatos' },
   { id: 'atividades', label: 'Atividades' },

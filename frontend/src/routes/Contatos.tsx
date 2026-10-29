@@ -1,10 +1,11 @@
 import { ArrowLeft } from '@carbon/icons-react'
 import { useState } from 'react'
-import { Button, Stack } from '@carbon/react'
+import { Button, Stack, Tab, TabList, TabPanel, TabPanels, Tabs } from '@carbon/react'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { formatarNomeExibicao } from '../utils/formatadores'
 import ListaContatos from './contatos/ListaContatos'
 import CadastroContato from './contatos/CadastroContato'
+import VinculosContato from './contatos/VinculosContato'
 
 type Visao = { tipo: 'lista' } | { tipo: 'detalhe'; clienteId: string | null }
 
@@ -37,15 +38,28 @@ export default function Contatos() {
         Voltar para clientes
       </Button>
       <h1>{nomeDetalhe}</h1>
-      <CadastroContato
-        clienteId={visao.clienteId}
-        onCarregado={(cliente) => setNomeDetalhe(cliente.nome ? formatarNomeExibicao(cliente.nome) : '(sem nome)')}
-        onSalvo={(cliente) => {
-          setNomeDetalhe(cliente.nome ? formatarNomeExibicao(cliente.nome) : '(sem nome)')
-          setVisao({ tipo: 'detalhe', clienteId: cliente.id ?? null })
-        }}
-        onExcluido={() => setVisao({ tipo: 'lista' })}
-      />
+      <Tabs key={visao.clienteId ?? 'novo'}>
+        <TabList aria-label="Detalhes do contato">
+          <Tab>Cadastro</Tab>
+          {visao.clienteId && <Tab>Processos vinculados</Tab>}
+          {visao.clienteId && <Tab>Financeiro</Tab>}
+        </TabList>
+        <TabPanels>
+          <TabPanel>
+            <CadastroContato
+              clienteId={visao.clienteId}
+              onCarregado={(cliente) => setNomeDetalhe(cliente.nome ? formatarNomeExibicao(cliente.nome) : '(sem nome)')}
+              onSalvo={(cliente) => {
+                setNomeDetalhe(cliente.nome ? formatarNomeExibicao(cliente.nome) : '(sem nome)')
+                setVisao({ tipo: 'detalhe', clienteId: cliente.id ?? null })
+              }}
+              onExcluido={() => setVisao({ tipo: 'lista' })}
+            />
+          </TabPanel>
+          {visao.clienteId && <TabPanel><VinculosContato clienteId={visao.clienteId} tipo="processos" /></TabPanel>}
+          {visao.clienteId && <TabPanel><VinculosContato clienteId={visao.clienteId} tipo="financeiro" /></TabPanel>}
+        </TabPanels>
+      </Tabs>
     </Stack>
   )
 }
