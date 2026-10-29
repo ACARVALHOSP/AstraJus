@@ -5,6 +5,7 @@ import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarDataSimples, formatarNomeExibicao } from '../../utils/formatadores'
 import AtividadeModal from './AtividadeModal'
+import AgendaAtividade, { type VinculoAgenda } from './AgendaAtividade'
 
 export type Atividade = {
   id: string
@@ -15,6 +16,8 @@ export type Atividade = {
   hora?: string | null
   responsavel?: string | null
   observacoes?: string | null
+  agenda?: VinculoAgenda | null
+  agenda_institucional_anterior?: boolean
 }
 
 const ROTULO_TIPO: Record<string, string> = { tarefa: 'Tarefa', prazo: 'Prazo', audiencia: 'Audiência', reuniao: 'Reunião', outro: 'Outro' }
@@ -24,6 +27,7 @@ export default function AtividadesCaso({ casoId }: { casoId: string }) {
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [atividades, setAtividades] = useState<Atividade[] | null>(null)
+  const [agendaDisponivel, setAgendaDisponivel] = useState(false)
   const [modalAberto, setModalAberto] = useState(false)
   const [editando, setEditando] = useState<Atividade | null>(null)
   const [paraExcluir, setParaExcluir] = useState<Atividade | null>(null)
@@ -32,8 +36,11 @@ export default function AtividadesCaso({ casoId }: { casoId: string }) {
   const carregar = useCallback(() => {
     setCarregando(true)
     setErro(null)
-    buscarJson<{ atividades: Atividade[] }>(cliente, `/casos/${casoId}/atividades`)
-      .then((r) => setAtividades(r.atividades ?? []))
+    buscarJson<{ atividades: Atividade[]; agenda_disponivel?: boolean }>(cliente, `/casos/${casoId}/atividades`)
+      .then((r) => {
+        setAtividades(r.atividades ?? [])
+        setAgendaDisponivel(Boolean(r.agenda_disponivel))
+      })
       .catch((e) => setErro(e instanceof ErroMCP ? e.message : 'Falha ao carregar.'))
       .finally(() => setCarregando(false))
   }, [cliente, casoId])
@@ -101,6 +108,19 @@ export default function AtividadesCaso({ casoId }: { casoId: string }) {
                   </p>
                   {atv.responsavel && <p>Responsável: {formatarNomeExibicao(atv.responsavel)}</p>}
                   {atv.observacoes && <p>{atv.observacoes}</p>}
+                  {(atv.agenda || agendaDisponivel) && (
+                    <AgendaAtividade
+                      casoId={casoId}
+                      atividadeId={atv.id}
+                      titulo={atv.titulo}
+                      data={atv.data}
+                      hora={atv.hora}
+                      agenda={atv.agenda}
+                      agendaInstitucionalAnterior={atv.agenda_institucional_anterior}
+                      agendaDisponivel={agendaDisponivel}
+                      onAtualizado={carregar}
+                    />
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
                   <Button
