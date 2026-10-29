@@ -4,6 +4,7 @@ import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 import { buscarJson, enviarJson } from '../api/rest'
 import { formatarDataSimples, formatarMoeda, formatarNomeExibicao } from '../utils/formatadores'
+import NovoLancamentoModal from './financeiro/NovoLancamentoModal'
 
 type Lancamento = {
   id: string
@@ -31,6 +32,7 @@ export default function Financeiro() {
   const [casos, setCasos] = useState<Caso[]>([])
   const [paraExcluir, setParaExcluir] = useState<Lancamento | null>(null)
   const [excluindo, setExcluindo] = useState(false)
+  const [modalNovoAberto, setModalNovoAberto] = useState(false)
 
   const carregar = useCallback(async () => {
     setCarregando(true)
@@ -95,7 +97,7 @@ export default function Financeiro() {
     <Stack gap={6}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2>Lançamentos</h2>
-        <Button size="sm" disabled title="Em breve: cadastro de novo lançamento">
+        <Button size="sm" onClick={() => setModalNovoAberto(true)}>
           Novo lançamento
         </Button>
       </div>
@@ -186,6 +188,14 @@ export default function Financeiro() {
           Excluir o lançamento "{paraExcluir?.descricao}"? Essa ação não pode ser desfeita.
         </p>
       </Modal>
+      <NovoLancamentoModal
+        open={modalNovoAberto}
+        onClose={() => setModalNovoAberto(false)}
+        onSalvo={() => {
+          setModalNovoAberto(false)
+          carregar()
+        }}
+      />
     </Stack>
   )
 }
