@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Button, InlineNotification, Modal, Stack, Tag, TextInput } from '@carbon/react'
+import { ActionableNotification, Button, InlineNotification, Modal, Stack, Tag, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarDataSimples, formatarNomeExibicao } from '../../utils/formatadores'
+import NovoProcessoModal from './NovoProcessoModal'
 
 export type Caso = {
   id: string
@@ -58,6 +59,8 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
   const [busca, setBusca] = useState('')
   const [paraExcluir, setParaExcluir] = useState<Caso | null>(null)
   const [excluindo, setExcluindo] = useState(false)
+  const [modalNovoAberto, setModalNovoAberto] = useState(false)
+  const [casoCriado, setCasoCriado] = useState<Caso | null>(null)
 
   const carregar = () => {
     setCarregando(true)
@@ -104,9 +107,23 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
 
   return (
     <Stack gap={6}>
-      <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2>Processos</h2>
+        <Button size="sm" onClick={() => setModalNovoAberto(true)}>
+          Novo processo
+        </Button>
       </div>
+      {casoCriado && (
+        <ActionableNotification
+          kind="success"
+          title={`Processo "${casoCriado.titulo || 'sem título'}" cadastrado.`}
+          actionButtonLabel="Abrir processo criado"
+          onActionButtonClick={() => onAbrir(casoCriado.id)}
+          onCloseButtonClick={() => setCasoCriado(null)}
+          lowContrast
+          inline
+        />
+      )}
       <TextInput
         id="casos-busca"
         labelText="Filtrar processos"
@@ -185,6 +202,16 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
       >
         <p>Excluir o processo "{paraExcluir?.titulo || '(sem título)'}"? Essa ação não pode ser desfeita.</p>
       </Modal>
+      <NovoProcessoModal
+        open={modalNovoAberto}
+        clientes={clientes.map((c) => ({ id: c.id, nome: c.nome ?? '' }))}
+        onClose={() => setModalNovoAberto(false)}
+        onCriado={(novoCaso) => {
+          setCasos((atual) => [...(atual ?? []), novoCaso])
+          setModalNovoAberto(false)
+          setCasoCriado(novoCaso)
+        }}
+      />
     </Stack>
   )
 }
