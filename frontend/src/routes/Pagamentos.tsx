@@ -5,6 +5,7 @@ import { ErroMCP } from '../api/mcpClient'
 import { buscarJson, enviarJson } from '../api/rest'
 import { formatarDataSimples, formatarMoeda } from '../utils/formatadores'
 import { mascaraCpfCnpj } from '../utils/mascaras'
+import NovaCobrancaModal from './pagamentos/NovaCobrancaModal'
 
 type Cobranca = {
   id: string
@@ -45,6 +46,7 @@ export default function Pagamentos() {
   const [cobrancas, setCobrancas] = useState<Cobranca[] | null>(null)
   const [paraCancelar, setParaCancelar] = useState<Cobranca | null>(null)
   const [cancelando, setCancelando] = useState(false)
+  const [modalNovaAberto, setModalNovaAberto] = useState(false)
 
   const carregar = useCallback(
     async (clienteId: string) => {
@@ -118,7 +120,7 @@ export default function Pagamentos() {
     <Stack gap={6}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2>Pagamentos</h2>
-        <Button size="sm" disabled title="Em breve: criação de nova cobrança">
+        <Button size="sm" onClick={() => setModalNovaAberto(true)}>
           Nova cobrança
         </Button>
       </div>
@@ -212,6 +214,15 @@ export default function Pagamentos() {
       >
         <p>Cancelar esta cobrança no Asaas? Essa ação não pode ser desfeita.</p>
       </Modal>
+      <NovaCobrancaModal
+        open={modalNovaAberto}
+        clientes={clientes}
+        onClose={() => setModalNovaAberto(false)}
+        onCriada={() => {
+          setModalNovaAberto(false)
+          carregar(clienteEncontrado?.id ?? '')
+        }}
+      />
     </Stack>
   )
 }
