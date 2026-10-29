@@ -23,6 +23,7 @@ import Jurimetria from './routes/Jurimetria'
 import Integracoes from './routes/Integracoes'
 import Financeiro from './routes/Financeiro'
 import Pagamentos from './routes/Pagamentos'
+import Atividades from './routes/Atividades'
 
 const ABAS = [
   { id: 'acesso', label: 'Acesso' },
@@ -73,6 +74,8 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
       return <Financeiro />
     case 'pagamentos':
       return <Pagamentos />
+    case 'atividades':
+      return <Atividades />
     default:
       return (
         <div>
