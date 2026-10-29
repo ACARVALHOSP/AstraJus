@@ -3,7 +3,9 @@ import {
   Accordion,
   AccordionItem,
   Button,
+  Column,
   Form,
+  Grid,
   InlineLoading,
   InlineNotification,
   Select,
@@ -105,24 +107,28 @@ export default function Processo() {
       </div>
       <Form onSubmit={aoEnviar}>
         <Stack gap={5}>
-          <div style={{ maxWidth: 'calc(24ch + 3.5rem)' }}>
-            <Select id="tribunal" labelText="Tribunal" value={tribunal} onChange={(e) => setTribunal(e.target.value)} required>
-              <SelectItem value="" text="— selecione o tribunal —" />
-              {TRIBUNAIS.map((t) => (
-                <SelectItem key={t} value={t} text={t.toUpperCase()} />
-              ))}
-            </Select>
-          </div>
-          <TextInput
-            id="numero-processo"
-            labelText="Número do processo"
-            helperText="20 dígitos, com ou sem máscara."
-            placeholder="1006314-27.2023.8.26.0005"
-            autoComplete="off"
-            required
-            value={numero}
-            onChange={(e) => setNumero(e.target.value)}
-          />
+          <Grid narrow fullWidth>
+            <Column sm={4} md={4} lg={6}>
+              <Select id="tribunal" labelText="Tribunal" value={tribunal} onChange={(e) => setTribunal(e.target.value)} required>
+                <SelectItem value="" text="— selecione o tribunal —" />
+                {TRIBUNAIS.map((t) => (
+                  <SelectItem key={t} value={t} text={t.toUpperCase()} />
+                ))}
+              </Select>
+            </Column>
+            <Column sm={4} md={4} lg={8}>
+              <TextInput
+                id="numero-processo"
+                labelText="Número do processo"
+                helperText="20 dígitos, com ou sem máscara."
+                placeholder="1006314-27.2023.8.26.0005"
+                autoComplete="off"
+                required
+                value={numero}
+                onChange={(e) => setNumero(e.target.value)}
+              />
+            </Column>
+          </Grid>
           <div>
             <Button type="submit" disabled={consultando}>
               Consultar processo

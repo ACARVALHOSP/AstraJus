@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Button, Select, SelectItem, TextInput } from '@carbon/react'
+import { Button, Column, Grid, Select, SelectItem, TextInput } from '@carbon/react'
 import { mascaraCep } from '../../utils/mascaras'
 
 export type Endereco = {
@@ -108,8 +108,8 @@ function CardEndereco({
 
   return (
     <div className="endereco-card">
-      <div className="endereco-card-topo" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
-        <div style={{ maxWidth: 'calc(11ch + 3.5rem)' }}>
+      <Grid narrow fullWidth className="endereco-card-topo">
+        <Column sm={4} md={3} lg={4}>
           <Select id={`endereco-tipo-${indice}`} labelText="Tipo" value={item.tipo} onChange={(e) => onAlterar({ tipo: e.target.value })}>
             <SelectItem value="" text="Tipo" />
             <SelectItem value="residencial" text="Residencial" />
@@ -117,35 +117,53 @@ function CardEndereco({
             <SelectItem value="cobranca" text="Cobrança" />
             <SelectItem value="outro" text="Outro" />
           </Select>
-        </div>
-        <TextInput
-          id={`endereco-cep-${indice}`}
-          labelText="CEP"
-          placeholder="Digite o CEP"
-          autoComplete="postal-code"
-          value={item.cep}
-          onChange={(e) => aoMudarCep(e.target.value)}
-        />
-        <Button kind="ghost" size="sm" hasIconOnly iconDescription="Remover" onClick={onRemover}>
-          ✕
-        </Button>
-      </div>
-      <div className="endereco-grade cds--css-grid">
-        <TextInput id={`endereco-rua-${indice}`} labelText="Rua" placeholder="Digite a rua" autoComplete="address-line1" value={item.rua} onChange={(e) => onAlterar({ rua: e.target.value })} />
-        <TextInput id={`endereco-numero-${indice}`} labelText="Número" placeholder="Digite o número" value={item.numero} onChange={(e) => onAlterar({ numero: e.target.value })} />
-        <TextInput id={`endereco-bairro-${indice}`} labelText="Bairro" placeholder="Digite o bairro" value={item.bairro} onChange={(e) => onAlterar({ bairro: e.target.value })} />
-        <TextInput
-          id={`endereco-complemento-${indice}`}
-          labelText="Complemento"
-          placeholder="Digite o complemento"
-          autoComplete="address-line2"
-          value={item.complemento}
-          onChange={(e) => onAlterar({ complemento: e.target.value })}
-        />
-        <TextInput id={`endereco-cidade-${indice}`} labelText="Cidade" placeholder="Digite a cidade" autoComplete="address-level2" value={item.cidade} onChange={(e) => onAlterar({ cidade: e.target.value })} />
-        <TextInput id={`endereco-estado-${indice}`} labelText="Estado" placeholder="Digite o estado" autoComplete="address-level1" value={item.estado} onChange={(e) => onAlterar({ estado: e.target.value })} />
-        <TextInput id={`endereco-pais-${indice}`} labelText="País" placeholder="Digite o país" autoComplete="country-name" value={item.pais} onChange={(e) => onAlterar({ pais: e.target.value })} />
-      </div>
+        </Column>
+        <Column sm={3} md={4} lg={4}>
+          <TextInput
+            id={`endereco-cep-${indice}`}
+            labelText="CEP"
+            placeholder="Digite o CEP"
+            autoComplete="postal-code"
+            value={item.cep}
+            onChange={(e) => aoMudarCep(e.target.value)}
+          />
+        </Column>
+        <Column sm={1} md={1} lg={1} style={{ display: 'flex', alignItems: 'flex-end' }}>
+          <Button kind="ghost" size="sm" hasIconOnly iconDescription="Remover" onClick={onRemover}>
+            ✕
+          </Button>
+        </Column>
+      </Grid>
+      <Grid narrow fullWidth className="endereco-grade">
+        <Column sm={4} md={4} lg={7}>
+          <TextInput id={`endereco-rua-${indice}`} labelText="Rua" placeholder="Digite a rua" autoComplete="address-line1" value={item.rua} onChange={(e) => onAlterar({ rua: e.target.value })} />
+        </Column>
+        <Column sm={4} md={2} lg={3}>
+          <TextInput id={`endereco-numero-${indice}`} labelText="Número" placeholder="Digite o número" value={item.numero} onChange={(e) => onAlterar({ numero: e.target.value })} />
+        </Column>
+        <Column sm={4} md={2} lg={6}>
+          <TextInput id={`endereco-bairro-${indice}`} labelText="Bairro" placeholder="Digite o bairro" value={item.bairro} onChange={(e) => onAlterar({ bairro: e.target.value })} />
+        </Column>
+        <Column sm={4} md={4} lg={6}>
+          <TextInput
+            id={`endereco-complemento-${indice}`}
+            labelText="Complemento"
+            placeholder="Digite o complemento"
+            autoComplete="address-line2"
+            value={item.complemento}
+            onChange={(e) => onAlterar({ complemento: e.target.value })}
+          />
+        </Column>
+        <Column sm={4} md={3} lg={5}>
+          <TextInput id={`endereco-cidade-${indice}`} labelText="Cidade" placeholder="Digite a cidade" autoComplete="address-level2" value={item.cidade} onChange={(e) => onAlterar({ cidade: e.target.value })} />
+        </Column>
+        <Column sm={4} md={3} lg={3}>
+          <TextInput id={`endereco-estado-${indice}`} labelText="Estado" placeholder="Digite o estado" autoComplete="address-level1" value={item.estado} onChange={(e) => onAlterar({ estado: e.target.value })} />
+        </Column>
+        <Column sm={4} md={2} lg={2}>
+          <TextInput id={`endereco-pais-${indice}`} labelText="País" placeholder="Digite o país" autoComplete="country-name" value={item.pais} onChange={(e) => onAlterar({ pais: e.target.value })} />
+        </Column>
+      </Grid>
       <span role="status">{statusCep}</span>
     </div>
   )

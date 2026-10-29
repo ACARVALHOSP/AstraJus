@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button, InlineNotification, Select, SelectItem, Stack } from '@carbon/react'
+import { Button, Column, Grid, InlineNotification, Select, SelectItem, Stack } from '@carbon/react'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { ErroMCP } from '../api/mcpClient'
@@ -128,32 +128,32 @@ export default function Atividades() {
         Atividades pendentes de todos os processos. Filtre pelo responsável pela atividade ou pelo processo. As datas
         são as cadastradas, sem cálculo de prazo.
       </p>
-      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-        <div style={{ maxWidth: 'calc(14ch + 3.5rem)' }}>
+      <Grid narrow fullWidth>
+        <Column sm={4} md={4} lg={4}>
           <Select id="atividades-executor" labelText="Responsável pela atividade" value={filtroExecutor} onChange={(e) => setFiltroExecutor(e.target.value)}>
             <SelectItem value="" text="Todos" />
             {opcoesExecutor.map((o) => (
               <SelectItem key={o.valor} value={o.valor} text={o.nome} />
             ))}
           </Select>
-        </div>
-        <div style={{ maxWidth: 'calc(16ch + 3.5rem)' }}>
+        </Column>
+        <Column sm={4} md={4} lg={4}>
           <Select id="atividades-responsavel" labelText="Responsável pelo processo" value={filtroResponsavel} onChange={(e) => setFiltroResponsavel(e.target.value)}>
             <SelectItem value="" text="Todos" />
             {opcoesResponsavel.map((nome) => (
               <SelectItem key={nome} value={nome} text={nome === 'Sem responsável' ? nome : formatarNomeExibicao(nome)} />
             ))}
           </Select>
-        </div>
-        <div style={{ maxWidth: 'calc(9ch + 3.5rem)' }}>
+        </Column>
+        <Column sm={4} md={3} lg={3}>
           <Select id="atividades-tipo" labelText="Tipo" value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
             <SelectItem value="" text="Todos" />
             {Object.entries(ROTULO_TIPO).map(([valor, rotulo]) => (
               <SelectItem key={valor} value={valor} text={rotulo} />
             ))}
           </Select>
-        </div>
-      </div>
+        </Column>
+      </Grid>
       <div aria-live="polite">
         {statusTexto && (
           <InlineNotification

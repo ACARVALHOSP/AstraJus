@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Button, InlineNotification, Select, SelectItem, Stack, TextInput } from '@carbon/react'
+import { Button, Column, Grid, InlineNotification, Select, SelectItem, Stack, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -168,22 +168,26 @@ export default function VinculosCaso({ casoId, onAbrirCaso }: { casoId: string; 
       <details className="vinculos-adicionar">
         <summary>Vincular outro processo</summary>
         <Stack gap={5}>
-          <TextInput
-            id="vinculos-numero-processo"
-            labelText="Número do processo"
-            placeholder="1006314-27.2023.8.26.0005"
-            autoComplete="off"
-            helperText={preview ?? undefined}
-            value={numeroProcesso}
-            onChange={(e) => aoDigitarNumero(e.target.value)}
-          />
-          <div style={{ maxWidth: 'calc(21ch + 3.5rem)' }}>
-            <Select id="vinculos-tipo-select" labelText="Tipo de vínculo" value={tipo} onChange={(e) => setTipo(e.target.value)}>
-              {Object.entries(ROTULO_TIPO).map(([valor, rotulo]) => (
-                <SelectItem key={valor} value={valor} text={rotulo} />
-              ))}
-            </Select>
-          </div>
+          <Grid narrow fullWidth>
+            <Column sm={4} md={4} lg={9}>
+              <TextInput
+                id="vinculos-numero-processo"
+                labelText="Número do processo"
+                placeholder="1006314-27.2023.8.26.0005"
+                autoComplete="off"
+                helperText={preview ?? undefined}
+                value={numeroProcesso}
+                onChange={(e) => aoDigitarNumero(e.target.value)}
+              />
+            </Column>
+            <Column sm={4} md={4} lg={7}>
+              <Select id="vinculos-tipo-select" labelText="Tipo de vínculo" value={tipo} onChange={(e) => setTipo(e.target.value)}>
+                {Object.entries(ROTULO_TIPO).map(([valor, rotulo]) => (
+                  <SelectItem key={valor} value={valor} text={rotulo} />
+                ))}
+              </Select>
+            </Column>
+          </Grid>
           {erroForm && <InlineNotification kind="error" title="Erro" subtitle={erroForm} lowContrast hideCloseButton />}
           <div>
             <Button size="sm" onClick={adicionarVinculo} disabled={enviando}>

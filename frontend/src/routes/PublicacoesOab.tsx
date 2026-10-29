@@ -4,8 +4,10 @@ import {
   AccordionItem,
   Button,
   Checkbox,
+  Column,
   DatePicker,
   DatePickerInput,
+  Grid,
   InlineLoading,
   InlineNotification,
   Select,
@@ -336,50 +338,56 @@ function CapturaManual({ onCapturado }: { onCapturado: () => void }) {
       <AccordionItem title="Capturar publicações por OAB">
         <form onSubmit={aoEnviar}>
           <Stack gap={5}>
-            <div style={{ maxWidth: 'calc(6ch + 1.5rem)' }}>
-              <TextInput
-                id="pub-oab-manual-numero"
-                labelText="Número da OAB"
-                placeholder="Ex.: 330659"
-                maxLength={6}
-                autoComplete="off"
-                required
-                value={numeroOab}
-                onChange={(e) => setNumeroOab(e.target.value)}
-              />
-            </div>
-            <div style={{ maxWidth: 'calc(2ch + 1.5rem)' }}>
-              <TextInput
-                id="pub-oab-manual-uf"
-                labelText="UF da OAB (opcional)"
-                placeholder="Ex.: SP"
-                maxLength={2}
-                autoComplete="off"
-                value={ufOab}
-                onChange={(e) => setUfOab(e.target.value)}
-              />
-            </div>
-            <TextInput
-              id="pub-oab-manual-nome"
-              labelText="Nome para identificar os registros (opcional)"
-              placeholder="Ex.: Maria Silva"
-              helperText="Identifica os registros na lista; não filtra a consulta no DJEN."
-              autoComplete="off"
-              value={nome}
-              onChange={(e) => setNome(e.target.value)}
-            />
-            <DatePicker
-              datePickerType="range"
-              dateFormat="Y-m-d"
-              onChange={(datas: Date[]) => {
-                const [inicio, fim] = datas
-                setDataInicio(inicio ? isoDeData(inicio) : '')
-                setDataFim(fim ? isoDeData(fim) : '')
-              }}
-            >
-              <DatePickerInput id="pub-oab-manual-data-inicio" labelText="Data inicial" placeholder="aaaa-mm-dd" />
-              <DatePickerInput id="pub-oab-manual-data-fim" labelText="Data final" placeholder="aaaa-mm-dd" />
-            </DatePicker>
+            <Grid narrow fullWidth>
+              <Column sm={4} md={2} lg={2}>
+                <TextInput
+                  id="pub-oab-manual-numero"
+                  labelText="Número da OAB"
+                  placeholder="Ex.: 330659"
+                  maxLength={6}
+                  autoComplete="off"
+                  required
+                  value={numeroOab}
+                  onChange={(e) => setNumeroOab(e.target.value)}
+                />
+              </Column>
+              <Column sm={4} md={2} lg={2}>
+                <TextInput
+                  id="pub-oab-manual-uf"
+                  labelText="UF da OAB (opcional)"
+                  placeholder="Ex.: SP"
+                  maxLength={2}
+                  autoComplete="off"
+                  value={ufOab}
+                  onChange={(e) => setUfOab(e.target.value)}
+                />
+              </Column>
+              <Column sm={4} md={4} lg={5}>
+                <TextInput
+                  id="pub-oab-manual-nome"
+                  labelText="Nome para identificar os registros (opcional)"
+                  placeholder="Ex.: Maria Silva"
+                  helperText="Identifica os registros na lista; não filtra a consulta no DJEN."
+                  autoComplete="off"
+                  value={nome}
+                  onChange={(e) => setNome(e.target.value)}
+                />
+              </Column>
+              <Column sm={4} md={8} lg={7}>
+                <DatePicker
+                  datePickerType="range"
+                  dateFormat="Y-m-d"
+                  onChange={(datas: Date[]) => {
+                    const [inicio, fim] = datas
+                    setDataInicio(inicio ? isoDeData(inicio) : '')
+                    setDataFim(fim ? isoDeData(fim) : '')
+                  }}
+                >
+                  <DatePickerInput id="pub-oab-manual-data-inicio" labelText="Data inicial" placeholder="aaaa-mm-dd" />
+                  <DatePickerInput id="pub-oab-manual-data-fim" labelText="Data final" placeholder="aaaa-mm-dd" />
+                </DatePicker>
+              </Column>
+            </Grid>
             <div>
               <Button type="submit" size="sm" disabled={enviando}>
                 Capturar agora

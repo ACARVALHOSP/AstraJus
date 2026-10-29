@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
+import { Button, Column, Grid, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -95,23 +95,26 @@ export default function CadastroCaso({
           <p key={numero}>{formatarNumeroCNJ(numero)}</p>
         ))}
       </div>
-      <Stack gap={5}>
-        <div style={{ maxWidth: 'calc(25ch + 3.5rem)' }}>
+      <Grid narrow fullWidth>
+        <Column sm={4} md={4} lg={6}>
           <Select id="editar-caso-responsavel" labelText="Responsável" value={responsavel} onChange={(e) => setResponsavel(e.target.value)}>
             <SelectItem value="" text="Selecione um responsável" />
             {opcoesResponsavel.map((nome) => (
               <SelectItem key={nome} value={nome} text={nome} />
             ))}
           </Select>
-        </div>
-        <TextInput id="editar-caso-pasta" labelText="Pasta" autoComplete="off" value={pasta} onChange={(e) => setPasta(e.target.value)} />
-        <div style={{ maxWidth: 'calc(7ch + 3.5rem)' }}>
+        </Column>
+        <Column sm={4} md={4} lg={6}>
+          <TextInput id="editar-caso-pasta" labelText="Pasta" autoComplete="off" value={pasta} onChange={(e) => setPasta(e.target.value)} />
+        </Column>
+        <Column sm={4} md={4} lg={4}>
           <Select id="editar-caso-acesso" labelText="Acesso" value={acesso} onChange={(e) => setAcesso(e.target.value)}>
             <SelectItem value="equipe" text="Equipe" />
             <SelectItem value="publico" text="Público" />
             <SelectItem value="privado" text="Privado" />
           </Select>
-        </div>
+        </Column>
+      </Grid>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <Button size="sm" onClick={salvar} disabled={salvando}>
             Salvar
@@ -131,7 +134,6 @@ export default function CadastroCaso({
             />
           )}
         </div>
-      </Stack>
       <Modal
         open={paraExcluir}
         danger

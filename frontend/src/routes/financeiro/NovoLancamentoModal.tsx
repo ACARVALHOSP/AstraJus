@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Checkbox, DatePicker, DatePickerInput, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
+import { Checkbox, Column, DatePicker, DatePickerInput, Grid, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -163,12 +163,6 @@ export default function NovoLancamentoModal({ open, onClose, onSalvo }: { open: 
         <p>Registre um valor a receber ou a pagar. Os campos com * são obrigatórios.</p>
         {erroBase && <InlineNotification kind="error" title="Erro" subtitle={erroBase} lowContrast hideCloseButton />}
 
-        <div style={{ maxWidth: 'calc(9ch + 3.5rem)' }}>
-          <Select id="honorario-direcao" labelText="Tipo de lançamento *" value={direcao} onChange={(e) => setDirecao(e.target.value as 'RECEITA' | 'DESPESA')}>
-            <SelectItem value="RECEITA" text="A receber" />
-            <SelectItem value="DESPESA" text="A pagar" />
-          </Select>
-        </div>
         <TextInput
           id="honorario-descricao"
           labelText="Descrição *"
@@ -177,35 +171,49 @@ export default function NovoLancamentoModal({ open, onClose, onSalvo }: { open: 
           value={descricao}
           onChange={(e) => setDescricao(e.target.value)}
         />
-        <TextInput
-          id="honorario-valor"
-          labelText="Valor (R$) *"
-          helperText="Use vírgula para os centavos."
-          placeholder="Ex.: 1.500,00"
-          autoComplete="off"
-          value={valor}
-          onChange={(e) => setValor(e.target.value)}
-        />
-        <DatePicker
-          datePickerType="single"
-          dateFormat="d/m/Y"
-          onChange={(datas: Date[]) => setVencimento(datas[0] ? isoDeData(datas[0]) : '')}
-        >
-          <DatePickerInput id="honorario-vencimento" labelText="Vencimento *" placeholder="dd/mm/aaaa" />
-        </DatePicker>
+        <Grid narrow fullWidth>
+          <Column sm={4} md={2} lg={4}>
+            <Select id="honorario-direcao" labelText="Tipo de lançamento *" value={direcao} onChange={(e) => setDirecao(e.target.value as 'RECEITA' | 'DESPESA')}>
+              <SelectItem value="RECEITA" text="A receber" />
+              <SelectItem value="DESPESA" text="A pagar" />
+            </Select>
+          </Column>
+          <Column sm={4} md={2} lg={4}>
+            <TextInput
+              id="honorario-valor"
+              labelText="Valor (R$) *"
+              helperText="Use vírgula para os centavos."
+              placeholder="Ex.: 1.500,00"
+              autoComplete="off"
+              value={valor}
+              onChange={(e) => setValor(e.target.value)}
+            />
+          </Column>
+          <Column sm={4} md={2} lg={4}>
+            <DatePicker
+              datePickerType="single"
+              dateFormat="d/m/Y"
+              onChange={(datas: Date[]) => setVencimento(datas[0] ? isoDeData(datas[0]) : '')}
+            >
+              <DatePickerInput id="honorario-vencimento" labelText="Vencimento *" placeholder="dd/mm/aaaa" />
+            </DatePicker>
+          </Column>
+          {parcelar && (
+            <Column sm={4} md={2} lg={4}>
+              <TextInput
+                id="honorario-parcelas"
+                type="number"
+                labelText="Quantidade de parcelas *"
+                min={2}
+                max={60}
+                value={String(parcelas)}
+                onChange={(e) => setParcelas(Number(e.target.value) || 2)}
+              />
+            </Column>
+          )}
+        </Grid>
         <Checkbox id="honorario-recorrente" labelText="Repetir mensalmente" checked={recorrente} onChange={(_e, { checked }) => setRecorrente(checked)} />
         <Checkbox id="honorario-parcelar" labelText="Parcelar" checked={parcelar} onChange={(_e, { checked }) => setParcelar(checked)} />
-        {parcelar && (
-          <TextInput
-            id="honorario-parcelas"
-            type="number"
-            labelText="Quantidade de parcelas *"
-            min={2}
-            max={60}
-            value={String(parcelas)}
-            onChange={(e) => setParcelas(Number(e.target.value) || 2)}
-          />
-        )}
         {previewParcelas && (
           <div>
             <p>Prévia das parcelas:</p>
