@@ -1,3 +1,4 @@
+import { Star, StarFilled } from '@carbon/icons-react'
 import { useEffect, useState } from 'react'
 import { ActionableNotification, Button, InlineNotification, Modal, Stack, Tag, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
@@ -116,7 +117,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
 
   return (
     <Stack gap={6}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="aj-layout-23">
         <h2>Processos</h2>
         <Button size="sm" onClick={() => setModalNovoAberto(true)}>
           Novo processo
@@ -175,7 +176,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                           iconDescription={favoritado ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}
                           onClick={() => favoritar(caso.id)}
                         >
-                          {favoritado ? '★' : '☆'}
+                          {favoritado ? <StarFilled size={16} /> : <Star size={16} />}
                         </Button>
                       </td>
                       <td data-label="Título">
@@ -227,7 +228,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
           </div>
         )}
       </div>
-      <Modal
+      <Modal closeButtonLabel="Fechar"
         open={paraExcluir !== null}
         danger
         modalHeading="Excluir processo"

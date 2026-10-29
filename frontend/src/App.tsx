@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   Content,
+  SkipToContent,
   Header,
   HeaderName,
   HeaderGlobalBar,
@@ -44,7 +45,7 @@ const ABAS = [
   { id: 'pagamentos', label: 'Pagamentos' },
   { id: 'contatos', label: 'Contatos' },
   { id: 'atividades', label: 'Atividades' },
-  { id: 'casos', label: 'Casos' },
+  { id: 'casos', label: 'Processos' },
   { id: 'publicacoes-oab', label: 'Publicações OAB' },
 ]
 
@@ -99,10 +100,10 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
   }
 }
 
-function SideNavAstraJus({ expandida }: { expandida: boolean }) {
+function SideNavAstraJus({ expandida, fechar }: { expandida: boolean; fechar: () => void }) {
   const { abaAtiva, irPara } = useNavegacao()
   return (
-    <SideNav aria-label="Navegação principal" expanded={expandida} isRail={!expandida}>
+    <SideNav aria-label="Navegação principal" expanded={expandida} isPersistent={false} onOverlayClick={fechar}>
       <SideNavItems>
         {ABAS.map((aba) => (
           <SideNavLink
@@ -112,6 +113,7 @@ function SideNavAstraJus({ expandida }: { expandida: boolean }) {
             onClick={(e) => {
               e.preventDefault()
               irPara(aba.id)
+              fechar()
             }}
           >
             {aba.label}
@@ -125,7 +127,7 @@ function SideNavAstraJus({ expandida }: { expandida: boolean }) {
 function ConteudoPrincipal() {
   const { abaAtiva } = useNavegacao()
   return (
-    <Content>
+    <Content id="main-content" tabIndex={-1} className="app-content">
       <ConteudoAba abaAtiva={abaAtiva} />
     </Content>
   )
@@ -141,7 +143,21 @@ function temaSalvo(): 'white' | 'g100' {
 
 export default function App() {
   const [tema, setTema] = useState<'white' | 'g100'>(temaSalvo)
-  const [navExpandida, setNavExpandida] = useState(false)
+  const [navExpandida, setNavExpandida] = useState(() => window.matchMedia('(min-width: 1056px)').matches)
+
+  useEffect(() => {
+    function teclado(evento: KeyboardEvent) {
+      if (evento.key === 'Escape' && navExpandida) {
+        setNavExpandida(false)
+        document.querySelector<HTMLButtonElement>('.cds--header__menu-toggle')?.focus()
+      }
+    }
+    const media = window.matchMedia('(min-width: 1056px)')
+    const redimensionar = () => setNavExpandida(media.matches)
+    media.addEventListener('change', redimensionar)
+    document.addEventListener('keydown', teclado)
+    return () => { media.removeEventListener('change', redimensionar); document.removeEventListener('keydown', teclado) }
+  }, [navExpandida])
 
   useEffect(() => {
     try {
@@ -152,20 +168,23 @@ export default function App() {
   }, [tema])
 
   return (
-    <Theme theme={tema}>
+    <Theme theme={tema} className="app-theme">
       <ClienteProvider>
         <NavegacaoProvider abaInicial={ABAS[0].id}>
           <Header aria-label="AstraJus">
+            <SkipToContent href="#main-content">Pular para o conteúdo</SkipToContent>
             <HeaderMenuButton
+              isCollapsible
               aria-label={navExpandida ? 'Fechar menu' : 'Abrir menu'}
               isActive={navExpandida}
+              aria-expanded={navExpandida}
               onClick={() => setNavExpandida((atual) => !atual)}
             />
             <HeaderName href="#" prefix="">
               AstraJus
             </HeaderName>
             <HeaderGlobalBar>
-              <div style={{ display: 'flex', alignItems: 'center', marginRight: '1rem' }}>
+              <div className="shell-status">
                 <StatusConexaoTag />
               </div>
               <BuscaGlobal />
@@ -178,7 +197,7 @@ export default function App() {
               </HeaderGlobalAction>
             </HeaderGlobalBar>
           </Header>
-          <SideNavAstraJus expandida={navExpandida} />
+          <SideNavAstraJus expandida={navExpandida} fechar={() => setNavExpandida(false)} />
           <ConteudoPrincipal />
         </NavegacaoProvider>
       </ClienteProvider>

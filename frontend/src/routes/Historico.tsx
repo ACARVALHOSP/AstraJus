@@ -74,20 +74,20 @@ export default function Historico() {
   return (
     <Stack gap={7}>
       <div>
-        <h2>Histórico e favoritos</h2>
+        <h1>Histórico e favoritos</h1>
       </div>
 
       <section>
-        <h3>Casos favoritos</h3>
-        <p>Casos marcados com ★ na lista de Casos. Abrir pula direto para o caso.</p>
+        <h3>Processos favoritos</h3>
+        <p>Processos marcados como favoritos na lista de Processos. Abrir leva diretamente ao processo.</p>
         {casosFavoritos.length === 0 ? (
-          <p>Nenhum caso favorito ainda.</p>
+          <p>Nenhum processo favorito ainda.</p>
         ) : (
           <Stack gap={3}>
             {casosFavoritos.map((caso) => (
-              <div key={caso.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+              <div key={caso.id} className="aj-layout-40">
                 <span>{caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)'}</span>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div className="aj-layout-41">
                   <Button kind="ghost" size="sm" onClick={() => irPara('casos', { id: caso.id })}>
                     Abrir
                   </Button>
@@ -138,7 +138,7 @@ export default function Historico() {
                           ))}
                           <TableCell>
                             {fav && (
-                              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                              <div className="aj-layout-42">
                                 <Button kind="ghost" size="sm" onClick={() => consultarFavorito(fav)}>
                                   Consultar
                                 </Button>

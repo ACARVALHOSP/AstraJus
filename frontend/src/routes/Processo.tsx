@@ -1,3 +1,4 @@
+import { Star, StarFilled } from '@carbon/icons-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import {
   Accordion,
@@ -103,7 +104,7 @@ export default function Processo() {
   return (
     <Stack gap={6}>
       <div>
-        <h2>Consultar processo</h2>
+        <h1>Consultar processo</h1>
       </div>
       <Form onSubmit={aoEnviar}>
         <Stack gap={5}>
@@ -201,8 +202,8 @@ function CartaoProcesso({ proc }: { proc: ProcessoEncontrado }) {
         )}
         {proc.numeroProcesso && (
           <div>
-            <Button kind="ghost" size="sm" onClick={alternarFavoritoClick}>
-              {favorito ? '★ Favorito' : '☆ Favoritar'}
+            <Button kind="ghost" size="sm" renderIcon={favorito ? StarFilled : Star} onClick={alternarFavoritoClick}>
+              {favorito ? 'Favorito' : 'Favoritar'}
             </Button>
           </div>
         )}

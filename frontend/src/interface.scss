@@ -1,0 +1,345 @@
+@use '@carbon/react/scss/spacing' as spacing;
+@use '@carbon/react/scss/type' as type;
+
+.aj-layout-1 {
+  margin-top: spacing.$spacing-03;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+.aj-layout-2 {
+  position: relative;
+}
+
+.aj-layout-3 {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.25rem;
+  border-radius: 1rem;
+  background: var(--cds-support-error);
+  color: var(--cds-text-on-color);
+  font-size: 0.625rem;
+  line-height: 1rem;
+  text-align: center;
+}
+
+.aj-layout-4 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: spacing.$spacing-03;
+  margin-bottom: spacing.$spacing-03;
+}
+
+.aj-layout-5 {
+  @include type.type-style('heading-02');
+}
+
+.aj-layout-6 {
+  margin-top: spacing.$spacing-04;
+}
+
+.aj-layout-7 {
+  color: var(--cds-support-error);
+}
+
+.aj-layout-8 {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.aj-layout-9 {
+  border-bottom: 1px solid var(--cds-border-subtle);
+  padding: 0.75rem 0;
+}
+
+.aj-layout-10 {
+  @include type.type-style('heading-02');
+}
+
+.aj-layout-11 {
+  margin: 0.25rem 0;
+}
+
+.aj-layout-12 {
+  @include type.type-style('label-01');
+  color: var(--cds-text-secondary);
+}
+
+.aj-layout-13 {
+  display: flex;
+  gap: spacing.$spacing-03;
+  margin-top: spacing.$spacing-02;
+}
+
+.aj-layout-14 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.aj-layout-15 {
+  display: flex;
+  gap: spacing.$spacing-03;
+}
+
+.aj-layout-16 {
+  display: flex;
+  gap: spacing.$spacing-03;
+  flex-wrap: wrap;
+}
+
+.aj-layout-17 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.aj-layout-18 {
+  display: flex;
+  justify-content: space-between;
+  gap: spacing.$spacing-05;
+  flex-wrap: wrap;
+}
+
+.aj-layout-19 {
+  display: flex;
+  gap: spacing.$spacing-03;
+  align-items: flex-start;
+}
+
+.aj-layout-20 {
+  display: flex;
+  gap: spacing.$spacing-03;
+}
+
+.aj-layout-21 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: spacing.$spacing-03;
+}
+
+.aj-layout-22 {
+  display: flex;
+  gap: spacing.$spacing-03;
+}
+
+.aj-layout-23 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.aj-layout-24 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.aj-layout-25 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: spacing.$spacing-05;
+}
+
+.aj-layout-26 {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.aj-layout-27 {
+  display: flex;
+  align-items: center;
+  gap: spacing.$spacing-05;
+}
+
+.aj-layout-28 {
+  display: flex;
+  gap: spacing.$spacing-03;
+}
+
+.aj-layout-29 {
+  display: flex;
+  flex-direction: column;
+  gap: spacing.$spacing-04;
+  margin-top: spacing.$spacing-03;
+}
+
+.aj-layout-30 {
+  display: flex;
+  align-items: flex-end;
+}
+
+.aj-layout-31 {
+  margin-top: spacing.$spacing-03;
+}
+
+.aj-layout-32 {
+  max-width: calc(7ch + 3.5rem);
+}
+
+.aj-layout-33 {
+  display: flex;
+  flex-direction: column;
+  gap: spacing.$spacing-05;
+  margin-top: spacing.$spacing-03;
+}
+
+.aj-layout-34 {
+  margin-top: spacing.$spacing-03;
+}
+
+.aj-layout-35 {
+  display: flex;
+  align-items: flex-end;
+}
+
+.aj-layout-36 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.aj-layout-37 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: spacing.$spacing-02;
+}
+
+.aj-layout-38 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.aj-layout-39 {
+  display: flex;
+  gap: spacing.$spacing-03;
+  flex-wrap: wrap;
+}
+
+.aj-layout-40 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: spacing.$spacing-05;
+}
+
+.aj-layout-41 {
+  display: flex;
+  gap: spacing.$spacing-03;
+}
+
+.aj-layout-42 {
+  display: flex;
+  gap: spacing.$spacing-03;
+}
+
+.aj-layout-43 {
+  display: flex;
+  gap: spacing.$spacing-05;
+  flex-wrap: wrap;
+}
+
+.aj-layout-44 {
+  width: 16rem;
+}
+
+.aj-layout-45 {
+  width: 16rem;
+}
+
+.aj-layout-46 {
+  width: 16rem;
+}
+
+.aj-layout-47 {
+  width: 16rem;
+}
+
+.aj-layout-48 {
+  display: flex;
+  gap: spacing.$spacing-03;
+  flex-wrap: wrap;
+}
+
+.aj-layout-49 {
+  display: flex;
+  gap: spacing.$spacing-03;
+}
+
+.aj-layout-50 {
+  display: flex;
+  gap: spacing.$spacing-05;
+  flex-wrap: wrap;
+}
+
+.aj-layout-51 {
+  min-width: 10rem;
+}
+
+.aj-layout-52 {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.aj-layout-53 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.aj-layout-54 {
+  display: flex;
+  gap: spacing.$spacing-03;
+  flex-wrap: wrap;
+}
+
+.aj-layout-55 {
+  display: flex;
+  gap: spacing.$spacing-03;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.aj-layout-56 {
+  display: flex;
+  gap: spacing.$spacing-05;
+  align-items: center;
+}
+
+.aj-layout-57 {
+  display: flex;
+  gap: spacing.$spacing-05;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.aj-layout-58 {
+  max-width: calc(11ch + 3.5rem);
+}
+
+.aj-layout-59 {
+  display: flex;
+  gap: spacing.$spacing-05;
+  align-items: center;
+}
+
+.aj-layout-60 {
+  display: flex;
+  align-items: center;
+  gap: spacing.$spacing-03;
+}
+
+.aj-layout-61 {
+  max-width: calc(11ch + 3.5rem);
+}

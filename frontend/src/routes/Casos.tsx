@@ -1,3 +1,4 @@
+import { ArrowLeft } from '@carbon/icons-react'
 import { useState } from 'react'
 import { Button, Stack, Tab, TabList, TabPanel, TabPanels, Tabs } from '@carbon/react'
 import { useNavegacao } from '../api/NavegacaoContext'
@@ -25,11 +26,11 @@ export default function Casos() {
 
   return (
     <Stack gap={6}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <Button kind="ghost" size="sm" onClick={() => setCasoId(null)}>
-          ← Voltar
+      <div className="aj-layout-27">
+        <Button kind="ghost" size="sm" renderIcon={ArrowLeft} onClick={() => setCasoId(null)}>
+          Voltar
         </Button>
-        <h2>{titulo}</h2>
+        <h1>{titulo}</h1>
       </div>
       <Tabs key={casoId}>
         <TabList aria-label="Detalhes do processo">

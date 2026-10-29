@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { usePainelShell } from './usePainelShell'
+import { useCallback, useEffect, useState } from 'react'
 import { Button, Checkbox, HeaderGlobalAction } from '@carbon/react'
 import { Notification } from '@carbon/icons-react'
 import { useCliente } from './api/ClienteContext'
@@ -30,7 +31,7 @@ export default function CentralNotificacoes() {
   const [somenteNaoLidas, setSomenteNaoLidas] = useState(false)
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
-  const raiz = useRef<HTMLDivElement>(null)
+  const raiz = usePainelShell(aberta, () => setAberta(false))
 
   const carregar = useCallback(
     async (anexar = false) => {
@@ -63,13 +64,6 @@ export default function CentralNotificacoes() {
       .catch(() => {})
   }, [cliente])
 
-  useEffect(() => {
-    function aoClicarFora(ev: MouseEvent) {
-      if (raiz.current && !raiz.current.contains(ev.target as Node)) setAberta(false)
-    }
-    document.addEventListener('click', aoClicarFora)
-    return () => document.removeEventListener('click', aoClicarFora)
-  }, [])
 
   function abrir() {
     const abrindo = !aberta
@@ -97,26 +91,13 @@ export default function CentralNotificacoes() {
   }
 
   return (
-    <div ref={raiz} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+    <div ref={raiz} className="shell-action">
       <HeaderGlobalAction aria-label={`Notificações${naoLidas ? `: ${naoLidas} não lidas` : ''}`} aria-expanded={aberta} onClick={abrir}>
-        <span style={{ position: 'relative' }}>
+        <span className="aj-layout-2">
           <Notification size={20} />
           {!!naoLidas && (
             <span
-              style={{
-                position: 'absolute',
-                top: -4,
-                right: -4,
-                minWidth: '1rem',
-                height: '1rem',
-                padding: '0 0.25rem',
-                borderRadius: '1rem',
-                background: 'var(--cds-support-error, #da1e28)',
-                color: '#fff',
-                fontSize: '0.625rem',
-                lineHeight: '1rem',
-                textAlign: 'center',
-              }}
+              className="aj-layout-3"
             >
               {naoLidas > 99 ? '99+' : naoLidas}
             </span>
@@ -124,22 +105,9 @@ export default function CentralNotificacoes() {
         </span>
       </HeaderGlobalAction>
       {aberta && (
-        <div
-          style={{
-            position: 'absolute',
-            insetInlineEnd: 0,
-            top: '100%',
-            inlineSize: 'min(26rem, calc(100vw - 2rem))',
-            maxBlockSize: 'calc(100dvh - 4rem)',
-            overflowY: 'auto',
-            background: 'var(--cds-layer, #f4f4f4)',
-            boxShadow: '0 4px 8px rgba(0,0,0,.15)',
-            padding: '1rem',
-            zIndex: 8100,
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-            <h2 style={{ fontSize: '0.875rem', fontWeight: 600 }}>Notificações</h2>
+        <div className="shell-panel" role="region" aria-label="Notificações">
+          <div className="aj-layout-4">
+            <h2 className="aj-layout-5">Notificações</h2>
             <Button kind="ghost" size="sm" onClick={() => carregar(false)} disabled={carregando}>
               Atualizar
             </Button>
@@ -153,18 +121,18 @@ export default function CentralNotificacoes() {
               setCursor(null)
             }}
           />
-          <div style={{ marginTop: '0.75rem' }}>
-            {erro && <p style={{ color: 'var(--cds-support-error, #da1e28)' }}>{erro}</p>}
+          <div className="aj-layout-6">
+            {erro && <p className="aj-layout-7">{erro}</p>}
             {!erro && !carregando && itens.length === 0 && <p>Nenhuma notificação nos últimos 180 dias.</p>}
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+            <ul className="aj-layout-8">
               {itens.map((item) => (
-                <li key={item.id} style={{ borderBottom: '1px solid var(--cds-border-subtle, #e0e0e0)', padding: '0.75rem 0' }}>
-                  <h3 style={{ fontSize: '0.875rem', fontWeight: 600 }}>{item.titulo}</h3>
-                  <p style={{ margin: '0.25rem 0' }}>{item.mensagem}</p>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--cds-text-secondary, #525252)' }}>
+                <li key={item.id} className="aj-layout-9">
+                  <h3 className="aj-layout-10">{item.titulo}</h3>
+                  <p className="aj-layout-11">{item.mensagem}</p>
+                  <p className="aj-layout-12">
                     {new Date(item.criado_em).toLocaleString('pt-BR')} · {item.lida_em ? 'Lida' : 'Não lida'}
                   </p>
-                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+                  <div className="aj-layout-13">
                     <Button kind="ghost" size="sm" onClick={() => abrirDestino(item)}>
                       Abrir
                     </Button>

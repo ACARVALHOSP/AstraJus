@@ -143,9 +143,9 @@ export default function VinculosCaso({ casoId, onAbrirCaso }: { casoId: string; 
                     <td>
                       <button
                         type="button"
-                        className="cds--link"
+                        className="cds--link aj-layout-26"
                         onClick={() => onAbrirCaso(v.caso_id)}
-                        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+
                       >
                         {v.titulo || '(sem título)'}
                       </button>
