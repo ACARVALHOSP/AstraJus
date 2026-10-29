@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Content,
   Header,
   HeaderName,
   HeaderGlobalBar,
   HeaderGlobalAction,
+  HeaderMenuButton,
   SideNav,
   SideNavItems,
   SideNavLink,
@@ -13,6 +14,9 @@ import {
 } from '@carbon/react'
 import { Asleep, Light } from '@carbon/icons-react'
 import { ClienteProvider, useCliente } from './api/ClienteContext'
+import { CHAVE_TEMA } from './api/mcpClient'
+import BuscaGlobal from './BuscaGlobal'
+import CentralNotificacoes from './CentralNotificacoes'
 import { NavegacaoProvider, useNavegacao } from './api/NavegacaoContext'
 import Acesso from './routes/Acesso'
 import Processo from './routes/Processo'
@@ -95,10 +99,10 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
   }
 }
 
-function SideNavAstraJus() {
+function SideNavAstraJus({ expandida }: { expandida: boolean }) {
   const { abaAtiva, irPara } = useNavegacao()
   return (
-    <SideNav aria-label="Navegação principal" expanded isRail>
+    <SideNav aria-label="Navegação principal" expanded={expandida} isRail={!expandida}>
       <SideNavItems>
         {ABAS.map((aba) => (
           <SideNavLink
@@ -127,14 +131,36 @@ function ConteudoPrincipal() {
   )
 }
 
+function temaSalvo(): 'white' | 'g100' {
+  try {
+    return localStorage.getItem(CHAVE_TEMA) === 'g100' ? 'g100' : 'white'
+  } catch {
+    return 'white'
+  }
+}
+
 export default function App() {
-  const [tema, setTema] = useState<'white' | 'g100'>('white')
+  const [tema, setTema] = useState<'white' | 'g100'>(temaSalvo)
+  const [navExpandida, setNavExpandida] = useState(false)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CHAVE_TEMA, tema)
+    } catch {
+      // armazenamento indisponível: tema aplicado só nesta sessão
+    }
+  }, [tema])
 
   return (
     <Theme theme={tema}>
       <ClienteProvider>
         <NavegacaoProvider abaInicial={ABAS[0].id}>
           <Header aria-label="AstraJus">
+            <HeaderMenuButton
+              aria-label={navExpandida ? 'Fechar menu' : 'Abrir menu'}
+              isActive={navExpandida}
+              onClick={() => setNavExpandida((atual) => !atual)}
+            />
             <HeaderName href="#" prefix="">
               AstraJus
             </HeaderName>
@@ -142,6 +168,8 @@ export default function App() {
               <div style={{ display: 'flex', alignItems: 'center', marginRight: '1rem' }}>
                 <StatusConexaoTag />
               </div>
+              <BuscaGlobal />
+              <CentralNotificacoes />
               <HeaderGlobalAction
                 aria-label="Alternar tema"
                 onClick={() => setTema(tema === 'white' ? 'g100' : 'white')}
@@ -150,7 +178,7 @@ export default function App() {
               </HeaderGlobalAction>
             </HeaderGlobalBar>
           </Header>
-          <SideNavAstraJus />
+          <SideNavAstraJus expandida={navExpandida} />
           <ConteudoPrincipal />
         </NavegacaoProvider>
       </ClienteProvider>

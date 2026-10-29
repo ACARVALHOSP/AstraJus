@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Button, Stack, Tab, TabList, TabPanel, TabPanels, Tabs } from '@carbon/react'
+import { useNavegacao } from '../api/NavegacaoContext'
 import { formatarNomeExibicao } from '../utils/formatadores'
 import ListaCasos from './casos/ListaCasos'
 import CadastroCaso from './casos/CadastroCaso'
@@ -9,7 +10,8 @@ import MovimentacoesCaso from './casos/MovimentacoesCaso'
 import VinculosCaso from './casos/VinculosCaso'
 
 export default function Casos() {
-  const [casoId, setCasoId] = useState<string | null>(null)
+  const { consumirPayload } = useNavegacao()
+  const [casoId, setCasoId] = useState<string | null>(() => consumirPayload<{ id: string }>('casos')?.id ?? null)
   const [titulo, setTitulo] = useState('Carregando…')
 
   function abrir(id: string) {

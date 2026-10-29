@@ -16,6 +16,7 @@ export default defineConfig({
       '/cjpg-arvore': 'http://localhost:8000',
       '/clientes': 'http://localhost:8000',
       '/lancamentos': 'http://localhost:8000',
+      '/notificacoes': 'http://localhost:8000',
       '/pagamentos': 'http://localhost:8000',
       '/pendentes': 'http://localhost:8000',
       '/publicacoes-oab': 'http://localhost:8000',
