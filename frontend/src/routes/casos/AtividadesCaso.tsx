@@ -1,5 +1,5 @@
+import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
-import { Close } from '@carbon/icons-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Checkbox, InlineNotification, Modal, Stack } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
@@ -76,7 +76,7 @@ export default function AtividadesCaso({ casoId }: { casoId: string }) {
 
   return (
     <Stack gap={5}>
-      <div className="aj-layout-17">
+      <div className="casos-titulo-linha">
         <h3>Atividades</h3>
         <Button
           size="sm"
@@ -95,7 +95,7 @@ export default function AtividadesCaso({ casoId }: { casoId: string }) {
         {!carregando && atividades && atividades.length > 0 && (
           <Stack gap={4}>
             {atividades.map((atv) => (
-              <div key={atv.id} className="cds--tile aj-layout-18" >
+              <div key={atv.id} className="casos-atividade" >
                 <div>
                   <Checkbox
                     id={`atividade-concluida-${atv.id}`}
@@ -124,21 +124,10 @@ export default function AtividadesCaso({ casoId }: { casoId: string }) {
                     />
                   )}
                 </div>
-                <div className="aj-layout-19">
-                  <Button
-                    kind="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setEditando(atv)
-                      setModalAberto(true)
-                    }}
-                  >
-                    Editar
-                  </Button>
-                  <Button kind="ghost" size="sm" hasIconOnly iconDescription="Excluir atividade" onClick={() => setParaExcluir(atv)}>
-                    <Close size={16} />
-                  </Button>
-                </div>
+                <AcoesTabela rotulo={atv.titulo} acoes={[
+                  { texto: 'Editar', executar: () => { setEditando(atv); setModalAberto(true) } },
+                  { texto: 'Excluir', executar: () => setParaExcluir(atv), perigo: true },
+                ]} />
               </div>
             ))}
           </Stack>
