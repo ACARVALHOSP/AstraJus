@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 
 type NavegacaoContextValor = {
   abaAtiva: string
+  versaoNavegacao: number
   irPara: (abaId: string, payload?: unknown) => void
   consumirPayload: <T>(abaId: string) => T | undefined
 }
@@ -15,6 +16,7 @@ function abaDaHash(abaInicial: string): string {
 
 export function NavegacaoProvider({ children, abaInicial }: { children: ReactNode; abaInicial: string }) {
   const [abaAtiva, setAbaAtiva] = useState(() => abaDaHash(abaInicial))
+  const [versaoNavegacao, setVersaoNavegacao] = useState(0)
   const payloads = useRef(new Map<string, unknown>())
 
   useEffect(() => {
@@ -28,9 +30,11 @@ export function NavegacaoProvider({ children, abaInicial }: { children: ReactNod
   const valor = useMemo<NavegacaoContextValor>(
     () => ({
       abaAtiva,
+      versaoNavegacao,
       irPara: (abaId, payload) => {
         if (payload !== undefined) payloads.current.set(abaId, payload)
         setAbaAtiva(abaId)
+        setVersaoNavegacao(atual => atual + 1)
         if (window.location.hash.replace(/^#\/?/, '') !== abaId) window.location.hash = `/${abaId}`
       },
       consumirPayload: <T,>(abaId: string) => {
@@ -39,7 +43,7 @@ export function NavegacaoProvider({ children, abaInicial }: { children: ReactNod
         return valor
       },
     }),
-    [abaAtiva],
+    [abaAtiva, versaoNavegacao],
   )
 
   return <NavegacaoContext.Provider value={valor}>{children}</NavegacaoContext.Provider>

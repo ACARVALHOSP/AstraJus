@@ -1,6 +1,6 @@
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Checkbox, InlineNotification, Modal, Stack } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
@@ -24,7 +24,7 @@ export type Atividade = {
 
 const ROTULO_TIPO: Record<string, string> = { tarefa: 'Tarefa', prazo: 'Prazo', audiencia: 'Audiência', reuniao: 'Reunião', outro: 'Outro' }
 
-export default function AtividadesCaso({ casoId }: { casoId: string }) {
+export default function AtividadesCaso({ casoId, atividadeInicialId }: { casoId: string; atividadeInicialId?: string | number }) {
   const { cliente } = useCliente()
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
@@ -34,6 +34,7 @@ export default function AtividadesCaso({ casoId }: { casoId: string }) {
   const [editando, setEditando] = useState<Atividade | null>(null)
   const [paraExcluir, setParaExcluir] = useState<Atividade | null>(null)
   const [excluindo, setExcluindo] = useState(false)
+  const destinoConsumido = useRef(false)
 
   const carregar = useCallback(() => {
     setCarregando(true)
@@ -48,6 +49,18 @@ export default function AtividadesCaso({ casoId }: { casoId: string }) {
   }, [cliente, casoId])
 
   useEffect(carregar, [carregar])
+
+  useEffect(() => {
+    if (atividadeInicialId == null || !atividades || carregando || destinoConsumido.current) return
+    destinoConsumido.current = true
+    const atividade = atividades.find(item => String(item.id) === String(atividadeInicialId))
+    if (!atividade) {
+      setErro('A atividade desta notificação não está mais disponível. Atualize as notificações.')
+      return
+    }
+    setEditando(atividade)
+    setModalAberto(true)
+  }, [atividadeInicialId, atividades, carregando])
 
   async function alternarConcluida(atv: Atividade, concluida: boolean) {
     const novoStatus = concluida ? 'concluida' : 'pendente'
