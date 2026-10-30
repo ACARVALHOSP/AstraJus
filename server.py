@@ -42,6 +42,7 @@ from urllib.parse import parse_qs, urlsplit
 import asaas_integracao
 import agenda_atividades
 import notificacoes
+import monitoramento_runtime
 import db as _db
 import google_integracao
 import integracoes
@@ -672,9 +673,9 @@ def _extrair_publicacao_djen(item: dict) -> dict:
         "destinatarioadvogados": [
             {
                 **da,
-                "nome": (da.get("advogado") or {}).get("nome"),
-                "numero_oab": (da.get("advogado") or {}).get("numero_oab"),
-                "uf_oab": (da.get("advogado") or {}).get("uf_oab"),
+                "nome": (da.get("advogado") or da).get("nome"),
+                "numero_oab": (da.get("advogado") or da).get("numero_oab"),
+                "uf_oab": (da.get("advogado") or da).get("uf_oab"),
             }
             for da in item.get("destinatarioadvogados") or []
         ],
@@ -1890,20 +1891,38 @@ def _criar_monitoramento(
     if erro:
         return erro
 
-    if len(registro.do_usuario(usuario)) >= MONITORAMENTO_MAX_POR_USUARIO:
-        return _erro(f"Limite de {MONITORAMENTO_MAX_POR_USUARIO} monitoramentos por usuário atingido.")
+    agora_dt = monitoramento_runtime.utc(agora())
+    resultado = {}
+    def criar(dados):
+        chave = lambda c: {k: v for k, v in c.items() if k != 'nome'}
+        for mid, mon in dados.items():
+            if mon.get('usuario') == usuario and chave(mon.get('criterio') or {}) == chave(criterio):
+                resultado.update({'id': mid, **mon, 'existente': True})
+                return False
+        if sum(m.get('usuario') == usuario for m in dados.values()) >= MONITORAMENTO_MAX_POR_USUARIO:
+            resultado.update(_erro(f'Limite de {MONITORAMENTO_MAX_POR_USUARIO} monitoramentos por usuário atingido.'))
+            return False
+        mid = secrets.token_hex(8)
+        mon = {'usuario': usuario, 'criterio': criterio, 'criado_em': agora_dt.isoformat(),
+               'hashes_notificados': [], 'expira_em': (agora_dt + timedelta(days=180)).isoformat()}
+        dados[mid] = mon
+        resultado.update({'id': mid, **mon})
+    registro.atualizar(criar)
+    return resultado
 
-    agora_dt = agora()
-    novo_id = secrets.token_hex(8)
-    registro_novo = {
-        "usuario": usuario,
-        "criterio": criterio,
-        "criado_em": agora_dt.isoformat(),
-        "hashes_notificados": [],
-        "expira_em": (agora_dt + timedelta(days=MONITORAMENTO_EXPIRACAO_DIAS)).isoformat(),
-    }
-    registro.atualizar(lambda dados: dados.update({novo_id: registro_novo}))
-    return {"id": novo_id, **registro_novo}
+
+def _renovar_monitoramento(registro, usuario, mid, agora=None):
+    resultado = {}
+    def renovar(dados):
+        mon = dados.get(mid)
+        if not mon or mon.get('usuario') != usuario:
+            resultado.update(_erro('Monitoramento não encontrado.'))
+            return False
+        mon['expira_em'] = (monitoramento_runtime.utc(agora) + timedelta(days=180)).isoformat()
+        mon.pop('ultimo_aviso_expiracao', None)
+        resultado.update({'id': mid, 'expira_em': mon['expira_em']})
+    registro.atualizar(renovar)
+    return resultado
 
 
 def _listar_monitoramentos(registro: RegistroMonitoramentos, usuario: str) -> dict:
@@ -1911,8 +1930,15 @@ def _listar_monitoramentos(registro: RegistroMonitoramentos, usuario: str) -> di
         {"id": i, **{k: v for k, v in m.items() if k != "hashes_notificados"}}
         for i, m in registro.do_usuario(usuario).items()
     ]
-    itens.sort(key=lambda m: m["criado_em"])
-    return {"monitoramentos": itens}
+    repo = monitoramento_runtime.Repositorio(registro.caminho)
+    for item in itens:
+        item['verificacao'] = repo.estado(item['id'] + ':djen')
+        item['captura_oab'] = repo.estado(item['id'] + ':oab')
+    itens.sort(key=lambda m: m['criado_em'])
+    return {'monitoramentos': itens, 'limite': MONITORAMENTO_MAX_POR_USUARIO,
+            'email_configurado': _smtp_do_ambiente() is not None,
+            'historico': {nome: repo.historico(nome) for nome in ('monitoramentos', 'captura_oab', 'movimentos')}}
+
 
 
 def _remover_monitoramento(registro: RegistroMonitoramentos, usuario: str, id_monitoramento: str) -> dict:
@@ -1928,7 +1954,8 @@ def _remover_monitoramento(registro: RegistroMonitoramentos, usuario: str, id_mo
     registro.atualizar(alterar)
     if not encontrado["ok"]:
         return _erro("Monitoramento não encontrado.")
-    return {"removido": True}
+    monitoramento_runtime.Repositorio(registro.caminho).remover(id_monitoramento)
+    return {'removido': True}
 
 
 def _enviar_aviso_monitoramento(cfg: ConfiguracaoSMTP, destino: str, criterio: dict, itens: list[dict]) -> None:
@@ -2031,13 +2058,6 @@ def _enviar_aviso_atividade_delegada(cfg: ConfiguracaoSMTP, destino: str, ativid
             servidor.send_message(mensagem)
 
 
-def _atualizar_apos_aviso(dados: dict, id_monitoramento: str, hashes: list[str], expira_em: str):
-    if id_monitoramento not in dados:
-        return False
-    dados[id_monitoramento]["hashes_notificados"] = hashes
-    dados[id_monitoramento]["expira_em"] = expira_em
-
-
 def _marcar_aviso_expiracao(dados: dict, id_monitoramento: str, agora_iso: str):
     if id_monitoramento not in dados:
         return False
@@ -2055,101 +2075,157 @@ def _calcular_proxima_tentativa(id_monitoramento: str) -> float:
     return proximo
 
 
+async def _coletar_paginas_djen(params, receber):
+    """Só confirma completude ao esgotar páginas; callback persiste cada página.
+
+    Uma falha preserva os itens já ingeridos e não avança o checkpoint temporal.
+    O limite defensivo é explícito, nunca interpretado como sucesso.
+    """
+    vistos, paginas, total, ignoradas = set(), 0, 0, 0
+    for pagina in range(1, 1001):
+        resposta = await _djen_get_com_retry(DJEN_BASE_URL, params={**params, 'pagina': pagina})
+        if isinstance(resposta, dict):
+            return None, resposta
+        dados, erro = _json_da_resposta(resposta)
+        if erro or not isinstance(dados, dict) or not isinstance(dados.get('items'), list):
+            return None, erro or _erro('Resposta inesperada do DJEN durante a captura.')
+        itens = dados['items']
+        paginas += 1
+        total += len(itens)
+        validos = [i for i in itens if isinstance(i, dict) and _extrair_publicacao_djen(i).get('hash')]
+        ignoradas += len(itens) - len(validos)
+        assinatura = tuple(str(_extrair_publicacao_djen(i).get('hash')) for i in validos)
+        if itens and assinatura in vistos:
+            return None, _erro('O DJEN repetiu uma página. Captura parcial; tente novamente.')
+        vistos.add(assinatura)
+        receber(validos)
+        quantidade = dados.get('count')
+        if isinstance(quantidade, int) and quantidade >= 0:
+            terminou = total >= quantidade
+        else:
+            terminou = len(itens) < params.get('itensPorPagina', 100)
+        if terminou or not itens:
+            if isinstance(quantidade, int) and total < quantidade:
+                return None, _erro('O DJEN encerrou as páginas antes do total informado. Captura parcial.')
+            if ignoradas:
+                return None, _erro('Há publicações sem hash válido na resposta. Captura parcial; checkpoint preservado.')
+            return {'paginas': paginas, 'encontradas': total, 'ignoradas': ignoradas, 'completa': True}, None
+    return None, _erro('Limite de 1000 páginas atingido. Captura parcial; checkpoint preservado.')
+
+
+def _parametros_coleta(criterio, estado, agora_dt, tamanho):
+    params = {k: v for k, v in {
+        'numeroProcesso': criterio.get('numero_processo'), 'siglaTribunal': criterio.get('sigla_tribunal'),
+        'numeroOab': criterio.get('numero_oab'), 'ufOab': criterio.get('uf_oab'),
+        'itensPorPagina': tamanho,
+    }.items() if v is not None}
+    # Primeira coleta mantém a abrangência anterior; próximas coletas sobrepõem dois dias.
+    if estado.get('checkpoint') and estado.get('ultima_reconciliacao') and (monitoramento_runtime.utc(agora_dt) - monitoramento_runtime.utc(estado['ultima_reconciliacao'])).days < 7:
+        params['dataDisponibilizacaoInicio'] = (monitoramento_runtime.utc(estado['checkpoint']) - timedelta(days=2)).date().isoformat()
+    params['dataDisponibilizacaoFim'] = monitoramento_runtime.utc(agora_dt).date().isoformat()
+    return params
+
+
+async def _entregar_monitoramento(repo, registro, mid, mon, gestao, enviar_fn, agora_dt):
+    """Destinos locais e e-mail confirmam separadamente; falhas não apagam a fila."""
+    if mid not in registro.carregar():
+        return True
+    falhou = False
+    locais = repo.pendentes(mid, 'local')
+    for item in locais:
+        try:
+            if gestao is None:
+                continue
+            notificacoes.Repositorio(gestao.caminho, agora=lambda: agora_dt).registrar_monitoramento(mon['usuario'], [item])
+            numero = _so_digitos(item.get('numeroprocessocommascara'))
+            if len(numero) == 20:
+                gestao.registrar_evento(numero, 'publicacao', item, lambda: agora_dt)
+            if (mon.get('criterio') or {}).get('numero_oab'):
+                _registrar_itens_capturados([item], mid, (mon.get('criterio') or {}).get('nome'),
+                    RegistroPublicacoesOAB(gestao.caminho), gestao, lambda: agora_dt, mon['usuario'])
+            repo.confirmar(mid, 'local', [item['hash']])
+        except Exception:
+            falhou = True
+            log.exception('Monitoramento %s: destino local pendente', mid)
+    emails = repo.pendentes(mid, 'email')
+    if emails and enviar_fn is not None:
+        try:
+            await asyncio.to_thread(enviar_fn, mon['usuario'], mon.get('criterio') or {}, emails)
+            repo.confirmar(mid, 'email', [i['hash'] for i in emails])
+            def confirmar(dados):
+                if mid not in dados:
+                    return False
+                dados[mid]['hashes_notificados'] = list(dict.fromkeys(
+                    (dados[mid].get('hashes_notificados') or []) + [i['hash'] for i in emails]))[-MONITORAMENTO_MAX_HASHES_LEMBRADOS:]
+            registro.atualizar(confirmar)
+        except Exception:
+            falhou = True
+            log.exception('Monitoramento %s: entrega de e-mail pendente', mid)
+    repo.marcar(mid + ':djen', emails_pendentes=len(repo.pendentes(mid, 'email')),
+                locais_pendentes=len(repo.pendentes(mid, 'local')),
+                entrega_erro='Há entregas pendentes. Nova tentativa no próximo ciclo.' if falhou else None)
+    return not falhou
+
+
 async def _verificar_um_monitoramento(
     registro: RegistroMonitoramentos, id_monitoramento: str, monitoramento: dict, enviar_fn, agora_dt,
-    gestao: "RegistroClientesCasos | None" = None,
-    smtp: "ConfiguracaoSMTP | None" = None,
-) -> None:
-    # Backoff: se ainda está na janela de espera, pula este ciclo.
-    proxima = _PROXIMA_TENTATIVA_MONITORAMENTO.get(id_monitoramento, 0.0)
+    gestao: 'RegistroClientesCasos | None' = None, smtp: 'ConfiguracaoSMTP | None' = None,
+) -> bool:
+    agora_dt = monitoramento_runtime.utc(agora_dt)
+    repo = monitoramento_runtime.Repositorio(registro.caminho)
+    chave = id_monitoramento + ':djen'
+    estado = repo.estado(chave)
+    if estado.get('ultimo_sucesso') and monitoramento_runtime.utc(estado['ultimo_sucesso']) + timedelta(hours=6) > agora_dt:
+        return await _entregar_monitoramento(repo, registro, id_monitoramento, monitoramento, gestao, enviar_fn, agora_dt)
+    proxima = max(_PROXIMA_TENTATIVA_MONITORAMENTO.get(id_monitoramento, 0), estado.get('tentar_apos', 0))
     if time.time() < proxima:
-        log.debug("Monitoramento %s: backoff ativo, pulando ciclo", id_monitoramento)
-        return
-
-    criterio = monitoramento.get("criterio") or {}
-    params = {
-        "numeroProcesso": criterio.get("numero_processo"),
-        "siglaTribunal": criterio.get("sigla_tribunal"),
-        "numeroOab": criterio.get("numero_oab"),
-        "ufOab": criterio.get("uf_oab"),
-        "pagina": 1,
-        "itensPorPagina": 20,
-    }
-    params = {k: v for k, v in params.items() if v is not None}
-
-    resposta = await _djen_get_com_retry(DJEN_BASE_URL, params=params)
-    if isinstance(resposta, dict):
-        # instabilidade transitória do DJEN: aplica backoff e tenta de novo no próximo ciclo
-        log.warning("Monitoramento %s: DJEN indisponível neste ciclo (%s)", id_monitoramento, resposta.get("mensagem"))
-        _calcular_proxima_tentativa(id_monitoramento)
-        return
-
-    dados_resp, erro_json = _json_da_resposta(resposta)
-    if erro_json or not isinstance(dados_resp, dict):
-        log.warning("Monitoramento %s: resposta inesperada do DJEN", id_monitoramento)
-        _calcular_proxima_tentativa(id_monitoramento)
-        return
-
-    # Sucesso: limpa estado de backoff.
+        await _entregar_monitoramento(repo, registro, id_monitoramento, monitoramento, gestao, enviar_fn, agora_dt)
+        return False
+    repo.marcar(chave, ultima_tentativa=agora_dt.isoformat(), estado='executando')
+    novas = [0]
+    def receber(brutos):
+        itens = [_extrair_publicacao_djen(i) for i in brutos]
+        novas[0] += repo.ingerir(id_monitoramento, itens, agora_dt, monitoramento.get('hashes_notificados') or [])
+    params = _parametros_coleta(monitoramento.get('criterio') or {}, estado, agora_dt, 20)
+    resumo, erro = await _coletar_paginas_djen(params, receber)
+    if novas[0]:
+        def renovar(dados):
+            if id_monitoramento in dados:
+                dados[id_monitoramento]['expira_em'] = (agora_dt + timedelta(days=180)).isoformat()
+                dados[id_monitoramento].pop('ultimo_aviso_expiracao', None)
+        registro.atualizar(renovar)
+    entrega_ok = await _entregar_monitoramento(repo, registro, id_monitoramento, monitoramento, gestao, enviar_fn, agora_dt)
+    if erro:
+        _FALHAS_MONITORAMENTO[id_monitoramento] = max(_FALHAS_MONITORAMENTO.get(id_monitoramento, 0), estado.get('falhas', 0))
+        tentativa = _calcular_proxima_tentativa(id_monitoramento)
+        repo.marcar(chave, estado='parcial', erro=erro.get('mensagem'), tentar_apos=tentativa, falhas=_FALHAS_MONITORAMENTO[id_monitoramento],
+                    proxima_execucao=datetime.fromtimestamp(tentativa, timezone.utc).isoformat())
+        return False
     _FALHAS_MONITORAMENTO.pop(id_monitoramento, None)
     _PROXIMA_TENTATIVA_MONITORAMENTO.pop(id_monitoramento, None)
-
-    itens = [_extrair_publicacao_djen(item) for item in dados_resp.get("items") or []]
-    hashes_vistos = set(monitoramento.get("hashes_notificados") or [])
-    novos = [item for item in itens if item.get("hash") and item["hash"] not in hashes_vistos]
-
-    if novos:
-        if gestao is not None:
-            # Outbox antes do SMTP: uma falha de envio não perde a ocorrência do feed.
-            notificacoes.Repositorio(gestao.caminho, agora=lambda: agora_dt).registrar_monitoramento(monitoramento["usuario"], novos)
-        try:
-            await asyncio.to_thread(enviar_fn, monitoramento["usuario"], criterio, novos)
-        except Exception:
-            log.exception("Monitoramento %s: falha ao enviar e-mail de aviso", id_monitoramento)
-            return  # tenta de novo no próximo ciclo; não marca como notificado
-
-        hashes_atualizados = list(hashes_vistos | {item["hash"] for item in novos})
-        hashes_atualizados = hashes_atualizados[-MONITORAMENTO_MAX_HASHES_LEMBRADOS:]
-        nova_expiracao = (agora_dt + timedelta(days=MONITORAMENTO_EXPIRACAO_DIAS)).isoformat()
-        registro.atualizar(lambda d: _atualizar_apos_aviso(d, id_monitoramento, hashes_atualizados, nova_expiracao))
-
-        if gestao is not None:
-            # Fase 2: além do aviso por e-mail, alimenta a linha do tempo de cada caso cadastrado
-            # que já inclui o processo da publicação. Fase 3: se o monitoramento é por OAB (não
-            # por número de processo específico) e o processo da publicação ainda não tem caso
-            # nenhum, enfileira para triagem manual (nunca cria caso sozinho - ver Q10).
-            eh_monitoramento_por_oab = bool(criterio.get("numero_oab"))
-            for item in novos:
-                numero = _so_digitos(item.get("numeroprocessocommascara"))
-                if len(numero) != 20:
-                    continue
-                try:
-                    casos_ligados = gestao.registrar_evento(numero, "publicacao", item, lambda: agora_dt)
-                    if not casos_ligados and eh_monitoramento_por_oab:
-                        gestao.registrar_pendente(numero, monitoramento["usuario"], item, lambda: agora_dt)
-                except Exception:
-                    log.exception("Monitoramento %s: falha ao gravar evento/pendência do caso", id_monitoramento)
-        return
-
-    expira_em = monitoramento.get("expira_em")
-    if expira_em and datetime.fromisoformat(expira_em) <= agora_dt:
+    if 'dataDisponibilizacaoInicio' not in params:
+        repo.marcar(chave, ultima_reconciliacao=agora_dt.isoformat())
+    repo.marcar(chave, **resumo, estado='concluida', erro=None, tentar_apos=0, falhas=0,
+                ultimo_sucesso=agora_dt.isoformat(), checkpoint=agora_dt.isoformat(),
+                proxima_execucao=(agora_dt + timedelta(hours=6)).isoformat())
+    atual = registro.carregar().get(id_monitoramento)
+    if not atual:
+        return entrega_ok
+    expira = monitoramento_runtime.utc(atual['expira_em'])
+    if not novas[0] and expira <= agora_dt and not repo.pendentes(id_monitoramento, 'email') and not repo.pendentes(id_monitoramento, 'local'):
         registro.atualizar(lambda d: d.pop(id_monitoramento, None) if id_monitoramento in d else False)
-        return
+        return entrega_ok
+    dias = (expira - agora_dt).days
+    ultimo = atual.get('ultimo_aviso_expiracao')
+    if smtp and 0 < dias <= MONITORAMENTO_AVISO_EXPIRACAO_DIAS and (not ultimo or (agora_dt - monitoramento_runtime.utc(ultimo)).days >= 7):
+        try:
+            await asyncio.to_thread(_enviar_aviso_expiracao, smtp, atual['usuario'], atual.get('criterio') or {}, dias)
+            registro.atualizar(lambda d: _marcar_aviso_expiracao(d, id_monitoramento, agora_dt.isoformat()))
+        except Exception:
+            log.exception('Monitoramento %s: aviso de expiração pendente', id_monitoramento)
+    return entrega_ok
 
-    # Aviso de expiração próxima: envia e-mail uma única vez quando restam <= 30 dias.
-    if smtp is not None and expira_em:
-        dias_restantes = (datetime.fromisoformat(expira_em) - agora_dt).days
-        if 0 < dias_restantes <= MONITORAMENTO_AVISO_EXPIRACAO_DIAS:
-            ultimo_aviso = monitoramento.get("ultimo_aviso_expiracao")
-            if ultimo_aviso is None or (agora_dt - datetime.fromisoformat(ultimo_aviso)).days >= 7:
-                try:
-                    await asyncio.to_thread(
-                        _enviar_aviso_expiracao, smtp, monitoramento["usuario"], criterio, dias_restantes,
-                    )
-                    agora_iso = agora_dt.isoformat()
-                    registro.atualizar(lambda d: _marcar_aviso_expiracao(d, id_monitoramento, agora_iso))
-                except Exception:
-                    log.exception("Monitoramento %s: falha ao enviar aviso de expiração", id_monitoramento)
+
 
 
 # --- Captura de publicações por OAB a cada 24h (aba "Publicações por OAB") -------------------
@@ -2157,8 +2233,7 @@ async def _verificar_um_monitoramento(
 # Separada do ciclo de 6h acima (que manda e-mail): essa captura só alimenta o log geral da aba,
 # sem mandar aviso nenhum. Pega TODO monitoramento por OAB (ignora os por número de processo
 # específico - esses já têm sua própria linha do tempo via caso_eventos) e grava cada publicação
-# achada (dedupe por hash, ver RegistroPublicacoesOAB.registrar). Publicação de processo que já
-# tem caso cadastrado entra direto como "tratada" (Q11).
+# achada (dedupe por hash). Vincular ao processo não substitui a revisão humana.
 
 def _registrar_itens_capturados(
     itens_brutos: list[dict], monitoramento_id: str | None, nome_pesquisado: str | None,
@@ -2177,7 +2252,7 @@ def _registrar_itens_capturados(
         numero = _so_digitos(item.get("numeroprocessocommascara"))
         numero = numero if len(numero) == 20 else None
         casos_ligados = gestao.casos_do_processo(numero) if numero else []
-        status_inicial = "tratada" if casos_ligados else "nao_tratada"
+        status_inicial = "nao_tratada"
         inseriu = publicacoes.registrar(
             hash_publicacao, monitoramento_id, nome_pesquisado, numero, item,
             status_inicial, casos_ligados[0] if casos_ligados else None, agora,
@@ -2189,28 +2264,26 @@ def _registrar_itens_capturados(
 
 
 async def _capturar_um_monitoramento_oab(
-    id_monitoramento: str, criterio: dict, publicacoes: "RegistroPublicacoesOAB",
-    gestao: "RegistroClientesCasos", agora,
-    usuario: str | None = None,
-) -> None:
-    params = {k: v for k, v in {
-        "numeroOab": criterio.get("numero_oab"), "ufOab": criterio.get("uf_oab"),
-        "siglaTribunal": criterio.get("sigla_tribunal"), "pagina": 1, "itensPorPagina": 50,
-    }.items() if v is not None}
-
-    resposta = await _djen_get_com_retry(DJEN_BASE_URL, params=params)
-    if isinstance(resposta, dict):
-        log.warning("Captura 24h (OAB) %s: DJEN indisponível neste ciclo (%s)", id_monitoramento, resposta.get("mensagem"))
-        return
-    dados_resp, erro_json = _json_da_resposta(resposta)
-    if erro_json or not isinstance(dados_resp, dict):
-        log.warning("Captura 24h (OAB) %s: resposta inesperada do DJEN", id_monitoramento)
-        return
-
-    _registrar_itens_capturados(
-        dados_resp.get("items") or [], id_monitoramento, criterio.get("nome"), publicacoes, gestao, agora,
-        usuario_monitoramento=usuario,
-    )
+    id_monitoramento: str, criterio: dict, publicacoes: 'RegistroPublicacoesOAB',
+    gestao: 'RegistroClientesCasos', agora, usuario: str | None = None,
+) -> bool:
+    repo = monitoramento_runtime.Repositorio(publicacoes.caminho)
+    chave, agora_dt = id_monitoramento + ':oab', monitoramento_runtime.utc(agora())
+    estado = repo.estado(chave)
+    if estado.get('ultimo_sucesso') and monitoramento_runtime.utc(estado['ultimo_sucesso']) + timedelta(hours=24) > agora_dt:
+        return True
+    params = _parametros_coleta(criterio, estado, agora_dt, 50)
+    repo.marcar(chave, ultima_tentativa=agora_dt.isoformat(), estado='executando')
+    resumo, erro = await _coletar_paginas_djen(params, lambda itens: _registrar_itens_capturados(
+        itens, id_monitoramento, criterio.get('nome'), publicacoes, gestao, lambda: agora_dt, usuario))
+    if erro:
+        repo.marcar(chave, estado='parcial', erro=erro.get('mensagem'))
+        return False
+    if 'dataDisponibilizacaoInicio' not in params:
+        repo.marcar(chave, ultima_reconciliacao=agora_dt.isoformat())
+    repo.marcar(chave, **resumo, estado='concluida', erro=None, checkpoint=agora_dt.isoformat(),
+                ultimo_sucesso=agora_dt.isoformat(), proxima_execucao=(agora_dt + timedelta(hours=24)).isoformat())
+    return True
 
 
 async def _capturar_publicacoes_oab(
@@ -2219,25 +2292,40 @@ async def _capturar_publicacoes_oab(
 ) -> None:
     """Confere todo monitoramento por OAB e grava as publicações achadas no log da aba. Chamada
     pelo job do APScheduler a cada 24h; os testes chamam direto, com um relógio injetado."""
+    def indisponivel():
+        repo = monitoramento_runtime.Repositorio(registro.caminho)
+        for mid, mon in registro.carregar().items():
+            if (mon.get('criterio') or {}).get('numero_oab'):
+                repo.marcar(mid + ':oab', estado='falha', ultima_tentativa=monitoramento_runtime.utc(agora()).isoformat(),
+                            erro='DJEN indisponível. A coleta será tentada novamente.')
     if not _CIRCUIT_DJEN.pode_tentar():
         log.warning("CircuitBreaker DJEN: aberto — ciclo de captura OAB ignorado (cooldown ativo)")
-        return
+        indisponivel()
+        return False
     sonda = await _djen_get_com_retry(DJEN_BASE_URL, params={"pagina": 1, "itensPorPagina": 1})
     if isinstance(sonda, dict):
         log.warning("CircuitBreaker DJEN: API indisponível na sonda — ciclo de captura OAB ignorado")
-        return
+        indisponivel()
+        return False
     async def _capturar_com_sem(id_mon: str, criterio: dict, usuario: str | None) -> None:
         async with _SEM_MONITORAMENTO:
             try:
-                await _capturar_um_monitoramento_oab(id_mon, criterio, publicacoes, gestao, agora, usuario=usuario)
+                return await _capturar_um_monitoramento_oab(id_mon, criterio, publicacoes, gestao, agora, usuario=usuario)
             except Exception:
+                monitoramento_runtime.Repositorio(registro.caminho).marcar(id_mon + ':oab',
+                    estado='falha', erro='Falha ao persistir a captura. O checkpoint foi preservado.')
                 log.exception("Captura 24h (OAB): falha no monitoramento %s", id_mon)
+                return False
 
-    await asyncio.gather(*[
+    resultados = await asyncio.gather(*[
         _capturar_com_sem(id_mon, mon.get("criterio") or {}, mon.get("usuario"))
         for id_mon, mon in list(registro.carregar().items())
         if (mon.get("criterio") or {}).get("numero_oab")
     ])
+
+
+
+    return all(r is not False for r in resultados)
 
 
 async def _capturar_publicacoes_oab_manual(
@@ -2273,22 +2361,28 @@ async def _capturar_publicacoes_oab_manual(
         "pagina": 1, "itensPorPagina": 100,
     }.items() if v is not None}
 
-    resposta = await _djen_get_com_retry(DJEN_BASE_URL, params=params)
-    if isinstance(resposta, dict):
-        return None, resposta  # já no formato de erro (_erro ou equivalente)
-    dados_resp, erro_json = _json_da_resposta(resposta)
-    if erro_json:
-        return None, erro_json
-    if not isinstance(dados_resp, dict):
-        return None, _erro("Resposta inesperada da API do DJEN (não é um objeto JSON).")
+    contagem = {'novas': 0, 'encontradas': 0}
+    def receber(itens):
+        contagem['encontradas'] += len(itens)
+        contagem['novas'] += _registrar_itens_capturados(itens, None, nome, publicacoes, gestao, agora)
+    resumo, erro = await _coletar_paginas_djen(params, receber)
+    if erro:
+        return None, {**erro, **contagem, 'completa': False, 'mensagem': f"{erro.get('mensagem', 'Falha na captura')} {contagem['encontradas']} publicações consultadas; {contagem['novas']} novas preservadas. Repita o período para completar a captura."}
+    return {**resumo, **contagem}, None
 
-    itens_brutos = dados_resp.get("items") or []
-    novas = _registrar_itens_capturados(itens_brutos, None, nome, publicacoes, gestao, agora)
-    return {"encontradas": len(itens_brutos), "novas": novas}, None
+
+async def _registrar_djen_indisponivel(registro, smtp, enviar, gestao, agora):
+    repo = monitoramento_runtime.Repositorio(registro.caminho)
+    dt = monitoramento_runtime.utc(agora())
+    enviar_fn = enviar or ((lambda destino, criterio, itens: _enviar_aviso_monitoramento(smtp, destino, criterio, itens)) if smtp else None)
+    for mid, mon in registro.carregar().items():
+        await _entregar_monitoramento(repo, registro, mid, mon, gestao, enviar_fn, dt)
+        repo.marcar(mid + ':djen', estado='falha', ultima_tentativa=dt.isoformat(),
+                    erro='DJEN indisponível. Itens já coletados continuam na fila de entrega.')
 
 
 async def _verificar_monitoramentos_pendentes(
-    registro: RegistroMonitoramentos, smtp: ConfiguracaoSMTP | None, agora=datetime.now, enviar=None,
+    registro: RegistroMonitoramentos, smtp: ConfiguracaoSMTP | None, agora=lambda: datetime.now(timezone.utc), enviar=None,
     gestao: "RegistroClientesCasos | None" = None,
 ) -> None:
     """Confere todos os Monitoramentos ativos e avisa por e-mail quem tiver publicação nova.
@@ -2296,29 +2390,36 @@ async def _verificar_monitoramentos_pendentes(
     com um relógio e um 'enviar' injetados."""
     if _COFRE_INTEGRACOES:
         smtp = _smtp_do_ambiente()
-    if smtp is None:
-        return
     if not _CIRCUIT_DJEN.pode_tentar():
         log.warning("CircuitBreaker DJEN: aberto — ciclo de verificação de monitoramentos ignorado (cooldown ativo)")
-        return
+        await _registrar_djen_indisponivel(registro, smtp, enviar, gestao, agora)
+        return False
     sonda = await _djen_get_com_retry(DJEN_BASE_URL, params={"pagina": 1, "itensPorPagina": 1})
     if isinstance(sonda, dict):
         log.warning("CircuitBreaker DJEN: API indisponível na sonda — ciclo de verificação de monitoramentos ignorado")
-        return
-    enviar_fn = enviar or (lambda destino, criterio, itens: _enviar_aviso_monitoramento(smtp, destino, criterio, itens))
+        await _registrar_djen_indisponivel(registro, smtp, enviar, gestao, agora)
+        return False
+    enviar_fn = enviar or ((lambda destino, criterio, itens: _enviar_aviso_monitoramento(smtp, destino, criterio, itens)) if smtp else None)
     agora_dt = agora()
 
     async def _verificar_com_sem(id_mon: str, mon: dict) -> None:
         async with _SEM_MONITORAMENTO:
             try:
-                await _verificar_um_monitoramento(registro, id_mon, mon, enviar_fn, agora_dt, gestao, smtp)
+                return await _verificar_um_monitoramento(registro, id_mon, mon, enviar_fn, agora_dt, gestao, smtp)
             except Exception:
+                monitoramento_runtime.Repositorio(registro.caminho).marcar(id_mon + ':djen',
+                    estado='falha', erro='Falha de processamento; itens persistidos serão tentados novamente.')
                 log.exception("Falha ao verificar monitoramento %s", id_mon)
+                return False
 
-    await asyncio.gather(*[
+    resultados = await asyncio.gather(*[
         _verificar_com_sem(id_mon, mon)
         for id_mon, mon in list(registro.carregar().items())
     ])
+
+
+
+    return all(r is not False for r in resultados)
 
 
 # --- Sincronização periódica do Google Calendar (Fase 4: metade "Calendar -> sistema" do ------
@@ -2468,19 +2569,20 @@ async def monitorar_publicacoes(
     nas telas - não entra na busca em si.
 
     Limitações:
-    - Só funciona no servidor hospedado (modo HTTP, autenticado e com e-mail configurado); em uso
+    - Só funciona no servidor hospedado (modo HTTP e autenticado). Sem SMTP, as publicações
+      continuam sendo coletadas e os e-mails ficam pendentes. Em uso
       local (stdio) esta tool devolve erro.
     - Limite de 5 monitoramentos ativos por usuário.
     - Expira automaticamente após 180 dias sem nenhuma publicação nova (o prazo é renovado a cada
       publicação encontrada).
     """
-    resultado = _estado_e_usuario_ou_erro(ctx, exigir_smtp=True)
+    resultado = _estado_e_usuario_ou_erro(ctx)
     if isinstance(resultado, dict):
         return resultado
     estado, usuario = resultado
     return _criar_monitoramento(
         estado.registro_monitoramentos, usuario, numero_processo, sigla_tribunal, numero_oab, uf_oab,
-        datetime.now, nome,
+        lambda: datetime.now(timezone.utc), nome,
     )
 
 
@@ -2496,6 +2598,16 @@ async def listar_monitoramentos(ctx: Context) -> dict:
         return resultado
     estado, usuario = resultado
     return _listar_monitoramentos(estado.registro_monitoramentos, usuario)
+
+
+@mcp.tool()
+async def renovar_monitoramento(ctx: Context, id: str) -> dict:
+    """Renova por 180 dias preservando ID, coleta e entregas do usuário autenticado."""
+    resultado = _estado_e_usuario_ou_erro(ctx)
+    if isinstance(resultado, dict):
+        return resultado
+    estado, usuario = resultado
+    return _renovar_monitoramento(estado.registro_monitoramentos, usuario, id)
 
 
 @mcp.tool()
@@ -3053,7 +3165,7 @@ def _criar_caso_validado(
     clientes_adicionais (opcional) é uma lista de {cliente_id} ou {cliente_novo}: outras partes
     da mesma publicação/processo que também viram clientes do escritório, vinculadas a este
     mesmo caso (ex.: autor e réu, quando ambos interessam ao escritório).
-    `publicacoes`, se dado, marca como "tratada" qualquer publicação já capturada (aba
+    `publicacoes`, se dado, vincula qualquer publicação já capturada sem alterar o estado de revisão (aba
     "Publicações por OAB") desses mesmos processos (Q11: processo que já tem caso aparece
     tratado direto).
     Devolve (caso, None) ou (None, erro).
@@ -3100,7 +3212,7 @@ def _criar_caso_validado(
             try:
                 publicacoes.marcar_tratada_por_processo(numero, caso["id"])
             except Exception:
-                log.exception("Caso %s: falha ao marcar publicações tratadas para o processo %s", caso["id"], numero)
+                log.exception("Caso %s: falha ao vincular publicações ao processo %s", caso["id"], numero)
     return caso, None
 
 
@@ -3166,7 +3278,7 @@ def _criar_caso_de_publicacao(gestao, publicacoes, publicacao, dados, usuario_pa
                  "orgao_julgador": d.get("nomeOrgao") or d.get("orgao_julgador"),
                  "partes": partes, "advogados": advogados})
     gestao.salvar_capa_processo(caso["id"], numero, agora=lambda: datetime.now(timezone.utc), **capa)
-    publicacoes.atualizar_status([publicacao["hash"]], "tratada", caso_id=caso["id"])
+    publicacoes.vincular_caso(publicacao["hash"], caso["id"])
     return gestao.obter_caso(caso["id"]), None
 
 
@@ -3229,12 +3341,14 @@ async def _atualizar_movimentos_processos(gestao: "RegistroClientesCasos", agora
     capa". Não manda e-mail: o caso não tem um "dono" único no modelo atual (é a conta
     institucional do escritório inteiro, ver google_integracao.py), só o Monitoramento tem
     usuário - o movimento novo aparece na capa do processo e na linha do tempo do caso."""
+    falhou = False
     for vinculo in gestao.capas_vinculadas():
         caso_id, numero, tribunal = vinculo["caso_id"], vinculo["numero_processo"], vinculo["tribunal"]
         try:
             capa_atual = gestao.obter_capa_processo(caso_id, numero) or {}
             campos, erro = await _montar_capa_via_tribunal(numero, tribunal.lower())
             if erro:
+                falhou = True
                 log.warning("Atualização de movimentos: processo %s (%s): %s", numero, tribunal, erro.get("erro"))
                 continue
             novos = _movimentos_novos(capa_atual.get("movimentos"), campos.get("movimentos"))
@@ -3245,7 +3359,10 @@ async def _atualizar_movimentos_processos(gestao: "RegistroClientesCasos", agora
                     {"quantidade": len(novos), "ultimo": novos[-1]}, agora,
                 )
         except Exception:
+            falhou = True
             log.exception("Atualização de movimentos: falha ao processar processo %s", numero)
+
+    return not falhou
 
 
 class _AutenticacaoBearer:
@@ -3619,6 +3736,14 @@ class _AutenticacaoBearer:
             return
         if caminho.startswith("/pagamentos/") and self.gestao is not None:
             await self._pagamento_detalhe(scope, receive, send, caminho[len("/pagamentos/"):])
+            return
+        if caminho == '/automacoes' and self.gestao is not None:
+            if scope.get('method') != 'GET':
+                await _responder(send, 405, b'Metodo nao permitido')
+                return
+            repo = monitoramento_runtime.Repositorio(self.gestao.caminho)
+            await _json(send, 200, {'rotinas': {nome: repo.historico(nome) for nome in
+                ('monitoramentos', 'captura_oab', 'movimentos')}})
             return
         if caminho == "/pendentes" and self.gestao is not None:
             await _json(send, 200, {"pendentes": self.gestao.listar_pendentes()})
@@ -4718,18 +4843,17 @@ class _AutenticacaoBearer:
                 if resultado.get("erro"):
                     await _json(send, 400, resultado)
                     return
-                await _json(send, 201, resultado)
+                await _json(send, 201, {**resultado, 'monitorando': self._processo_monitorando(scope, numero)})
                 return
             if metodo == "DELETE":
-                id_monitoramento = next(
-                    (i for i, m in self.registro_monitoramentos.do_usuario(usuario).items()
-                     if m.get("criterio", {}).get("numero_processo") == numero),
-                    None,
-                )
-                if id_monitoramento is None:
-                    await _json(send, 404, _erro("Este processo não está sendo monitorado."))
+                ids = [i for i, m in self.registro_monitoramentos.do_usuario(usuario).items()
+                       if m.get('criterio', {}).get('numero_processo') == numero]
+                if not ids:
+                    await _json(send, 404, _erro('Este processo não está sendo monitorado.'))
                     return
-                await _json(send, 200, _remover_monitoramento(self.registro_monitoramentos, usuario, id_monitoramento))
+                for mid in ids:
+                    _remover_monitoramento(self.registro_monitoramentos, usuario, mid)
+                await _json(send, 200, {'removido': True, 'monitorando': self._processo_monitorando(scope, numero)})
                 return
             await _responder(send, 405, b"Metodo nao permitido")
             return
@@ -4833,7 +4957,7 @@ class _AutenticacaoBearer:
                 if isinstance(dados_publicacao, dict):
                     self.publicacoes.registrar(
                         h, None, corpo.get("nome_pesquisado"), corpo.get("numero_processo"),
-                        dados_publicacao, "tratada", caso_id,
+                        dados_publicacao, "nao_tratada", caso_id,
                         lambda: datetime.now(timezone.utc),
                     )
                     ok = True
@@ -4938,7 +5062,7 @@ class _AutenticacaoBearer:
         if status not in ("nao_tratada", "tratada", "arquivada"):
             await _json(send, 400, _erro("status deve ser nao_tratada, tratada ou arquivada."))
             return
-        resultado = self.publicacoes.atualizar_status_detalhado(hashes, status)
+        resultado = self.publicacoes.atualizar_status_detalhado(hashes, status, usuario=scope.get('usuario'))
         await _json(send, 200, resultado)
 
     async def _publicacoes_oab_capturar_manual(self, scope, receive, send):
@@ -4960,7 +5084,7 @@ class _AutenticacaoBearer:
 
     async def _publicacao_oab_criar_caso(self, scope, receive, send, hash_publicacao: str):
         """POST /publicacoes-oab/<hash>/criar-caso: atalho do "+" na tabela - cria o caso (cliente
-        novo com o nome pesquisado, se houver) e já marca a publicação como tratada (Q9)."""
+        novo com o nome pesquisado, se houver) e preserva o estado de revisão da publicação."""
         if scope.get("method") != "POST":
             await _responder(send, 404, b"Nao encontrado")
             return
@@ -5754,37 +5878,20 @@ def _montar_agendador(
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
     agendador = AsyncIOScheduler()
-    if smtp is not None or _COFRE_INTEGRACOES:
-        agendador.add_job(
-            _verificar_monitoramentos_pendentes,
-            "interval",
-            hours=MONITORAMENTO_INTERVALO_HORAS,
-            args=[registro_monitoramentos, smtp],
-            kwargs={"gestao": gestao},
-        )
-        log.info("Monitoramento: verificação periódica a cada %dh.", MONITORAMENTO_INTERVALO_HORAS)
+    repo = monitoramento_runtime.Repositorio(gestao.caminho)
+    for nome, horas, funcao, args, kwargs in (
+        ('monitoramentos', MONITORAMENTO_INTERVALO_HORAS, _verificar_monitoramentos_pendentes,
+         [registro_monitoramentos, smtp], {'gestao': gestao}),
+        ('captura_oab', 24, _capturar_publicacoes_oab, [registro_monitoramentos, publicacoes, gestao], {}),
+        ('movimentos', 24, _atualizar_movimentos_processos, [gestao], {}),
+    ):
+        agendador.add_job(repo.executar, 'interval', minutes=5, id=nome,
+            args=[nome, horas, funcao, args, kwargs], next_run_time=datetime.now(timezone.utc),
+            max_instances=1, coalesce=True, misfire_grace_time=3600)
     if google_configurado or _COFRE_INTEGRACOES:
-        agendador.add_job(
-            _sincronizar_calendar_google_job,
-            "interval",
-            hours=1,
-            args=[registro_google, gestao, google_client_id, google_client_secret],
-        )
-        log.info("Google Calendar: sincronização periódica a cada 1h para as contas conectadas.")
-    agendador.add_job(
-        _capturar_publicacoes_oab,
-        "interval",
-        hours=24,
-        args=[registro_monitoramentos, publicacoes, gestao],
-    )
-    log.info("Publicações por OAB: captura periódica a cada 24h.")
-    agendador.add_job(
-        _atualizar_movimentos_processos,
-        "interval",
-        hours=24,
-        args=[gestao],
-    )
-    log.info("Movimentos de processo: atualização periódica a cada 24h para processos já vinculados a um tribunal.")
+        agendador.add_job(_sincronizar_calendar_google_job, 'interval', hours=1,
+            args=[registro_google, gestao, google_client_id, google_client_secret])
+
     return agendador
 
 
@@ -5924,6 +6031,13 @@ def _principal() -> int:
         registro_usuarios=registro, oauth=oauth, registro_monitoramentos=registro_monitoramentos, smtp=smtp,
     )
 
+    def normalizar_datas(dados):
+        for mon in dados.values():
+            for campo in ('criado_em', 'expira_em', 'ultimo_aviso_expiracao'):
+                if mon.get(campo):
+                    mon[campo] = monitoramento_runtime.utc(mon[campo]).isoformat()
+    registro_monitoramentos.atualizar(normalizar_datas)
+
     app = _montar_app_http(
         registro, limitador, admin_token, cadastro, oauth,
         captcha, site_captcha or None, falhas, gestao,
@@ -5944,6 +6058,9 @@ def _principal() -> int:
             smtp, registro_monitoramentos, gestao, google_configurado,
             registro_google, google_client_id, google_client_secret, publicacoes,
         )
+        for pendente in gestao.listar_pendentes():
+            _registrar_itens_capturados([pendente['dados']], None, None, publicacoes, gestao,
+                lambda: datetime.now(timezone.utc), pendente.get('usuario'))
         agendador.start()
 
         # access_log desligado: o log padrão do uvicorn gravaria a URL completa, inclusive os
