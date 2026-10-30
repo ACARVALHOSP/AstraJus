@@ -49,6 +49,7 @@ type Resposta = {
   monitoramentos?: Monitoramento[]
   limite?: number
   email_configurado?: boolean
+  email_destinatario_configurado?: boolean
   existente?: boolean
   historico?: Record<string, Historico[]>
 }
@@ -246,11 +247,13 @@ function Painel() {
                 lowContrast
                 hideCloseButton
               />
-              {dados?.email_configurado === false && (
+              {(dados?.email_configurado === false || dados?.email_destinatario_configurado === false) && (
                 <InlineNotification
                   kind="warning"
-                  title="Envio de e-mail indisponível"
-                  subtitle="A coleta continua. Os e-mails ficarão pendentes até a configuração do servidor ser restabelecida."
+                  title={dados?.email_destinatario_configurado === false ? 'E-mail do perfil não informado' : 'Envio de e-mail indisponível'}
+                  subtitle={dados?.email_destinatario_configurado === false
+                    ? 'Você pode criar monitoramentos e as publicações serão coletadas. Peça a um administrador para completar o e-mail do seu perfil; os envios pendentes serão retomados após a atualização.'
+                    : 'A coleta continua. Os e-mails ficarão pendentes até a configuração do servidor ser restabelecida.'}
                   lowContrast
                   hideCloseButton
                 />
