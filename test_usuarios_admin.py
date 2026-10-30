@@ -71,7 +71,9 @@ class UsuariosTest(unittest.TestCase):
         u.registrar_acesso(self.reg, 'ana')
         r = self.reg.carregar()['ana']
         self.assertTrue(r['ultimo_acesso_em'])
+        u.registrar_acesso(self.reg, 'ana')
         with db._abrir(self.path) as c:
+            self.assertEqual(c.execute('SELECT count(*) FROM usuarios_acessos').fetchone()[0], 1)
             texto = str(c.execute('SELECT * FROM usuarios_auditoria').fetchall())
             self.assertNotIn(criado['token'], texto)
             self.assertNotIn(r['hash'], texto)
