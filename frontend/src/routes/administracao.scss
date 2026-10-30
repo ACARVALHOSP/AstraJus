@@ -15,7 +15,7 @@
   &__resumo dd { @include type.type-style('heading-04'); margin-block-end: 0; }
   &__tabela { overflow-x: auto; margin-block-start: spacing.$spacing-05; }
   &__tabela:focus-visible { outline: 2px solid var(--cds-focus); outline-offset: 2px; }
-  table { min-inline-size: 56rem; inline-size: 100%; }
+  table { min-inline-size: 0; inline-size: 100%; }
   caption { text-align: start; padding: spacing.$spacing-05; background: var(--cds-layer); @include type.type-style('heading-02'); }
   small { display: block; color: var(--cds-text-secondary); }
 }

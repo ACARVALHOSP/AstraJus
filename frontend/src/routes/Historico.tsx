@@ -1,3 +1,4 @@
+import TabelaResponsiva from '../TabelaResponsiva'
 import TextoTabela from '../TextoTabela'
 import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
@@ -127,7 +128,7 @@ export default function Historico() {
           >
             {({ rows, headers, getHeaderProps, getRowProps, getTableProps }) => (
               <TableContainer>
-                <Table {...getTableProps()} aria-label="Favoritos de consulta">
+                <TabelaResponsiva principais={['Número do processo', 'Consulta']}><Table {...getTableProps()} aria-label="Favoritos de consulta">
                   <TableHead>
                     <TableRow>
                       {headers.map((header) => (
@@ -158,7 +159,7 @@ export default function Historico() {
                       )
                     })}
                   </TableBody>
-                </Table>
+                </Table></TabelaResponsiva>
               </TableContainer>
             )}
           </DataTable>
@@ -181,7 +182,7 @@ export default function Historico() {
           >
             {({ rows, headers, getHeaderProps, getRowProps, getTableProps }) => (
               <TableContainer>
-                <Table {...getTableProps()} aria-label="Histórico recente">
+                <TabelaResponsiva principais={['Número do processo', 'Consulta']}><Table {...getTableProps()} aria-label="Histórico recente">
                   <TableHead>
                     <TableRow>
                       {headers.map((header) => (
@@ -209,7 +210,7 @@ export default function Historico() {
                       )
                     })}
                   </TableBody>
-                </Table>
+                </Table></TabelaResponsiva>
               </TableContainer>
             )}
           </DataTable>

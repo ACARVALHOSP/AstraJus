@@ -1,3 +1,4 @@
+import TabelaResponsiva from '../../TabelaResponsiva'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { Button, Checkbox, Column, DataTable, Grid, InlineNotification, OverflowMenu, OverflowMenuItem, Pagination, Select, SelectItem, Stack, Table, TableBatchAction, TableBatchActions, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow, TableSelectAll, TableSelectRow, TableToolbar, TableToolbarContent, Toggletip, ToggletipButton, ToggletipContent, useTheme } from '@carbon/react'
 import { Archive } from '@carbon/icons-react'
@@ -138,7 +139,7 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
             </Toggletip>
           </TableToolbarContent>}
         </TableToolbar></div>
-        <Table {...getTableProps()} aria-label="Publicações monitoradas">
+        <TabelaResponsiva principais={['Processo']}><Table {...getTableProps()} aria-label="Publicações monitoradas">
           <TableHead><TableRow>
             <TableHeader scope="col">Detalhes</TableHeader>
             <TableSelectAll id="oab-todas" name="oab-todas" aria-label="Selecionar publicações desta página" checked={todasPagina} indeterminate={!todasPagina && publicacoes.some(p => selecionadas.has(p.hash))} disabled={ocupada || !publicacoes.length} onSelect={() => { if (ocupada) return; setSelecionadas(s => { const novo = new Set(s); for (const p of publicacoes) { if (todasPagina) novo.delete(p.hash); else novo.add(p.hash) } return novo }) }} />
@@ -173,7 +174,7 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
               </Stack></TableCell></TableRow>
             </Fragment>
           })}</TableBody>
-        </Table>
+        </Table></TabelaResponsiva>
       </TableContainer>}
       </DataTable>
       {carregando && <Carregamento tipo="tabela" descricao="Carregando publicações…" />}

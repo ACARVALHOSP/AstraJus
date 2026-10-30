@@ -1,3 +1,4 @@
+import TabelaResponsiva from '../../TabelaResponsiva'
 import TextoTabela from '../../TextoTabela'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
@@ -130,7 +131,7 @@ export default function VinculosCaso({ casoId, onAbrirCaso }: { casoId: string; 
         {!carregando && vinculos && vinculos.length === 0 && <InlineNotification kind="info" title="Nenhum processo vinculado" lowContrast hideCloseButton />}
         {!carregando && vinculos && vinculos.length > 0 && (
           <div className="tabela-responsiva-wrap">
-            <Table size="lg" className="casos-vinculos-tabela" aria-label="Processos vinculados">
+            <TabelaResponsiva principais={['Processo']}><Table size="lg" className="casos-vinculos-tabela" aria-label="Processos vinculados">
               <TableHead>
                 <TableRow>
                   <TableHeader>Processo</TableHeader>
@@ -155,7 +156,7 @@ export default function VinculosCaso({ casoId, onAbrirCaso }: { casoId: string; 
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+            </Table></TabelaResponsiva>
           </div>
         )}
       </div>

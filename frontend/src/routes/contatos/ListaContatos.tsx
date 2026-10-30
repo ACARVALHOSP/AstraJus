@@ -1,3 +1,4 @@
+import TabelaResponsiva from '../../TabelaResponsiva'
 import TextoTabela from '../../TextoTabela'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
@@ -242,7 +243,7 @@ function TabelaContatos({
               </TableBatchActions>
               <TableToolbarContent aria-hidden={batchActionProps.shouldShowBatchActions}>{null}</TableToolbarContent>
             </TableToolbar>
-            <Table {...getTableProps()} aria-label="Clientes">
+            <TabelaResponsiva principais={['Nome']}><Table {...getTableProps()} aria-label="Clientes">
               <TableHead>
                 <TableRow>
                   <TableSelectAll {...getSelectionProps()} aria-label="Selecionar todas as linhas" />
@@ -282,7 +283,7 @@ function TabelaContatos({
                   )
                 })}
               </TableBody>
-            </Table>
+            </Table></TabelaResponsiva>
           </TableContainer>
         )
       }}

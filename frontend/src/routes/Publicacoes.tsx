@@ -1,3 +1,4 @@
+import TabelaResponsiva from '../TabelaResponsiva'
 import TextoTabela from '../TextoTabela'
 import Carregamento from '../Carregamento'
 import { Fragment, useEffect, useState, type FormEvent } from 'react'
@@ -284,7 +285,7 @@ function TabelaPublicacoes({ itens }: { itens: ItemPublicacao[] }) {
     <DataTable rows={linhas} headers={CABECALHOS_PUBLICACOES} isSortable>
       {({ rows, headers, getHeaderProps, getRowProps, getTableProps, getExpandHeaderProps }) => (
         <TableContainer>
-          <Table {...getTableProps()} aria-label="Publicações encontradas">
+          <TabelaResponsiva principais={['Processo']}><Table {...getTableProps()} aria-label="Publicações encontradas">
             <TableHead>
               <TableRow>
                 <TableExpandHeader {...getExpandHeaderProps()} />
@@ -310,7 +311,7 @@ function TabelaPublicacoes({ itens }: { itens: ItemPublicacao[] }) {
                 )
               })}
             </TableBody>
-          </Table>
+          </Table></TabelaResponsiva>
         </TableContainer>
       )}
     </DataTable>

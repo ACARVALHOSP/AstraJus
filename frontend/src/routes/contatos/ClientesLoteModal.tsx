@@ -1,3 +1,4 @@
+import TabelaResponsiva from '../../TabelaResponsiva'
 import TextoTabela from '../../TextoTabela'
 import { useState } from 'react'
 import { Checkbox, InlineNotification, Modal, RadioButton, RadioButtonGroup, Select, SelectItem, Stack, TextInput } from '@carbon/react'
@@ -158,7 +159,7 @@ export default function ClientesLoteModal({
             </p>
             <p>Confira os valores antes de confirmar. Nenhuma alteração foi aplicada ainda.</p>
             <div className="tabela-responsiva-wrap">
-              <table className="tabela-responsiva clientes-lote-preview">
+              <TabelaResponsiva principais={['Cliente', 'Após confirmar']}><table className="tabela-responsiva clientes-lote-preview">
                 <thead>
                   <tr>
                     <th>Cliente</th>
@@ -177,7 +178,7 @@ export default function ClientesLoteModal({
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></TabelaResponsiva>
             </div>
           </Stack>
         )}

@@ -1,3 +1,4 @@
+import TabelaResponsiva from '../TabelaResponsiva'
 import TextoTabela from '../TextoTabela'
 import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
@@ -203,7 +204,7 @@ function TabelaLancamentos({
     <DataTable rows={linhas} headers={CABECALHOS_LANCAMENTOS} isSortable>
       {({ rows, headers, getHeaderProps, getRowProps, getTableProps }) => (
         <TableContainer>
-          <Table {...getTableProps()} aria-label="Lançamentos">
+          <TabelaResponsiva principais={['Descrição', 'Valor']}><Table {...getTableProps()} aria-label="Lançamentos">
             <TableHead>
               <TableRow>
                 {headers.map((header) => (
@@ -251,7 +252,7 @@ function TabelaLancamentos({
                 )
               })}
             </TableBody>
-          </Table>
+          </Table></TabelaResponsiva>
         </TableContainer>
       )}
     </DataTable>

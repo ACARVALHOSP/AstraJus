@@ -1,3 +1,4 @@
+import TabelaResponsiva from '../../TabelaResponsiva'
 import TextoTabela from '../../TextoTabela'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
@@ -159,7 +160,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
         )}
         {!carregando && ordenados.length > 0 && (
           <section aria-label="Processos cadastrados"><p className="casos-contagem">{ordenados.length} {ordenados.length === 1 ? 'processo' : 'processos'}</p>
-            <Table size="xl" className="casos-tabela" aria-label="Processos cadastrados">
+            <TabelaResponsiva principais={['Título']}><Table size="xl" className="casos-tabela" aria-label="Processos cadastrados">
               <TableHead>
                 <TableRow>
                   <TableHeader>Favorito</TableHeader>
@@ -226,7 +227,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                   )
                 })}
               </TableBody>
-            </Table>
+            </Table></TabelaResponsiva>
           </section>
         )}
       </div>

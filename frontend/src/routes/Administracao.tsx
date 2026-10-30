@@ -1,3 +1,4 @@
+import TabelaResponsiva from '../TabelaResponsiva'
 import { useState } from 'react'
 import { Button, TextInput, Select, SelectItem, InlineNotification, Tabs, TabList, Tab, TabPanels, TabPanel, Modal } from '@carbon/react'
 import { useCliente } from '../api/ClienteContext'
@@ -91,16 +92,16 @@ export default function Administracao() {
         <TabPanel>
           <dl className="administracao__resumo"><div><dt>Usuários cadastrados</dt><dd>{usuarios.length}</dd></div><div><dt>Ativos</dt><dd>{usuarios.filter(u => u.status === 'ativo').length}</dd></div><div><dt>Bloqueados ou revogados</dt><dd>{usuarios.filter(u => ['bloqueado', 'revogado'].includes(u.status)).length}</dd></div></dl>
           <div className="administracao__acoes"><TextInput id="admin-filtro" labelText="Filtrar usuários" value={filtro} onChange={e => setFiltro(e.target.value)} /><Button disabled={ocupado} onClick={() => { setErro(''); setEditor({ login: null, campos: { ...VAZIO } }) }}>Criar usuário</Button></div>
-          <div className="administracao__tabela" role="region" aria-label="Usuários cadastrados" tabIndex={0}><table className="cds--data-table"><caption>Usuários do sistema — {lista.length} resultado(s)</caption><thead><tr>{['Nome e login', 'E-mail', 'Nível de acesso', 'Status', 'Cadastro', 'Último acesso', 'Ações'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>
+          <div className="administracao__tabela" role="region" aria-label="Usuários cadastrados" tabIndex={0}><TabelaResponsiva principais={['Nome e login', 'Status', 'Data', 'Usuário']}><table className="cds--data-table"><caption>Usuários do sistema — {lista.length} resultado(s)</caption><thead><tr>{['Nome e login', 'E-mail', 'Nível de acesso', 'Status', 'Cadastro', 'Último acesso', 'Ações'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>
             {lista.map(u => <tr key={u.usuario_id}><td>{u.nome_completo}<small>{u.login}</small></td><td>{u.email || 'Não informado'}</td><td>{u.nivel_acesso}</td><td>{u.status}</td><td>{data(u.criado_em)}</td><td>{data(u.ultimo_acesso_em)}</td><td><Button size="sm" kind="ghost" disabled={ocupado} onClick={() => { setErro(''); setEditor({ login: u.login, campos: { login: u.login, nome_completo: u.nome_completo, email: u.email || '', nivel_acesso: u.nivel_acesso, status: u.status } }) }}>Editar<span className="cds--visually-hidden"> {u.nome_completo}</span></Button></td></tr>)}
             {!lista.length && <tr><td colSpan={7}>Nenhum usuário encontrado.</td></tr>}
-          </tbody></table></div>
+          </tbody></table></TabelaResponsiva></div>
         </TabPanel>
         <TabPanel><h2>Banco de dados</h2><p>Consulte o estado do SQLite e gere uma cópia consistente dos dados.</p>
           <div className="administracao__acoes"><Button disabled={ocupado} onClick={() => void executar(async () => { setBanco(await (await requisicao('/admin/banco/api', sessao)).json()) })}>Carregar informações</Button><Button kind="tertiary" disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/banco/integridade', sessao, 'POST')).json(); if (!r.integro) throw new Error('A verificação identificou inconsistências no banco.'); setMensagem(`Integridade verificada em ${data(r.verificado_em)}.`) })}>Verificar integridade</Button><Button kind="tertiary" disabled={ocupado} onClick={() => setConfirmarBackup(true)}>Baixar backup</Button></div>
           {banco && <dl className="administracao__resumo"><div><dt>Banco</dt><dd>{banco.tipo}</dd></div><div><dt>Tamanho</dt><dd>{(banco.tamanho_bytes / 1024 / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} MB</dd></div><div><dt>Tabelas</dt><dd>{banco.tabelas}</dd></div></dl>}
         </TabPanel>
-        <TabPanel><h2>Histórico administrativo</h2><p>Até 100 alterações de cadastro, com data e responsável.</p><Button disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/usuarios/historico', sessao)).json(); setHistorico(r.historico) })}>Carregar histórico</Button><div className="administracao__tabela" role="region" aria-label="Histórico administrativo" tabIndex={0}><table className="cds--data-table"><thead><tr>{['Data', 'Responsável', 'Usuário', 'Ação', 'Campos alterados'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>{historico.map((h, i) => <tr key={i}><td>{data(h.ocorrido_em)}</td><td>{h.ator}</td><td>{h.usuario}</td><td>{h.acao}</td><td>{JSON.parse(h.campos).join(', ')}</td></tr>)}{!historico.length && <tr><td colSpan={5}>Carregue o histórico para consultar os registros disponíveis.</td></tr>}</tbody></table></div></TabPanel>
+        <TabPanel><h2>Histórico administrativo</h2><p>Até 100 alterações de cadastro, com data e responsável.</p><Button disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/usuarios/historico', sessao)).json(); setHistorico(r.historico) })}>Carregar histórico</Button><div className="administracao__tabela" role="region" aria-label="Histórico administrativo" tabIndex={0}><TabelaResponsiva principais={['Nome e login', 'Status', 'Data', 'Usuário']}><table className="cds--data-table"><thead><tr>{['Data', 'Responsável', 'Usuário', 'Ação', 'Campos alterados'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>{historico.map((h, i) => <tr key={i}><td>{data(h.ocorrido_em)}</td><td>{h.ator}</td><td>{h.usuario}</td><td>{h.acao}</td><td>{JSON.parse(h.campos).join(', ')}</td></tr>)}{!historico.length && <tr><td colSpan={5}>Carregue o histórico para consultar os registros disponíveis.</td></tr>}</tbody></table></TabelaResponsiva></div></TabPanel>
         </TabPanels>
       </Tabs>
       <section aria-label="Histórico de acessos">
@@ -108,9 +109,9 @@ export default function Administracao() {
         <p>Últimos 100 registros de atividade autenticada. Até um registro por usuário por minuto, com retenção de 180 dias.</p>
         <Button disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/usuarios/acessos', sessao)).json(); setAcessos(r.acessos) })}>Carregar acessos</Button>
         <div className="administracao__tabela" role="region" aria-label="Acessos registrados" tabIndex={0}>
-          <table className="cds--data-table"><thead><tr><th scope="col">Data e hora</th><th scope="col">Usuário</th></tr></thead>
+          <TabelaResponsiva principais={['Nome e login', 'Status', 'Data', 'Usuário']}><table className="cds--data-table"><thead><tr><th scope="col">Data e hora</th><th scope="col">Usuário</th></tr></thead>
             <tbody>{acessos.map((a, i) => <tr key={i}><td>{data(a.ocorrido_em)}</td><td>{a.usuario}</td></tr>)}{!acessos.length && <tr><td colSpan={2}>Carregue os acessos para consultar os registros disponíveis.</td></tr>}</tbody>
-          </table>
+          </table></TabelaResponsiva>
         </div>
       </section>
     </>}

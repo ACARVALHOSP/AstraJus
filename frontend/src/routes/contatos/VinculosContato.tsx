@@ -1,3 +1,4 @@
+import TabelaResponsiva from '../../TabelaResponsiva'
 import TextoTabela from '../../TextoTabela'
 import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
@@ -76,20 +77,20 @@ export default function VinculosContato({ clienteId, tipo }: { clienteId: string
       {erro && <InlineNotification kind="error" title="Erro ao carregar" subtitle={erro} lowContrast hideCloseButton />}
       {!carregando && dados && (tipo === 'processos' ? (
         casos.length ? <div className="contato-vinculos-tabela" tabIndex={0} role="region" aria-label="Processos vinculados">
-          <table><caption>{casos.length} processo(s) vinculado(s)</caption><thead><tr><th scope="col">Título</th><th scope="col">Número CNJ</th><th scope="col">Vínculo</th><th scope="col">Situação</th></tr></thead>
+          <TabelaResponsiva principais={['Título', 'Descrição', 'Valor']}><table><caption>{casos.length} processo(s) vinculado(s)</caption><thead><tr><th scope="col">Título</th><th scope="col">Número CNJ</th><th scope="col">Vínculo</th><th scope="col">Situação</th></tr></thead>
             <tbody>{casos.map((caso) => <tr key={caso.id}><td>{linkProcesso(caso)}</td><td>{caso.processos?.map(formatarNumeroCNJ).join(', ') || 'Não informado'}</td><td>{caso.cliente_id === clienteId ? 'Cliente principal' : 'Cliente adicional'}</td><td>{formatarNomeExibicao(caso.status) || 'Não informado'}</td></tr>)}</tbody>
-          </table>
+          </table></TabelaResponsiva>
         </div> : <InlineNotification kind="info" title="Nenhum processo vinculado a este cliente ainda" lowContrast hideCloseButton />
       ) : itens.length ? <Stack gap={5}>
         <dl className="contato-vinculos-resumo">{resumo.map(([rotulo, valor]) => <div key={rotulo}><dt>{rotulo}</dt><dd>{formatarMoeda(valor / 100)}</dd></div>)}</dl>
         <div className="contato-vinculos-tabela" tabIndex={0} role="region" aria-label="Lançamentos do cliente">
-          <table><caption>{itens.length} lançamento(s) deste cliente</caption><thead><tr>{['Vencimento', 'Descrição', 'Processo', 'Tipo', 'Situação', 'Valor'].map((c) => <th scope="col" key={c}>{c}</th>)}</tr></thead>
+          <TabelaResponsiva principais={['Título', 'Descrição', 'Valor']}><table><caption>{itens.length} lançamento(s) deste cliente</caption><thead><tr>{['Vencimento', 'Descrição', 'Processo', 'Tipo', 'Situação', 'Valor'].map((c) => <th scope="col" key={c}>{c}</th>)}</tr></thead>
             <tbody>{itens.map((item) => {
               const caso = dados.casos.find((c) => c.id === item.caso_id)
               const despesa = item.direcao === 'DESPESA'
               return <tr key={item.id}><td>{formatarDataSimples(item.vencimento)}</td><td><TextoTabela texto={item.descricao || 'Não informado'} /></td><td>{caso ? linkProcesso(caso) : 'Não informado'}</td><td>{despesa ? 'Despesa' : 'Receita'}</td><td>{item.pago ? despesa ? 'Pago' : 'Recebido' : despesa ? 'A pagar' : 'A receber'}</td><td>{formatarMoeda(item.valor)}</td></tr>
             })}</tbody>
-          </table>
+          </table></TabelaResponsiva>
         </div>
       </Stack> : <InlineNotification kind="info" title="Nenhum lançamento financeiro para este cliente" lowContrast hideCloseButton />)}
     </div>

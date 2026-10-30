@@ -18,8 +18,8 @@
 .oab-menu { min-inline-size: 16rem; max-inline-size: calc(100vw - 2rem); }
 .oab-menu button { max-inline-size: none; }
 .oab-celula { max-inline-size: 18rem; }
-.oab-celula-nome { min-inline-size: 16rem; }
-.oab-celula-processo, .oab-celula-tribunal { white-space: nowrap; }
+.oab-celula-nome { min-inline-size: 0; }
+.oab-celula-processo, .oab-celula-tribunal { white-space: normal; overflow-wrap: anywhere; }
 .oab-celula-status { font-size: 0.625rem; }
 .oab-lista .oab-inteiro-teor { white-space: pre-wrap; overflow-wrap: anywhere; text-align: justify; font-size: 0.625rem; line-height: 1rem; padding-block: spacing.$spacing-05; }
 .oab-demonstrativo { max-block-size: 20rem; overflow: auto; padding-inline-start: spacing.$spacing-06; @include type.type-style('label-01'); }
