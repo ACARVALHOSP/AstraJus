@@ -1,3 +1,4 @@
+import TabelaResponsiva from './TabelaResponsiva'
 import { Table, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow } from '@carbon/react'
 import { formatarDataSimples, formatarMoeda } from './utils/formatadores'
 
@@ -11,7 +12,7 @@ export default function PreviaParcelas({ parcelas, quantidade, descricao }: {
   return (
     <div className="previa-parcelas">
       <TableContainer title="Prévia das parcelas" description={descricao}>
-        <Table size="md" className="previa-parcelas-tabela" aria-label="Prévia das parcelas">
+        <TabelaResponsiva principais={['Parcela', 'Vencimento', 'Valor']}><Table size="md" className="previa-parcelas-tabela" aria-label="Prévia das parcelas">
           <TableHead>
             <TableRow>
               <TableHeader scope="col">Parcela</TableHeader>
@@ -28,7 +29,7 @@ export default function PreviaParcelas({ parcelas, quantidade, descricao }: {
               </TableRow>
             ))}
           </TableBody>
-        </Table>
+        </Table></TabelaResponsiva>
       </TableContainer>
     </div>
   )

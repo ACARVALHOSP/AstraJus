@@ -18,7 +18,7 @@
 .contato-vinculos-tabela {
   overflow-x: auto;
   &:focus-visible { outline: 2px solid var(--cds-focus); outline-offset: 2px; }
-  table { border-collapse: collapse; inline-size: 100%; min-inline-size: 48rem; }
+  table { border-collapse: collapse; inline-size: 100%; min-inline-size: 0; }
   caption { text-align: start; padding-block-end: spacing.$spacing-04; }
   th, td { text-align: start; padding: spacing.$spacing-05; border-block-end: 1px solid var(--cds-border-subtle); }
   th { background: var(--cds-layer-accent); @include type.type-style('heading-compact-01'); }
@@ -40,7 +40,7 @@
   .cds--css-grid { row-gap: spacing.$spacing-05; }
   .cds--data-table-container { inline-size: 100%; }
   .cds--data-table-content { max-inline-size: 100%; overflow-x: auto; }
-  .cds--data-table { min-inline-size: 64rem; overflow-wrap: normal; }
+  .cds--data-table { inline-size: 100%; min-inline-size: 0; overflow-wrap: anywhere; }
   .cds--batch-actions { overflow-x: auto; white-space: nowrap; }
   .cds--batch-summary, .cds--action-list { flex-shrink: 0; }
 }

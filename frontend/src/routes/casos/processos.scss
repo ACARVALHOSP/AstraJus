@@ -3,8 +3,8 @@
 .casos-titulo-linha { display:flex; align-items:center; justify-content:space-between; gap:spacing.$spacing-05; flex-wrap:wrap; }
 .casos-ajuda { @include type.type-style('body-01'); color:var(--cds-text-secondary); margin-block-start:spacing.$spacing-03; }
 .casos-contagem { @include type.type-style('label-01'); color:var(--cds-text-secondary); padding-block-end:spacing.$spacing-04; }
-.app-content .casos-lista .casos-tabela { min-inline-size:60rem; }
-.casos-lista .casos-celula-principal { min-inline-size:17rem; }
+.app-content .casos-lista .casos-tabela { min-inline-size:0; }
+.casos-lista .casos-celula-principal { min-inline-size:0; }
 .casos-celula-secundaria { @include type.type-style('label-01'); color:var(--cds-text-secondary); margin-block-start:spacing.$spacing-02; }
 .casos-detalhe-cabecalho { display:flex; flex-direction:column; align-items:flex-start; gap:spacing.$spacing-03; }
 .casos-detalhe-cabecalho h1 { max-inline-size:38ch; }
@@ -16,7 +16,7 @@
 .casos-acoes-cadastro { display:flex; align-items:center; justify-content:space-between; gap:spacing.$spacing-05; flex-wrap:wrap; }
 .casos-atividade { display:flex; justify-content:space-between; gap:spacing.$spacing-05; padding:spacing.$spacing-05; border-block-end:1px solid var(--cds-border-subtle); background:var(--cds-layer); }
 .casos-publicacao-linha { display:flex; align-items:start; justify-content:space-between; gap:spacing.$spacing-05; flex-wrap:wrap; }
-.casos-detalhe .casos-vinculos-tabela { min-inline-size:48rem; }
+.casos-detalhe .casos-vinculos-tabela { min-inline-size:0; }
 @media (max-width:671px) { .casos-titulo-linha { align-items:flex-start; } .casos-atividade {flex-direction:column;} .casos-acoes-cadastro {align-items:stretch;} }
 
 .casos-resumo dl { padding-block:spacing.$spacing-03; }

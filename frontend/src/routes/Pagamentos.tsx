@@ -1,3 +1,4 @@
+import TabelaResponsiva from '../TabelaResponsiva'
 import TextoTabela from '../TextoTabela'
 import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
@@ -229,7 +230,7 @@ function TabelaCobrancas({ cobrancas, onCancelar }: { cobrancas: Cobranca[]; onC
     <DataTable rows={linhas} headers={CABECALHOS_COBRANCAS} isSortable>
       {({ rows, headers, getHeaderProps, getRowProps, getTableProps }) => (
         <TableContainer>
-          <Table {...getTableProps()} aria-label="Cobranças">
+          <TabelaResponsiva principais={['Cliente', 'Valor']}><Table {...getTableProps()} aria-label="Cobranças">
             <TableHead>
               <TableRow>
                 {headers.map((header) => (
@@ -269,7 +270,7 @@ function TabelaCobrancas({ cobrancas, onCancelar }: { cobrancas: Cobranca[]; onC
                 )
               })}
             </TableBody>
-          </Table>
+          </Table></TabelaResponsiva>
         </TableContainer>
       )}
     </DataTable>
