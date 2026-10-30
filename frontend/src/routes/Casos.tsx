@@ -14,6 +14,7 @@ export default function Casos() {
   const { consumirPayload } = useNavegacao()
   const [casoId, setCasoId] = useState<string | null>(() => consumirPayload<{ id: string }>('casos')?.id ?? null)
   const [resumo, setResumo] = useState<Caso | null>(null)
+  const [abaSelecionada, setAbaSelecionada] = useState(0)
   const [titulo, setTitulo] = useState('Carregando…')
   const faixaAbas = useRef<HTMLDivElement>(null)
 
@@ -41,6 +42,7 @@ export default function Casos() {
   }, [casoId])
 
   function abrir(id: string) {
+    setAbaSelecionada(0)
     setResumo(null)
     setTitulo('Carregando…')
     setCasoId(id)
@@ -58,7 +60,7 @@ export default function Casos() {
         </Button>
         <h1 tabIndex={-1}>{titulo}</h1>{resumo?.processos?.map((numero) => <p key={numero} className="casos-cnj">{formatarNumeroCNJ(numero)}</p>)}
       </div>
-      <Tabs key={casoId}>
+      <Tabs key={casoId} selectedIndex={abaSelecionada} onChange={({ selectedIndex }) => setAbaSelecionada(selectedIndex)}>
         <div ref={faixaAbas}>
         <TabList className="casos-abas" aria-label="Detalhes do processo">
           <Tab>Cadastro</Tab>
@@ -75,6 +77,7 @@ export default function Casos() {
               onCarregado={(caso) => { setResumo(caso); setTitulo(caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)') }}
               onSalvo={(caso) => { setResumo(caso); setTitulo(caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)') }}
               onExcluido={() => setCasoId(null)}
+              onMovimentacoes={() => setAbaSelecionada(3)}
             />
           </TabPanel>
           <TabPanel>

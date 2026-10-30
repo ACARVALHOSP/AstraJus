@@ -25,3 +25,14 @@
 
 // Mantém o cálculo de rolagem das abas relativo à própria faixa no celular.
 .casos-abas { position:relative; }
+
+.capa-processo { min-inline-size:0; }
+.capa-processo .casos-titulo-linha h2 { margin:0; }
+.capa-numero { @include type.type-style('heading-03'); margin-block:spacing.$spacing-06; overflow-wrap:anywhere; }
+.capa-processo dd { overflow-wrap:anywhere; margin-block-end:spacing.$spacing-04; }
+.capa-parte { display:inline-flex; align-items:baseline; flex-wrap:wrap; gap:spacing.$spacing-02; margin-inline-end:spacing.$spacing-05; }
+.capa-mais { margin-block:spacing.$spacing-06; }
+.capa-mais summary { @include type.type-style('body-01'); cursor:pointer; padding-block:spacing.$spacing-04; color:var(--cds-link-primary); }
+.capa-mais summary:focus-visible { outline:2px solid var(--cds-focus); outline-offset:2px; }
+.capa-acoes { display:flex; align-items:center; flex-wrap:wrap; gap:spacing.$spacing-05; margin-block:spacing.$spacing-05; }
+@media (max-width:671px) { .capa-processo .casos-titulo-linha { align-items:stretch; } .capa-processo .casos-titulo-linha button { inline-size:100%; max-inline-size:none; } }
