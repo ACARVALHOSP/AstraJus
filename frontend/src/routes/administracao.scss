@@ -1,0 +1,21 @@
+@use '@carbon/react/scss/spacing' as spacing;
+@use '@carbon/react/scss/type' as type;
+
+.administracao {
+  display: grid;
+  gap: spacing.$spacing-05;
+  &__acesso, &__formulario { display: grid; gap: spacing.$spacing-05; }
+  &__acesso { max-inline-size: 40rem; padding: spacing.$spacing-06; background: var(--cds-layer); }
+  &__acoes { display: flex; flex-wrap: wrap; align-items: end; gap: spacing.$spacing-05; margin-block: spacing.$spacing-05; }
+  &__acoes .cds--form-item { flex: 1; min-inline-size: 12rem; }
+  &__resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: spacing.$spacing-02; margin-block: spacing.$spacing-06; }
+  &__resumo > div { padding: spacing.$spacing-05; background: var(--cds-layer); }
+  dt { @include type.type-style('label-01'); color: var(--cds-text-secondary); }
+  dd { margin: spacing.$spacing-03 0 spacing.$spacing-05; overflow-wrap: anywhere; }
+  &__resumo dd { @include type.type-style('heading-04'); margin-block-end: 0; }
+  &__tabela { overflow-x: auto; margin-block-start: spacing.$spacing-05; }
+  &__tabela:focus-visible { outline: 2px solid var(--cds-focus); outline-offset: 2px; }
+  table { min-inline-size: 56rem; inline-size: 100%; }
+  caption { text-align: start; padding: spacing.$spacing-05; background: var(--cds-layer); @include type.type-style('heading-02'); }
+  small { display: block; color: var(--cds-text-secondary); }
+}

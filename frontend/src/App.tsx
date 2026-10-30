@@ -32,6 +32,7 @@ import Historico from './routes/Historico'
 import Monitoramentos from './routes/Monitoramentos'
 import Jurimetria from './routes/Jurimetria'
 import Integracoes from './routes/Integracoes'
+import Administracao from './routes/Administracao'
 import Financeiro from './routes/Financeiro'
 import Pagamentos from './routes/Pagamentos'
 import Atividades from './routes/Atividades'
@@ -76,6 +77,7 @@ const GRUPOS_NAVEGACAO = [
     abas: [
       { id: 'acesso', label: 'Acesso' },
       { id: 'integracoes', label: 'Integrações' },
+      { id: 'administracao', label: 'Administração' },
     ],
   },
 ]
@@ -96,6 +98,8 @@ function StatusConexaoTag() {
 
 function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
   switch (abaAtiva) {
+    case 'administracao':
+      return <Administracao />
     case 'acesso':
       return <Acesso />
     case 'processo':

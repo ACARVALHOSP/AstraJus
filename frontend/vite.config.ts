@@ -13,6 +13,7 @@ export default defineConfig({
     proxy: {
       // backend Python (server.py) rodando em paralelo durante o desenvolvimento
       '/mcp': 'http://localhost:8000',
+      '/admin': 'http://localhost:8000',
       '/integracoes': 'http://localhost:8000',
       '/cep': 'http://localhost:8000',
       '/static': 'http://localhost:8000',
