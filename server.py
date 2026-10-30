@@ -46,6 +46,7 @@ import db as _db
 import google_integracao
 import integracoes
 import integracoes_http
+import usuarios_admin
 from _util import _hash_token, hash_origem_djen_valido, origem_djen_legada
 from db import (
     CacheDataJud, ConflitoClientesLote, RegistroClientesCasos, RegistroIntegracaoGoogle, RegistroMonitoramentos,
@@ -3316,7 +3317,7 @@ class _AutenticacaoBearer:
 
     - /mcp exige 'Authorization: Bearer <token>' de um usuário ativo e aplica os limites de uso.
     - /cadastro (se houver SMTP configurado) permite pedir o token pelo e-mail.
-    - /admin (se houver CNJ_MCP_ADMIN_TOKEN) é a página administrativa.
+    - /admin (se houver hash administrativo no SQLite) é a página administrativa.
     - /healthz é liberado para o health check da hospedagem.
     """
 
@@ -3332,7 +3333,8 @@ class _AutenticacaoBearer:
         self.app = app
         self.registro = registro
         self.limitador = limitador
-        self.admin_token = admin_token
+        if admin_token:
+            usuarios_admin.configurar_token_admin(registro, admin_token, somente_se_ausente=True)
         self.cadastro = cadastro
         self.oauth = oauth
         self.captcha = captcha
@@ -3790,7 +3792,7 @@ class _AutenticacaoBearer:
     # --- Página administrativa -------------------------------------------------
 
     async def _admin(self, scope, receive, send):
-        if self.admin_token is None:
+        if not usuarios_admin.token_admin_configurado(self.registro):
             await _responder(send, 404, b"Nao encontrado")
             return
 
@@ -3830,7 +3832,7 @@ class _AutenticacaoBearer:
                 await _responder(send, 413, b"Formulario grande demais")
                 return
             campos = {k: v[0] for k, v in parse_qs(corpo.decode("utf-8", "replace"), keep_blank_values=True).items()}
-            if not hmac.compare_digest(campos.get("token_admin", "").encode("utf-8"), self.admin_token.encode("utf-8")):
+            if not usuarios_admin.validar_token_admin(self.registro, campos.get("token_admin", "")):
                 if self.falhas is not None:
                     self.falhas.verificar(chave_admin)
                 log.warning("Ação administrativa negada: token administrativo inválido")
@@ -3869,7 +3871,7 @@ class _AutenticacaoBearer:
             return
         corpo = await _ler_corpo(receive)
         campos = {k: v[0] for k, v in parse_qs((corpo or b"").decode("utf-8", "replace"), keep_blank_values=True).items()}
-        if not hmac.compare_digest(campos.get("token_admin", "").encode("utf-8"), (self.admin_token or "").encode("utf-8")):
+        if not usuarios_admin.validar_token_admin(self.registro, campos.get("token_admin", "")):
             await _responder(send, 401, b"Token administrativo invalido.")
             return
         self._limpar_estados_expirados()
@@ -3916,7 +3918,7 @@ class _AutenticacaoBearer:
     async def _google_desconectar(self, scope, receive, send) -> None:
         corpo = await _ler_corpo(receive)
         campos = {k: v[0] for k, v in parse_qs((corpo or b"").decode("utf-8", "replace"), keep_blank_values=True).items()}
-        if not hmac.compare_digest(campos.get("token_admin", "").encode("utf-8"), (self.admin_token or "").encode("utf-8")):
+        if not usuarios_admin.validar_token_admin(self.registro, campos.get("token_admin", "")):
             await _responder(send, 401, b"Token administrativo invalido.")
             return
         if self.registro_google is not None:
@@ -5905,6 +5907,7 @@ def _principal() -> int:
     parser.add_argument("--criar-usuario", metavar="NOME", help="Cria um usuário e mostra o token uma vez.")
     parser.add_argument("--revogar-usuario", metavar="NOME", help="Revoga o token de um usuário.")
     parser.add_argument("--listar-usuarios", action="store_true", help="Lista os usuários cadastrados.")
+    parser.add_argument("--gerar-token-admin", action="store_true", help="Gera um novo token administrativo, grava somente o hash no banco e mostra o token uma vez. Invalida o anterior.")
     parser.add_argument(
         "--atualizar-arvores-cjpg", action="store_true",
         help="Baixa e salva as árvores de Vara/Classe/Assunto/Magistrado do CJPG (TJSP), usadas pelo autocomplete da aba Jurimetria.",
@@ -5917,6 +5920,9 @@ def _principal() -> int:
     banco_caminho = dados_dir / os.environ.get("CNJ_MCP_BANCO", "cnj.db")
     _db.migrar_de_json_se_necessario(banco_caminho, dados_dir)
     registro = RegistroUsuarios(banco_caminho)
+    if args.gerar_token_admin:
+        print(usuarios_admin.gerar_token_admin(registro))
+        return 0
     global _COFRE_INTEGRACOES
     chave_integracoes = os.environ.get('CNJ_INTEGRACOES_CHAVE', '').strip()
     if chave_integracoes:
@@ -5966,8 +5972,16 @@ def _principal() -> int:
         mcp.run(transport="stdio")
         return 0
 
+    # Importação única para instalações antigas; o banco prevalece nas partidas seguintes.
+    legado_admin = os.environ.pop("CNJ_MCP_ADMIN_TOKEN", "").strip()
+    if legado_admin and not usuarios_admin.token_admin_configurado(registro):
+        if len(legado_admin) < 24:
+            sys.exit("Erro: o token administrativo legado precisa ter pelo menos 24 caracteres.")
+        usuarios_admin.configurar_token_admin(registro, legado_admin, somente_se_ausente=True)
+    del legado_admin
+    admin_habilitado = usuarios_admin.token_admin_configurado(registro)
     smtp = _smtp_do_ambiente()
-    if not registro.ativos() and smtp is None and not (_COFRE_INTEGRACOES and os.environ.get('CNJ_MCP_ADMIN_TOKEN')):
+    if not registro.ativos() and smtp is None and not admin_habilitado:
         print(
             "Erro: nenhum usuário ativo e cadastro público desligado (sem CNJ_SMTP_HOST). "
             "Crie um usuário com --criar-usuario NOME ou configure o SMTP.",
@@ -5975,9 +5989,6 @@ def _principal() -> int:
         )
         return 1
 
-    admin_token = os.environ.get("CNJ_MCP_ADMIN_TOKEN", "").strip() or None
-    if admin_token and len(admin_token) < 24:
-        sys.exit("Erro: CNJ_MCP_ADMIN_TOKEN precisa ter pelo menos 24 caracteres.")
     limitador = LimitadorUso(
         por_minuto=_inteiro_env("CNJ_MCP_LIMITE_POR_MINUTO", 20),
         por_dia=_inteiro_env("CNJ_MCP_LIMITE_DIARIO", 300),
@@ -6029,7 +6040,7 @@ def _principal() -> int:
     )
 
     app = _montar_app_http(
-        registro, limitador, admin_token, cadastro, oauth,
+        registro, limitador, None, cadastro, oauth,
         captcha, site_captcha or None, falhas, gestao,
         registro_google, google_client_id, google_client_secret, publicacoes,
         registro_monitoramentos=registro_monitoramentos,
@@ -6037,7 +6048,7 @@ def _principal() -> int:
     log.info(
         "Servidor HTTP em http://%s:%d/mcp (%d usuário(s) ativo(s); cadastro %s; admin %s; monitoramento %s)",
         args.host, args.port, len(registro.ativos()),
-        "habilitado" if cadastro else "desabilitado", "habilitado" if admin_token else "desabilitado",
+        "habilitado" if cadastro else "desabilitado", "habilitado" if admin_habilitado else "desabilitado",
         "habilitado" if smtp else "desabilitado",
     )
 
