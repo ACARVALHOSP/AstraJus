@@ -125,3 +125,34 @@
 // O menu flutuante é renderizado no body e precisa receber o tema do acionador.
 .acoes-tabela-menu--g100 { @include theme.theme(themes.$g100); }
 .acoes-tabela-menu--white { @include theme.theme(themes.$white); }
+
+.shell-conta__acionador {
+  @include type.type-style('body-compact-01');
+  display: flex;
+  align-items: center;
+  gap: spacing.$spacing-03;
+  block-size: 3rem;
+  padding-inline: spacing.$spacing-05;
+  border: 0;
+  background: transparent;
+  color: var(--cds-text-primary);
+  cursor: pointer;
+  svg { flex-shrink: 0; }
+  &:hover, &[aria-expanded='true'] { background: var(--cds-background-hover); }
+  &:focus-visible { outline: 2px solid var(--cds-focus); outline-offset: -2px; }
+}
+.shell-conta__nome {
+  max-inline-size: 12rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.shell-conta__painel {
+  inline-size: 20rem;
+  overflow-wrap: anywhere;
+  p { margin-block: spacing.$spacing-03; }
+  .cds--btn { display: flex; inline-size: 100%; margin-block-start: spacing.$spacing-03; }
+}
+@media (max-width: 671px) {
+  .shell-conta__nome { display: none; }
+}
