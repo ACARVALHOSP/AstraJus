@@ -6,6 +6,9 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from contextlib import closing
+from unittest import mock
+import io
+from contextlib import redirect_stdout
 
 import db
 import server
@@ -93,6 +96,37 @@ class UsuariosTest(unittest.TestCase):
         self.assertFalse(u.mcp_consulta_permitido({'method': 'tools/call', 'params': {'name': 'monitorar_publicacoes'}}))
         self.assertFalse(u.mcp_consulta_permitido([{'method': 'tools/list'}, {'method': 'tools/call', 'params': {'name': 'remover_monitoramento'}}]))
 
+    def test_admin_hash_persiste_sem_variavel_e_nao_guarda_texto(self):
+        token = u.gerar_token_admin(self.reg)
+        outro_registro = db.RegistroUsuarios(self.path)
+        self.assertTrue(u.validar_token_admin(outro_registro, token))
+        self.assertFalse(u.validar_token_admin(outro_registro, 'invalido'))
+        self.assertFalse(u.validar_token_admin(outro_registro, ''))
+        self.assertNotIn(token.encode(), self.path.read_bytes())
+        with db._abrir(self.path) as c:
+            self.assertEqual(c.execute('SELECT hash_token FROM credencial_administrativa').fetchone()[0], _hash_token(token))
+
+    def test_migracao_admin_nao_sobrescreve_rotacao_e_efeito_imediato(self):
+        server._AutenticacaoBearer(None, self.reg, admin_token='token-legado')
+        self.assertTrue(u.validar_token_admin(self.reg, 'token-legado'))
+        novo = u.gerar_token_admin(self.reg)
+        server._AutenticacaoBearer(None, self.reg, admin_token='token-legado')
+        self.assertFalse(u.validar_token_admin(self.reg, 'token-legado'))
+        self.assertTrue(u.validar_token_admin(self.reg, novo))
+        app = server._AutenticacaoBearer(None, self.reg)
+        self.assertFalse(hasattr(app, 'admin_token'))
+        status, _ = asyncio.run(self.chamar('/admin/usuarios/api', novo))
+        self.assertEqual(status['status'], 200)
+
+    def test_comando_gerar_admin_grava_apenas_hash(self):
+        saida = io.StringIO()
+        with mock.patch.dict('os.environ', {'CNJ_MCP_USUARIOS': str(Path(self.tmp.name) / 'usuarios.json'), 'CNJ_MCP_BANCO': 'teste.db'}), mock.patch('sys.argv', ['server.py', '--gerar-token-admin']), redirect_stdout(saida):
+            self.assertEqual(server._principal(), 0)
+        token = saida.getvalue().strip()
+        self.assertGreaterEqual(len(token), 40)
+        self.assertTrue(u.validar_token_admin(self.reg, token))
+        self.assertNotIn(token.encode(), self.path.read_bytes())
+
     def test_permissoes_http_mcp_e_oauth(self):
         r = self.criar(nivel_acesso='consulta')
         async def verificar():
@@ -114,6 +148,7 @@ class UsuariosTest(unittest.TestCase):
         asyncio.run(verificar())
 
     async def chamar(self, path, token='', method='GET', corpo=None):
+        u.configurar_token_admin(self.reg, 'bootstrap-seguro', somente_se_ausente=True)
         app = SimpleNamespace(registro=self.reg, admin_token='bootstrap-seguro', falhas=None, oauth=None)
         scope = {'path': path, 'method': method, 'headers': [(b'authorization', ('Bearer '+token).encode())], 'client': ('127.0.0.1', 1)}
         eventos = []

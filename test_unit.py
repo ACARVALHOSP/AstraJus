@@ -678,8 +678,13 @@ class PaginaAdministrativaTest(_RegistroTemporario):
         return urlencode(campos).encode()
 
     def test_sem_admin_token_configurado_a_pagina_nao_existe(self):
-        mw = server._AutenticacaoBearer(self.mw.app, self.registro, None, None)
+        registro_vazio = db.RegistroUsuarios(self.registro.caminho.with_name('sem-admin.db'))
+        mw = server._AutenticacaoBearer(self.mw.app, registro_vazio, None, None)
         self.assertEqual(_chamar_asgi(mw, "GET", "/admin")[0], 404)
+
+    def test_hash_persistido_habilita_pagina_sem_variavel(self):
+        mw = server._AutenticacaoBearer(self.mw.app, self.registro, None, None)
+        self.assertEqual(_chamar_asgi(mw, "GET", "/admin")[0], 200)
 
     def test_get_admin_sem_token_nao_lista_usuarios(self):
         status, corpo, _ = _chamar_asgi(self.mw, "GET", "/admin")

@@ -1,5 +1,12 @@
 # cnj-processual
 
+**Credencial administrativa**:
+Token aleatório usado nas operações administrativas do sistema. Somente seu hash
+SHA-256 é persistido no SQLite, na tabela `credencial_administrativa`. O token original
+é apresentado uma única vez por `--gerar-token-admin` e colado no frontend, que o mantém
+em memória. A variável legada `CNJ_MCP_ADMIN_TOKEN` serve apenas à importação inicial;
+um hash existente no banco sempre prevalece. Gerar outro token invalida o anterior.
+
 Servidor MCP e painel web (`/app`) para consulta processual judicial brasileira via APIs públicas do CNJ (DataJud e DJEN).
 
 ## Language

@@ -54,6 +54,9 @@ def migrar(c):
             if campo not in existentes:
                 c.execute(f'ALTER TABLE usuarios ADD COLUMN {campo} TEXT')
         c.execute('CREATE UNIQUE INDEX IF NOT EXISTS usuarios_id_unico ON usuarios(usuario_id)')
+        c.execute('''CREATE TABLE IF NOT EXISTS credencial_administrativa (
+            id INTEGER PRIMARY KEY CHECK (id = 1), hash_token TEXT NOT NULL,
+            atualizado_em TEXT NOT NULL)''')
         c.execute('''CREATE TABLE IF NOT EXISTS usuarios_auditoria (
             id INTEGER PRIMARY KEY AUTOINCREMENT, ocorrido_em TEXT NOT NULL,
             ator TEXT NOT NULL, usuario TEXT NOT NULL, acao TEXT NOT NULL,
@@ -67,6 +70,43 @@ def migrar(c):
 
 def publico(nome, dados):
     return {'login': nome, **{k: dados.get(k) for k in CAMPOS}}
+
+
+def configurar_token_admin(registro, token, *, somente_se_ausente=False):
+    """Persiste apenas SHA-256 de um token de alta entropia; nunca o valor original."""
+    from db import _abrir
+    from _util import _hash_token
+    if not isinstance(token, str) or not token:
+        raise ValueError('Token administrativo vazio.')
+    with registro._trava, _abrir(registro.caminho) as c, c:
+        if somente_se_ausente:
+            c.execute('INSERT OR IGNORE INTO credencial_administrativa VALUES (1, ?, ?)', (_hash_token(token), agora()))
+        else:
+            c.execute('INSERT INTO credencial_administrativa VALUES (1, ?, ?) '
+                      'ON CONFLICT(id) DO UPDATE SET hash_token=excluded.hash_token, atualizado_em=excluded.atualizado_em',
+                      (_hash_token(token), agora()))
+
+
+def token_admin_configurado(registro):
+    from db import _abrir
+    with _abrir(registro.caminho) as c:
+        return c.execute('SELECT 1 FROM credencial_administrativa WHERE id=1').fetchone() is not None
+
+
+def validar_token_admin(registro, token):
+    from db import _abrir
+    from _util import _hash_token
+    if not isinstance(token, str) or not token:
+        return False
+    with _abrir(registro.caminho) as c:
+        row = c.execute('SELECT hash_token FROM credencial_administrativa WHERE id=1').fetchone()
+    return bool(row and hmac.compare_digest(_hash_token(token), row[0]))
+
+
+def gerar_token_admin(registro):
+    token = secrets.token_urlsafe(32)
+    configurar_token_admin(registro, token)
+    return token
 
 
 def validar(dados):
@@ -166,7 +206,7 @@ async def tratar(app, scope, receive, send, s):
     if app.falhas and app.falhas.ocupado(chave)[0]:
         await s._json(send, 429, {'mensagem': 'Muitas tentativas. Aguarde.'})
         return
-    bootstrap = bool(token and app.admin_token and hmac.compare_digest(token.encode(), app.admin_token.encode()))
+    bootstrap = validar_token_admin(app.registro, token)
     login = app.registro.identificar(token) if token and not bootstrap else None
     if not login and not bootstrap and token and app.oauth:
         login = app.oauth.identificar(token)
