@@ -51,8 +51,6 @@ with sync_playwright() as p:
     page.goto('http://127.0.0.1:5174/novo/#/casos')
     page.locator('button.texto-tabela').first.click()
     card = page.get_by_role('region', name='Capa do processo 1001840-19.2026.5.02.0072')
-    page.wait_for_timeout(500)
-    print(page.locator('body').inner_text()[:4500], flush=True)
     expect(card.get_by_text('Cliente', exact=True)).to_have_count(1)
     expect(card.get_by_text('02/01/2026', exact=True)).to_be_visible()
     expect(card.get_by_text('29/10/2026 · Audiência designada')).to_be_visible()
@@ -99,14 +97,14 @@ with sync_playwright() as p:
     page.get_by_role('button', name='Tentar novamente', exact=True).wait_for()
     fail['get'] = False
     page.get_by_role('button', name='Tentar novamente', exact=True).click()
-    page.wait_for_timeout(500)
-    print(page.locator('body').inner_text()[:4500], flush=True)
     expect(card.get_by_text('Cliente', exact=True)).to_have_count(1)
-    fail['clients'] = True
     page.reload()
+    page.locator('button.texto-tabela').first.wait_for()
+    fail['clients'] = True
     page.locator('button.texto-tabela').first.click()
     expect(card.get_by_text('As tags de cliente estão indisponíveis.', exact=False)).to_be_visible()
     expect(card.get_by_text('Cliente', exact=True)).to_have_count(0)
+    fail['clients'] = False
     caso['processos'] = []
     page.reload()
     page.locator('button.texto-tabela').first.click()

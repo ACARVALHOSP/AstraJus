@@ -147,7 +147,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
     </div>
     {erroCarga && <Button kind="tertiary" size="sm" disabled={carregando} onClick={() => { setCarregando(true); setErroCarga(false); setTentativa(n => n + 1) }}>Tentar novamente</Button>}
     {capa && !carregando && <>
-      <Grid narrow fullWidth className="casos-formulario-grade">
+      <Grid withRowGap narrow fullWidth className="casos-formulario-grade">
         {principais.map(([rotulo, valor]) => <Column key={rotulo} sm={4} md={4} lg={8}><dl><dt>{rotulo}</dt><dd>{valor || 'Não informado'}</dd></dl></Column>)}
         <Column sm={4} md={8} lg={16}><dl>
           <dt>Polo ativo</dt><dd>{participantes('ativo')}</dd>
@@ -162,7 +162,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
       {erroClientes && <p className="casos-ajuda">Não foi possível identificar os clientes vinculados. As tags de cliente estão indisponíveis.</p>}
       <details className="capa-mais"><summary>Mais informações</summary><dl>{mais.map(([rotulo, valor]) => <Fragment key={rotulo}><dt>{rotulo}</dt><dd>{valor ?? 'Não informado'}</dd></Fragment>)}</dl></details>
       <form onSubmit={e => { e.preventDefault(); void executar('salvar') }}>
-        <Grid narrow fullWidth className="casos-formulario-grade">
+        <Grid withRowGap narrow fullWidth className="casos-formulario-grade">
           {campos.map(([chave, rotulo]) => <Column key={chave} sm={4} md={4} lg={8}>
             <TextInput id={`capa-${numero}-${chave}`} labelText={rotulo} value={edicao[chave]} disabled={bloqueado}
               type={chave === 'valor_causa' ? 'number' : 'text'} min={chave === 'valor_causa' ? 0 : undefined} step={chave === 'valor_causa' ? '0.01' : undefined}
@@ -170,7 +170,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
               onChange={e => setEdicao(anterior => ({ ...anterior, [chave]: e.target.value }))} />
           </Column>)}
         </Grid>
-        <div className="capa-acoes"><Button size="sm" type="submit" disabled={bloqueado || !pendente || invalido}>{operacao === 'salvar' ? 'Salvando capa…' : 'Salvar capa'}</Button>
+        <div className="capa-acoes"><Button kind="primary" size="sm" type="submit" disabled={bloqueado || !pendente || invalido}>{operacao === 'salvar' ? 'Salvando capa…' : 'Salvar capa'}</Button>
           <Button kind="ghost" size="sm" type="button" disabled={bloqueado} onClick={() => executar('monitorar')}>{operacao === 'monitorar' ? 'Atualizando monitoramento…' : capa.monitorando ? 'Parar monitoramento' : 'Monitorar automaticamente'}</Button>
         </div>
       </form>
@@ -182,3 +182,4 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
     </>}
   </section>
 }
+
