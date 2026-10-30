@@ -2778,7 +2778,7 @@ class ServidorOAuth:
             return None
         usuario = registro["usuario"]
         conta = self.registro.carregar().get(usuario)
-        if not conta or conta.get("revogado"):
+        if not conta or conta.get("revogado") or conta.get("status", "ativo") != "ativo":
             return None
         return usuario
 
@@ -3517,6 +3517,10 @@ class _AutenticacaoBearer:
             # acesso por link assinado e temporário (sem token de usuário)
             await _servir_certidao(scope, send)
             return
+        if caminho.startswith('/admin/usuarios/') or caminho.startswith('/admin/banco/'):
+            import usuarios_admin
+            await usuarios_admin.tratar(self, scope, receive, send, sys.modules[__name__])
+            return
         if caminho.startswith("/admin"):
             await self._admin(scope, receive, send)
             return
@@ -3555,6 +3559,30 @@ class _AutenticacaoBearer:
             return
 
         scope["usuario"] = usuario
+        import usuarios_admin
+        usuarios_admin.registrar_acesso(self.registro, usuario)
+        perfil = self.registro.carregar().get(usuario, {})
+        if perfil.get('nivel_acesso') == 'consulta' and scope.get('method') not in ('GET', 'HEAD', 'OPTIONS'):
+            if caminho != '/mcp' or scope.get('method') != 'POST':
+                await _json(send, 403, _erro('Seu nível de acesso permite somente consulta.'))
+                return
+            corpo_consulta = await _ler_corpo(receive)
+            try:
+                permitido = corpo_consulta is not None and usuarios_admin.mcp_consulta_permitido(json.loads(corpo_consulta))
+            except (ValueError, UnicodeDecodeError):
+                permitido = False
+            if not permitido:
+                await _json(send, 403, _erro('Seu nível de acesso permite somente consulta.'))
+                return
+            receive_original = receive
+            entregue = False
+            async def receber_consulta():
+                nonlocal entregue
+                if not entregue:
+                    entregue = True
+                    return {'type': 'http.request', 'body': corpo_consulta, 'more_body': False}
+                return await receive_original()
+            receive = receber_consulta
 
         if caminho.startswith('/integracoes/calendar') and self.integracoes:
             if caminho == '/integracoes/calendar/status' and scope.get('method') == 'GET':

@@ -16,4 +16,4 @@ dependencies = [
 ]
 
 [tool.setuptools]
-py-modules = ["server", "db", "_util", "google_integracao", "agenda_atividades", "notificacoes", "asaas_integracao", "integracoes", "integracoes_http"]
+py-modules = ["server", "db", "_util", "google_integracao", "agenda_atividades", "notificacoes", "asaas_integracao", "integracoes", "integracoes_http", "usuarios_admin"]
