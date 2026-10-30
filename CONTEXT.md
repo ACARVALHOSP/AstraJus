@@ -24,7 +24,8 @@ Processo (tribunal + número) marcado manualmente pelo usuário no `/app`, guard
 _Avoid_: Salvo, marcado
 
 **Monitoramento**:
-Acompanhamento recorrente de um processo ou OAB, configurado pelo usuário autenticado no `/app`, que dispara verificações periódicas no DJEN (a cada 6 horas) e avisa por e-mail (resumo + link) quando surge publicação nova. Diferente de uma Consulta: não é pontual, persiste no servidor atrelado ao usuário, tem limite de 5 por usuário, e expira automaticamente após 180 dias sem publicação nova (o prazo é renovado a cada publicação encontrada).
+Acompanhamento recorrente de um processo ou OAB, configurado pelo usuário autenticado no `/app`, que dispara verificações periódicas no DJEN (a cada 6 horas), persiste as publicações e avisa por e-mail (resumo + link) quando surge publicação nova. Diferente de uma Consulta: não é pontual, persiste no servidor atrelado ao usuário, tem limite de 5 por usuário, e expira automaticamente após 180 dias sem publicação nova (o prazo é renovado a cada publicação encontrada).
+A coleta independe do SMTP; e-mails pendentes são preservados para nova tentativa. Captura por OAB também ocorre a cada 24 horas. Datas são persistidas em UTC; datas legadas sem fuso são interpretadas como UTC. Renovação explícita preserva ID e histórico. Vincular uma publicação a um processo não a marca como tratada: o tratamento exige revisão ou ação explícita sobre o status. A triagem de novas publicações converge para Publicações monitoradas; endpoints antigos de pendências permanecem por compatibilidade.
 _Avoid_: Alerta, assinatura, inscrição (pode confundir com cobrança)
 
 
