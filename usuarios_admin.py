@@ -58,6 +58,9 @@ def migrar(c):
             id INTEGER PRIMARY KEY AUTOINCREMENT, ocorrido_em TEXT NOT NULL,
             ator TEXT NOT NULL, usuario TEXT NOT NULL, acao TEXT NOT NULL,
             campos TEXT NOT NULL)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS usuarios_acessos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, ocorrido_em TEXT NOT NULL,
+            usuario TEXT NOT NULL)''')
         for nome, dados in c.execute('SELECT nome, dados FROM usuarios WHERE usuario_id IS NULL').fetchall():
             gravar(c, nome, json.loads(dados))
 
@@ -139,10 +142,14 @@ def registrar_acesso(registro, login):
     with registro._trava, _abrir(registro.caminho) as c, c:
         data = agora()
         # No máximo uma escrita por minuto, mesmo com polling da interface.
-        c.execute("""UPDATE usuarios SET ultimo_acesso_em=?,
+        cursor = c.execute("""UPDATE usuarios SET ultimo_acesso_em=?,
             dados=json_set(dados, '$.ultimo_acesso_em', ?)
             WHERE nome=? AND (ultimo_acesso_em IS NULL OR substr(ultimo_acesso_em,1,16)<>substr(?,1,16))""",
                   (data, data, login, data))
+        if cursor.rowcount:
+            c.execute('INSERT INTO usuarios_acessos (ocorrido_em, usuario) VALUES (?, ?)', (data, login))
+            # Limita a retenção sem guardar IP, credenciais ou o conteúdo consultado.
+            c.execute("DELETE FROM usuarios_acessos WHERE ocorrido_em < strftime('%Y-%m-%dT%H:%M:%S', 'now', '-180 days')")
 
 
 async def tratar(app, scope, receive, send, s):
@@ -180,6 +187,10 @@ async def tratar(app, scope, receive, send, s):
             with _abrir(app.registro.caminho) as c:
                 rows = c.execute('SELECT ocorrido_em, ator, usuario, acao, campos FROM usuarios_auditoria ORDER BY id DESC LIMIT 100').fetchall()
             await s._json(send, 200, {'historico': [dict(zip(('ocorrido_em', 'ator', 'usuario', 'acao', 'campos'), r)) for r in rows]})
+        elif path == '/admin/usuarios/acessos' and method == 'GET':
+            with _abrir(app.registro.caminho) as c:
+                rows = c.execute('SELECT ocorrido_em, usuario FROM usuarios_acessos ORDER BY id DESC LIMIT 100').fetchall()
+            await s._json(send, 200, {'acessos': [dict(zip(('ocorrido_em', 'usuario'), r)) for r in rows]})
         elif path == '/admin/banco/api' and method == 'GET':
             with _abrir(app.registro.caminho) as c:
                 tamanho = c.execute('PRAGMA page_count').fetchone()[0] * c.execute('PRAGMA page_size').fetchone()[0]
