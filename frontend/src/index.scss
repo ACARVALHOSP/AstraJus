@@ -135,11 +135,11 @@
   padding-inline: spacing.$spacing-05;
   border: 0;
   background: transparent;
-  color: var(--cds-text-inverse);
+  color: var(--cds-text-primary);
   cursor: pointer;
   svg { flex-shrink: 0; }
-  &:hover, &[aria-expanded='true'] { background: var(--cds-background-inverse-hover); }
-  &:focus-visible { outline: 2px solid var(--cds-focus-inverse); outline-offset: -2px; }
+  &:hover, &[aria-expanded='true'] { background: var(--cds-background-hover); }
+  &:focus-visible { outline: 2px solid var(--cds-focus); outline-offset: -2px; }
 }
 .shell-conta__nome {
   max-inline-size: 12rem;
