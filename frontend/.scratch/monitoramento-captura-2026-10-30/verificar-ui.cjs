@@ -1,4 +1,5 @@
 async (page) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('about:blank');
   await page.unroute('**/mcp');
@@ -42,11 +43,13 @@ async (page) => {
   await page.getByText('Monitoramento renovado por 180 dias, preservando seu histórico.').waitFor();
   if (renovar !== 1) throw Error('Renovação duplicada');
   await page.getByRole('button', { name: 'Remover', exact: true }).first().click();
-  await page.getByRole('button', { name: 'Remover', exact: true }).last().click();
+  const dialogoRemover = page.getByRole('dialog', { name: 'Remover monitoramento', exact: true });
+  await dialogoRemover.waitFor();
+  await dialogoRemover.getByRole('button', { name: 'Remover', exact: true }).click();
   await page.getByRole('dialog', { name: 'Remover monitoramento' }).getByText('Falha simulada de remoção. Tente novamente.').waitFor();
   if (!await page.getByRole('dialog').isVisible()) throw Error('Modal fechou em erro de domínio');
   await page.screenshot({ path: '.scratch/monitoramento-captura-2026-10-30/erro-recuperavel.png', fullPage: true, animations: 'disabled' });
-  await page.getByRole('button', { name: 'Remover', exact: true }).last().click();
+  await dialogoRemover.getByRole('button', { name: 'Remover', exact: true }).click();
   await page.getByText('Nenhum monitoramento ativo', { exact: true }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
   const fecharMenu = page.getByRole('button', { name: 'Fechar menu', exact: true });
