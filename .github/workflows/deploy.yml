@@ -34,7 +34,7 @@ jobs:
 
       - name: Deploy via SSH (git pull + rebuild + restart)
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" '
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "admin@${{ secrets.VPS_HOST }}" '
             set -e
             echo "== git pull =="
             sudo git -C /root/apps/cnj-processual pull --ff-only origin main
@@ -51,6 +51,8 @@ jobs:
               cnj-processual
 
             sleep 3
+            echo "== credencial administrativa no banco =="
+            sudo python3 /root/apps/cnj-processual/deploy_token_admin.py
             echo "== status =="
             sudo docker ps --filter name=cnj-processual
           '
