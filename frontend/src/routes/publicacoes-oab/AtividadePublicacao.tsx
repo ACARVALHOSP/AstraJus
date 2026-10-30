@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { Checkbox, Column, Grid, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
+import { Button, Checkbox, Column, Grid, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarDataSimples, formatarNomeExibicao } from '../../utils/formatadores'
 import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
 import { numeroPublicacao, type PublicacaoOab } from './dados'
 import { calcularPrazo, dataValida, detectarDias, REGRAS_PRAZO, type CalendarioForense, type ProvedorCalendario, type RegraPrazo } from './prazos'
+import { imprimirDemonstrativoPrazo } from './impressaoPrazo'
 
 export default function AtividadePublicacao({ publicacao, onClose, onConcluido, provedorCalendario }: {
   publicacao: PublicacaoOab; onClose: () => void; onConcluido: (mensagem: string) => void; provedorCalendario?: ProvedorCalendario
@@ -120,7 +121,14 @@ export default function AtividadePublicacao({ publicacao, onClose, onConcluido, 
     finally { trava.current = false; setSalvando(false) }
   }
   const bloqueado = salvando || jaCriada
-  return <Modal open={true} size="lg" modalHeading="Criar atividade a partir da publicação" closeButtonLabel="Fechar" primaryButtonText={jaCriada ? 'Concluir atualização de status' : revisado ? 'Confirmar atividade e prazo' : 'Criar com prazo pendente de revisão'} secondaryButtonText="Cancelar" primaryButtonDisabled={salvando || calculando || carregandoContexto} onRequestSubmit={salvar} onRequestClose={() => { if (!salvando) onClose() }}>
+  function imprimir() {
+    if (!resultado || calculando || carregandoContexto) return
+    setErro('')
+    try {
+      imprimirDemonstrativoPrazo({ titulo, numero, tribunal, municipio, base, dias: Number(dias), regra, suspensaoCpc, calendario, resultado, dataFinal: final, revisado })
+    } catch (e) { setErro((e as Error).message) }
+  }
+  return <Modal open={true} size="md" modalHeading="Criar atividade a partir da publicação" closeButtonLabel="Fechar" primaryButtonText={jaCriada ? 'Concluir atualização de status' : revisado ? 'Confirmar atividade e prazo' : 'Criar com prazo pendente de revisão'} secondaryButtonText="Cancelar" primaryButtonDisabled={salvando || calculando || carregandoContexto} onRequestSubmit={salvar} onRequestClose={() => { if (!salvando) onClose() }}>
     <Stack gap={5}>
       <TextInput id="oab-atividade-titulo" labelText="Título" maxLength={160} value={titulo} disabled={bloqueado} onChange={e => setTitulo(e.target.value)} />
       <Grid withRowGap narrow fullWidth>
@@ -141,7 +149,7 @@ export default function AtividadePublicacao({ publicacao, onClose, onConcluido, 
       <Checkbox id="oab-prazo-revisado" labelText="Revisei o termo inicial, a quantidade de dias, a regra, os feriados e as suspensões aplicáveis e confirmo a data final." checked={revisado} disabled={bloqueado || calculando || !dataValida(final)} onChange={(_, { checked }) => setRevisado(checked)} />
       <Select id="oab-atividade-responsavel" labelText="Responsável" value={responsavel} disabled={bloqueado} onChange={e => setResponsavel(e.target.value)}><SelectItem value="" text="Eu mesmo" />{responsaveis.map(r => <SelectItem key={r} value={r} text={formatarNomeExibicao(r)} />)}</Select>
       {resultado && <details><summary>Demonstrativo da contagem</summary><ol className="oab-demonstrativo">{resultado.linhas.map((l, i) => <li key={`${l.data}-${i}`}>{formatarDataSimples(l.data)} · {l.evento}{l.dia ? ` · dia ${l.dia}` : ''}</li>)}</ol></details>}
-      <p><a href="https://pgmprazos.prefeitura.sp.gov.br/" target="_blank" rel="noopener noreferrer">Modelo de referência: calculadora PGM-SP</a></p>
+      <div><Button kind="tertiary" size="sm" disabled={!resultado || calculando || carregandoContexto} onClick={imprimir}>Imprimir / salvar PDF</Button></div>
       {erro && <InlineNotification kind="error" title="Não foi possível concluir" subtitle={erro} lowContrast hideCloseButton />}
     </Stack>
   </Modal>
