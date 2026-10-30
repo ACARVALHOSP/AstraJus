@@ -182,4 +182,3 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
     </>}
   </section>
 }
-
