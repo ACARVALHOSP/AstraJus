@@ -1,0 +1,228 @@
+{
+  "batch": true,
+  "files_processed": 5,
+  "files_failed": 0,
+  "total_issues": 9,
+  "results": [
+    {
+      "path": "src/routes/publicacoes-oab/PainelPublicacoes.tsx",
+      "valid": false,
+      "total": 3,
+      "sev": {
+        "e": 3
+      },
+      "cat": {
+        "accessibility": 3
+      },
+      "issues": [
+        {
+          "name": "Validate keyboard event handlers",
+          "sev": "e",
+          "msg": "onClick handler without keyboard equivalent. Add onKeyDown or onKeyPress for keyboard accessibility.",
+          "fix": "Add keyboard event handler or use semantic HTML elements like <button> that handle keyboard events.",
+          "line": 126,
+          "col": 98,
+          "ctx": "onClick={() => mudarStatus([...selecionadas], 'tratada', tru",
+          "cat": "accessibility"
+        },
+        {
+          "name": "Validate keyboard event handlers",
+          "sev": "e",
+          "msg": "onClick handler without keyboard equivalent. Add onKeyDown or onKeyPress for keyboard accessibility.",
+          "fix": "Add keyboard event handler or use semantic HTML elements like <button> that handle keyboard events.",
+          "line": 127,
+          "col": 96,
+          "ctx": "onClick={() => mudarStatus([...selecionadas], 'arquivada', t",
+          "cat": "accessibility"
+        },
+        {
+          "name": "Validate keyboard event handlers",
+          "sev": "e",
+          "msg": "onClick handler without keyboard equivalent. Add onKeyDown or onKeyPress for keyboard accessibility.",
+          "fix": "Add keyboard event handler or use semantic HTML elements like <button> that handle keyboard events.",
+          "line": 144,
+          "col": 331,
+          "ctx": "onClick={() => { if (!ocupada) setOrdem(o => ({ chave: c.key",
+          "cat": "accessibility"
+        }
+      ],
+      "ctx": "react/typescript/advanced,components,accessibility,layout",
+      "took_ms": 132,
+      "meta": {
+        "tool": "carbon-check",
+        "v": "1.0.0"
+      },
+      "validation_confidence": 0.95,
+      "analysis_method": "ast",
+      "execution_summary": {
+        "total_rules": 57,
+        "successful_rules": 57,
+        "failed_rules": 0
+      }
+    },
+    {
+      "path": "src/routes/publicacoes-oab/AtividadePublicacao.tsx",
+      "valid": false,
+      "total": 2,
+      "sev": {
+        "w": 1,
+        "i": 1
+      },
+      "cat": {
+        "components": 1,
+        "advanced": 1
+      },
+      "issues": [
+        {
+          "name": "Check for deprecated props",
+          "sev": "w",
+          "msg": "Modal uses deprecated prop \"onRequestSubmit\". The \"onRequestSubmit\" prop is deprecated. Handle form submission separately.",
+          "fix": "Replace with: onRequestClose with form submission",
+          "line": 123,
+          "col": 10,
+          "ctx": "<Modal open={true} size=\"lg\" modalHeading=\"Criar atividade a",
+          "cat": "components"
+        },
+        {
+          "name": "Validate dialog/modal patterns",
+          "sev": "i",
+          "msg": "Modal should use ModalHeader and ModalBody for proper structure.",
+          "fix": "Structure Modal with: <Modal><ModalHeader /><ModalBody>...</ModalBody></Modal>",
+          "line": 123,
+          "col": 10,
+          "cat": "advanced"
+        }
+      ],
+      "ctx": "react/typescript/advanced,components,accessibility,layout",
+      "took_ms": 144,
+      "meta": {
+        "tool": "carbon-check",
+        "v": "1.0.0"
+      },
+      "validation_confidence": 0.95,
+      "analysis_method": "ast",
+      "execution_summary": {
+        "total_rules": 57,
+        "successful_rules": 57,
+        "failed_rules": 0
+      }
+    },
+    {
+      "path": "src/routes/publicacoes-oab/ProcessoPublicacao.tsx",
+      "valid": false,
+      "total": 1,
+      "sev": {
+        "i": 1
+      },
+      "cat": {
+        "advanced": 1
+      },
+      "issues": [
+        {
+          "name": "Validate dialog/modal patterns",
+          "sev": "i",
+          "msg": "Modal should use ModalHeader and ModalBody for proper structure.",
+          "fix": "Structure Modal with: <Modal><ModalHeader /><ModalBody>...</ModalBody></Modal>",
+          "line": 93,
+          "col": 10,
+          "cat": "advanced"
+        }
+      ],
+      "ctx": "react/typescript/advanced,components,accessibility,layout",
+      "took_ms": 128,
+      "meta": {
+        "tool": "carbon-check",
+        "v": "1.0.0"
+      },
+      "validation_confidence": 0.95,
+      "analysis_method": "ast",
+      "execution_summary": {
+        "total_rules": 57,
+        "successful_rules": 57,
+        "failed_rules": 0
+      }
+    },
+    {
+      "path": "src/routes/PublicacoesOab.tsx",
+      "valid": true,
+      "total": 0,
+      "ctx": "react/typescript/advanced,components,accessibility,layout",
+      "took_ms": 23,
+      "meta": {
+        "tool": "carbon-check",
+        "v": "1.0.0"
+      },
+      "validation_confidence": 0.95,
+      "analysis_method": "ast",
+      "execution_summary": {
+        "total_rules": 57,
+        "successful_rules": 57,
+        "failed_rules": 0
+      }
+    },
+    {
+      "path": "src/routes/publicacoes-oab/publicacoes.scss",
+      "valid": false,
+      "total": 3,
+      "sev": {
+        "e": 2,
+        "w": 1
+      },
+      "cat": {
+        "tokens": 3
+      },
+      "issues": [
+        {
+          "name": "No custom font-size values",
+          "sev": "e",
+          "msg": "Custom font-size '0.625rem' detected. Use Carbon type tokens instead.",
+          "fix": "Use @include type.type-style('body-01') (or matching style) with @use '@carbon/react/scss/type' as type; — type tokens are Sass maps and cannot be used as scalar values",
+          "line": 21,
+          "col": 22,
+          "ctx": "CSS property",
+          "cat": "tokens"
+        },
+        {
+          "name": "No custom font-size values",
+          "sev": "e",
+          "msg": "Custom font-size '0.625rem' detected. Use Carbon type tokens instead.",
+          "fix": "Use @include type.type-style('body-01') (or matching style) with @use '@carbon/react/scss/type' as type; — type tokens are Sass maps and cannot be used as scalar values",
+          "line": 22,
+          "col": 101,
+          "ctx": "CSS property",
+          "cat": "tokens"
+        },
+        {
+          "name": "No custom line-height values",
+          "sev": "w",
+          "msg": "Custom line-height '1rem' detected. Consider using Carbon line-height tokens.",
+          "fix": "Line-height is part of Carbon type-style maps. Use @include type.type-style('body-01') with @use '@carbon/react/scss/type' as type; — $line-height-* variables do not exist",
+          "line": 22,
+          "col": 122,
+          "ctx": "CSS property",
+          "cat": "tokens"
+        }
+      ],
+      "ctx": "react/scss/advanced,tokens,accessibility,layout",
+      "took_ms": 80,
+      "meta": {
+        "tool": "carbon-check",
+        "v": "1.0.0"
+      },
+      "validation_confidence": 0.85,
+      "analysis_method": "regex",
+      "execution_summary": {
+        "total_rules": 53,
+        "successful_rules": 53,
+        "failed_rules": 0
+      }
+    }
+  ],
+  "took_ms": 223,
+  "metadata": {
+    "tool": "code_audit",
+    "version": "1.0.0",
+    "mode": "batch",
+    "parallel": true
+  }
+}

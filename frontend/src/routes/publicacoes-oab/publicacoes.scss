@@ -1,0 +1,28 @@
+@use '@carbon/react/scss/spacing' as spacing;
+@use '@carbon/react/scss/type' as type;
+@use '@carbon/react/scss/breakpoint' as breakpoint;
+
+.oab-painel { min-inline-size: 0; }
+.oab-ajuda { border-block: 1px solid var(--cds-border-subtle); padding-block: spacing.$spacing-05; }
+.oab-ajuda summary { cursor: pointer; padding-block: spacing.$spacing-03; }
+.oab-captura { border: 0; padding: 0; min-inline-size: 0; }
+.oab-toolbar-area > section { block-size: auto; min-block-size: spacing.$spacing-09; }
+.oab-painel .oab-toolbar { display: flex; flex-wrap: wrap; align-items: center; block-size: auto; gap: spacing.$spacing-04; padding: spacing.$spacing-04 spacing.$spacing-05; min-block-size: spacing.$spacing-09; }
+.oab-toolbar > :first-child { margin-inline-end: auto; flex: 0 1 14rem; }
+.oab-colunas { flex: 0 0 auto; }
+.oab-colunas-conteudo { inline-size: 20rem; max-inline-size: calc(100vw - 4rem); background: var(--cds-layer); }
+.oab-colunas-conteudo fieldset { border: 0; padding: 0; }
+.oab-colunas-conteudo legend { @include type.type-style('heading-compact-01'); margin-block-end: spacing.$spacing-04; }
+.oab-colunas-opcoes { max-block-size: 22rem; overflow-y: auto; padding: spacing.$spacing-02; }
+.oab-acoes { display: flex; align-items: center; gap: spacing.$spacing-02; }
+.oab-menu { min-inline-size: 16rem; max-inline-size: calc(100vw - 2rem); }
+.oab-menu button { max-inline-size: none; }
+.oab-celula { max-inline-size: 18rem; }
+.oab-celula-nome { min-inline-size: 16rem; }
+.oab-celula-processo, .oab-celula-tribunal { white-space: nowrap; }
+.oab-celula-status { font-size: 0.625rem; }
+.oab-lista .oab-inteiro-teor { white-space: pre-wrap; overflow-wrap: anywhere; text-align: justify; font-size: 0.625rem; line-height: 1rem; padding-block: spacing.$spacing-05; }
+.oab-demonstrativo { max-block-size: 20rem; overflow: auto; padding-inline-start: spacing.$spacing-06; @include type.type-style('label-01'); }
+.oab-painel :is(button, summary):focus-visible { outline: 2px solid var(--cds-focus); outline-offset: -2px; }
+@include breakpoint.breakpoint-down(md) { .oab-toolbar { align-items: end; } .oab-toolbar > :first-child { flex-basis: 100%; } }
+@media (pointer: coarse) { .oab-acoes { min-block-size: 2.75rem; } }
