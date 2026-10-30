@@ -741,7 +741,17 @@ async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> d
                 orgao_julgador_djen = item.get("nomeOrgao")
                 data_mais_recente = data_item
 
+        # Cada campo usa a publicação mais recente que efetivamente o informa.
+        capa_djen = {}
+        for item in sorted(resultado_djen.get("itens") or [],
+                           key=lambda i: i.get("data_disponibilizacao") or "", reverse=True):
+            for destino, origem in (("tribunal", "siglaTribunal"), ("orgao_julgador", "nomeOrgao"),
+                                    ("classe", "nomeClasse")):
+                if item.get(origem) and destino not in capa_djen:
+                    capa_djen[destino] = item[origem]
+
         return {
+            "capa_djen": capa_djen,
             "numero_processo": _so_digitos(numero_processo),
             "encontrado_datajud": bool(resultado_datajud.get("encontrado")),
             "instancias": resultado_datajud.get("processos") or [],
@@ -3204,7 +3214,11 @@ async def _montar_capa_via_tribunal(numero: str, tribunal: str) -> tuple[dict | 
     resultado = await consultar_processo_unificado(tribunal=tribunal, numero_processo=numero)
     if resultado.get("erro"):
         return None, resultado
-    instancia = (resultado.get("instancias") or [{}])[0]
+    instancias = resultado.get("instancias") or []
+    capa_djen = resultado.get("capa_djen") or {}
+    if not instancias and not (capa_djen or resultado.get("partes") or resultado.get("advogados")):
+        return None, _erro("Nenhum dado encontrado no DataJud ou no DJEN. A capa anterior foi preservada.")
+    instancia = (instancias or [{}])[0]
     municipios = json.loads((Path(__file__).parent / "static" / "municipios.json").read_text(encoding="utf-8"))["data"]
     codigo = str(instancia.get("codigoMunicipioIBGE") or "")
     municipio = next((m for m in municipios if str(m["Codigo"]) == codigo), None)
@@ -3220,18 +3234,21 @@ async def _montar_capa_via_tribunal(numero: str, tribunal: str) -> tuple[dict | 
     segmento = numero[13:14]
     automaticos = {
         "tipo_justica": _TIPO_JUSTICA_POR_SEGMENTO.get(segmento),
-        "orgao_julgador": instancia.get("orgaoJulgador"),
+        "orgao_julgador": instancia.get("orgaoJulgador") or capa_djen.get("orgao_julgador") or resultado.get("orgao_julgador_djen"),
     }
     campos = {
         **{k: v for k, v in automaticos.items() if v},
-        "tribunal": instancia.get("tribunal"), "classe": instancia.get("classe"),
+        "tribunal": instancia.get("tribunal") or capa_djen.get("tribunal") or tribunal.upper(),
+        "classe": instancia.get("classe") or capa_djen.get("classe"),
         "assuntos": instancia.get("assuntos"), "grau": instancia.get("grau"),
         "data_distribuicao": instancia.get("dataAjuizamento"), "nivel_sigilo": instancia.get("nivelSigilo"),
         **({"nome_processo": nome_processo} if nome_processo else {}),
         **localidade, "movimentos": movimentos, "partes": resultado.get("partes") or [],
         "advogados": resultado.get("advogados") or [],
-        "datajud": [i["datajud"] for i in resultado.get("instancias") or [] if "datajud" in i],
+        **({"datajud": [i["datajud"] for i in instancias if "datajud" in i]} if instancias else {}),
     }
+    # Uma fonte sem determinado campo não deve apagar o último valor conhecido.
+    campos = {k: v for k, v in campos.items() if v is not None and v != [] and v != "" or k == "datajud"}
     return campos, None
 
 
@@ -4746,7 +4763,9 @@ class _AutenticacaoBearer:
                 }.items() if v})
                 self.gestao.atualizar_caso(caso_id, **atualizaveis)
             await _json(send, 200, {
-                **capa, "partes": campos.get("partes") or [], "advogados": campos.get("advogados") or [],
+                **capa,
+                **({"aviso": "Capa atualizada com os dados disponíveis no DJEN. Processo não encontrado no DataJud; os dados anteriores foram preservados."}
+                   if "datajud" not in campos else {}),
                 "monitorando": self._processo_monitorando(scope, numero),
             })
             return
