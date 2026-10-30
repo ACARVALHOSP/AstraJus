@@ -10,6 +10,7 @@ import type { Caso } from './ListaCasos'
 type Advogado = { nome?: string; numero_oab?: string; uf_oab?: string; advogado?: Omit<Advogado, 'advogado'> }
 type Movimento = { nome?: string; dataHora?: string }
 type Capa = {
+  aviso?: string
   nome_processo?: string | null; tipo_justica?: string | null; tribunal?: string | null
   classe?: string | null; orgao_julgador?: string | null; data_distribuicao?: string | null
   assuntos?: string[] | null; cidade?: string | null; uf?: string | null; grau?: string | null
@@ -35,7 +36,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
   const [erroClientes, setErroClientes] = useState(false)
   const [carregando, setCarregando] = useState(true)
   const [operacao, setOperacao] = useState<string | null>(null)
-  const [mensagem, setMensagem] = useState<{ erro: boolean; texto: string } | null>(null)
+  const [mensagem, setMensagem] = useState<{ erro: boolean; aviso?: boolean; texto: string } | null>(null)
   const [erroCarga, setErroCarga] = useState(false)
   const [tentativa, setTentativa] = useState(0)
   const vivo = useRef(true)
@@ -73,6 +74,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
     if (bloqueado || (acao === 'salvar' && invalido)) return
     setOperacao(acao)
     setMensagem(null)
+    let avisoAtualizacao: string | undefined
     try {
       if (acao === 'salvar') {
         const corpo = Object.fromEntries(campos.map(([chave]) => [chave, chave === 'valor_causa'
@@ -83,6 +85,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
         setEdicao(editar(salva))
       } else if (acao === 'atualizar') {
         const nova = await enviarJson<Capa>(cliente, `${url}/atualizar`, { tribunal })
+        avisoAtualizacao = nova.aviso
         if (!vivo.current) return
         setCapa(nova)
         setEdicao(editar(nova))
@@ -99,7 +102,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
         if (!vivo.current) return
         setCapa(anterior => ({ ...anterior, monitorando: !anterior?.monitorando }))
       }
-      if (vivo.current) setMensagem({ erro: false, texto: acao === 'salvar' ? 'Capa salva.' : acao === 'atualizar' ? 'Capa atualizada com DataJud e DJEN.' : 'Monitoramento atualizado.' })
+      if (vivo.current) setMensagem({ erro: false, aviso: Boolean(avisoAtualizacao), texto: acao === 'salvar' ? 'Capa salva.' : acao === 'atualizar' ? avisoAtualizacao || 'Capa atualizada com DataJud e DJEN.' : 'Monitoramento atualizado.' })
     } catch (erro) {
       if (vivo.current) setMensagem({ erro: true, texto: erro instanceof Error ? erro.message : 'Não foi possível concluir a operação.' })
     } finally {
@@ -143,7 +146,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
     <p className="capa-numero">{formatarNumeroCNJ(numero)}</p>
     <div aria-live="polite">
       {carregando && <p>Carregando capa…</p>}
-      {mensagem && <InlineNotification kind={mensagem.erro ? 'error' : 'success'} title={mensagem.erro ? 'Não foi possível concluir' : 'Sucesso'} subtitle={mensagem.texto} lowContrast hideCloseButton />}
+      {mensagem && <InlineNotification kind={mensagem.erro ? 'error' : mensagem.aviso ? 'warning' : 'success'} title={mensagem.erro ? 'Não foi possível concluir' : mensagem.aviso ? 'Atualização parcial' : 'Sucesso'} subtitle={mensagem.texto} lowContrast hideCloseButton />}
     </div>
     {erroCarga && <Button kind="tertiary" size="sm" disabled={carregando} onClick={() => { setCarregando(true); setErroCarga(false); setTentativa(n => n + 1) }}>Tentar novamente</Button>}
     {capa && !carregando && <>
