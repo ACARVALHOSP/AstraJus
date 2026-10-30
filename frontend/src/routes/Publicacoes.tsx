@@ -1,3 +1,4 @@
+import TextoTabela from '../TextoTabela'
 import Carregamento from '../Carregamento'
 import { Fragment, useEffect, useState, type FormEvent } from 'react'
 import {
@@ -301,7 +302,7 @@ function TabelaPublicacoes({ itens }: { itens: ItemPublicacao[] }) {
                   <Fragment key={row.id}>
                     <TableExpandRow {...getRowProps({ row })}>
                       {row.cells.map((cell) => (
-                        <TableCell key={cell.id}>{cell.value}</TableCell>
+                        <TableCell key={cell.id}>{['classe', 'tipo', 'orgao', 'nome', 'referencia'].includes(cell.info.header) ? <TextoTabela texto={String(cell.value ?? '')} /> : cell.value}</TableCell>
                       ))}
                     </TableExpandRow>
                     <TableExpandedRow colSpan={headers.length + 1}>{item && <CartaoPublicacao item={item} />}</TableExpandedRow>

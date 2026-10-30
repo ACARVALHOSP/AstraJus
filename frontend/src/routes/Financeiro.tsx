@@ -1,3 +1,5 @@
+import TextoTabela from '../TextoTabela'
+import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
 import {
@@ -235,24 +237,15 @@ function TabelaLancamentos({
                           </div>
                         </TableCell>
                       ) : (
-                        <TableCell key={cell.id}>{cell.value}</TableCell>
+                        <TableCell key={cell.id}>{['descricao', 'cliente', 'processo', 'responsavel'].includes(cell.info.header) ? <TextoTabela texto={String(cell.value ?? '')} /> : cell.value}</TableCell>
                       ),
                     )}
                     <TableCell>
-                      <div className="aj-layout-39">
-                        {lanc.asaas_cobranca_id ? (
-                          <span title={`Cobrança ${lanc.asaas_cobranca_id}`}>Cobrança gerada</span>
-                        ) : (
-                          !lanc.pago && (
-                            <Button kind="tertiary" size="sm" onClick={() => onGerarCobranca(lanc)}>
-                              Gerar cobrança
-                            </Button>
-                          )
-                        )}
-                        <Button kind="danger--tertiary" size="sm" onClick={() => onExcluir(lanc)}>
-                          Excluir
-                        </Button>
-                      </div>
+                      {lanc.asaas_cobranca_id && <span title={`Cobrança ${lanc.asaas_cobranca_id}`}>Cobrança gerada</span>}
+                      <AcoesTabela rotulo={lanc.descricao} acoes={[
+                        ...(!lanc.asaas_cobranca_id && !lanc.pago ? [{ texto: 'Gerar cobrança', executar: () => onGerarCobranca(lanc) }] : []),
+                        { texto: 'Excluir', executar: () => onExcluir(lanc), perigo: true },
+                      ]} />
                     </TableCell>
                   </TableRow>
                 )

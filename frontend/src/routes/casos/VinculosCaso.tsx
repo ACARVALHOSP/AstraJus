@@ -1,3 +1,5 @@
+import TextoTabela from '../../TextoTabela'
+import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Column, Grid, InlineNotification, Select, SelectItem, Stack, TextInput } from '@carbon/react'
@@ -135,29 +137,20 @@ export default function VinculosCaso({ casoId, onAbrirCaso }: { casoId: string; 
                   <th>Cliente</th>
                   <th>Ação / Tipo</th>
                   <th>Vínculo</th>
-                  <th></th>
+                  <th>Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {vinculos.map((v) => (
                   <tr key={v.caso_id}>
                     <td>
-                      <button
-                        type="button"
-                        className="cds--link aj-layout-26"
-                        onClick={() => onAbrirCaso(v.caso_id)}
-
-                      >
-                        {v.titulo || '(sem título)'}
-                      </button>
+                      <TextoTabela texto={v.titulo || '(sem título)'} onClick={() => onAbrirCaso(v.caso_id)} />
                     </td>
-                    <td>{v.cliente_nome || '—'}</td>
-                    <td>{v.acao || '—'}</td>
+                    <td><TextoTabela texto={v.cliente_nome || '—'} /></td>
+                    <td><TextoTabela texto={v.acao || '—'} /></td>
                     <td>{ROTULO_TIPO[v.tipo] ?? v.tipo}</td>
                     <td>
-                      <Button kind="ghost" size="sm" disabled={removendo === v.caso_id} onClick={() => removerVinculo(v)}>
-                        Remover
-                      </Button>
+                      <AcoesTabela rotulo={v.titulo || 'vínculo'} acoes={[{ texto: 'Remover', executar: () => removerVinculo(v), desabilitada: removendo === v.caso_id }]} />
                     </td>
                   </tr>
                 ))}

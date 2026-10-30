@@ -2,6 +2,8 @@
 @use '@carbon/react/scss/spacing' as spacing;
 @use '@carbon/react/scss/type' as type;
 @use '@carbon/motion' as motion;
+@use '@carbon/react/scss/theme' as theme;
+@use '@carbon/react/scss/themes' as themes;
 @use './interface';
 
 .contato-vinculos-resumo {
@@ -108,3 +110,17 @@
 .previa-parcelas-data, .previa-parcelas-valor { white-space: nowrap; }
 .previa-parcelas .previa-parcelas-valor { text-align: end; }
 .previa-parcelas-valor-cabecalho { display: block; inline-size: 100%; text-align: end; }
+
+.texto-tabela {
+  display: block;
+  max-inline-size: 16rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  &:focus-visible { outline: 2px solid var(--cds-focus); outline-offset: -2px; }
+}
+.texto-tabela-dica { display: inline-block; max-inline-size: 100%; }
+
+// O menu flutuante é renderizado no body e precisa receber o tema do acionador.
+.acoes-tabela-menu--g100 { @include theme.theme(themes.$g100); }
+.acoes-tabela-menu--white { @include theme.theme(themes.$white); }

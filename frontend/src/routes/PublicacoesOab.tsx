@@ -1,3 +1,4 @@
+import TextoTabela from '../TextoTabela'
 import Carregamento from '../Carregamento'
 import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
@@ -332,7 +333,7 @@ function TabelaPublicacoesOab({
                               </button>
                             </TableCell>
                           ) : (
-                            <TableCell key={cell.id}>{cell.value}</TableCell>
+                            <TableCell key={cell.id}>{['classe', 'tipo', 'orgao', 'nome', 'referencia'].includes(cell.info.header) ? <TextoTabela texto={String(cell.value ?? '')} /> : cell.value}</TableCell>
                           ),
                         )}
                       </TableExpandRow>
