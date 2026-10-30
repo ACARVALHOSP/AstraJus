@@ -21,4 +21,12 @@ Regressões novas cobrem 21/51/101 itens, deduplicação acima de 50, falha na p
 
 Jornada no navegador com respostas simuladas: criar OAB, renovar, receber erro de domínio ao remover, repetir remoção e conferir mobile sem overflow. A auditoria Carbon foi executada nos cinco arquivos alterados; observações sobre handlers de TableBatchAction/TableHeader são falsos positivos em componentes Carbon que já fornecem teclado. A hierarquia efetiva é Grid → Column → conteúdo.
 
-Resultados finais e PRs serão acrescentados após a validação.
+Resultados finais:
+
+- Branch React: 341 testes offline passaram. Main reconciliada: 343 testes offline passaram. Incluem 14 novas regressões específicas.
+- `npm run build` passou. Lint dos cinco arquivos React alterados passou sem avisos. A build mantém os avisos de dependências Sass e tamanho de bundle já existentes.
+- Auditoria Carbon final de `Monitoramentos.tsx`: válida, zero apontamentos.
+- Jornada simulada de navegador concluída; mobile a 390 px sem overflow horizontal e com menu recolhido.
+- Backend integrado pelo [PR #134](https://github.com/ACARVALHOSP/AstraJus/pull/134), antes do frontend dependente.
+
+Os testes de navegador usam apenas respostas simuladas. A validação de deploy verifica o workflow e a saúde HTTP; não envia e-mails reais nem cria monitoramentos de produção.
