@@ -1622,10 +1622,10 @@ class MonitoramentoCriacaoTest(unittest.TestCase):
         return server._criar_monitoramento(self.registro, usuario, numero_processo, sigla_tribunal,
                                             numero_oab, uf_oab, self.relogio)
 
-    def test_usuario_sem_email_e_recusado(self):
+    def test_login_sem_arroba_pode_criar_monitoramento(self):
         r = self.criar(usuario="ana", numero_oab="330659")
-        self.assertTrue(r["erro"])
-        self.assertEqual(self.registro.carregar(), {})
+        self.assertNotIn("erro", r)
+        self.assertEqual(r['usuario'], 'ana')
 
     def test_sem_processo_nem_oab_e_recusado(self):
         r = self.criar()
@@ -2785,10 +2785,10 @@ class CapaMonitorarHttpTest(unittest.TestCase):
         status, resultado = self._chamar("DELETE", "monitorar")
         self.assertEqual(status, 404)
 
-    def test_usuario_sem_email_e_recusado(self):
+    def test_login_sem_arroba_pode_monitorar_pela_capa(self):
         status, resultado = self._chamar("POST", "monitorar", usuario="ana")
-        self.assertEqual(status, 400)
-        self.assertEqual(self.registro_monitoramentos.carregar(), {})
+        self.assertEqual(status, 201)
+        self.assertTrue(resultado['monitorando'])
 
     def test_metodo_errado_e_recusado(self):
         enviados = []

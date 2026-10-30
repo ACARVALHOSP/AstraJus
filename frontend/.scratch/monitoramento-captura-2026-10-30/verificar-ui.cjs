@@ -1,4 +1,5 @@
 async (page) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('about:blank');
   await page.unroute('**/mcp');
@@ -12,7 +13,7 @@ async (page) => {
     if (req.method === 'tools/call') {
       const { name, arguments: args } = req.params;
       let valor = {};
-      if (name === 'listar_monitoramentos') valor = { monitoramentos: lista, limite: 5, email_configurado: false, historico: { monitoramentos: [] } };
+      if (name === 'listar_monitoramentos') valor = { monitoramentos: lista, limite: 5, email_configurado: true, email_destinatario_configurado: false, historico: { monitoramentos: [] } };
       if (name === 'monitorar_publicacoes') {
         if (!args.numero_oab || args.uf_oab !== 'SP') throw Error('Critério enviado incorretamente');
         lista.push({ id: 'mon-teste', criterio: args, criado_em: '2026-10-30T15:00:00Z', expira_em: '2027-04-28T15:00:00Z', verificacao: { ultima_tentativa: '2026-10-30T15:00:00Z', estado: 'concluida', emails_pendentes: 1, paginas: 2, encontradas: 21 } });
@@ -31,6 +32,7 @@ async (page) => {
   await page.route('**/notificacoes?*', route => route.fulfill({ json: { notificacoes: [], nao_lidas: 0 } }));
   await page.route('**/responsaveis/me', route => route.fulfill({ json: { nome: 'Teste local', email: 'teste@exemplo.com' } }));
   await page.goto('http://127.0.0.1:5180/novo/#monitoramentos');
+  await page.getByText('E-mail do perfil não informado', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Criar monitoramento', exact: true }).click();
   await page.getByLabel('Número da OAB', { exact: true }).fill('123');
   await page.getByLabel('UF da OAB', { exact: true }).selectOption('SP');
@@ -41,11 +43,13 @@ async (page) => {
   await page.getByText('Monitoramento renovado por 180 dias, preservando seu histórico.').waitFor();
   if (renovar !== 1) throw Error('Renovação duplicada');
   await page.getByRole('button', { name: 'Remover', exact: true }).first().click();
-  await page.getByRole('button', { name: 'Remover', exact: true }).last().click();
+  const dialogoRemover = page.getByRole('dialog', { name: 'Remover monitoramento', exact: true });
+  await dialogoRemover.waitFor();
+  await dialogoRemover.getByRole('button', { name: 'Remover', exact: true }).click();
   await page.getByRole('dialog', { name: 'Remover monitoramento' }).getByText('Falha simulada de remoção. Tente novamente.').waitFor();
   if (!await page.getByRole('dialog').isVisible()) throw Error('Modal fechou em erro de domínio');
   await page.screenshot({ path: '.scratch/monitoramento-captura-2026-10-30/erro-recuperavel.png', fullPage: true, animations: 'disabled' });
-  await page.getByRole('button', { name: 'Remover', exact: true }).last().click();
+  await dialogoRemover.getByRole('button', { name: 'Remover', exact: true }).click();
   await page.getByText('Nenhum monitoramento ativo', { exact: true }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
   const fecharMenu = page.getByRole('button', { name: 'Fechar menu', exact: true });
