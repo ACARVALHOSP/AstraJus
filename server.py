@@ -1884,8 +1884,8 @@ def _criar_monitoramento(
     registro: RegistroMonitoramentos, usuario: str, numero_processo: str | None, sigla_tribunal: str | None,
     numero_oab: str | None, uf_oab: str | None, agora, nome: str | None = None,
 ) -> dict:
-    if "@" not in (usuario or ""):
-        return _erro("Monitoramento exige um usuário com e-mail cadastrado.")
+    if not isinstance(usuario, str) or not usuario.strip():
+        return _erro("Monitoramento exige um usuário autenticado.")
 
     criterio, erro = _normalizar_criterio_monitoramento(numero_processo, sigla_tribunal, numero_oab, uf_oab, nome)
     if erro:
@@ -1925,6 +1925,16 @@ def _renovar_monitoramento(registro, usuario, mid, agora=None):
     return resultado
 
 
+def _email_do_monitoramento(registro, usuario):
+    """A chave do proprietário não é o endereço de entrega. Resolve o perfil atual."""
+    perfil = RegistroUsuarios(registro.caminho).carregar().get(usuario)
+    email = perfil.get('email') if perfil is not None else usuario
+    # Compatibilidade com registros antigos em que o próprio login era o e-mail.
+    if isinstance(email, str) and re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email.strip()):
+        return email.strip()
+    return None
+
+
 def _listar_monitoramentos(registro: RegistroMonitoramentos, usuario: str) -> dict:
     itens = [
         {"id": i, **{k: v for k, v in m.items() if k != "hashes_notificados"}}
@@ -1937,6 +1947,7 @@ def _listar_monitoramentos(registro: RegistroMonitoramentos, usuario: str) -> di
     itens.sort(key=lambda m: m['criado_em'])
     return {'monitoramentos': itens, 'limite': MONITORAMENTO_MAX_POR_USUARIO,
             'email_configurado': _smtp_do_ambiente() is not None,
+            'email_destinatario_configurado': _email_do_monitoramento(registro, usuario) is not None,
             'historico': {nome: repo.historico(nome) for nome in ('monitoramentos', 'captura_oab', 'movimentos')}}
 
 
@@ -2148,9 +2159,10 @@ async def _entregar_monitoramento(repo, registro, mid, mon, gestao, enviar_fn, a
             falhou = True
             log.exception('Monitoramento %s: destino local pendente', mid)
     emails = repo.pendentes(mid, 'email')
-    if emails and enviar_fn is not None:
+    destino = _email_do_monitoramento(registro, mon['usuario'])
+    if emails and enviar_fn is not None and destino:
         try:
-            await asyncio.to_thread(enviar_fn, mon['usuario'], mon.get('criterio') or {}, emails)
+            await asyncio.to_thread(enviar_fn, destino, mon.get('criterio') or {}, emails)
             repo.confirmar(mid, 'email', [i['hash'] for i in emails])
             def confirmar(dados):
                 if mid not in dados:
@@ -2217,9 +2229,10 @@ async def _verificar_um_monitoramento(
         return entrega_ok
     dias = (expira - agora_dt).days
     ultimo = atual.get('ultimo_aviso_expiracao')
-    if smtp and 0 < dias <= MONITORAMENTO_AVISO_EXPIRACAO_DIAS and (not ultimo or (agora_dt - monitoramento_runtime.utc(ultimo)).days >= 7):
+    destino = _email_do_monitoramento(registro, atual['usuario'])
+    if smtp and destino and 0 < dias <= MONITORAMENTO_AVISO_EXPIRACAO_DIAS and (not ultimo or (agora_dt - monitoramento_runtime.utc(ultimo)).days >= 7):
         try:
-            await asyncio.to_thread(_enviar_aviso_expiracao, smtp, atual['usuario'], atual.get('criterio') or {}, dias)
+            await asyncio.to_thread(_enviar_aviso_expiracao, smtp, destino, atual.get('criterio') or {}, dias)
             registro.atualizar(lambda d: _marcar_aviso_expiracao(d, id_monitoramento, agora_dt.isoformat()))
         except Exception:
             log.exception('Monitoramento %s: aviso de expiração pendente', id_monitoramento)

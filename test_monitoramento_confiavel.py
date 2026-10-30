@@ -164,6 +164,34 @@ class MonitoramentoConfiavelTest(unittest.TestCase):
         self.assertEqual(row[:3], ('ana@teste.com', 'tratada', 'alteracao_status'))
         self.assertIsNotNone(utc(row[3]).tzinfo)
 
+    def test_login_distinto_do_email_entrega_ao_perfil_sem_mudar_proprietario(self):
+        usuarios = db.RegistroUsuarios(self.path)
+        usuarios.salvar({'operador': {'email': 'destino@teste.com'}})
+        mon = server._criar_monitoramento(self.registro, 'operador', None, None, '456', 'SP', lambda: self.agora)
+        self.repo.ingerir(mon['id'], [{'hash': 'perfil-email'}], self.agora)
+        enviar = mock.Mock()
+        asyncio.run(server._entregar_monitoramento(self.repo, self.registro, mon['id'], mon, self.gestao, enviar, self.agora))
+        self.assertEqual(enviar.call_args.args[0], 'destino@teste.com')
+        self.assertEqual(self.registro.carregar()[mon['id']]['usuario'], 'operador')
+        self.assertEqual(len(self.registro.do_usuario('operador')), 1)
+        self.assertEqual(self.registro.do_usuario('destino@teste.com'), {})
+
+    def test_sem_email_preserva_fila_e_reenvia_apos_completar_perfil(self):
+        usuarios = db.RegistroUsuarios(self.path)
+        usuarios.salvar({'operador': {'email': None}})
+        mon = server._criar_monitoramento(self.registro, 'operador', None, None, '456', 'SP', lambda: self.agora)
+        self.repo.ingerir(mon['id'], [{'hash': 'sem-perfil-email'}], self.agora)
+        enviar = mock.Mock()
+        asyncio.run(server._entregar_monitoramento(self.repo, self.registro, mon['id'], mon, self.gestao, enviar, self.agora))
+        enviar.assert_not_called()
+        self.assertEqual(len(self.repo.pendentes(mon['id'], 'email')), 1)
+        self.assertEqual(self.repo.pendentes(mon['id'], 'local'), [])
+        self.assertFalse(server._listar_monitoramentos(self.registro, 'operador')['email_destinatario_configurado'])
+        usuarios.salvar({'operador': {'email': 'completo@teste.com'}})
+        asyncio.run(server._entregar_monitoramento(self.repo, self.registro, mon['id'], mon, self.gestao, enviar, self.agora))
+        self.assertEqual(enviar.call_args.args[0], 'completo@teste.com')
+        self.assertEqual(self.repo.pendentes(mon['id'], 'email'), [])
+
     def test_lease_e_historico_impedem_duplicacao_e_retomam_falha(self):
         async def executar():
             chamadas = []
