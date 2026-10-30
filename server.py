@@ -5712,6 +5712,7 @@ def _criar_usuario_core(registro: RegistroUsuarios, nome: str) -> tuple[bool, st
             "criado_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "revogado": False,
             "origem": "admin",
+            "status": "ativo",
         }
         resultado["ok"] = True
 

@@ -82,6 +82,9 @@ class UsuariosTest(unittest.TestCase):
         self.assertEqual(self.reg.identificar(token), 'legado')
         self.assertTrue(server._revogar_usuario_core(self.reg, 'legado')[0])
         self.assertIsNone(self.reg.identificar(token))
+        ok, _, token_novo = server._criar_usuario_core(self.reg, 'legado')
+        self.assertTrue(ok)
+        self.assertEqual(self.reg.identificar(token_novo), 'legado')
 
     def test_consulta_mcp(self):
         self.assertTrue(u.mcp_consulta_permitido({'method': 'tools/call', 'params': {'name': 'listar_monitoramentos'}}))
