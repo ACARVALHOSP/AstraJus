@@ -1,10 +1,11 @@
 import Carregamento from '../../Carregamento'
+import PreviaParcelas from '../../PreviaParcelas'
 import { useEffect, useState } from 'react'
 import { Checkbox, Column, DatePicker, DatePickerInput, Grid, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
-import { formatarDdMmAaaa, formatarMoeda, formatarNomeExibicao } from '../../utils/formatadores'
+import { formatarDdMmAaaa, formatarNomeExibicao } from '../../utils/formatadores'
 import { calcularValoresParcelas, somarMeses, valorLancamentoEmReais } from '../../utils/parcelas'
 
 type ClienteBusca = { id: string; nome: string; cpf_cnpj?: string }
@@ -215,31 +216,7 @@ export default function NovoLancamentoModal({ open, onClose, onSalvo }: { open: 
         </Grid>
         <Checkbox id="honorario-recorrente" labelText="Repetir mensalmente" checked={recorrente} onChange={(_e, { checked }) => setRecorrente(checked)} />
         <Checkbox id="honorario-parcelar" labelText="Parcelar" checked={parcelar} onChange={(_e, { checked }) => setParcelar(checked)} />
-        {previewParcelas && (
-          <div>
-            <p>Prévia das parcelas:</p>
-            <table className="tabela-responsiva">
-              <thead>
-                <tr>
-                  <th>Parcela</th>
-                  <th>Vencimento</th>
-                  <th>Valor</th>
-                </tr>
-              </thead>
-              <tbody>
-                {previewParcelas.map((p) => (
-                  <tr key={p.numero}>
-                    <td>
-                      {p.numero}/{parcelas}
-                    </td>
-                    <td>{formatarDdMmAaaa(new Date(p.vencimento + 'T00:00:00'))}</td>
-                    <td>{formatarMoeda(p.valor)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {previewParcelas && <PreviaParcelas parcelas={previewParcelas} quantidade={parcelas} />}
 
         <h4>Vínculos e responsabilidade</h4>
         {carregandoBase ? <Carregamento tipo="detalhe" descricao="Carregando clientes e processos…" /> : <>
