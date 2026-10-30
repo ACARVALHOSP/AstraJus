@@ -5,6 +5,7 @@
 @use '@carbon/react/scss/theme' as theme;
 @use '@carbon/react/scss/themes' as themes;
 @use './interface';
+@use './routes/casos/processos';
 
 .contato-vinculos-resumo {
   display: grid;

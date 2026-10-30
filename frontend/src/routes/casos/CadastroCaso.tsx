@@ -34,23 +34,26 @@ export default function CadastroCaso({
   const [excluindo, setExcluindo] = useState(false)
 
   useEffect(() => {
+    let atual = true
     setCarregando(true)
     setErroCarregar(null)
     buscarJson<Caso>(cliente, `/casos/${casoId}`)
       .then((dados) => {
+        if (!atual) return
         setCaso(dados)
         setResponsavel(dados.responsavel ?? '')
         setPasta(dados.pasta ?? '')
         setAcesso(dados.acesso ?? 'equipe')
         onCarregado(dados)
       })
-      .catch((e) => setErroCarregar(e instanceof ErroMCP ? e.message : 'Falha ao carregar processo.'))
-      .finally(() => setCarregando(false))
+      .catch((e) => { if (atual) setErroCarregar(e instanceof ErroMCP ? e.message : 'Falha ao carregar processo.') })
+      .finally(() => { if (atual) setCarregando(false) })
     buscarJson<{ responsaveis: string[] }>(cliente, '/responsaveis')
-      .then((r) => setResponsaveis(r.responsaveis ?? []))
+      .then((r) => { if (atual) setResponsaveis(r.responsaveis ?? []) })
       .catch(() => {
         // segue sem a lista; o responsável já salvo continua selecionável via opção extra abaixo
       })
+    return () => { atual = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cliente, casoId])
 
@@ -89,14 +92,16 @@ export default function CadastroCaso({
 
   return (
     <Stack gap={6}>
-      <div>
-        <h3>Capa do processo</h3>
-        {(caso?.processos ?? []).length === 0 && <p>Nenhum número de processo vinculado.</p>}
-        {(caso?.processos ?? []).map((numero) => (
-          <p key={numero}>{formatarNumeroCNJ(numero)}</p>
-        ))}
-      </div>
-      <Grid narrow fullWidth>
+      <section className="casos-resumo" aria-label="Dados do processo">
+        <h2>Identificação do processo</h2>
+        <Grid narrow fullWidth className="casos-formulario-grade">
+          <Column sm={4} md={4} lg={8}><dl><dt>Número CNJ</dt><dd>{caso?.processos?.length ? caso.processos.map(formatarNumeroCNJ).join(', ') : 'Ainda não informado'}</dd></dl></Column>
+          <Column sm={4} md={4} lg={8}><dl><dt>Classe / ação</dt><dd>{caso?.acao || 'Não informada'}</dd></dl></Column>
+          <Column sm={4} md={8} lg={16}><dl><dt>Foro</dt><dd>{caso?.foro || 'Não informado'}</dd></dl></Column>
+        </Grid>
+      </section>
+      <h2>Organização do escritório</h2>
+      <Grid narrow fullWidth className="casos-formulario-grade">
         <Column sm={4} md={4} lg={8} xlg={6}>
           <Select id="editar-caso-responsavel" labelText="Responsável" value={responsavel} onChange={(e) => setResponsavel(e.target.value)}>
             <SelectItem value="" text="Selecione um responsável" />
@@ -109,16 +114,16 @@ export default function CadastroCaso({
           <TextInput id="editar-caso-pasta" labelText="Pasta" autoComplete="off" value={pasta} onChange={(e) => setPasta(e.target.value)} />
         </Column>
         <Column sm={4} md={4} lg={8} xlg={4}>
-          <Select id="editar-caso-acesso" labelText="Acesso" value={acesso} onChange={(e) => setAcesso(e.target.value)}>
+          <Select id="editar-caso-acesso" labelText="Acesso" helperText="Classificação interna; não altera as permissões do sistema." value={acesso} onChange={(e) => setAcesso(e.target.value)}>
             <SelectItem value="equipe" text="Equipe" />
             <SelectItem value="publico" text="Público" />
             <SelectItem value="privado" text="Privado" />
           </Select>
         </Column>
       </Grid>
-        <div className="aj-layout-20">
+        <div className="casos-acoes-cadastro">
           <Button size="sm" onClick={salvar} disabled={salvando}>
-            Salvar
+            Salvar alterações
           </Button>
           <Button kind="danger--ghost" size="sm" onClick={() => setParaExcluir(true)}>
             Excluir processo

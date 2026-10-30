@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
 import { Column, ComboBox, Grid, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
@@ -13,11 +13,13 @@ export default function NovoProcessoModal({
   clientes,
   onClose,
   onCriado,
+  launcherButtonRef,
 }: {
   open: boolean
   clientes: ClienteOpcao[]
   onClose: () => void
   onCriado: (caso: Caso) => void
+  launcherButtonRef?: RefObject<HTMLButtonElement | null>
 }) {
   const { cliente } = useCliente()
   const [clienteSelecionado, setClienteSelecionado] = useState<ClienteOpcao | null>(null)
@@ -30,6 +32,22 @@ export default function NovoProcessoModal({
   const [processos, setProcessos] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    // O ComboBox precisa estar na camada visível para receber o foco inicial.
+    let quadro: number
+    const focarCliente = () => {
+      const campo = document.getElementById('caso-cliente-busca')
+      if (campo && getComputedStyle(campo).visibility === 'visible') {
+        campo.focus()
+        return
+      }
+      quadro = requestAnimationFrame(focarCliente)
+    }
+    quadro = requestAnimationFrame(focarCliente)
+    return () => cancelAnimationFrame(quadro)
+  }, [open])
 
   function limpar() {
     setClienteSelecionado(null)
@@ -78,6 +96,8 @@ export default function NovoProcessoModal({
       primaryButtonText="Cadastrar processo"
       secondaryButtonText="Cancelar"
       primaryButtonDisabled={enviando}
+      selectorPrimaryFocus="#caso-cliente-busca"
+      launcherButtonRef={launcherButtonRef}
       onRequestClose={() => {
         limpar()
         onClose()
@@ -85,9 +105,11 @@ export default function NovoProcessoModal({
       onRequestSubmit={cadastrar}
     >
       <Stack gap={5}>
+        <p>Cadastre o processo e vincule um cliente. O número CNJ pode ser informado depois.</p>
+        <h3>Identificação</h3>
         <ComboBox
           id="caso-cliente-busca"
-          titleText="Cliente"
+          titleText="Cliente *"
           placeholder="Digite para buscar..."
           items={clientes}
           itemToString={(c: ClienteOpcao | null) => (c ? formatarNomeExibicao(c.nome) : '')}
@@ -95,7 +117,7 @@ export default function NovoProcessoModal({
           onChange={({ selectedItem }) => setClienteSelecionado(selectedItem ?? null)}
         />
         <TextInput id="caso-titulo" labelText="Título" placeholder="Ex.: Cobrança de honorários" autoComplete="off" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
-        <Grid narrow fullWidth>
+        <Grid narrow fullWidth className="casos-formulario-grade">
           <Column sm={4} md={4} lg={8}>
             <TextInput id="caso-responsavel" labelText="Responsável" placeholder="Ex.: Dra. Fernanda Reis" autoComplete="off" value={responsavel} onChange={(e) => setResponsavel(e.target.value)} />
           </Column>

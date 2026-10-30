@@ -61,7 +61,7 @@ export default function PublicacoesCaso({ casoId }: { casoId: string }) {
               const texto = pub.dados?.texto || pub.dados?.teor || pub.dados?.conteudo || ''
               return (
                 <Tile key={pub.hash}>
-                  <div className="aj-layout-25">
+                  <div className="casos-publicacao-linha">
                     <div>
                       <strong>{pub.numero_processo || pub.nome_pesquisado || 'Publicação'}</strong>{' '}
                       <span>{(pub.criado_em ?? '').substring(0, 10)}</span>

@@ -2,7 +2,7 @@ import TextoTabela from '../../TextoTabela'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Column, Grid, InlineNotification, Select, SelectItem, Stack, TextInput } from '@carbon/react'
+import { Button, Column, Grid, InlineNotification, Select, SelectItem, Stack, TextInput, Table, TableHead, TableHeader, TableRow, TableBody, TableCell } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -130,32 +130,32 @@ export default function VinculosCaso({ casoId, onAbrirCaso }: { casoId: string; 
         {!carregando && vinculos && vinculos.length === 0 && <InlineNotification kind="info" title="Nenhum processo vinculado" lowContrast hideCloseButton />}
         {!carregando && vinculos && vinculos.length > 0 && (
           <div className="tabela-responsiva-wrap">
-            <table className="tabela-responsiva tabela-vinculos">
-              <thead>
-                <tr>
-                  <th>Caso</th>
-                  <th>Cliente</th>
-                  <th>Ação / Tipo</th>
-                  <th>Vínculo</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table size="lg" className="casos-vinculos-tabela" aria-label="Processos vinculados">
+              <TableHead>
+                <TableRow>
+                  <TableHeader>Processo</TableHeader>
+                  <TableHeader>Cliente</TableHeader>
+                  <TableHeader>Ação / Tipo</TableHeader>
+                  <TableHeader>Vínculo</TableHeader>
+                  <TableHeader>Ações</TableHeader>
+                </TableRow>
+              </TableHead>
+              <TableBody>
                 {vinculos.map((v) => (
-                  <tr key={v.caso_id}>
-                    <td>
+                  <TableRow key={v.caso_id}>
+                    <TableCell>
                       <TextoTabela texto={v.titulo || '(sem título)'} onClick={() => onAbrirCaso(v.caso_id)} />
-                    </td>
-                    <td><TextoTabela texto={v.cliente_nome || '—'} /></td>
-                    <td><TextoTabela texto={v.acao || '—'} /></td>
-                    <td>{ROTULO_TIPO[v.tipo] ?? v.tipo}</td>
-                    <td>
+                    </TableCell>
+                    <TableCell><TextoTabela texto={v.cliente_nome || '—'} /></TableCell>
+                    <TableCell><TextoTabela texto={v.acao || '—'} /></TableCell>
+                    <TableCell>{ROTULO_TIPO[v.tipo] ?? v.tipo}</TableCell>
+                    <TableCell>
                       <AcoesTabela rotulo={v.titulo || 'vínculo'} acoes={[{ texto: 'Remover', executar: () => removerVinculo(v), desabilitada: removendo === v.caso_id }]} />
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </div>
