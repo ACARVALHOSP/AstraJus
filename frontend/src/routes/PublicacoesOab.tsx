@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Accordion, AccordionItem, Button, Column, DatePicker, DatePickerInput, Grid, Stack, TextInput } from '@carbon/react'
+import { Accordion, AccordionItem, Button, Column, DatePicker, DatePickerInput, Grid, InlineNotification, Stack, TextInput } from '@carbon/react'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 import { enviarJson } from '../api/rest'
@@ -20,10 +20,15 @@ function CapturaManual({ onCapturado }: { onCapturado: () => void }) {
   const [dataFim, setDataFim] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
+  const [falhou, setFalhou] = useState(false)
 
   async function aoEnviar(evento: FormEvent) {
     evento.preventDefault()
+    if (!dataInicio || !dataFim || dataInicio > dataFim) {
+      setFalhou(true); setStatus('Informe um período completo. A data inicial deve ser anterior ou igual à data final.'); return
+    }
     setEnviando(true)
+    setFalhou(false)
     setStatus('Consultando o DJEN…')
     try {
       const resultado = (await enviarJson(cliente, '/publicacoes-oab/capturar-manual', {
@@ -39,7 +44,9 @@ function CapturaManual({ onCapturado }: { onCapturado: () => void }) {
       )
       onCapturado()
     } catch (e) {
+      setFalhou(true)
       setStatus(e instanceof ErroMCP ? e.message : 'Falha inesperada.')
+      onCapturado()
     } finally {
       setEnviando(false)
     }
@@ -50,6 +57,7 @@ function CapturaManual({ onCapturado }: { onCapturado: () => void }) {
       <AccordionItem title="Capturar publicações por OAB">
         <form onSubmit={aoEnviar}>
           <Stack gap={5}>
+            <p>Captura avulsa: informe a OAB e as duas datas obrigatórias. Para ativar a captura recorrente, crie um monitoramento na tela Monitoramentos.</p>
             <Grid withRowGap narrow fullWidth>
               <Column sm={4} md={4} lg={4}>
                 <TextInput
@@ -95,8 +103,8 @@ function CapturaManual({ onCapturado }: { onCapturado: () => void }) {
                     setDataFim(fim ? isoDeData(fim) : '')
                   }}
                 >
-                  <DatePickerInput id="pub-oab-manual-data-inicio" labelText="Data inicial" placeholder="aaaa-mm-dd" />
-                  <DatePickerInput id="pub-oab-manual-data-fim" labelText="Data final" placeholder="aaaa-mm-dd" />
+                  <DatePickerInput id="pub-oab-manual-data-inicio" labelText="Data inicial (obrigatória)" placeholder="aaaa-mm-dd" aria-required="true" />
+                  <DatePickerInput id="pub-oab-manual-data-fim" labelText="Data final (obrigatória)" placeholder="aaaa-mm-dd" aria-required="true" />
                 </DatePicker>
               </Column>
             </Grid>
@@ -105,7 +113,7 @@ function CapturaManual({ onCapturado }: { onCapturado: () => void }) {
                 Capturar agora
               </Button>
             </div>
-            {status && <p role="status">{status}</p>}
+            {status && <InlineNotification kind={falhou ? 'error' : enviando ? 'info' : 'success'} title={falhou ? 'Captura não concluída' : enviando ? 'Capturando' : 'Captura concluída'} subtitle={status} hideCloseButton lowContrast />}
           </Stack>
         </form>
       </AccordionItem>

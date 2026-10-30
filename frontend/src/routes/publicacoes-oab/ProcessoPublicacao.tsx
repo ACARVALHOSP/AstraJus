@@ -84,10 +84,7 @@ export default function ProcessoPublicacao({ publicacao, onClose, onConcluido }:
         if (capa.aviso) throw new Error(`Processo criado e vinculado. A capa requer revisão: ${capa.aviso}. Use Tentar novamente para completar a consulta.`)
       }
       if (!escolhido && !tribunal) throw new Error('Processo criado e vinculado; tribunal não identificado. Complete a capa no cadastro do processo.')
-      setEtapa('Atualizando status…')
-      const resultado = await enviarJson<{ hashes_falharam?: string[] }>(cliente, '/publicacoes-oab/status', { hashes: [publicacao.hash], status: 'tratada' })
-      if (resultado.hashes_falharam?.length) throw new Error('Processo vinculado, mas não foi possível marcar a publicação como tratada. Tente novamente.')
-      onConcluido(escolhido ? 'Publicação vinculada e marcada como tratada.' : 'Processo criado, capa preenchida e publicação tratada.')
+      onConcluido(escolhido ? 'Publicação vinculada. O estado de revisão foi preservado.' : 'Processo criado e capa preenchida. A publicação permanece disponível para revisão.')
     } catch (e) { setErro((e as Error).message) } finally { trava.current = false; setSalvando(false); setEtapa('') }
   }
   return <Modal open={true} size="lg" modalHeading="Criar ou vincular processo" closeButtonLabel="Fechar" primaryButtonText={processoCriado ? 'Tentar novamente' : escolhido ? 'Confirmar vínculo' : 'Criar processo e preencher capa'} secondaryButtonText="Cancelar" primaryButtonDisabled={salvando || carregando || numero.length !== 20} onRequestClose={() => { if (!salvando) onClose() }} onRequestSubmit={concluir}>

@@ -1636,7 +1636,7 @@ class MonitoramentoCriacaoTest(unittest.TestCase):
         r = self.criar(numero_oab="330659", uf_oab="sp")
         self.assertNotIn("erro", r)
         self.assertEqual(r["criterio"], {"numero_oab": "330659", "uf_oab": "SP"})
-        self.assertEqual(r["expira_em"], (self.relogio.t + timedelta(days=180)).isoformat())
+        self.assertEqual(r["expira_em"], (server.monitoramento_runtime.utc(self.relogio.t) + timedelta(days=180)).isoformat())
         self.assertEqual(len(self.registro.carregar()), 1)
 
     def test_numero_processo_tem_mascara_removida(self):
@@ -1732,10 +1732,12 @@ class MonitoramentoVerificacaoTest(_Simulado, unittest.TestCase):
             self.registro, self.smtp, agora=self.relogio, enviar=enviar or self._enviar_fake
         )
 
-    def test_sem_smtp_nao_faz_nada(self):
+    def test_sem_smtp_coleta_e_preserva_entrega_pendente(self):
         self.responder(_json(200, DJEN_OK))
         _rodar(server._verificar_monitoramentos_pendentes(self.registro, None, agora=self.relogio))
-        self.assertEqual(self.chamadas, [])
+        self.assertEqual(len(self.chamadas), 2)
+        repo = server.monitoramento_runtime.Repositorio(self.registro.caminho)
+        self.assertEqual(len(repo.pendentes(self.criado['id'], 'email')), 1)
 
     def test_publicacao_nova_dispara_aviso_e_atualiza_hashes(self):
         self.responder(_json(200, DJEN_OK))
@@ -1746,7 +1748,7 @@ class MonitoramentoVerificacaoTest(_Simulado, unittest.TestCase):
         self.assertEqual(itens[0]["hash"], "abc123")
         atual = self.registro.carregar()[self.criado["id"]]
         self.assertEqual(atual["hashes_notificados"], ["abc123"])
-        self.assertEqual(atual["expira_em"], (self.relogio.t + timedelta(days=180)).isoformat())
+        self.assertEqual(atual["expira_em"], (server.monitoramento_runtime.utc(self.relogio.t) + timedelta(days=180)).isoformat())
 
     def test_mesma_publicacao_nao_avisa_duas_vezes(self):
         self.responder(_json(200, DJEN_OK))
@@ -1988,7 +1990,7 @@ class RegistroDeToolsTest(unittest.TestCase):
             "consultar_processo_datajud", "consultar_publicacoes_djen", "baixar_certidao_djen",
             "monitorar_publicacoes", "listar_monitoramentos", "remover_monitoramento",
             "buscar_feriados_forenses", "consultar_jurimetria_cjpg",
-            "perfil_decisorio_magistrado", "status_apis", "consultar_processo_unificado",
+            "perfil_decisorio_magistrado", "status_apis", "consultar_processo_unificado", "renovar_monitoramento",
         })
 
 
@@ -2231,7 +2233,7 @@ class PublicacaoCadastroInlineTest(unittest.TestCase):
         self.assertIsNone(capa["data_distribuicao"])
         pub = self.publicacoes.obter("pub-inline")
         self.assertEqual(pub["caso_id"], caso["id"])
-        self.assertEqual(pub["status"], "tratada")
+        self.assertEqual(pub["status"], "nao_tratada")
         self.assertEqual(pub["dados"]["texto"], "Texto ORIGINAL")
         for termo in ("1006314-27.2023.8.26.0005", "Maria", "Banco", "arvore"):
             self.assertEqual(server._consultar_casos_para_vinculo(self.gestao, termo)[0]["id"], caso["id"])
@@ -2263,7 +2265,7 @@ class PublicacaoCadastroInlineTest(unittest.TestCase):
         self.assertEqual(capa["nome_processo"], "Maria Silva X Banco Exemplo")
         pub = self.publicacoes.obter("pub-mascarada")
         self.assertEqual(pub["caso_id"], caso["id"])
-        self.assertEqual(pub["status"], "tratada")
+        self.assertEqual(pub["status"], "nao_tratada")
 
     def test_numero_invalido_nao_deixa_cadastro_parcial(self):
         pub = {**self.publicacoes.obter("pub-inline"), "numero_processo": "123"}
@@ -2775,7 +2777,7 @@ class CapaMonitorarHttpTest(unittest.TestCase):
         self._chamar("POST", "monitorar")
         status, resultado = self._chamar("DELETE", "monitorar")
         self.assertEqual(status, 200)
-        self.assertEqual(resultado, {"removido": True})
+        self.assertEqual(resultado, {"removido": True, "monitorando": False})
         status, resultado = self._chamar("GET", None)
         self.assertFalse(resultado["monitorando"])
 

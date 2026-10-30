@@ -23,7 +23,7 @@ import uuid
 import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime, timezone
 from notificacoes import registrar_evento as _registrar_notificacao
 
 from _util import _hash_token, origem_djen_legada
@@ -99,6 +99,12 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 nome TEXT PRIMARY KEY,
                 dados TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS publicacao_revisoes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, hash TEXT NOT NULL,
+                usuario TEXT, status TEXT NOT NULL, acao TEXT NOT NULL, criado_em TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS publicacao_revisoes_hash ON publicacao_revisoes(hash, id);
 
             CREATE TABLE IF NOT EXISTS monitoramentos (
                 id TEXT PRIMARY KEY,
@@ -763,6 +769,17 @@ class RegistroMonitoramentos(_RegistroJSON):
 
     _tabela = "monitoramentos"
     _coluna_chave = "id"
+
+    def atualizar(self, alterar) -> None:
+        # Reserva escrita antes de ler: objetos/processos distintos compartilham o limite.
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute('BEGIN IMMEDIATE')
+            dados = {mid: json.loads(valor) for mid, valor in conexao.execute('SELECT id,dados FROM monitoramentos')}
+            if alterar(dados) is False:
+                return
+            conexao.execute('DELETE FROM monitoramentos')
+            conexao.executemany('INSERT INTO monitoramentos(id,dados) VALUES (?,?)',
+                               [(mid, json.dumps(mon)) for mid, mon in dados.items()])
 
     def do_usuario(self, usuario: str) -> dict:
         return {i: m for i, m in self.carregar().items() if m.get("usuario") == usuario}
@@ -1657,11 +1674,15 @@ class RegistroClientesCasos:
         criado_em = agora().isoformat()
         conteudo_json = json.dumps(conteudo, ensure_ascii=False)
         with self._trava, _abrir(self.caminho) as conexao, conexao:
-            conexao.executemany(
-                "INSERT INTO caso_eventos (caso_id, numero_processo, tipo, conteudo, criado_em) "
-                "VALUES (?, ?, ?, ?, ?)",
-                [(caso_id, numero_processo, tipo, conteudo_json, criado_em) for caso_id in casos],
-            )
+            conexao.execute('BEGIN IMMEDIATE')
+            for caso_id in casos:
+                if tipo == 'publicacao' and conteudo.get('hash'):
+                    existe = conexao.execute("SELECT 1 FROM caso_eventos WHERE caso_id=? AND tipo='publicacao' "
+                        "AND json_extract(conteudo,'$.hash')=?", (caso_id, conteudo['hash'])).fetchone()
+                    if existe:
+                        continue
+                conexao.execute('INSERT INTO caso_eventos (caso_id,numero_processo,tipo,conteudo,criado_em) VALUES (?,?,?,?,?)',
+                                (caso_id, numero_processo, tipo, conteudo_json, criado_em))
         return casos
 
     def registrar_evento_no_caso(self, caso_id: str, numero_processo: str | None, tipo: str, conteudo: dict, agora) -> None:
@@ -1928,7 +1949,7 @@ class RegistroPublicacoesOAB:
                 "SELECT hash FROM publicacoes_capturadas" + (" WHERE status = ?" if status else ""),
                 (status,) if status else ())]
 
-    def atualizar_status_detalhado(self, hashes: list[str], status: str) -> dict:
+    def atualizar_status_detalhado(self, hashes: list[str], status: str, usuario: str | None = None) -> dict:
         """Atualização atômica com identificação dos registros ausentes."""
         if status not in _STATUS_PUBLICACAO_VALIDOS:
             raise ValueError(f"status inválido: {status}")
@@ -1942,6 +1963,8 @@ class RegistroPublicacoesOAB:
                     "UPDATE publicacoes_capturadas SET status = ? WHERE hash = ?", (status, hash_publicacao))
                 if cursor.rowcount:
                     existentes.append(hash_publicacao)
+                    conexao.execute('INSERT INTO publicacao_revisoes(hash,usuario,status,acao,criado_em) VALUES (?,?,?,?,?)',
+                        (hash_publicacao, usuario, status, 'alteracao_status', datetime.now(timezone.utc).isoformat()))
         encontrados = set(existentes)
         return {"atualizadas": len(existentes), "hashes_atualizados": existentes,
                 "hashes_falharam": [h for h in hashes if h not in encontrados]}
@@ -1987,14 +2010,10 @@ class RegistroPublicacoesOAB:
             return cursor.rowcount
 
     def marcar_tratada_por_processo(self, numero_processo: str, caso_id: str) -> int:
-        """Quando um processo já tem caso (ou acaba de ganhar um), as publicações já capturadas
-        desse processo viram "tratada" automaticamente (Q11 da fase de publicações por OAB)."""
+        """Nome legado: apenas vincula ao processo; revisão permanece independente."""
         with self._trava, _abrir(self.caminho) as conexao, conexao:
-            cursor = conexao.execute(
-                "UPDATE publicacoes_capturadas SET status = 'tratada', caso_id = ? "
-                "WHERE numero_processo = ? AND status != 'tratada'",
-                (caso_id, numero_processo),
-            )
+            cursor = conexao.execute('UPDATE publicacoes_capturadas SET caso_id=? WHERE numero_processo=?',
+                                     (caso_id, numero_processo))
             return cursor.rowcount
 
     def listar_por_caso(self, caso_id: str) -> list[dict]:
