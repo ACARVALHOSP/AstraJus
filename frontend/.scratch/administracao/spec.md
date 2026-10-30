@@ -19,7 +19,7 @@ AGENTS.md exige aprovação explícita do mockup. Usuário autorizou continuar a
 
 Colunas tipadas na tabela usuarios: usuario_id, nome_completo, email, email_verificado_em, criado_em, atualizado_em, ultimo_acesso_em, nivel_acesso, status, criado_por, revogado_em, revogado_por. O login continua na coluna nome. O JSON legado é mantido sincronizado para compatibilidade. Migração idempotente preserva hashes e datas conhecidas; registros antigos recebem nível operador sem promoção automática.
 
-Último acesso significa última requisição autenticada aceita, registrado em UTC com limitação de escrita a uma vez por minuto. Não há histórico completo de sessões nesta entrega. A confirmação de e-mail fica vazia até existir um fluxo de verificação; editar o endereço apaga eventual confirmação anterior.
+Último acesso significa última requisição autenticada aceita, registrado em UTC com limitação de escrita a uma vez por minuto. O histórico de atividade autenticada usa tabela separada, retém 180 dias e não registra IP, token ou conteúdo consultado; não equivale a sessões de login/logout. A confirmação de e-mail fica vazia até existir um fluxo de verificação; editar o endereço apaga eventual confirmação anterior.
 
 Níveis: administrador, operador e consulta. Status pendente/bloqueado/revogado impede autenticação por token e OAuth. Consulta impede mutações HTTP e ferramentas MCP mutáveis. Mudanças de perfil não podem remover o próprio acesso administrativo nem o último administrador ativo. Revogação pelo novo painel não pode ser desfeita; bloqueio pode.
 

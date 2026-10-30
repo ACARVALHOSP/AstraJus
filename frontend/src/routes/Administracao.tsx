@@ -20,6 +20,7 @@ export default function Administracao() {
   const [sessao, setSessao] = useState<string | null>(null)
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [historico, setHistorico] = useState<Historico[]>([])
+  const [acessos, setAcessos] = useState<{ ocorrido_em: string; usuario: string }[]>([])
   const [banco, setBanco] = useState<Banco | null>(null)
   const [erro, setErro] = useState('')
   const [mensagem, setMensagem] = useState('')
@@ -52,7 +53,7 @@ export default function Administracao() {
     finally { setOcupado(false) }
   }
   function sair() {
-    setSessao(null); setCredencial(''); setUsuarios([]); setHistorico([]); setBanco(null)
+    setSessao(null); setCredencial(''); setUsuarios([]); setHistorico([]); setAcessos([]); setBanco(null)
     setEditor(null); setTokenNovo(''); setErro(''); setMensagem(''); setConfirmarBackup(false)
   }
   async function salvar() {
@@ -102,6 +103,16 @@ export default function Administracao() {
         <TabPanel><h2>Histórico administrativo</h2><p>Até 100 alterações de cadastro, com data e responsável.</p><Button disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/usuarios/historico', sessao)).json(); setHistorico(r.historico) })}>Carregar histórico</Button><div className="administracao__tabela" role="region" aria-label="Histórico administrativo" tabIndex={0}><table className="cds--data-table"><thead><tr>{['Data', 'Responsável', 'Usuário', 'Ação', 'Campos alterados'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>{historico.map((h, i) => <tr key={i}><td>{data(h.ocorrido_em)}</td><td>{h.ator}</td><td>{h.usuario}</td><td>{h.acao}</td><td>{JSON.parse(h.campos).join(', ')}</td></tr>)}{!historico.length && <tr><td colSpan={5}>Carregue o histórico para consultar os registros disponíveis.</td></tr>}</tbody></table></div></TabPanel>
         </TabPanels>
       </Tabs>
+      <section aria-label="Histórico de acessos">
+        <h2>Histórico de acessos</h2>
+        <p>Últimos 100 registros de atividade autenticada. Até um registro por usuário por minuto, com retenção de 180 dias.</p>
+        <Button disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/usuarios/acessos', sessao)).json(); setAcessos(r.acessos) })}>Carregar acessos</Button>
+        <div className="administracao__tabela" role="region" aria-label="Acessos registrados" tabIndex={0}>
+          <table className="cds--data-table"><thead><tr><th scope="col">Data e hora</th><th scope="col">Usuário</th></tr></thead>
+            <tbody>{acessos.map((a, i) => <tr key={i}><td>{data(a.ocorrido_em)}</td><td>{a.usuario}</td></tr>)}{!acessos.length && <tr><td colSpan={2}>Carregue os acessos para consultar os registros disponíveis.</td></tr>}</tbody>
+          </table>
+        </div>
+      </section>
     </>}
     <Modal open={editor !== null} modalHeading={editor?.login === null ? 'Criar usuário' : 'Editar usuário'} primaryButtonText={ocupado ? 'Salvando…' : 'Salvar cadastro'} secondaryButtonText="Cancelar" primaryButtonDisabled={ocupado || !editor?.campos.nome_completo.trim() || (editor.login === null && (!editor.campos.email || !editor.campos.login))} onRequestClose={() => { if (!ocupado) { setEditor(null); setErro('') } }} onRequestSubmit={() => void executar(salvar)}>
       {editor && <div className="administracao__formulario">
