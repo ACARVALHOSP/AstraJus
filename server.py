@@ -3630,6 +3630,15 @@ class _AutenticacaoBearer:
                                    'zapsign': bool(self.integracoes and self.integracoes.ativo('zapsign'))})
             return
 
+        if caminho == "/responsaveis/me" and scope.get("method") == "GET":
+            await _responder(send, 200, json.dumps({"usuario": {
+                "login": usuario,
+                "nome_completo": perfil.get("nome_completo") or usuario,
+                "nivel_acesso": perfil.get("nivel_acesso") or "operador",
+            }}, ensure_ascii=False).encode("utf-8"), tipo="application/json; charset=utf-8",
+                cabecalhos_extra=[(b"cache-control", b"no-store")])
+            return
+
         if caminho == "/responsaveis" and scope.get("method") == "GET":
             await _json(send, 200, {"responsaveis": self.registro.ativos()})
             return
