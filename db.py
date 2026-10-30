@@ -75,6 +75,8 @@ def conectar(caminho: Path) -> sqlite3.Connection:
     conexao = sqlite3.connect(caminho, check_same_thread=False)
     conexao.execute("PRAGMA foreign_keys = ON")
     _criar_schema(conexao)
+    from usuarios_admin import migrar
+    migrar(conexao)
     return conexao
 
 
@@ -742,13 +744,27 @@ class RegistroUsuarios(_RegistroJSON):
     _tabela = "usuarios"
     _coluna_chave = "nome"
 
+    def salvar(self, dados: dict) -> None:
+        from usuarios_admin import gravar
+        with _abrir(self.caminho) as conexao, conexao:
+            conexao.execute("BEGIN IMMEDIATE")
+            anteriores = {n: json.loads(r) for n, r in conexao.execute("SELECT nome, dados FROM usuarios")}
+            for nome, registro in dados.items():
+                # Preserva metadados quando um cliente legado envia apenas hash/status.
+                anterior = anteriores.get(nome, {})
+                from usuarios_admin import CAMPOS
+                registro = {**{k: anterior[k] for k in CAMPOS if k in anterior}, **registro}
+                gravar(conexao, nome, registro)
+            for nome in anteriores.keys() - dados.keys():
+                conexao.execute("DELETE FROM usuarios WHERE nome=?", (nome,))
+
     def identificar(self, token: str) -> str | None:
         """Devolve o nome do usuário dono do token, ou None se não existe ou foi revogado."""
         h = _hash_token(token)
         with _abrir(self.caminho) as conexao:
             row = conexao.execute(
                 "SELECT nome FROM usuarios "
-                "WHERE json_extract(dados, '$.hash') = ? "
+                "WHERE json_extract(dados, '$.hash') = ? AND status = 'ativo' "
                 "AND (json_extract(dados, '$.revogado') IS NULL "
                 "     OR json_extract(dados, '$.revogado') = 0)",
                 (h,),
@@ -756,7 +772,7 @@ class RegistroUsuarios(_RegistroJSON):
         return row[0] if row else None
 
     def ativos(self) -> list[str]:
-        return [nome for nome, r in self.carregar().items() if not r.get("revogado")]
+        return [nome for nome, r in self.carregar().items() if not r.get("revogado") and r.get("status", "ativo") == "ativo"]
 
 
 class RegistroMonitoramentos(_RegistroJSON):

@@ -12,7 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY pyproject.toml README.md server.py db.py _util.py google_integracao.py agenda_atividades.py notificacoes.py asaas_integracao.py integracoes.py integracoes_http.py guia-do-usuario.html ./
+COPY pyproject.toml README.md server.py db.py _util.py google_integracao.py agenda_atividades.py notificacoes.py asaas_integracao.py integracoes.py integracoes_http.py usuarios_admin.py guia-do-usuario.html ./
 COPY static/ ./static/
 COPY --from=frontend-build /frontend/dist/ ./frontend-dist/
 RUN pip install --no-cache-dir . \
