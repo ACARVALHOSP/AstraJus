@@ -23,7 +23,7 @@ import uuid
 import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime, timezone
 from notificacoes import registrar_evento as _registrar_notificacao
 
 from _util import _hash_token, origem_djen_legada
@@ -378,8 +378,12 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
             );
             """
         )
+        conexao.execute("""CREATE TABLE IF NOT EXISTS processos_datajud (
+            numero_processo TEXT NOT NULL, tribunal TEXT NOT NULL,
+            instancias TEXT NOT NULL, atualizado_em TEXT NOT NULL,
+            PRIMARY KEY (numero_processo, tribunal))""")
         colunas_capa = {r[1] for r in conexao.execute("PRAGMA table_info(caso_processo_capa)")}
-        for campo in ("movimentos", "partes", "advogados"):
+        for campo in ("movimentos", "partes", "advogados", "datajud"):
             if campo not in colunas_capa:
                 conexao.execute(f"ALTER TABLE caso_processo_capa ADD COLUMN {campo} TEXT")
         if "orgao_julgador" not in {c[1] for c in conexao.execute("PRAGMA table_info(caso_processo_capa)")}:
@@ -1083,8 +1087,36 @@ class RegistroClientesCasos:
     _CAMPOS_CAPA = (
         "tribunal", "classe", "assuntos", "grau", "data_distribuicao", "nivel_sigilo", "nome_processo", "orgao_julgador",
         "area_direito", "magistrado", "tipo_justica", "cidade", "uf", "valor_causa", "fase", "status_processo",
-        "movimentos", "partes", "advogados",
+        "movimentos", "partes", "advogados", "datajud",
     )
+
+    def salvar_datajud(self, numero: str, tribunal: str, instancias: list[dict]) -> None:
+        """Snapshot durável completo por processo/tribunal, independente do cache."""
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute(
+                "INSERT INTO processos_datajud VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(numero_processo, tribunal) DO UPDATE SET "
+                "instancias=excluded.instancias, atualizado_em=excluded.atualizado_em",
+                (numero, tribunal.lower(), json.dumps(instancias, ensure_ascii=False), datetime.now(timezone.utc).isoformat()),
+            )
+
+    def obter_datajud(self, numero: str, tribunal: str) -> list[dict]:
+        with _abrir(self.caminho) as conexao:
+            linha = conexao.execute("SELECT instancias FROM processos_datajud WHERE numero_processo=? AND tribunal=?",
+                                    (numero, tribunal.lower())).fetchone()
+            return json.loads(linha[0]) if linha else []
+
+    def processos_datajud_pendentes(self) -> list[tuple[str, str | None]]:
+        """Todos os CNJs cadastrados ou monitorados, inclusive os sem capa."""
+        with _abrir(self.caminho) as conexao:
+            itens = {(n, t) for n, t in conexao.execute(
+                "SELECT p.numero_processo, c.tribunal FROM caso_processos p LEFT JOIN caso_processo_capa c "
+                "ON c.caso_id=p.caso_id AND c.numero_processo=p.numero_processo WHERE c.tribunal IS NULL")}
+            for (dados,) in conexao.execute("SELECT dados FROM monitoramentos"):
+                criterio = json.loads(dados).get("criterio") or {}
+                if criterio.get("numero_processo"):
+                    itens.add((criterio["numero_processo"], criterio.get("sigla_tribunal")))
+            return sorted(itens, key=lambda item: (item[0], item[1] or ""))
 
     def capas_vinculadas(self) -> list[dict]:
         """Processos cuja capa já foi preenchida ao menos uma vez a partir de um tribunal
@@ -1109,8 +1141,14 @@ class RegistroClientesCasos:
             if not linha:
                 return None
             capa = dict(zip((*self._CAMPOS_CAPA, "atualizado_em"), linha))
-            for campo in ("assuntos", "movimentos", "partes", "advogados"):
+            for campo in ("assuntos", "movimentos", "partes", "advogados", "datajud"):
                 capa[campo] = json.loads(capa[campo]) if capa[campo] else []
+            if capa.get("tribunal") and not capa["datajud"]:
+                linha_datajud = conexao.execute(
+                    "SELECT instancias FROM processos_datajud WHERE numero_processo=? AND tribunal=?",
+                    (numero_processo, capa["tribunal"].lower())).fetchone()
+                if linha_datajud:
+                    capa["datajud"] = json.loads(linha_datajud[0])
             return capa
 
     def salvar_capa_processo(self, caso_id: str, numero_processo: str, agora, **campos) -> dict:
@@ -1120,7 +1158,7 @@ class RegistroClientesCasos:
         invalidos = set(campos) - set(self._CAMPOS_CAPA)
         if invalidos:
             raise ValueError(f"Campos inválidos para capa de processo: {sorted(invalidos)}")
-        for campo in ("assuntos", "movimentos", "partes", "advogados"):
+        for campo in ("assuntos", "movimentos", "partes", "advogados", "datajud"):
             if campos.get(campo) is not None:
                 campos[campo] = json.dumps(campos[campo])
         atualizado_em = agora().isoformat()

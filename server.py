@@ -366,7 +366,7 @@ async def consultar_processo_datajud(tribunal: str, numero_processo: str) -> dic
     """
     try:
         tribunal_norm = (tribunal or "").strip().lower()
-        if not re.fullmatch(r"[a-z0-9]+", tribunal_norm):
+        if not re.fullmatch(r"[a-z0-9]+(?:-[a-z]{2})?", tribunal_norm):
             return _erro("Tribunal inválido. Use a sigla minúscula, como 'tjsp', 'trf1' ou 'stj'.")
 
         numero = _so_digitos(numero_processo)
@@ -376,7 +376,7 @@ async def consultar_processo_datajud(tribunal: str, numero_processo: str) -> dic
                 "Formato CNJ: NNNNNNN-DD.AAAA.J.TR.OOOO."
             )
 
-        chave_cache = f"{tribunal_norm}:{numero}"
+        chave_cache = f"v2:{tribunal_norm}:{numero}"
         if _CACHE_DATAJUD is not None:
             resultado_cache = await asyncio.to_thread(_CACHE_DATAJUD.obter, chave_cache)
             if resultado_cache is not None:
@@ -388,7 +388,7 @@ async def consultar_processo_datajud(tribunal: str, numero_processo: str) -> dic
             "Authorization": f"APIKey {_datajud_api_key()}",
             "Content-Type": "application/json",
         }
-        corpo = {"query": {"match": {"numeroProcesso": numero}}}
+        corpo = {"_source": True, "size": 100, "query": {"match": {"numeroProcesso": numero}}}
 
         resposta = await _datajud_post_com_retry(url, headers, corpo)
         if isinstance(resposta, dict):  # erro estruturado já montado
@@ -414,6 +414,9 @@ async def consultar_processo_datajud(tribunal: str, numero_processo: str) -> dic
 
         processos = [_extrair_processo_datajud(h.get("_source") or {}) for h in hits.get("hits") or []]
         resultado = {"encontrado": True, "total": total, "processos": processos}
+        if _CACHE_DATAJUD is not None:
+            await asyncio.to_thread(RegistroClientesCasos(_CACHE_DATAJUD.caminho).salvar_datajud,
+                                    numero, tribunal_norm, [p["datajud"] for p in processos])
         if _CACHE_DATAJUD is not None:
             await asyncio.to_thread(_CACHE_DATAJUD.gravar, chave_cache, resultado)
         return resultado
@@ -472,14 +475,21 @@ async def _datajud_post_com_retry(url: str, headers: dict, corpo: dict):
 def _extrair_processo_datajud(fonte: dict) -> dict:
     movimentos = []
     for mov in fonte.get("movimentos") or []:
-        item = {"codigo": mov.get("codigo"), "nome": mov.get("nome"), "dataHora": mov.get("dataHora")}
-        if mov.get("complementosTabelados"):
-            item["complementosTabelados"] = mov["complementosTabelados"]
+        item = dict(mov)
         movimentos.append(item)
 
     assuntos = [(a.get("nome") or "") for a in (fonte.get("assuntos") or []) if a.get("nome")]
 
     return {
+        # Estrutura original completa, inclusive códigos e objetos aninhados.
+        # Os campos de apresentação abaixo preservam o contrato da interface.
+        "datajud": {**{campo: fonte.get(campo) for campo in (
+            "tribunal", "numeroProcesso", "dataAjuizamento", "grau", "nivelSigilo",
+            "formato", "sistema", "classe", "assuntos", "orgaoJulgador", "movimentos",
+        )}, **fonte},
+        "nivelSigilo": fonte.get("nivelSigilo"),
+        "formato": fonte.get("formato"),
+        "sistema": fonte.get("sistema"),
         "numeroProcesso": fonte.get("numeroProcesso"),
         "tribunal": fonte.get("tribunal"),
         "grau": fonte.get("grau"),
@@ -3216,10 +3226,11 @@ async def _montar_capa_via_tribunal(numero: str, tribunal: str) -> tuple[dict | 
         **{k: v for k, v in automaticos.items() if v},
         "tribunal": instancia.get("tribunal"), "classe": instancia.get("classe"),
         "assuntos": instancia.get("assuntos"), "grau": instancia.get("grau"),
-        "data_distribuicao": instancia.get("dataAjuizamento"), "nivel_sigilo": instancia.get("nivel_sigilo"),
+        "data_distribuicao": instancia.get("dataAjuizamento"), "nivel_sigilo": instancia.get("nivelSigilo"),
         **({"nome_processo": nome_processo} if nome_processo else {}),
         **localidade, "movimentos": movimentos, "partes": resultado.get("partes") or [],
         "advogados": resultado.get("advogados") or [],
+        "datajud": [i["datajud"] for i in resultado.get("instancias") or [] if "datajud" in i],
     }
     return campos, None
 
@@ -3231,13 +3242,37 @@ def _movimentos_novos(antigos: list[dict] | None, novos: list[dict] | None) -> l
     return [m for m in novos or [] if (m.get("codigo"), m.get("dataHora")) not in vistos]
 
 
+def _tribunal_do_numero(numero: str) -> str | None:
+    """Resolve segmentos CNJ atendidos pela API pública; não presume tribunal."""
+    if len(numero) != 20 or not numero.isdigit():
+        return None
+    segmento, regiao = numero[13], int(numero[14:16])
+    if segmento == "8" and 1 <= regiao <= 27:
+        return "tjdft" if regiao == 7 else "tj" + ("ac al ap am ba ce df es go ma mt ms mg pa pb pr pe pi rj rn rs ro rr sc se sp to".split()[regiao - 1])
+    if segmento == "4" and 1 <= regiao <= 6:
+        return f"trf{regiao}"
+    if segmento == "5" and 1 <= regiao <= 24:
+        return f"trt{regiao}"
+    if segmento == "6" and 1 <= regiao <= 27:
+        return "tre-" + ("ac al ap am ba ce df es go ma mt ms mg pa pb pr pe pi rj rn rs ro rr sc se sp to".split()[regiao - 1])
+    return {"3": "stj", "7": "stm"}.get(segmento) if regiao == 0 else None
+
+
 async def _atualizar_movimentos_processos(gestao: "RegistroClientesCasos", agora=lambda: datetime.now(timezone.utc)) -> None:
-    """Job periódico (Fase 1 do roadmap de buscas): para cada processo cuja capa já foi
-    vinculada a um tribunal ao menos uma vez, consulta de novo o DataJud/DJEN e atualiza a capa
-    se houver movimento novo - sem isso, a capa só mudava com o clique manual em "Atualizar
-    capa". Não manda e-mail: o caso não tem um "dono" único no modelo atual (é a conta
+    """Preenche snapshots completos dos CNJs cadastrados ou monitorados e atualiza
+    as capas vinculadas a um tribunal, preservando os campos manuais. Não manda e-mail: o caso não tem um "dono" único no modelo atual (é a conta
     institucional do escritório inteiro, ver google_integracao.py), só o Monitoramento tem
     usuário - o movimento novo aparece na capa do processo e na linha do tempo do caso."""
+    # Inclui cadastros antigos sem capa e processos apenas monitorados.
+    for numero, tribunal in gestao.processos_datajud_pendentes():
+        try:
+            tribunal = tribunal or _tribunal_do_numero(numero)
+            if tribunal:
+                resultado = await consultar_processo_datajud(tribunal.lower(), numero)
+                if resultado.get("encontrado"):
+                    gestao.salvar_datajud(numero, tribunal, [p["datajud"] for p in resultado["processos"]])
+        except Exception:
+            log.exception("DataJud: falha ao preencher processo %s", numero)
     for vinculo in gestao.capas_vinculadas():
         caso_id, numero, tribunal = vinculo["caso_id"], vinculo["numero_processo"], vinculo["tribunal"]
         try:
@@ -3248,6 +3283,8 @@ async def _atualizar_movimentos_processos(gestao: "RegistroClientesCasos", agora
                 continue
             novos = _movimentos_novos(capa_atual.get("movimentos"), campos.get("movimentos"))
             gestao.salvar_capa_processo(caso_id, numero, agora=agora, **campos)
+            if campos.get("datajud"):
+                gestao.salvar_datajud(numero, tribunal, campos["datajud"])
             if novos:
                 gestao.registrar_evento_no_caso(
                     caso_id, numero, "movimento_processual",
@@ -5800,9 +5837,10 @@ def _montar_agendador(
         _atualizar_movimentos_processos,
         "interval",
         hours=24,
+        next_run_time=datetime.now(timezone.utc),
         args=[gestao],
     )
-    log.info("Movimentos de processo: atualização periódica a cada 24h para processos já vinculados a um tribunal.")
+    log.info("Movimentos de processo: atualização periódica a cada 24h para processos cadastrados ou monitorados, com preenchimento inicial na partida.")
     return agendador
 
 
