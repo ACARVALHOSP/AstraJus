@@ -11,12 +11,23 @@ import MovimentacoesCaso from './casos/MovimentacoesCaso'
 import VinculosCaso from './casos/VinculosCaso'
 
 export default function Casos() {
-  const { consumirPayload } = useNavegacao()
-  const [casoId, setCasoId] = useState<string | null>(() => consumirPayload<{ id: string }>('casos')?.id ?? null)
+  const { consumirPayload, versaoNavegacao } = useNavegacao()
+  const [casoId, setCasoId] = useState<string | null>(null)
+  const [destinoAtividade, setDestinoAtividade] = useState<{ id?: string | number; versao: number }>({ versao: 0 })
   const [resumo, setResumo] = useState<Caso | null>(null)
   const [abaSelecionada, setAbaSelecionada] = useState(0)
   const [titulo, setTitulo] = useState('Carregando…')
   const faixaAbas = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const destino = consumirPayload<{ id: string; aba?: 'atividades' | 'publicacoes'; atividadeId?: string | number }>('casos')
+    if (!destino) return
+    setCasoId(destino.id)
+    setResumo(null)
+    setTitulo('Carregando…')
+    setAbaSelecionada(destino.aba === 'atividades' ? 1 : destino.aba === 'publicacoes' ? 2 : 0)
+    setDestinoAtividade({ id: destino.atividadeId, versao: versaoNavegacao })
+  }, [consumirPayload, versaoNavegacao])
 
   useEffect(() => {
     const faixa = faixaAbas.current
@@ -42,6 +53,7 @@ export default function Casos() {
   }, [casoId])
 
   function abrir(id: string) {
+    setDestinoAtividade({ versao: versaoNavegacao })
     setAbaSelecionada(0)
     setResumo(null)
     setTitulo('Carregando…')
@@ -81,7 +93,7 @@ export default function Casos() {
             />
           </TabPanel>
           <TabPanel>
-            <AtividadesCaso casoId={casoId} />
+            <AtividadesCaso key={`${casoId}:${destinoAtividade.versao}`} casoId={casoId} atividadeInicialId={destinoAtividade.id} />
           </TabPanel>
           <TabPanel>
             <PublicacoesCaso casoId={casoId} />

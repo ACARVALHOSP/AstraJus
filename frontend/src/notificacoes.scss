@@ -1,0 +1,18 @@
+@use '@carbon/react/scss/spacing' as spacing;
+@use '@carbon/react/scss/type' as type;
+
+.notificacoes-painel {
+  overflow-wrap: anywhere;
+  .notificacoes-contagem { @include type.type-style('body-compact-01'); color: var(--cds-text-secondary); margin-block-end: spacing.$spacing-05; }
+  .notificacoes-item {
+    border-block-end: 1px solid var(--cds-border-subtle);
+    padding-block: spacing.$spacing-05;
+    h3 { @include type.type-style('heading-compact-01'); }
+  }
+  .notificacoes-mensagem { @include type.type-style('body-01'); margin-block: spacing.$spacing-03; }
+  .notificacoes-data, .notificacoes-retencao { @include type.type-style('label-01'); color: var(--cds-text-secondary); }
+  .notificacoes-retencao { margin-block-start: spacing.$spacing-05; }
+  .notificacoes-acoes { display: flex; flex-wrap: wrap; gap: spacing.$spacing-02; margin-block-start: spacing.$spacing-03; }
+  .notificacoes-erro, .notificacoes-vazio { margin-block: spacing.$spacing-05; }
+  .cds--inline-notification { min-inline-size: 0; inline-size: 100%; max-inline-size: 100%; }
+}

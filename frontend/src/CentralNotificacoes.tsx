@@ -1,158 +1,84 @@
 import Carregamento from './Carregamento'
 import { usePainelShell } from './usePainelShell'
-import { useCallback, useEffect, useState } from 'react'
-import { Button, Checkbox, HeaderGlobalAction } from '@carbon/react'
+import { useState } from 'react'
+import { Button, Checkbox, HeaderGlobalAction, InlineNotification } from '@carbon/react'
 import { Notification } from '@carbon/icons-react'
 import { useCliente } from './api/ClienteContext'
 import { useNavegacao } from './api/NavegacaoContext'
-import { buscarJson, enviarJson } from './api/rest'
-import { ErroMCP } from './api/mcpClient'
-
-type Destino =
-  | { tipo: 'atividade'; caso_id: string; atividade_id: string }
-  | { tipo: 'publicacoes_processo'; caso_id: string }
-  | { tipo: 'publicacoes_monitoradas' }
-
-type Notificacao = {
-  id: string
-  titulo: string
-  mensagem: string
-  criado_em: string
-  lida_em: string | null
-  destino: Destino
-}
+import type { ClienteMCP } from './api/mcpClient'
+import { useNotificacoes, type Notificacao } from './useNotificacoes'
 
 export default function CentralNotificacoes() {
   const { cliente } = useCliente()
+  // A troca de credencial desmonta o feed anterior antes de exibir a nova sessão.
+  return <PainelNotificacoes key={cliente?.token ?? 'sem-sessao'} cliente={cliente} />
+}
+
+function PainelNotificacoes({ cliente }: { cliente: ClienteMCP | null }) {
   const { irPara } = useNavegacao()
   const [aberta, setAberta] = useState(false)
-  const [itens, setItens] = useState<Notificacao[]>([])
-  const [naoLidas, setNaoLidas] = useState<number | null>(null)
-  const [cursor, setCursor] = useState<string | null>(null)
   const [somenteNaoLidas, setSomenteNaoLidas] = useState(false)
-  const [carregando, setCarregando] = useState(false)
-  const [erro, setErro] = useState<string | null>(null)
   const raiz = usePainelShell(aberta, () => setAberta(false))
+  const { itens, naoLidas, cursor, carregando, carregou, erro, acaoPendente, carregar, marcarLida, buscarDestino } = useNotificacoes(cliente, aberta, somenteNaoLidas)
+  const ocupado = carregando || acaoPendente !== null
+  const rotulo = !cliente ? 'Conecte-se para consultar notificações' : naoLidas === null ? 'Contagem indisponível' : `${naoLidas} não lidas`
 
-  const carregar = useCallback(
-    async (anexar = false) => {
-      if (!cliente) return
-      setCarregando(true)
-      setErro(null)
-      try {
-        const query = new URLSearchParams({ limite: '20', estado: somenteNaoLidas ? 'nao_lidas' : 'todas' })
-        if (anexar && cursor) query.set('cursor', cursor)
-        const dados = await buscarJson<{ notificacoes: Notificacao[]; proximo_cursor: string | null; nao_lidas: number }>(
-          cliente,
-          `/notificacoes?${query}`,
-        )
-        setItens((atual) => (anexar ? [...atual, ...dados.notificacoes] : dados.notificacoes))
-        setCursor(dados.proximo_cursor)
-        setNaoLidas(dados.nao_lidas)
-      } catch (e) {
-        setErro(e instanceof ErroMCP ? e.message : 'Falha ao carregar notificações.')
-      } finally {
-        setCarregando(false)
-      }
-    },
-    [cliente, cursor, somenteNaoLidas],
-  )
-
-  useEffect(() => {
-    if (!cliente) return
-    buscarJson<{ nao_lidas: number }>(cliente, '/notificacoes?limite=1&estado=nao_lidas')
-      .then((d) => setNaoLidas(d.nao_lidas))
-      .catch(() => {})
-  }, [cliente])
-
-
-  function abrir() {
-    const abrindo = !aberta
-    setAberta(abrindo)
-    if (abrindo) carregar(false)
-  }
-
-  async function marcarLida(item: Notificacao) {
-    if (!cliente) return
-    try {
-      await enviarJson(cliente, `/notificacoes/${item.id}`, { lida: true }, 'PATCH')
-      setItens((atual) => atual.map((n) => (n.id === item.id ? { ...n, lida_em: new Date().toISOString() } : n)))
-      setNaoLidas((atual) => (atual !== null ? Math.max(0, atual - 1) : atual))
-    } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Falha ao marcar como lida.')
-    }
-  }
-
-  function abrirDestino(item: Notificacao) {
+  async function abrirDestino(item: Notificacao) {
+    const destino = await buscarDestino(item)
+    if (!destino) return
     setAberta(false)
-    const destino = item.destino
     if (destino.tipo === 'publicacoes_monitoradas') irPara('publicacoes-oab')
-    else irPara('casos', { id: destino.caso_id })
-    if (!item.lida_em) marcarLida(item)
+    else irPara('casos', {
+      id: destino.caso_id,
+      aba: destino.tipo === 'atividade' ? 'atividades' : 'publicacoes',
+      atividadeId: destino.tipo === 'atividade' ? destino.atividade_id : undefined,
+    })
   }
 
   return (
     <div ref={raiz} className="shell-action">
-      <HeaderGlobalAction aria-label={`Notificações${naoLidas ? `: ${naoLidas} não lidas` : ''}`} aria-expanded={aberta} onClick={abrir}>
+      <HeaderGlobalAction aria-label={`Notificações: ${rotulo}`} aria-controls="painel-notificacoes" aria-expanded={aberta} isActive={aberta} onClick={() => setAberta(atual => !atual)}>
         <span className="aj-layout-2">
           <Notification size={20} />
-          {!!naoLidas && (
-            <span
-              className="aj-layout-3"
-            >
-              {naoLidas > 99 ? '99+' : naoLidas}
-            </span>
-          )}
+          {!!naoLidas && <span className="aj-layout-3" aria-hidden="true">{naoLidas > 99 ? '99+' : naoLidas}</span>}
         </span>
       </HeaderGlobalAction>
       {aberta && (
-        <div className="shell-panel" role="region" aria-label="Notificações">
+        <div id="painel-notificacoes" className="shell-panel notificacoes-painel" role="region" aria-labelledby="notificacoes-titulo">
           <div className="aj-layout-4">
-            <h2 className="aj-layout-5">Notificações</h2>
-            <Button kind="ghost" size="sm" onClick={() => carregar(false)} disabled={carregando}>
-              Atualizar
-            </Button>
+            <h2 id="notificacoes-titulo">Notificações</h2>
+            <Button kind="ghost" size="sm" onClick={() => carregar()} disabled={!cliente || ocupado}>Atualizar</Button>
           </div>
-          <Checkbox
-            id="notificacoes-filtro"
-            labelText="Mostrar só não lidas"
-            checked={somenteNaoLidas}
-            onChange={(_e, { checked }) => {
-              setSomenteNaoLidas(checked)
-              setCursor(null)
-            }}
-          />
-          <div className="aj-layout-6">
-            {erro && <p className="aj-layout-7">{erro}</p>}
-            {!erro && !carregando && itens.length === 0 && <p>Nenhuma notificação nos últimos 180 dias.</p>}
+          <p className="notificacoes-contagem" role="status">{rotulo}</p>
+          {!cliente ? <p>Conecte-se na aba Acesso para consultar suas notificações.</p> : <>
+            <Checkbox id="notificacoes-filtro" labelText="Mostrar só não lidas" checked={somenteNaoLidas} disabled={acaoPendente !== null} onChange={(_e, { checked }) => setSomenteNaoLidas(checked)} />
+            {erro && <div className="notificacoes-erro">
+              <InlineNotification kind="error" title="Não foi possível concluir" subtitle={erro} lowContrast hideCloseButton />
+              <Button kind="ghost" size="sm" disabled={ocupado} onClick={() => carregar()}>Tentar novamente</Button>
+            </div>}
             {carregando && <Carregamento tipo="texto" descricao="Carregando notificações…" />}
-            <ul className="aj-layout-8">
-              {itens.map((item) => (
-                <li key={item.id} className="aj-layout-9">
-                  <h3 className="aj-layout-10">{item.titulo}</h3>
-                  <p className="aj-layout-11">{item.mensagem}</p>
-                  <p className="aj-layout-12">
-                    {new Date(item.criado_em).toLocaleString('pt-BR')} · {item.lida_em ? 'Lida' : 'Não lida'}
-                  </p>
-                  <div className="aj-layout-13">
-                    <Button kind="ghost" size="sm" onClick={() => abrirDestino(item)}>
-                      Abrir
-                    </Button>
-                    {!item.lida_em && (
-                      <Button kind="ghost" size="sm" onClick={() => marcarLida(item)}>
-                        Marcar como lida
-                      </Button>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-            {cursor && (
-              <Button kind="ghost" size="sm" onClick={() => carregar(true)} disabled={carregando}>
-                Carregar mais
-              </Button>
-            )}
-          </div>
+            <div aria-busy={carregando}>
+              {!erro && !carregando && carregou && itens.length === 0 && <div className="notificacoes-vazio" role="status">
+                <p>{somenteNaoLidas ? 'Nenhuma notificação não lida.' : 'Nenhuma notificação nos últimos 180 dias.'}</p>
+                {somenteNaoLidas && <Button kind="ghost" size="sm" onClick={() => setSomenteNaoLidas(false)}>Mostrar todas</Button>}
+              </div>}
+              <ul className="aj-layout-8">
+                {itens.map(item => (
+                  <li key={item.id} className="notificacoes-item">
+                    <h3>{item.titulo}</h3>
+                    <p className="notificacoes-mensagem">{item.mensagem}</p>
+                    <p className="notificacoes-data"><time dateTime={item.criado_em}>{new Date(item.criado_em).toLocaleString('pt-BR')}</time> · {item.lida_em ? 'Lida' : 'Não lida'}</p>
+                    <div className="notificacoes-acoes" aria-busy={acaoPendente === item.id}>
+                      <Button kind="ghost" size="sm" disabled={ocupado} onClick={() => abrirDestino(item)}>{item.destino.tipo === 'atividade' ? 'Abrir atividade' : 'Abrir publicações'}</Button>
+                      {!item.lida_em && <Button kind="ghost" size="sm" disabled={ocupado} onClick={() => marcarLida(item)}>Marcar como lida</Button>}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              {cursor && <Button kind="ghost" size="sm" onClick={() => carregar(true)} disabled={ocupado}>Carregar mais</Button>}
+            </div>
+            <p className="notificacoes-retencao">Notificações dos últimos 180 dias</p>
+          </>}
         </div>
       )}
     </div>
