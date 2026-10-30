@@ -6,17 +6,20 @@ import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarNumeroCNJ } from '../../utils/formatadores'
 import type { Caso } from './ListaCasos'
+import CapaProcesso from './CapaProcesso'
 
 export default function CadastroCaso({
   casoId,
   onCarregado,
   onSalvo,
   onExcluido,
+  onMovimentacoes,
 }: {
   casoId: string
   onCarregado: (caso: Caso) => void
   onSalvo: (caso: Caso) => void
   onExcluido: () => void
+  onMovimentacoes: () => void
 }) {
   const { cliente } = useCliente()
   const [caso, setCaso] = useState<Caso | null>(null)
@@ -100,6 +103,10 @@ export default function CadastroCaso({
           <Column sm={4} md={8} lg={16}><dl><dt>Foro</dt><dd>{caso?.foro || 'Não informado'}</dd></dl></Column>
         </Grid>
       </section>
+      {caso?.processos?.length ? caso.processos.map(numero => <CapaProcesso
+        key={`${casoId}-${numero}`} caso={caso} numero={numero} onMovimentacoes={onMovimentacoes}
+        onAtualizado={atualizado => { setCaso(atualizado); onSalvo(atualizado) }}
+      />) : <InlineNotification kind="info" title="Capa do processo" subtitle="Este processo ainda não tem número CNJ para consultar a capa." lowContrast hideCloseButton />}
       <h2>Organização do escritório</h2>
       <Grid narrow fullWidth className="casos-formulario-grade">
         <Column sm={4} md={4} lg={8} xlg={6}>
