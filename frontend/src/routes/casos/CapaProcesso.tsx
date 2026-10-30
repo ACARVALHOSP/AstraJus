@@ -98,9 +98,9 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
           return
         }
       } else {
-        await enviarJson(cliente, `${url}/monitorar`, {}, capa?.monitorando ? 'DELETE' : 'POST')
+        const resultado = await enviarJson<{ monitorando: boolean }>(cliente, `${url}/monitorar`, {}, capa?.monitorando ? 'DELETE' : 'POST')
         if (!vivo.current) return
-        setCapa(anterior => ({ ...anterior, monitorando: !anterior?.monitorando }))
+        setCapa(anterior => ({ ...anterior, monitorando: resultado.monitorando }))
       }
       if (vivo.current) setMensagem({ erro: false, aviso: Boolean(avisoAtualizacao), texto: acao === 'salvar' ? 'Capa salva.' : acao === 'atualizar' ? avisoAtualizacao || 'Capa atualizada com DataJud e DJEN.' : 'Monitoramento atualizado.' })
     } catch (erro) {
@@ -174,12 +174,12 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
           </Column>)}
         </Grid>
         <div className="capa-acoes"><Button kind="primary" size="sm" type="submit" disabled={bloqueado || !pendente || invalido}>{operacao === 'salvar' ? 'Salvando capa…' : 'Salvar capa'}</Button>
-          <Button kind="ghost" size="sm" type="button" disabled={bloqueado} onClick={() => executar('monitorar')}>{operacao === 'monitorar' ? 'Atualizando monitoramento…' : capa.monitorando ? 'Parar monitoramento' : 'Monitorar automaticamente'}</Button>
+          <Button kind="ghost" size="sm" type="button" disabled={bloqueado} onClick={() => executar('monitorar')}>{operacao === 'monitorar' ? 'Atualizando monitoramento…' : capa.monitorando ? 'Parar avisos de publicações' : 'Receber avisos de publicações'}</Button>
         </div>
       </form>
       {pendente && <p className="casos-ajuda">Há alterações não salvas. Salve a capa antes de atualizar os dados externos.</p>}
       {!tribunal && <p className="casos-ajuda">Não foi possível determinar o tribunal pelo número CNJ.</p>}
-      <p className="casos-ajuda">Monitoramento: {capa.monitorando ? 'ativo para seu usuário' : 'não ativo para seu usuário'}.</p>
+      <p className="casos-ajuda">Monitoramento de publicações: {capa.monitorando ? 'ativo para seu usuário' : 'não ativo para seu usuário'}. A atualização diária da capa é independente desses avisos.</p>
       <p className="casos-ajuda">Fontes da consulta: DataJud (dados judiciais) e DJEN (partes e advogados). Os campos editáveis são mantidos pelo escritório.</p>
       <p className="casos-ajuda">Última gravação da capa: {dataCapa(capa.atualizado_em)}. A data também é alterada ao salvar campos manuais.</p>
     </>}

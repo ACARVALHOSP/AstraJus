@@ -117,7 +117,7 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
     <div><h1>Publicações monitoradas</h1><p>Revise as publicações capturadas pelos monitoramentos por OAB.</p></div>
     <details className="oab-ajuda"><summary>Sobre a captura e os status</summary><Stack gap={3}>
       <p>A captura dos monitoramentos por OAB ocorre a cada 24 horas. Os avisos por e-mail são verificados a cada 6 horas.</p>
-      <p>Não tratada: aguarda revisão. Tratada: revisada ou com processo/atividade criado. Arquivada: dispensada, preservando dados e vínculos. É possível reabrir.</p>
+      <p>Não tratada: aguarda revisão, mesmo quando vinculada a um processo. Tratada: revisão confirmada ou atividade criada. Arquivada: dispensada, preservando dados e vínculos. É possível reabrir.</p>
     </Stack></details>
     <fieldset className="oab-captura" disabled={ocupada || lote}><Captura onCapturado={carregar} /></fieldset>
     <section aria-label="Lista de publicações" aria-busy={carregando || operacao}>
