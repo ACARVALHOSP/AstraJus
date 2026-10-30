@@ -1,0 +1,32 @@
+/* Standalone white document: print must not inherit the application's dark theme. */
+:root { color-scheme: light; font: 14px/1.5 Arial, sans-serif; color: #161616; background: #fff; }
+body { max-inline-size: 850px; margin: 32px auto; padding-inline: 24px; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 16px; border-block-end: 2px solid #161616; padding-block-end: 12px; }
+h1 { font-size: 24px; font-weight: 400; margin-block: 24px 12px; }
+p { margin-block: 8px; overflow-wrap: anywhere; }
+.resumo { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; margin-block: 20px; }
+.resumo div { min-inline-size: 0; overflow-wrap: anywhere; }
+dt { font-weight: 700; }
+dd { margin: 0; }
+.situacao { border-inline-start: 3px solid #8a5300; padding: 8px 12px; background: #fff8e6; }
+table { border-collapse: collapse; inline-size: 100%; margin-block-start: 20px; font-size: 12px; }
+th, td { padding: 8px 10px; text-align: start; border: 1px solid #c6c6c6; overflow-wrap: anywhere; }
+th { background: #e0e0e0; }
+.nao-util { background: #f4f4f4; }
+.feriado { background: #fff1f1; }
+.suspensao { background: #fff8e6; }
+.vencimento { font-weight: 700; background: #defbe6; }
+.fonte { font-size: 12px; margin-block-start: 16px; }
+button { border: 0; background: #0f62fe; color: #fff; padding: 12px 16px; cursor: pointer; font: inherit; }
+button:focus-visible { outline: 2px solid #0f62fe; outline-offset: 2px; }
+@media (max-width: 500px) { body { margin: 16px auto; padding-inline: 16px; } .resumo { grid-template-columns: 1fr; } }
+@page { size: A4 portrait; margin: 15mm; }
+@media print {
+  body { margin: 0; padding: 0; max-inline-size: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  button { display: none; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+  h1, .situacao, .resumo div { break-inside: avoid; }
+  h1 { break-after: avoid; }
+  table { font-size: 10pt; }
+}
