@@ -1,3 +1,4 @@
+import TextoTabela from '../../TextoTabela'
 import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
 import { Button, InlineNotification, Stack } from '@carbon/react'
@@ -56,7 +57,7 @@ export default function VinculosContato({ clienteId, tipo }: { clienteId: string
   ]
 
   function linkProcesso(caso: Caso) {
-    return <Button kind="ghost" size="sm" onClick={() => irPara('casos', { id: caso.id })}>{formatarNomeExibicao(caso.titulo) || 'Processo sem título'}</Button>
+    return <TextoTabela texto={formatarNomeExibicao(caso.titulo) || 'Processo sem título'} onClick={() => irPara('casos', { id: caso.id })} />
   }
 
   return <Stack gap={5}>
@@ -86,7 +87,7 @@ export default function VinculosContato({ clienteId, tipo }: { clienteId: string
             <tbody>{itens.map((item) => {
               const caso = dados.casos.find((c) => c.id === item.caso_id)
               const despesa = item.direcao === 'DESPESA'
-              return <tr key={item.id}><td>{formatarDataSimples(item.vencimento)}</td><td>{item.descricao || 'Não informado'}</td><td>{caso ? linkProcesso(caso) : 'Não informado'}</td><td>{despesa ? 'Despesa' : 'Receita'}</td><td>{item.pago ? despesa ? 'Pago' : 'Recebido' : despesa ? 'A pagar' : 'A receber'}</td><td>{formatarMoeda(item.valor)}</td></tr>
+              return <tr key={item.id}><td>{formatarDataSimples(item.vencimento)}</td><td><TextoTabela texto={item.descricao || 'Não informado'} /></td><td>{caso ? linkProcesso(caso) : 'Não informado'}</td><td>{despesa ? 'Despesa' : 'Receita'}</td><td>{item.pago ? despesa ? 'Pago' : 'Recebido' : despesa ? 'A pagar' : 'A receber'}</td><td>{formatarMoeda(item.valor)}</td></tr>
             })}</tbody>
           </table>
         </div>

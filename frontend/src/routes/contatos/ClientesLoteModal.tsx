@@ -1,3 +1,4 @@
+import TextoTabela from '../../TextoTabela'
 import { useState } from 'react'
 import { Checkbox, InlineNotification, Modal, RadioButton, RadioButtonGroup, Select, SelectItem, Stack, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
@@ -168,11 +169,10 @@ export default function ClientesLoteModal({
                 <tbody>
                   {previa.mudancas.map((m) => (
                     <tr key={m.id}>
-                      <td data-label="Cliente">{m.nome}</td>
-                      <td data-label="Atual">{formatarValor(m.atual)}</td>
+                      <td data-label="Cliente"><TextoTabela texto={m.nome} /></td>
+                      <td data-label="Atual"><TextoTabela texto={formatarValor(m.atual)} /></td>
                       <td data-label="Após confirmar">
-                        {formatarValor(m.depois)}
-                        {m.alterado ? '' : ' · Sem alteração'}
+                        <TextoTabela texto={formatarValor(m.depois) + (m.alterado ? '' : ' · Sem alteração')} />
                       </td>
                     </tr>
                   ))}

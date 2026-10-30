@@ -1,3 +1,5 @@
+import TextoTabela from '../TextoTabela'
+import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
 import {
@@ -6,7 +8,6 @@ import {
   DataTable,
   Grid,
   InlineNotification,
-  Link,
   Modal,
   Select,
   SelectItem,
@@ -255,22 +256,14 @@ function TabelaCobrancas({ cobrancas, onCancelar }: { cobrancas: Cobranca[]; onC
                           </Tag>
                         </TableCell>
                       ) : (
-                        <TableCell key={cell.id}>{cell.value}</TableCell>
+                        <TableCell key={cell.id}>{cell.info.header === 'cliente' ? <TextoTabela texto={String(cell.value ?? '')} /> : cell.value}</TableCell>
                       ),
                     )}
                     <TableCell>
-                      <div className="aj-layout-54">
-                        {link && (
-                          <Link href={link} target="_blank" rel="noopener">
-                            Ver cobrança
-                          </Link>
-                        )}
-                        {!STATUS_FINALIZADOS.has(cobranca.status ?? '') && (
-                          <Button kind="danger--tertiary" size="sm" onClick={() => onCancelar(cobranca)}>
-                            Cancelar
-                          </Button>
-                        )}
-                      </div>
+                      <AcoesTabela rotulo={`cobrança ${cobranca.id}`} acoes={[
+                        ...(link ? [{ texto: 'Ver cobrança', href: link }] : []),
+                        ...(!STATUS_FINALIZADOS.has(cobranca.status ?? '') ? [{ texto: 'Cancelar', executar: () => onCancelar(cobranca), perigo: true }] : []),
+                      ]} />
                     </TableCell>
                   </TableRow>
                 )

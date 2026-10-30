@@ -1,3 +1,5 @@
+import TextoTabela from '../../TextoTabela'
+import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
 import {
@@ -261,23 +263,19 @@ function TabelaContatos({
                       {row.cells.map((cell) =>
                         cell.info.header === 'nome' && c ? (
                           <TableCell key={cell.id}>
-                            <button type="button" className="contato-nome-link" onClick={() => onAbrir(c.id)}>
-                              {cell.value}
-                            </button>
+                            <TextoTabela texto={String(cell.value ?? '')} onClick={() => onAbrir(c.id)} />
                           </TableCell>
                         ) : cell.info.header === 'etiquetas' && c ? (
                           <TableCell key={cell.id}>
                             {(c.etiquetas ?? []).length ? (c.etiquetas ?? []).map((et) => <Tag key={et} size="sm">{et}</Tag>) : 'Sem etiquetas'}
                           </TableCell>
                         ) : (
-                          <TableCell key={cell.id}>{cell.value}</TableCell>
+                          <TableCell key={cell.id}>{cell.info.header === 'email' ? <TextoTabela texto={String(cell.value ?? '')} /> : cell.value}</TableCell>
                         ),
                       )}
                       <TableCell>
                         {c && (
-                          <Button kind="danger--tertiary" size="sm" onClick={() => onExcluir(c)}>
-                            Excluir
-                          </Button>
+                          <AcoesTabela rotulo={c.nome || 'contato'} acoes={[{ texto: 'Excluir', executar: () => onExcluir(c), perigo: true }]} />
                         )}
                       </TableCell>
                     </TableRow>

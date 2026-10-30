@@ -1,3 +1,5 @@
+import TextoTabela from '../TextoTabela'
+import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
 import { useEffect, useState } from 'react'
 import {
@@ -142,18 +144,14 @@ export default function Historico() {
                       return (
                         <TableRow {...getRowProps({ row })}>
                           {row.cells.map((cell) => (
-                            <TableCell key={cell.id}>{cell.value}</TableCell>
+                            <TableCell key={cell.id}>{cell.info.header === 'resumo' ? <TextoTabela texto={String(cell.value ?? '')} /> : cell.value}</TableCell>
                           ))}
                           <TableCell>
                             {fav && (
-                              <div className="aj-layout-42">
-                                <Button kind="ghost" size="sm" onClick={() => consultarFavorito(fav)}>
-                                  Consultar
-                                </Button>
-                                <Button kind="ghost" size="sm" onClick={() => remover(fav)}>
-                                  Remover
-                                </Button>
-                              </div>
+                              <AcoesTabela rotulo={`favorito ${fav.numero}`} acoes={[
+                                { texto: 'Consultar', executar: () => consultarFavorito(fav) },
+                                { texto: 'Remover', executar: () => remover(fav) },
+                              ]} />
                             )}
                           </TableCell>
                         </TableRow>
@@ -200,13 +198,11 @@ export default function Historico() {
                       return (
                         <TableRow {...getRowProps({ row })}>
                           {row.cells.map((cell) => (
-                            <TableCell key={cell.id}>{cell.value}</TableCell>
+                            <TableCell key={cell.id}>{cell.info.header === 'resumo' ? <TextoTabela texto={String(cell.value ?? '')} /> : cell.value}</TableCell>
                           ))}
                           <TableCell>
                             {item && (
-                              <Button kind="ghost" size="sm" onClick={() => repetirItem(item)}>
-                                Repetir
-                              </Button>
+                              <AcoesTabela rotulo={item.resumo} acoes={[{ texto: 'Repetir', executar: () => repetirItem(item) }]} />
                             )}
                           </TableCell>
                         </TableRow>

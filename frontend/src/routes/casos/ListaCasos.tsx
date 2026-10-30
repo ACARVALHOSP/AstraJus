@@ -1,3 +1,5 @@
+import TextoTabela from '../../TextoTabela'
+import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { Star, StarFilled } from '@carbon/icons-react'
 import { useEffect, useState } from 'react'
@@ -182,9 +184,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                         </Button>
                       </td>
                       <td data-label="Título">
-                        <button type="button" className="contato-nome-link" onClick={() => onAbrir(caso.id)}>
-                          {caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)'}
-                        </button>
+                        <TextoTabela texto={caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)'} onClick={() => onAbrir(caso.id)} />
                         {caso.monitorado && <Tag type="green" size="sm">Monitorado</Tag>}
                         {caso.desfecho && ROTULO_DESFECHO[caso.desfecho] && (
                           <Tag type="purple" size="sm">
@@ -209,18 +209,14 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                         </div>
                       </td>
                       <td data-label="Cliente/Pasta">
-                        {nomes.join(', ') || 'Sem cliente vinculado'}
-                        {caso.pasta ? ` · ${caso.pasta}` : ''}
+                        <TextoTabela texto={(nomes.join(', ') || 'Sem cliente vinculado') + (caso.pasta ? ` · ${caso.pasta}` : '')} />
                       </td>
                       <td data-label="Ação/Foro">
-                        {formatarClasse(caso.acao) || 'Classe não informada'}
-                        {caso.foro ? ` · ${caso.foro}` : ''}
+                        <TextoTabela texto={(formatarClasse(caso.acao) || 'Classe não informada') + (caso.foro ? ` · ${caso.foro}` : '')} />
                       </td>
                       <td data-label="Últ. mov.">{formatarDataSimples(caso.ultima_movimentacao)}</td>
                       <td data-label="Ações">
-                        <Button kind="danger--tertiary" size="sm" onClick={() => setParaExcluir(caso)}>
-                          Excluir
-                        </Button>
+                        <AcoesTabela rotulo={caso.titulo || 'processo'} acoes={[{ texto: 'Excluir', executar: () => setParaExcluir(caso), perigo: true }]} />
                       </td>
                     </tr>
                   )
