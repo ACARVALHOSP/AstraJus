@@ -23,6 +23,7 @@ import { Settings } from "@carbon/icons-react";
 import { ClienteProvider, useCliente } from './api/ClienteContext'
 import { CHAVE_TEMA } from './api/mcpClient'
 import BuscaGlobal from './BuscaGlobal'
+import ContaUsuario from './ContaUsuario'
 import CentralNotificacoes from './CentralNotificacoes'
 import { NavegacaoProvider, useNavegacao } from './api/NavegacaoContext'
 import Acesso from './routes/Acesso'
@@ -242,6 +243,7 @@ export default function App() {
               >
                 {tema === 'white' ? <Asleep size={20} /> : <Light size={20} />}
               </HeaderGlobalAction>
+              <ContaUsuario />
             </HeaderGlobalBar>
           </Header>
           <SideNavAstraJus expandida={navExpandida} fechar={() => setNavExpandida(false)} />
