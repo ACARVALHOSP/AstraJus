@@ -1667,18 +1667,44 @@ async def consultar_jurisprudencia_tjsp(
             dados = resp.json()
 
         itens = dados.get("jurisprudencias") or []
-        comarcas_disponiveis = next(
-            (f.get("valoresSubFiltroResponseDTO") for f in dados.get("subfiltros") or [] if f.get("campo") == "comarcas"),
-            [],
-        )
+        subfiltros = dados.get("subfiltros") or []
+
+        def _extrair_facetas(nome_subfiltro: str, campo_item: str, chave_retorno: str) -> list[dict]:
+            encontrados = next(
+                (f.get("valoresSubFiltroResponseDTO") for f in subfiltros if f.get("campo") == nome_subfiltro),
+                None,
+            )
+            if encontrados:
+                return [
+                    {chave_retorno: f.get("descricao"), "quantidade": str(f.get("quantidade", ""))}
+                    for f in encontrados
+                    if f.get("descricao")
+                ]
+            contagem: dict[str, int] = {}
+            for item in itens:
+                val = item.get(campo_item)
+                if val and str(val).strip():
+                    val_str = str(val).strip()
+                    contagem[val_str] = contagem.get(val_str, 0) + 1
+            return [
+                {chave_retorno: val, "quantidade": str(qtd)}
+                for val, qtd in sorted(contagem.items(), key=lambda x: x[0].lower())
+            ]
+
+        comarcas_disponiveis = _extrair_facetas("comarcas", "nmComarca", "comarca")
+        relatores_disponiveis = _extrair_facetas("relatores", "deRelator", "relator")
+        classes_disponiveis = _extrair_facetas("classes", "deClasse", "classe")
+        orgaos_disponiveis = _extrair_facetas("orgaosJulgadores", "nmOrgaoJulgador", "orgao_julgador")
+
         return {
             "total_servidor": dados.get("totalHits"),
             "pagina": pagina,
             "tamanho_pagina": JURISPRUDENCIA_TJSP_TAMANHO_PAGINA,
             "resultados": [_jurisprudencia_tjsp_campos_resultado(item) for item in itens],
-            "comarcas_disponiveis": [
-                {"comarca": f.get("descricao"), "quantidade": f.get("quantidade")} for f in comarcas_disponiveis
-            ],
+            "comarcas_disponiveis": comarcas_disponiveis,
+            "relatores_disponiveis": relatores_disponiveis,
+            "classes_disponiveis": classes_disponiveis,
+            "orgaos_disponiveis": orgaos_disponiveis,
         }
 
     except httpx.HTTPError as exc:

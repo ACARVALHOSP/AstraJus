@@ -1,5 +1,4 @@
-import Carregamento from '../Carregamento'
-import { useRef, useState, type FormEvent } from 'react'
+import { useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   Button,
   Column,
@@ -10,11 +9,14 @@ import {
   Form,
   Grid,
   InlineNotification,
+  Pagination,
+  SkeletonText,
   Stack,
   Tag,
   TextInput,
   Tile,
 } from '@carbon/react'
+import { Checkmark, Copy } from '@carbon/icons-react'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 import { formatarDataSimples, formatarDdMmAaaa } from '../utils/formatadores'
@@ -37,7 +39,11 @@ const OPCOES_ORDENACAO: OpcaoOrdenacao[] = [
   { id: 'relevancia', label: 'Relevância' },
 ]
 
-type ComarcaDisponivel = { comarca: string; quantidade: string }
+type FacetaItem = {
+  id: string
+  label: string
+  quantidade?: string
+}
 
 type ResultadoJurisprudencia = {
   cdJurisprudencia?: number
@@ -60,16 +66,28 @@ type RespostaJurisprudencia = {
   pagina?: number
   tamanho_pagina?: number
   resultados?: ResultadoJurisprudencia[]
-  comarcas_disponiveis?: ComarcaDisponivel[]
+  comarcas_disponiveis?: Array<{ comarca?: string; quantidade?: string }>
+  relatores_disponiveis?: Array<{ relator?: string; quantidade?: string }>
+  classes_disponiveis?: Array<{ classe?: string; quantidade?: string }>
+  orgaos_disponiveis?: Array<{ orgao_julgador?: string; quantidade?: string }>
 }
 
-type FiltrosAtivos = {
-  relator: string
-  classe: string
-  comarcas: string[]
-  orgaoJulgador: string
-  dataInicio: string
-  dataFim: string
+function normalizarFacetas(
+  lista?: Array<Record<string, unknown>>,
+  chavePrincipal = 'descricao',
+): FacetaItem[] {
+  if (!lista || !Array.isArray(lista)) return []
+  return lista
+    .map((item) => {
+      const valor = String(item[chavePrincipal] ?? item.descricao ?? '').trim()
+      const quantidade = item.quantidade !== undefined ? String(item.quantidade).trim() : ''
+      return {
+        id: valor,
+        label: valor,
+        quantidade,
+      }
+    })
+    .filter((f) => Boolean(f.id))
 }
 
 export default function Jurisprudencia() {
@@ -79,23 +97,20 @@ export default function Jurisprudencia() {
   const [buscarEm, setBuscarEm] = useState<BuscarEm>('ementa')
   const [dataInicio, setDataInicio] = useState('')
   const [dataFim, setDataFim] = useState('')
-  const [relator, setRelator] = useState('')
-  const [classe, setClasse] = useState('')
-  const [comarcasSelecionadas, setComarcasSelecionadas] = useState<string[]>([])
-  const [orgaoJulgador, setOrgaoJulgador] = useState('')
   const [ordenacao, setOrdenacao] = useState<Ordenacao>('recente')
   const [pagina, setPagina] = useState(1)
-  const [filtrosAtivos, setFiltrosAtivos] = useState<FiltrosAtivos | null>(null)
+
+  // Filtros locais (atuam sobre os resultados carregados, sem nova busca de rede)
+  const [comarcasFiltro, setComarcasFiltro] = useState<string[]>([])
+  const [relatoresFiltro, setRelatoresFiltro] = useState<string[]>([])
+  const [classesFiltro, setClassesFiltro] = useState<string[]>([])
+  const [orgaosFiltro, setOrgaosFiltro] = useState<string[]>([])
 
   const [consultando, setConsultando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [resultado, setResultado] = useState<RespostaJurisprudencia | null>(null)
-  // Opções de comarca só existem após a primeira busca: a própria API do TJSP só devolve as
-  // facetas (com contagem) na resposta de uma pesquisa já feita.
-  const [comarcasDisponiveis, setComarcasDisponiveis] = useState<ComarcaDisponivel[]>([])
 
-  // Descarta respostas de pesquisas superadas: um clique rápido em "Próxima"/"Anterior" não
-  // deve deixar uma página antiga sobrescrever o resultado de uma busca mais recente.
+  // Descarta respostas superadas
   const requisicaoAtual = useRef(0)
 
   async function executar(paginaAlvo: number) {
@@ -118,17 +133,18 @@ export default function Jurisprudencia() {
         buscar_em: buscarEm,
         data_julgamento_inicio: dataInicio || null,
         data_julgamento_fim: dataFim || null,
-        relator: relator.trim() || null,
-        classe: classe.trim() || null,
-        comarcas: comarcasSelecionadas,
-        orgao_julgador: orgaoJulgador.trim() || null,
         ordenacao,
         pagina: paginaAlvo,
       })) as RespostaJurisprudencia
       if (idRequisicao !== requisicaoAtual.current) return
       setResultado(dados)
-      setComarcasDisponiveis(dados.comarcas_disponiveis ?? [])
-      setFiltrosAtivos({ relator: relator.trim(), classe: classe.trim(), comarcas: comarcasSelecionadas, orgaoJulgador: orgaoJulgador.trim(), dataInicio, dataFim })
+      // Preserva filtros se continuarem válidos, ou reinicia filtros ao buscar página 1 nova
+      if (paginaAlvo === 1) {
+        setComarcasFiltro([])
+        setRelatoresFiltro([])
+        setClassesFiltro([])
+        setOrgaosFiltro([])
+      }
     } catch (e) {
       if (idRequisicao !== requisicaoAtual.current) return
       setErro(e instanceof ErroMCP ? e.message : 'Falha inesperada ao consultar.')
@@ -142,31 +158,67 @@ export default function Jurisprudencia() {
     executar(1)
   }
 
-  const totalPaginas = resultado?.total_servidor
-    ? Math.ceil(resultado.total_servidor / (resultado.tamanho_pagina || 10))
-    : 0
+  // Prepara listas de autocompletar e contagem das facetas pré-baixadas no consumível
+  const comarcasOpcoes = useMemo(() => {
+    return normalizarFacetas(resultado?.comarcas_disponiveis, 'comarca')
+  }, [resultado?.comarcas_disponiveis])
 
-  const tagsFiltros = filtrosAtivos
-    ? [
-        filtrosAtivos.relator && `Relator(a): ${filtrosAtivos.relator}`,
-        filtrosAtivos.classe && `Classe: ${filtrosAtivos.classe}`,
-        filtrosAtivos.comarcas.length > 0 && `Comarca(s): ${filtrosAtivos.comarcas.join(', ')}`,
-        filtrosAtivos.orgaoJulgador && `Órgão julgador: ${filtrosAtivos.orgaoJulgador}`,
-        (filtrosAtivos.dataInicio || filtrosAtivos.dataFim) &&
-          `Julgamento: ${filtrosAtivos.dataInicio || '…'} a ${filtrosAtivos.dataFim || '…'}`,
-      ].filter((v): v is string => Boolean(v))
-    : []
+  const relatoresOpcoes = useMemo(() => {
+    return normalizarFacetas(resultado?.relatores_disponiveis, 'relator')
+  }, [resultado?.relatores_disponiveis])
+
+  const classesOpcoes = useMemo(() => {
+    return normalizarFacetas(resultado?.classes_disponiveis, 'classe')
+  }, [resultado?.classes_disponiveis])
+
+  const orgaosOpcoes = useMemo(() => {
+    return normalizarFacetas(resultado?.orgaos_disponiveis, 'orgao_julgador')
+  }, [resultado?.orgaos_disponiveis])
+
+  // Filtragem local instantânea em memória dos acórdãos recebidos
+  const resultadosFiltrados = useMemo(() => {
+    const itens = resultado?.resultados ?? []
+    return itens.filter((item) => {
+      if (comarcasFiltro.length > 0 && (!item.comarca || !comarcasFiltro.includes(item.comarca))) {
+        return false
+      }
+      if (relatoresFiltro.length > 0 && (!item.relator || !relatoresFiltro.includes(item.relator))) {
+        return false
+      }
+      if (classesFiltro.length > 0 && (!item.classe || !classesFiltro.includes(item.classe))) {
+        return false
+      }
+      if (orgaosFiltro.length > 0 && (!item.orgao_julgador || !orgaosFiltro.includes(item.orgao_julgador))) {
+        return false
+      }
+      return true
+    })
+  }, [resultado?.resultados, comarcasFiltro, relatoresFiltro, classesFiltro, orgaosFiltro])
+
+  const temFiltrosLocaisAtivos =
+    comarcasFiltro.length > 0 ||
+    relatoresFiltro.length > 0 ||
+    classesFiltro.length > 0 ||
+    orgaosFiltro.length > 0
+
+  function limparFiltrosLocais() {
+    setComarcasFiltro([])
+    setRelatoresFiltro([])
+    setClassesFiltro([])
+    setOrgaosFiltro([])
+  }
 
   return (
     <Stack gap={6}>
       <div>
         <h1>Jurisprudência</h1>
         <p>
-          Consulta a acórdãos da base "Jurisprudência Selecionada" do TJSP. Os resultados vêm direto do tribunal —
+          Consulta a acórdãos da base &quot;Jurisprudência Selecionada&quot; do TJSP. Os resultados vêm direto do tribunal —
           nada é digitado manualmente. Integração não oficial (sem API pública documentada), sujeita a mudanças sem
           aviso do tribunal.
         </p>
       </div>
+
       <Form onSubmit={aoEnviar}>
         <Stack gap={5}>
           <Grid narrow fullWidth className="aj-layout-62">
@@ -196,61 +248,23 @@ export default function Jurisprudencia() {
               />
             </Column>
           </Grid>
-          <DatePicker
-            datePickerType="range"
-            dateFormat="d/m/Y"
-            onChange={(datas: Date[]) => {
-              const [inicio, fim] = datas
-              setDataInicio(inicio ? formatarDdMmAaaa(inicio) : '')
-              setDataFim(fim ? formatarDdMmAaaa(fim) : '')
-            }}
-          >
-            <DatePickerInput id="juris-data-inicio" labelText="Julgamento - início" placeholder="dd/mm/aaaa" />
-            <DatePickerInput id="juris-data-fim" labelText="Julgamento - fim" placeholder="dd/mm/aaaa" />
-          </DatePicker>
+
           <Grid narrow fullWidth className="aj-layout-62">
             <Column sm={4} md={4} lg={8}>
-              <TextInput
-                id="juris-relator"
-                labelText="Relator(a)"
-                autoComplete="off"
-                value={relator}
-                onChange={(e) => setRelator(e.target.value)}
-              />
+              <DatePicker
+                datePickerType="range"
+                dateFormat="d/m/Y"
+                onChange={(datas: Date[]) => {
+                  const [inicio, fim] = datas
+                  setDataInicio(inicio ? formatarDdMmAaaa(inicio) : '')
+                  setDataFim(fim ? formatarDdMmAaaa(fim) : '')
+                }}
+              >
+                <DatePickerInput id="juris-data-inicio" labelText="Julgamento - início" placeholder="dd/mm/aaaa" />
+                <DatePickerInput id="juris-data-fim" labelText="Julgamento - fim" placeholder="dd/mm/aaaa" />
+              </DatePicker>
             </Column>
-            <Column sm={4} md={4} lg={8}>
-              <TextInput
-                id="juris-classe"
-                labelText="Classe"
-                autoComplete="off"
-                value={classe}
-                onChange={(e) => setClasse(e.target.value)}
-              />
-            </Column>
-          </Grid>
-          <Grid narrow fullWidth className="aj-layout-62">
-            <Column sm={4} md={4} lg={8}>
-              <FilterableMultiSelect
-                id="juris-comarcas"
-                titleText="Comarca"
-                placeholder={comarcasDisponiveis.length ? 'Selecione uma ou mais comarcas' : 'Disponível após a primeira pesquisa'}
-                items={comarcasDisponiveis}
-                itemToString={(item) => (item ? `${item.comarca} (${item.quantidade})` : '')}
-                selectedItems={comarcasDisponiveis.filter((c) => comarcasSelecionadas.includes(c.comarca))}
-                onChange={({ selectedItems }) => setComarcasSelecionadas((selectedItems ?? []).map((c) => c.comarca))}
-              />
-            </Column>
-            <Column sm={4} md={4} lg={8}>
-              <TextInput
-                id="juris-orgao"
-                labelText="Órgão julgador"
-                autoComplete="off"
-                value={orgaoJulgador}
-                onChange={(e) => setOrgaoJulgador(e.target.value)}
-              />
-            </Column>
-          </Grid>
-          <Grid narrow fullWidth className="aj-layout-62">
+
             <Column sm={4} md={4} lg={8}>
               <Dropdown<OpcaoOrdenacao>
                 id="juris-ordenacao"
@@ -263,48 +277,172 @@ export default function Jurisprudencia() {
               />
             </Column>
           </Grid>
+
           <Button type="submit" disabled={consultando}>
-            Pesquisar
+            {consultando ? 'Pesquisando…' : 'Pesquisar'}
           </Button>
         </Stack>
       </Form>
+
       <div aria-live="polite">
-        {consultando && <Carregamento tipo="cartoes" descricao="Consultando a jurisprudência do TJSP…" />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
-        {resultado?.erro && <InlineNotification kind="error" title="Erro" subtitle={resultado.mensagem} lowContrast hideCloseButton />}
+        {resultado?.erro && (
+          <InlineNotification kind="error" title="Erro" subtitle={resultado.mensagem} lowContrast hideCloseButton />
+        )}
+
+        {/* Skeleton durante a consulta */}
+        {consultando && <SkeletonJurisprudencia />}
+
+        {/* Resultados */}
         {!consultando && resultado && !resultado.erro && (
-          <Stack gap={5}>
+          <Stack gap={6}>
+            {/* Painel de Filtros Autocompletáveis / Multi-select (filtragem instantânea sem nova busca) */}
+            <Tile>
+              <Stack gap={4}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <strong>Filtrar resultados desta pesquisa</strong>
+                  {temFiltrosLocaisAtivos && (
+                    <Button kind="ghost" size="sm" onClick={limparFiltrosLocais}>
+                      Limpar filtros
+                    </Button>
+                  )}
+                </div>
+
+                <Grid narrow fullWidth className="aj-layout-62">
+                  <Column sm={4} md={4} lg={4}>
+                    <FilterableMultiSelect<FacetaItem>
+                      id="juris-filtro-relator"
+                      titleText="Relator(a)"
+                      placeholder={relatoresOpcoes.length ? 'Filtrar por relator(a)' : 'Nenhum relator listado'}
+                      items={relatoresOpcoes}
+                      itemToString={(item) => (item ? `${item.label}${item.quantidade ? ` (${item.quantidade})` : ''}` : '')}
+                      selectedItems={relatoresOpcoes.filter((r) => relatoresFiltro.includes(r.id))}
+                      onChange={({ selectedItems }) => setRelatoresFiltro((selectedItems ?? []).map((r) => r.id))}
+                    />
+                  </Column>
+
+                  <Column sm={4} md={4} lg={4}>
+                    <FilterableMultiSelect<FacetaItem>
+                      id="juris-filtro-classe"
+                      titleText="Classe"
+                      placeholder={classesOpcoes.length ? 'Filtrar por classe' : 'Nenhuma classe listada'}
+                      items={classesOpcoes}
+                      itemToString={(item) => (item ? `${item.label}${item.quantidade ? ` (${item.quantidade})` : ''}` : '')}
+                      selectedItems={classesOpcoes.filter((c) => classesFiltro.includes(c.id))}
+                      onChange={({ selectedItems }) => setClassesFiltro((selectedItems ?? []).map((c) => c.id))}
+                    />
+                  </Column>
+
+                  <Column sm={4} md={4} lg={4}>
+                    <FilterableMultiSelect<FacetaItem>
+                      id="juris-filtro-comarca"
+                      titleText="Comarca"
+                      placeholder={comarcasOpcoes.length ? 'Filtrar por comarca' : 'Nenhuma comarca listada'}
+                      items={comarcasOpcoes}
+                      itemToString={(item) => (item ? `${item.label}${item.quantidade ? ` (${item.quantidade})` : ''}` : '')}
+                      selectedItems={comarcasOpcoes.filter((c) => comarcasFiltro.includes(c.id))}
+                      onChange={({ selectedItems }) => setComarcasFiltro((selectedItems ?? []).map((c) => c.id))}
+                    />
+                  </Column>
+
+                  <Column sm={4} md={4} lg={4}>
+                    <FilterableMultiSelect<FacetaItem>
+                      id="juris-filtro-orgao"
+                      titleText="Órgão julgador"
+                      placeholder={orgaosOpcoes.length ? 'Filtrar por órgão julgador' : 'Nenhum órgão listado'}
+                      items={orgaosOpcoes}
+                      itemToString={(item) => (item ? `${item.label}${item.quantidade ? ` (${item.quantidade})` : ''}` : '')}
+                      selectedItems={orgaosOpcoes.filter((o) => orgaosFiltro.includes(o.id))}
+                      onChange={({ selectedItems }) => setOrgaosFiltro((selectedItems ?? []).map((o) => o.id))}
+                    />
+                  </Column>
+                </Grid>
+              </Stack>
+            </Tile>
+
+            {/* Sumário da busca e tags dos filtros ativos */}
             <Stack gap={3}>
-              <p>
-                <strong>{resultado.total_servidor ?? 0}</strong> acórdãos encontrados
-                {totalPaginas > 1 && ` — página ${resultado.pagina} de ${totalPaginas}`}
-              </p>
-              {tagsFiltros.length > 0 && (
-                <div className="aj-layout-48">
-                  {tagsFiltros.map((texto) => (
-                    <Tag key={texto} type="gray" size="sm">
-                      {texto}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <p>
+                  <strong>{resultado.total_servidor ?? 0}</strong> acórdãos encontrados no total
+                  {temFiltrosLocaisAtivos && (
+                    <span>
+                      {' '}
+                      · Exibindo <strong>{resultadosFiltrados.length}</strong> de {resultado.resultados?.length ?? 0} nesta página
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              {temFiltrosLocaisAtivos && (
+                <div className="aj-layout-48" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
+                  {relatoresFiltro.map((rel) => (
+                    <Tag key={rel} type="teal" size="sm" onClose={() => setRelatoresFiltro((s) => s.filter((x) => x !== rel))} filter>
+                      Relator: {rel}
+                    </Tag>
+                  ))}
+                  {classesFiltro.map((cls) => (
+                    <Tag key={cls} type="purple" size="sm" onClose={() => setClassesFiltro((s) => s.filter((x) => x !== cls))} filter>
+                      Classe: {cls}
+                    </Tag>
+                  ))}
+                  {comarcasFiltro.map((com) => (
+                    <Tag key={com} type="blue" size="sm" onClose={() => setComarcasFiltro((s) => s.filter((x) => x !== com))} filter>
+                      Comarca: {com}
+                    </Tag>
+                  ))}
+                  {orgaosFiltro.map((org) => (
+                    <Tag key={org} type="cyan" size="sm" onClose={() => setOrgaosFiltro((s) => s.filter((x) => x !== org))} filter>
+                      Órgão: {org}
                     </Tag>
                   ))}
                 </div>
               )}
             </Stack>
-            {(resultado.resultados ?? []).map((item, i) => (
-              <CartaoJurisprudencia key={item.cdJurisprudencia ?? i} item={item} />
-            ))}
-            {!resultado.resultados?.length && (
-              <InlineNotification kind="info" title="Nenhum resultado" subtitle="Tente ampliar os filtros ou o termo de busca." lowContrast hideCloseButton />
-            )}
-            {totalPaginas > 1 && (
-              <div className="aj-layout-48">
-                <Button kind="secondary" size="sm" disabled={consultando || pagina <= 1} onClick={() => executar(pagina - 1)}>
-                  « Anterior
-                </Button>
-                <Button kind="secondary" size="sm" disabled={consultando || pagina >= totalPaginas} onClick={() => executar(pagina + 1)}>
-                  Próxima »
-                </Button>
-              </div>
-            )}
+
+            {/* Lista de Acórdãos */}
+            <Stack gap={4}>
+              {resultadosFiltrados.map((item, i) => (
+                <CartaoJurisprudencia key={item.cdJurisprudencia ?? i} item={item} />
+              ))}
+
+              {resultadosFiltrados.length === 0 && (
+                <InlineNotification
+                  kind="info"
+                  title="Nenhum resultado para estes filtros"
+                  subtitle="Tente remover ou ajustar os filtros acima para exibir os acórdãos desta página."
+                  lowContrast
+                  hideCloseButton
+                />
+              )}
+            </Stack>
+
+            {/* Paginação oficial Carbon */}
+            {resultado.total_servidor && resultado.total_servidor > 0 ? (
+              <Pagination
+                id="juris-paginacao"
+                size="md"
+                page={pagina}
+                pageSize={resultado.tamanho_pagina || 10}
+                pageSizes={[resultado.tamanho_pagina || 10]}
+                totalItems={resultado.total_servidor}
+                disabled={consultando}
+                itemsPerPageText="Itens por página:"
+                backwardText="Página anterior"
+                forwardText="Próxima página"
+                pageNumberText="Página"
+                pageSelectLabelText={() => 'Selecionar página'}
+                pageRangeText={(_, totalPags) => `de ${totalPags} página(s)`}
+                itemRangeText={(min, max, totalItens) =>
+                  totalItens ? `${min}-${max} de ${totalItens} acórdãos` : '0 acórdãos'
+                }
+                onChange={({ page }) => {
+                  if (!consultando && page !== pagina) {
+                    executar(page)
+                  }
+                }}
+              />
+            ) : null}
           </Stack>
         )}
       </div>
@@ -313,11 +451,56 @@ export default function Jurisprudencia() {
 }
 
 function CartaoJurisprudencia({ item }: { item: ResultadoJurisprudencia }) {
+  const [copiado, setCopiado] = useState(false)
+  const timerCopia = useRef<number | null>(null)
+
   const atribuicoes: { rotulo: string; valor: string }[] = [
     item.relator && { rotulo: 'Relator(a)', valor: item.relator },
     item.comarca && { rotulo: 'Comarca', valor: item.comarca },
     item.orgao_julgador && { rotulo: 'Órgão julgador', valor: item.orgao_julgador },
   ].filter((v): v is { rotulo: string; valor: string } => Boolean(v))
+
+  function extrairTextoEmenta(): string {
+    if (item.ementa && item.ementa.trim()) {
+      return item.ementa.trim()
+    }
+    if (item.trecho_destacado_html) {
+      // Remove tags HTML para copiar texto limpo
+      const div = document.createElement('div')
+      div.innerHTML = item.trecho_destacado_html
+      return (div.textContent || div.innerText || '').trim()
+    }
+    return ''
+  }
+
+  async function aoCopiarEmenta() {
+    const texto = extrairTextoEmenta()
+    if (!texto) return
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(texto)
+      } else {
+        const textArea = document.createElement('textarea')
+        textArea.value = texto
+        document.body.appendChild(textArea)
+        textArea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textArea)
+      }
+      setCopiado(true)
+      if (timerCopia.current) {
+        window.clearTimeout(timerCopia.current)
+      }
+      timerCopia.current = window.setTimeout(() => {
+        setCopiado(false)
+      }, 2000)
+    } catch {
+      setCopiado(false)
+    }
+  }
+
+  const temTextoEmenta = Boolean((item.ementa && item.ementa.trim()) || item.trecho_destacado_html)
 
   return (
     <Tile>
@@ -329,11 +512,13 @@ function CartaoJurisprudencia({ item }: { item: ResultadoJurisprudencia }) {
           <div style={{ flex: '1 1 auto' }} />
           <span>Julgado em {formatarDataSimples(item.data_julgamento)}</span>
         </div>
+
         {item.trecho_destacado_html ? (
           <p className="juris-trecho" dangerouslySetInnerHTML={{ __html: item.trecho_destacado_html }} />
         ) : (
           item.ementa && <p>{item.ementa}</p>
         )}
+
         {atribuicoes.length > 0 && (
           <p>
             {atribuicoes.map(({ rotulo, valor }, i) => (
@@ -344,12 +529,54 @@ function CartaoJurisprudencia({ item }: { item: ResultadoJurisprudencia }) {
             ))}
           </p>
         )}
-        {item.pdf_url && (
-          <a href={item.pdf_url} target="_blank" rel="noreferrer">
-            Baixar PDF da ementa
-          </a>
-        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginTop: '0.25rem' }}>
+          <div>
+            {temTextoEmenta && (
+              <Button
+                kind={copiado ? 'primary' : 'ghost'}
+                size="sm"
+                renderIcon={copiado ? Checkmark : Copy}
+                onClick={aoCopiarEmenta}
+              >
+                {copiado ? 'Ementa copiada!' : 'Copiar ementa'}
+              </Button>
+            )}
+          </div>
+
+          <div>
+            {item.pdf_url && (
+              <a href={item.pdf_url} target="_blank" rel="noreferrer" className="cds--link">
+                Baixar PDF da ementa
+              </a>
+            )}
+          </div>
+        </div>
       </Stack>
     </Tile>
+  )
+}
+
+function SkeletonJurisprudencia() {
+  return (
+    <Stack gap={5} aria-busy="true" aria-label="Carregando acórdãos da jurisprudência…">
+      {[1, 2, 3].map((idx) => (
+        <Tile key={idx}>
+          <Stack gap={3}>
+            <div className="aj-layout-48" style={{ alignItems: 'center' }}>
+              <SkeletonText width="50px" />
+              <SkeletonText width="100px" />
+              <div style={{ flex: '1 1 auto' }} />
+              <SkeletonText width="120px" />
+            </div>
+            <SkeletonText paragraph lineCount={3} />
+            <SkeletonText width="55%" />
+            <div className="aj-layout-48" style={{ marginTop: '0.5rem' }}>
+              <SkeletonText width="110px" />
+            </div>
+          </Stack>
+        </Tile>
+      ))}
+    </Stack>
   )
 }
