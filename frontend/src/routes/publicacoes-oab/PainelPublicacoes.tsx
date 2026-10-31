@@ -21,9 +21,13 @@ import './publicacoes.scss'
 type RespostaLista = { publicacoes: PublicacaoOab[]; total: number; pagina: number; campos_djen?: string[]; hashes_disponiveis?: string[] }
 type ResultadoStatus = { hashes_atualizados: string[]; hashes_falharam: string[] }
 export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<{ onCapturado: () => void }> }) {
-  const { cliente } = useCliente(), { irPara } = useNavegacao()
+  const { cliente } = useCliente(), { irPara, consumirPayload, versaoNavegacao } = useNavegacao()
   const { theme } = useTheme()
   const [status, setStatus] = useState(''), [pagina, setPagina] = useState(1), [tamanho, setTamanho] = useState(5)
+  useEffect(() => {
+    const destino = consumirPayload<{ status?: string }>('publicacoes-oab')
+    if (destino?.status === 'nao_tratada') { setStatus('nao_tratada'); setPagina(1) }
+  }, [consumirPayload, versaoNavegacao])
   const [publicacoes, setPublicacoes] = useState<PublicacaoOab[]>([]), [total, setTotal] = useState(0)
   const [campos, setCampos] = useState<string[]>([]), [preferencias, setPreferencias] = useState(lerPreferencias)
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set()), [expandidas, setExpandidas] = useState<Set<string>>(new Set())

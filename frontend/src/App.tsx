@@ -11,6 +11,7 @@ import {
   SideNavItems,
   SideNavMenu,
   SideNavMenuItem,
+  SideNavLink,
   Tag,
   Theme,
 } from '@carbon/react'
@@ -40,6 +41,7 @@ import Atividades from './routes/Atividades'
 import PublicacoesOab from './routes/PublicacoesOab'
 import Contatos from './routes/Contatos'
 import Casos from './routes/Casos'
+import Home from './routes/Home'
 
 const GRUPOS_NAVEGACAO = [
   {
@@ -99,6 +101,8 @@ function StatusConexaoTag() {
 
 function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
   switch (abaAtiva) {
+    case 'inicio':
+      return <Home />
     case 'administracao':
       return <Administracao />
     case 'acesso':
@@ -143,6 +147,10 @@ function SideNavAstraJus({ expandida, fechar }: { expandida: boolean; fechar: ()
     <SideNav aria-label="Navegação principal" expanded={expandida} isPersistent={false} onOverlayClick={fechar}>
       {/* Reabre o grupo de destino também ao navegar por links internos ou pela hash. */}
       <SideNavItems key={abaAtiva}>
+        <SideNavLink href="#/inicio" isActive={abaAtiva === 'inicio'} aria-current={abaAtiva === 'inicio' ? 'page' : undefined} onClick={(e) => {
+          if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return
+          e.preventDefault(); irPara('inicio'); fechar()
+        }}>Início</SideNavLink>
         {GRUPOS_NAVEGACAO.map((grupo) => {
           const ativo = grupo.abas.some((aba) => aba.id === abaAtiva)
           return (
@@ -218,7 +226,7 @@ export default function App() {
   return (
     <Theme theme={tema} className="app-theme">
       <ClienteProvider>
-        <NavegacaoProvider abaInicial="acesso">
+        <NavegacaoProvider abaInicial="inicio">
           <Header aria-label="AstraJus">
             <SkipToContent href="#main-content">Pular para o conteúdo</SkipToContent>
             <HeaderMenuButton
@@ -228,7 +236,7 @@ export default function App() {
               aria-expanded={navExpandida}
               onClick={() => setNavExpandida((atual) => !atual)}
             />
-            <HeaderName href="#" prefix="">
+            <HeaderName href="#/inicio" prefix="">
               AstraJus
             </HeaderName>
             <HeaderGlobalBar>
