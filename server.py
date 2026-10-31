@@ -1602,9 +1602,12 @@ async def consultar_jurisprudencia_tjsp(
     data_julgamento_inicio: str | None = None,
     data_julgamento_fim: str | None = None,
     relator: str | None = None,
+    relatores: list[str] | None = None,
     classe: str | None = None,
+    classes: list[str] | None = None,
     comarcas: list[str] | None = None,
     orgao_julgador: str | None = None,
+    orgaos_julgadores: list[str] | None = None,
     ordenacao: str = "recente",
     pagina: int = 1,
 ) -> dict:
@@ -1639,15 +1642,36 @@ async def consultar_jurisprudencia_tjsp(
             return _erro(f"ordenacao deve ser uma de: {', '.join(JURISPRUDENCIA_TJSP_ORDENACAO)}.")
 
         sub_filter: dict[str, list[str]] = {}
-        comarcas_limpas = [c.strip() for c in (comarcas or []) if c and c.strip()]
+
+        def _combinar_lista(singular: str | None, plural: list[str] | None) -> list[str]:
+            res: list[str] = []
+            if plural and isinstance(plural, list):
+                for x in plural:
+                    if x and str(x).strip():
+                        s = str(x).strip()
+                        if s not in res:
+                            res.append(s)
+            if singular and str(singular).strip():
+                s = str(singular).strip()
+                if s not in res:
+                    res.append(s)
+            return res
+
+        comarcas_limpas = _combinar_lista(None, comarcas)
         if comarcas_limpas:
             sub_filter["comarcas"] = comarcas_limpas
-        if relator and relator.strip():
-            sub_filter["relatores"] = [relator.strip()]
-        if classe and classe.strip():
-            sub_filter["classes"] = [classe.strip()]
-        if orgao_julgador and orgao_julgador.strip():
-            sub_filter["orgaosJulgadores"] = [orgao_julgador.strip()]
+
+        relatores_limpos = _combinar_lista(relator, relatores)
+        if relatores_limpos:
+            sub_filter["relatores"] = relatores_limpos
+
+        classes_limpas = _combinar_lista(classe, classes)
+        if classes_limpas:
+            sub_filter["classes"] = classes_limpas
+
+        orgaos_limpos = _combinar_lista(orgao_julgador, orgaos_julgadores)
+        if orgaos_limpos:
+            sub_filter["orgaosJulgadores"] = orgaos_limpos
 
         corpo: dict[str, Any] = {
             "dePesquisaTermos": termo.strip(),

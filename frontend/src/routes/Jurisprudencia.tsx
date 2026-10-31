@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import {
   Button,
   Column,
@@ -16,7 +16,7 @@ import {
   TextInput,
   Tile,
 } from '@carbon/react'
-import { Checkmark, Copy } from '@carbon/icons-react'
+import { Checkmark, Copy, Filter } from '@carbon/icons-react'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 import { formatarDataSimples, formatarDdMmAaaa } from '../utils/formatadores'
@@ -96,6 +96,17 @@ function normalizarFacetas(
     .filter((f) => Boolean(f.id))
 }
 
+function mesclarFacetas(existentes: FacetaItem[], novas: FacetaItem[]): FacetaItem[] {
+  const mapa = new Map<string, FacetaItem>()
+  for (const item of existentes) {
+    mapa.set(item.id, item)
+  }
+  for (const item of novas) {
+    mapa.set(item.id, item)
+  }
+  return Array.from(mapa.values()).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))
+}
+
 export default function Jurisprudencia() {
   const { cliente } = useCliente()
   const [termo, setTermo] = useState('')
@@ -106,20 +117,34 @@ export default function Jurisprudencia() {
   const [ordenacao, setOrdenacao] = useState<Ordenacao>('recente')
   const [pagina, setPagina] = useState(1)
 
-  // Filtros locais (atuam sobre os resultados carregados, sem nova busca de rede)
-  const [comarcasFiltro, setComarcasFiltro] = useState<string[]>([])
-  const [relatoresFiltro, setRelatoresFiltro] = useState<string[]>([])
-  const [classesFiltro, setClassesFiltro] = useState<string[]>([])
-  const [orgaosFiltro, setOrgaosFiltro] = useState<string[]>([])
+  // Filtros selecionados pelo usuário (multiselect)
+  const [relatoresSelecionados, setRelatoresSelecionados] = useState<string[]>([])
+  const [classesSelecionadas, setClassesSelecionadas] = useState<string[]>([])
+  const [comarcasSelecionadas, setComarcasSelecionadas] = useState<string[]>([])
+  const [orgaosSelecionados, setOrgaosSelecionados] = useState<string[]>([])
+
+  // Opções de facetas acumuladas (mantém as opções disponíveis mesmo ao aplicar filtros restritivos)
+  const [opcoesRelatores, setOpcoesRelatores] = useState<FacetaItem[]>([])
+  const [opcoesClasses, setOpcoesClasses] = useState<FacetaItem[]>([])
+  const [opcoesComarcas, setOpcoesComarcas] = useState<FacetaItem[]>([])
+  const [opcoesOrgaos, setOpcoesOrgaos] = useState<FacetaItem[]>([])
 
   const [consultando, setConsultando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [resultado, setResultado] = useState<RespostaJurisprudencia | null>(null)
 
-  // Descarta respostas superadas
+  // Descarta respostas de pesquisas superadas
   const requisicaoAtual = useRef(0)
 
-  async function executar(paginaAlvo: number) {
+  async function executar(
+    paginaAlvo: number,
+    filtrosSobrescritos?: {
+      relatores?: string[]
+      classes?: string[]
+      comarcas?: string[]
+      orgaos?: string[]
+    },
+  ) {
     if (!cliente) {
       setErro('Informe o seu token na aba Acesso e clique em Conectar antes de consultar.')
       return
@@ -133,24 +158,39 @@ export default function Jurisprudencia() {
     setConsultando(true)
     setErro(null)
     setPagina(paginaAlvo)
+
+    const rels = filtrosSobrescritos?.relatores ?? relatoresSelecionados
+    const clas = filtrosSobrescritos?.classes ?? classesSelecionadas
+    const coms = filtrosSobrescritos?.comarcas ?? comarcasSelecionadas
+    const orgs = filtrosSobrescritos?.orgaos ?? orgaosSelecionados
+
     try {
       const dados = (await cliente.chamarFerramenta('consultar_jurisprudencia_tjsp', {
         termo: termo.trim(),
         buscar_em: buscarEm,
         data_julgamento_inicio: dataInicio || null,
         data_julgamento_fim: dataFim || null,
+        relatores: rels.length > 0 ? rels : null,
+        classes: clas.length > 0 ? clas : null,
+        comarcas: coms.length > 0 ? coms : null,
+        orgaos_julgadores: orgs.length > 0 ? orgs : null,
         ordenacao,
         pagina: paginaAlvo,
       })) as RespostaJurisprudencia
+
       if (idRequisicao !== requisicaoAtual.current) return
       setResultado(dados)
-      // Reinicia filtros locais ao buscar página 1 nova
-      if (paginaAlvo === 1) {
-        setComarcasFiltro([])
-        setRelatoresFiltro([])
-        setClassesFiltro([])
-        setOrgaosFiltro([])
-      }
+
+      // Atualiza e acumula as opções autocompletáveis com as facetas pré-baixadas do consumível
+      const novasRelatores = normalizarFacetas(dados.relatores_disponiveis, 'relator')
+      const novasClasses = normalizarFacetas(dados.classes_disponiveis, 'classe')
+      const novasComarcas = normalizarFacetas(dados.comarcas_disponiveis, 'comarca')
+      const novasOrgaos = normalizarFacetas(dados.orgaos_disponiveis, 'orgao_julgador')
+
+      setOpcoesRelatores((anteriores) => mesclarFacetas(anteriores, novasRelatores))
+      setOpcoesClasses((anteriores) => mesclarFacetas(anteriores, novasClasses))
+      setOpcoesComarcas((anteriores) => mesclarFacetas(anteriores, novasComarcas))
+      setOpcoesOrgaos((anteriores) => mesclarFacetas(anteriores, novasOrgaos))
     } catch (e) {
       if (idRequisicao !== requisicaoAtual.current) return
       setErro(e instanceof ErroMCP ? e.message : 'Falha inesperada ao consultar.')
@@ -159,60 +199,53 @@ export default function Jurisprudencia() {
     }
   }
 
-  function aoEnviar(evento: FormEvent<HTMLFormElement>) {
+  function aoEnviarBuscaPrincipal(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault()
+    // Nova busca reseta os filtros para que o usuário veja o panorama geral e as novas facetas
+    setRelatoresSelecionados([])
+    setClassesSelecionadas([])
+    setComarcasSelecionadas([])
+    setOrgaosSelecionados([])
+    executar(1, { relatores: [], classes: [], comarcas: [], orgaos: [] })
+  }
+
+  function aplicarFiltros() {
     executar(1)
   }
 
-  // Prepara listas de autocompletar e contagem das facetas pré-baixadas no consumível
-  const comarcasOpcoes = useMemo(() => {
-    return normalizarFacetas(resultado?.comarcas_disponiveis, 'comarca')
-  }, [resultado?.comarcas_disponiveis])
-
-  const relatoresOpcoes = useMemo(() => {
-    return normalizarFacetas(resultado?.relatores_disponiveis, 'relator')
-  }, [resultado?.relatores_disponiveis])
-
-  const classesOpcoes = useMemo(() => {
-    return normalizarFacetas(resultado?.classes_disponiveis, 'classe')
-  }, [resultado?.classes_disponiveis])
-
-  const orgaosOpcoes = useMemo(() => {
-    return normalizarFacetas(resultado?.orgaos_disponiveis, 'orgao_julgador')
-  }, [resultado?.orgaos_disponiveis])
-
-  // Filtragem local instantânea em memória dos acórdãos recebidos
-  const resultadosFiltrados = useMemo(() => {
-    const itens = resultado?.resultados ?? []
-    return itens.filter((item) => {
-      if (comarcasFiltro.length > 0 && (!item.comarca || !comarcasFiltro.includes(item.comarca))) {
-        return false
-      }
-      if (relatoresFiltro.length > 0 && (!item.relator || !relatoresFiltro.includes(item.relator))) {
-        return false
-      }
-      if (classesFiltro.length > 0 && (!item.classe || !classesFiltro.includes(item.classe))) {
-        return false
-      }
-      if (orgaosFiltro.length > 0 && (!item.orgao_julgador || !orgaosFiltro.includes(item.orgao_julgador))) {
-        return false
-      }
-      return true
-    })
-  }, [resultado?.resultados, comarcasFiltro, relatoresFiltro, classesFiltro, orgaosFiltro])
-
-  const temFiltrosLocaisAtivos =
-    comarcasFiltro.length > 0 ||
-    relatoresFiltro.length > 0 ||
-    classesFiltro.length > 0 ||
-    orgaosFiltro.length > 0
-
-  function limparFiltrosLocais() {
-    setComarcasFiltro([])
-    setRelatoresFiltro([])
-    setClassesFiltro([])
-    setOrgaosFiltro([])
+  function limparTodosFiltros() {
+    setRelatoresSelecionados([])
+    setClassesSelecionadas([])
+    setComarcasSelecionadas([])
+    setOrgaosSelecionados([])
+    executar(1, { relatores: [], classes: [], comarcas: [], orgaos: [] })
   }
+
+  function removerFiltro(tipo: 'relator' | 'classe' | 'comarca' | 'orgao', valor: string) {
+    if (tipo === 'relator') {
+      const novos = relatoresSelecionados.filter((x) => x !== valor)
+      setRelatoresSelecionados(novos)
+      executar(1, { relatores: novos })
+    } else if (tipo === 'classe') {
+      const novos = classesSelecionadas.filter((x) => x !== valor)
+      setClassesSelecionadas(novos)
+      executar(1, { classes: novos })
+    } else if (tipo === 'comarca') {
+      const novos = comarcasSelecionadas.filter((x) => x !== valor)
+      setComarcasSelecionadas(novos)
+      executar(1, { comarcas: novos })
+    } else if (tipo === 'orgao') {
+      const novos = orgaosSelecionados.filter((x) => x !== valor)
+      setOrgaosSelecionados(novos)
+      executar(1, { orgaos: novos })
+    }
+  }
+
+  const temFiltrosAtivos =
+    relatoresSelecionados.length > 0 ||
+    classesSelecionadas.length > 0 ||
+    comarcasSelecionadas.length > 0 ||
+    orgaosSelecionados.length > 0
 
   return (
     <Stack gap={6}>
@@ -225,7 +258,8 @@ export default function Jurisprudencia() {
         </p>
       </div>
 
-      <Form onSubmit={aoEnviar}>
+      {/* Formulário Principal de Pesquisa */}
+      <Form onSubmit={aoEnviarBuscaPrincipal}>
         <Stack gap={5}>
           <Grid narrow fullWidth className="aj-layout-62">
             <Column sm={4} md={6} lg={11}>
@@ -299,19 +333,30 @@ export default function Jurisprudencia() {
         {/* Skeleton durante a consulta */}
         {consultando && <SkeletonJurisprudencia />}
 
-        {/* Resultados */}
+        {/* Resultados e Painel de Filtros */}
         {!consultando && resultado && !resultado.erro && (
           <Stack gap={6}>
-            {/* Painel de Filtros Autocompletáveis / Multi-select (filtragem instantânea sem nova busca) */}
+            {/* Painel de Filtros Autocompletáveis / Multi-select */}
             <Tile>
               <Stack gap={4}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <strong>Filtrar resultados desta pesquisa</strong>
-                  {temFiltrosLocaisAtivos && (
-                    <Button kind="ghost" size="sm" onClick={limparFiltrosLocais}>
-                      Limpar filtros
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <strong>Filtrar jurisprudência por Relator, Classe, Comarca e Órgão</strong>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <Button
+                      kind="primary"
+                      size="sm"
+                      renderIcon={Filter}
+                      disabled={consultando}
+                      onClick={aplicarFiltros}
+                    >
+                      Aplicar filtros
                     </Button>
-                  )}
+                    {temFiltrosAtivos && (
+                      <Button kind="ghost" size="sm" disabled={consultando} onClick={limparTodosFiltros}>
+                        Limpar filtros
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
                 <Grid narrow fullWidth className="aj-layout-62">
@@ -319,11 +364,11 @@ export default function Jurisprudencia() {
                     <FilterableMultiSelect<FacetaItem>
                       id="juris-filtro-relator"
                       titleText="Relator(a)"
-                      placeholder={relatoresOpcoes.length ? 'Filtrar por relator(a)' : 'Nenhum relator listado'}
-                      items={relatoresOpcoes}
+                      placeholder={opcoesRelatores.length ? 'Buscar relator(a)…' : 'Disponível após pesquisa'}
+                      items={opcoesRelatores}
                       itemToString={(item) => (item ? `${item.label}${item.quantidade ? ` (${item.quantidade})` : ''}` : '')}
-                      selectedItems={relatoresOpcoes.filter((r) => relatoresFiltro.includes(r.id))}
-                      onChange={({ selectedItems }) => setRelatoresFiltro((selectedItems ?? []).map((r) => r.id))}
+                      selectedItems={opcoesRelatores.filter((r) => relatoresSelecionados.includes(r.id))}
+                      onChange={({ selectedItems }) => setRelatoresSelecionados((selectedItems ?? []).map((r) => r.id))}
                     />
                   </Column>
 
@@ -331,11 +376,11 @@ export default function Jurisprudencia() {
                     <FilterableMultiSelect<FacetaItem>
                       id="juris-filtro-classe"
                       titleText="Classe"
-                      placeholder={classesOpcoes.length ? 'Filtrar por classe' : 'Nenhuma classe listada'}
-                      items={classesOpcoes}
+                      placeholder={opcoesClasses.length ? 'Buscar classe…' : 'Disponível após pesquisa'}
+                      items={opcoesClasses}
                       itemToString={(item) => (item ? `${item.label}${item.quantidade ? ` (${item.quantidade})` : ''}` : '')}
-                      selectedItems={classesOpcoes.filter((c) => classesFiltro.includes(c.id))}
-                      onChange={({ selectedItems }) => setClassesFiltro((selectedItems ?? []).map((c) => c.id))}
+                      selectedItems={opcoesClasses.filter((c) => classesSelecionadas.includes(c.id))}
+                      onChange={({ selectedItems }) => setClassesSelecionadas((selectedItems ?? []).map((c) => c.id))}
                     />
                   </Column>
 
@@ -343,11 +388,11 @@ export default function Jurisprudencia() {
                     <FilterableMultiSelect<FacetaItem>
                       id="juris-filtro-comarca"
                       titleText="Comarca"
-                      placeholder={comarcasOpcoes.length ? 'Filtrar por comarca' : 'Nenhuma comarca listada'}
-                      items={comarcasOpcoes}
+                      placeholder={opcoesComarcas.length ? 'Buscar comarca…' : 'Disponível após pesquisa'}
+                      items={opcoesComarcas}
                       itemToString={(item) => (item ? `${item.label}${item.quantidade ? ` (${item.quantidade})` : ''}` : '')}
-                      selectedItems={comarcasOpcoes.filter((c) => comarcasFiltro.includes(c.id))}
-                      onChange={({ selectedItems }) => setComarcasFiltro((selectedItems ?? []).map((c) => c.id))}
+                      selectedItems={opcoesComarcas.filter((c) => comarcasSelecionadas.includes(c.id))}
+                      onChange={({ selectedItems }) => setComarcasSelecionadas((selectedItems ?? []).map((c) => c.id))}
                     />
                   </Column>
 
@@ -355,50 +400,42 @@ export default function Jurisprudencia() {
                     <FilterableMultiSelect<FacetaItem>
                       id="juris-filtro-orgao"
                       titleText="Órgão julgador"
-                      placeholder={orgaosOpcoes.length ? 'Filtrar por órgão julgador' : 'Nenhum órgão listado'}
-                      items={orgaosOpcoes}
+                      placeholder={opcoesOrgaos.length ? 'Buscar órgão…' : 'Disponível após pesquisa'}
+                      items={opcoesOrgaos}
                       itemToString={(item) => (item ? `${item.label}${item.quantidade ? ` (${item.quantidade})` : ''}` : '')}
-                      selectedItems={orgaosOpcoes.filter((o) => orgaosFiltro.includes(o.id))}
-                      onChange={({ selectedItems }) => setOrgaosFiltro((selectedItems ?? []).map((o) => o.id))}
+                      selectedItems={opcoesOrgaos.filter((o) => orgaosSelecionados.includes(o.id))}
+                      onChange={({ selectedItems }) => setOrgaosSelecionados((selectedItems ?? []).map((o) => o.id))}
                     />
                   </Column>
                 </Grid>
               </Stack>
             </Tile>
 
-            {/* Sumário da busca e tags dos filtros ativos */}
+            {/* Sumário e Tags de Filtros Ativos */}
             <Stack gap={3}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                <p>
-                  <strong>{resultado.total_servidor ?? 0}</strong> acórdãos encontrados no total
-                  {temFiltrosLocaisAtivos && (
-                    <span>
-                      {' '}
-                      · Exibindo <strong>{resultadosFiltrados.length}</strong> de {resultado.resultados?.length ?? 0} nesta página
-                    </span>
-                  )}
-                </p>
-              </div>
+              <p>
+                <strong>{resultado.total_servidor ?? 0}</strong> acórdãos encontrados
+              </p>
 
-              {temFiltrosLocaisAtivos && (
+              {temFiltrosAtivos && (
                 <div className="aj-layout-48" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
-                  {relatoresFiltro.map((rel) => (
-                    <Tag key={rel} type="teal" size="sm" onClose={() => setRelatoresFiltro((s) => s.filter((x) => x !== rel))} filter>
+                  {relatoresSelecionados.map((rel) => (
+                    <Tag key={rel} type="teal" size="sm" onClose={() => removerFiltro('relator', rel)} filter>
                       Relator: {rel}
                     </Tag>
                   ))}
-                  {classesFiltro.map((cls) => (
-                    <Tag key={cls} type="purple" size="sm" onClose={() => setClassesFiltro((s) => s.filter((x) => x !== cls))} filter>
+                  {classesSelecionadas.map((cls) => (
+                    <Tag key={cls} type="purple" size="sm" onClose={() => removerFiltro('classe', cls)} filter>
                       Classe: {cls}
                     </Tag>
                   ))}
-                  {comarcasFiltro.map((com) => (
-                    <Tag key={com} type="blue" size="sm" onClose={() => setComarcasFiltro((s) => s.filter((x) => x !== com))} filter>
+                  {comarcasSelecionadas.map((com) => (
+                    <Tag key={com} type="blue" size="sm" onClose={() => removerFiltro('comarca', com)} filter>
                       Comarca: {com}
                     </Tag>
                   ))}
-                  {orgaosFiltro.map((org) => (
-                    <Tag key={org} type="cyan" size="sm" onClose={() => setOrgaosFiltro((s) => s.filter((x) => x !== org))} filter>
+                  {orgaosSelecionados.map((org) => (
+                    <Tag key={org} type="cyan" size="sm" onClose={() => removerFiltro('orgao', org)} filter>
                       Órgão: {org}
                     </Tag>
                   ))}
@@ -408,15 +445,15 @@ export default function Jurisprudencia() {
 
             {/* Lista de Acórdãos */}
             <Stack gap={4}>
-              {resultadosFiltrados.map((item, i) => (
+              {(resultado.resultados ?? []).map((item, i) => (
                 <CartaoJurisprudencia key={item.cdJurisprudencia ?? i} item={item} />
               ))}
 
-              {resultadosFiltrados.length === 0 && (
+              {(!resultado.resultados || resultado.resultados.length === 0) && (
                 <InlineNotification
                   kind="info"
-                  title="Nenhum resultado para estes filtros"
-                  subtitle="Tente remover ou ajustar os filtros acima para exibir os acórdãos desta página."
+                  title="Nenhum acórdão encontrado"
+                  subtitle="Tente ampliar o termo de busca ou remover alguns dos filtros selecionados."
                   lowContrast
                   hideCloseButton
                 />
