@@ -1554,6 +1554,20 @@ def _jurisprudencia_tjsp_trecho_destacado(bruto: str | None) -> str | None:
     return "".join(partes)
 
 
+def _extrair_lista_strings(valores: Any) -> list[str]:
+    if not valores or not isinstance(valores, list):
+        return []
+    resultado: list[str] = []
+    for v in valores:
+        if isinstance(v, str) and v.strip():
+            resultado.append(v.strip())
+        elif isinstance(v, dict):
+            nome = v.get("nmProlator") or v.get("deProlator") or v.get("deBoletim") or v.get("descricao") or v.get("nome")
+            if nome and str(nome).strip():
+                resultado.append(str(nome).strip())
+    return resultado
+
+
 def _jurisprudencia_tjsp_campos_resultado(item: dict) -> dict:
     return {
         "cdJurisprudencia": item.get("cdJurisprudencia"),
@@ -1564,6 +1578,12 @@ def _jurisprudencia_tjsp_campos_resultado(item: dict) -> dict:
         "orgao_julgador": item.get("nmOrgaoJulgador"),
         "data_julgamento": item.get("dtJulgamento"),
         "ementa": item.get("deEmentaJuris"),
+        "nu_processo_origem": item.get("nuProcOrigem"),
+        "votacao": item.get("deVotacao"),
+        "voto": item.get("deVoto"),
+        "prolatores": _extrair_lista_strings(item.get("prolatores")),
+        "boletins": _extrair_lista_strings(item.get("boletimList")),
+        "ativo": item.get("flAtivo") != "N",
         "trecho_destacado_html": _jurisprudencia_tjsp_trecho_destacado(item.get("highlightedDesc")),
         "segredo_justica": item.get("flSegredoJustica") == "S",
         "pdf_url": (
