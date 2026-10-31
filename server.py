@@ -1469,6 +1469,115 @@ async def consultar_jurimetria_cjpg(
         return _erro(f"Erro inesperado ao consultar o CJPG: {exc}")
 
 
+JURISPRUDENCIA_TJSP_BASE_URL = "https://esaj.tjsp.jus.br"
+JURISPRUDENCIA_TJSP_TIMEOUT_S = 30.0
+JURISPRUDENCIA_TJSP_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Content-Type": "application/json;charset=UTF-8",
+    "Referer": f"{JURISPRUDENCIA_TJSP_BASE_URL}/gcn-frontend-vue/jurisprudencia-selecionada/consulta",
+}
+JURISPRUDENCIA_TJSP_TAMANHO_PAGINA = 10
+
+
+def _jurisprudencia_tjsp_campos_resultado(item: dict) -> dict:
+    return {
+        "cdJurisprudencia": item.get("cdJurisprudencia"),
+        "cdAcordao": item.get("cdAcordao"),
+        "classe": item.get("dsClasse") or item.get("nmClasse"),
+        "relator": item.get("nmMagistrado") or item.get("nmRelator"),
+        "comarca": item.get("nmComarca"),
+        "orgao_julgador": item.get("nmOrgaoJulgador"),
+        "data_julgamento": item.get("dtJulgamento"),
+        "ementa": item.get("deEmentaJuris"),
+        "segredo_justica": item.get("flSegredoJustica") == "S",
+        "foro": item.get("cdForo", 0),
+        "pdf_url": (
+            f"{JURISPRUDENCIA_TJSP_BASE_URL}/mat-report/publico/gcn/api/v1.0/jurisprudencia"
+            f"?cdJurisprudenciaList={item.get('cdJurisprudencia')}&formato=S"
+            if item.get("flSegredoJustica") != "S" and item.get("cdJurisprudencia")
+            else None
+        ),
+    }
+
+
+@mcp.tool()
+async def consultar_jurisprudencia_tjsp(
+    termo: str,
+    buscar_em: str = "ementa",
+    data_julgamento_inicio: str | None = None,
+    data_julgamento_fim: str | None = None,
+    relator: str | None = None,
+    classe: str | None = None,
+    comarca: str | None = None,
+    orgao_julgador: str | None = None,
+    pagina: int = 1,
+) -> dict:
+    """Busca acórdãos na base "Jurisprudência Selecionada" do TJSP (e-SAJ/GCN - API interna não
+    documentada publicamente, obtida por engenharia reversa; sem SLA de estabilidade).
+
+    Parâmetros:
+    - termo: pesquisa por termos (obrigatório).
+    - buscar_em: "ementa" (padrão), "inteiro_teor" ou "ambos" - define em quais campos o termo é
+      buscado.
+    - data_julgamento_inicio / data_julgamento_fim: formato dd/mm/aaaa.
+    - relator / classe / comarca / orgao_julgador: filtros em texto livre (correspondência feita
+      pelo próprio servidor do e-SAJ).
+    - pagina: página de 10 resultados (1-indexada).
+
+    Cada resultado já traz a ementa pronta (campo "ementa") quando o acórdão tiver uma cadastrada -
+    não há geração automática de ementa pelo TJSP, só exibição da que foi redigida pelo tribunal.
+    Resultados com "segredo_justica": true não têm PDF de acórdão disponível.
+    """
+    try:
+        if not termo or not termo.strip():
+            return _erro("Informe o termo de pesquisa.")
+        if pagina < 1:
+            return _erro("pagina deve ser >= 1.")
+
+        corpo = {
+            "dePesquisaTermos": termo.strip(),
+            "flEmenta": buscar_em in ("ementa", "ambos"),
+            "flInteiroTeor": buscar_em in ("inteiro_teor", "ambos"),
+            "ordenacao": "dtJulgamento_DESC",
+            "numPag": pagina,
+            "tamanhoPagina": JURISPRUDENCIA_TJSP_TAMANHO_PAGINA,
+            "subFilter": {},
+            "legislativasNormativas": [],
+            "dtJulgamentoInicio": (data_julgamento_inicio or "").strip() or None,
+            "dtJulgamentoFim": (data_julgamento_fim or "").strip() or None,
+            "nmRelator": (relator or "").strip() or None,
+            "nmClasse": (classe or "").strip() or None,
+            "nmComarca": (comarca or "").strip() or None,
+            "nmOrgaoJulgador": (orgao_julgador or "").strip() or None,
+        }
+
+        async with _cliente(JURISPRUDENCIA_TJSP_TIMEOUT_S, headers=JURISPRUDENCIA_TJSP_HEADERS) as cliente:
+            resp = await cliente.post(
+                f"{JURISPRUDENCIA_TJSP_BASE_URL}/gcn-services/api/publico/jurisprudencia/find/jurisprudencias",
+                json=corpo,
+            )
+            resp.raise_for_status()
+            dados = resp.json()
+
+        itens = dados.get("jurisprudencias") or []
+        return {
+            "total_servidor": dados.get("totalHits"),
+            "pagina": pagina,
+            "tamanho_pagina": JURISPRUDENCIA_TJSP_TAMANHO_PAGINA,
+            "resultados": [_jurisprudencia_tjsp_campos_resultado(item) for item in itens],
+        }
+
+    except httpx.HTTPError as exc:
+        return _erro(f"Erro de rede ao consultar a jurisprudência do TJSP: {exc}")
+    except Exception as exc:
+        log.exception("Falha inesperada em consultar_jurisprudencia_tjsp")
+        return _erro(f"Erro inesperado ao consultar a jurisprudência do TJSP: {exc}")
+
+
 CJPG_CATEGORIAS_DESFECHO = ["procedente", "parcial", "improcedente", "acordo", "extinto"]
 
 

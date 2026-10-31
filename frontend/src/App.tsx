@@ -33,6 +33,7 @@ import Publicacoes from './routes/Publicacoes'
 import Historico from './routes/Historico'
 import Monitoramentos from './routes/Monitoramentos'
 import Jurimetria from './routes/Jurimetria'
+import Jurisprudencia from './routes/Jurisprudencia'
 import Integracoes from './routes/Integracoes'
 import Administracao from './routes/Administracao'
 import Financeiro from './routes/Financeiro'
@@ -58,6 +59,7 @@ const GRUPOS_NAVEGACAO = [
       { id: 'processo', label: 'Consultar processo' },
       { id: 'publicacoes', label: 'Consultar publicações' },
       { id: 'jurimetria', label: 'Jurimetria' },
+      { id: 'jurisprudencia', label: 'Jurisprudência' },
       { id: 'historico', label: 'Histórico' },
     ],
   },
@@ -117,6 +119,8 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
       return <Monitoramentos />
     case 'jurimetria':
       return <Jurimetria />
+    case 'jurisprudencia':
+      return <Jurisprudencia />
     case 'integracoes':
       return <Integracoes />
     case 'financeiro':
