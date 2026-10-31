@@ -1525,6 +1525,18 @@ JURISPRUDENCIA_TJSP_ORDENACAO = {
 # resposta, chave "subFilter" no próximo request) - não há correspondência parcial no servidor.
 _RE_JURISPRUDENCIA_TJSP_HIGHLIGHT = re.compile(r'<span id="highlighter">(.*?)</span>', re.DOTALL)
 _RE_JURISPRUDENCIA_TJSP_BR = re.compile(r"<br\s*/?>", re.IGNORECASE)
+# O e-SAJ aceita aspas na sintaxe (inclusive no próprio site oficial), mas não as usa para frase
+# exata de verdade - confirmado comparando com a busca real do TJSP (as aspas mal reduzem o total
+# de resultados). Por isso filtramos aqui usando a ementa completa, que é o único texto integral
+# que recebemos do item.
+_RE_JURISPRUDENCIA_TJSP_FRASE = re.compile(r'"([^"]+)"')
+
+
+def _jurisprudencia_tjsp_contem_frases(texto: str | None, frases: list[str]) -> bool:
+    if not texto:
+        return False
+    alvo = texto.lower()
+    return all(frase.lower() in alvo for frase in frases)
 
 
 def _jurisprudencia_tjsp_epoch_ms(data_ddmmaaaa: str, fim_do_dia: bool = False) -> int | None:
@@ -1657,7 +1669,11 @@ async def consultar_jurisprudencia_tjsp(
     documentada publicamente, obtida por engenharia reversa; sem SLA de estabilidade).
 
     Parâmetros:
-    - termo: pesquisa por termos (obrigatório).
+    - termo: pesquisa por termos (obrigatório). Aceita os operadores que o próprio e-SAJ reconhece:
+      OU, NÃO, "frase exata", * e ? (wildcards). Frase entre aspas: o e-SAJ não implementa busca de
+      frase exata de verdade (confirmado contra o site oficial), então filtramos aqui usando a
+      ementa completa do acórdão - um item sem ementa cadastrada não tem como ser verificado e é
+      mantido pelo benefício da dúvida; "total_servidor" não reflete esse filtro.
     - buscar_em: "ementa" (padrão), "inteiro_teor" ou "ambos" - define em quais campos o termo é
       buscado.
     - data_julgamento_inicio / data_julgamento_fim: formato dd/mm/aaaa.
@@ -1811,11 +1827,22 @@ async def consultar_jurisprudencia_tjsp(
         classes_disponiveis = _extrair_facetas("classes", "deClasse", "classe")
         orgaos_disponiveis = _extrair_facetas("orgaosJulgadores", "nmOrgaoJulgador", "orgao_julgador")
 
+        resultados = [_jurisprudencia_tjsp_campos_resultado(item) for item in itens]
+        frases = _RE_JURISPRUDENCIA_TJSP_FRASE.findall(termo)
+        if frases:
+            # Item sem ementa cadastrada não tem como ser verificado (não recebemos o inteiro teor
+            # completo) - mantemos pelo benefício da dúvida em vez de descartar um possível acerto.
+            # shortcut: total_servidor abaixo continua sendo a contagem bruta do TJSP, sem esse
+            # filtro - pode ficar maior que len(resultados) nesta página.
+            resultados = [
+                r for r in resultados if not r.get("ementa") or _jurisprudencia_tjsp_contem_frases(r["ementa"], frases)
+            ]
+
         return {
             "total_servidor": dados.get("totalHits"),
             "pagina": pagina,
             "tamanho_pagina": JURISPRUDENCIA_TJSP_TAMANHO_PAGINA,
-            "resultados": [_jurisprudencia_tjsp_campos_resultado(item) for item in itens],
+            "resultados": resultados,
             "comarcas_disponiveis": comarcas_disponiveis,
             "relatores_disponiveis": relatores_disponiveis,
             "classes_disponiveis": classes_disponiveis,
