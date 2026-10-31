@@ -38,6 +38,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
+from zoneinfo import ZoneInfo
 
 import asaas_integracao
 import agenda_atividades
@@ -1511,20 +1512,60 @@ JURISPRUDENCIA_TJSP_HEADERS = {
     "Referer": f"{JURISPRUDENCIA_TJSP_BASE_URL}/gcn-frontend-vue/jurisprudencia-selecionada/consulta",
 }
 JURISPRUDENCIA_TJSP_TAMANHO_PAGINA = 10
+JURISPRUDENCIA_TJSP_TZ = ZoneInfo("America/Sao_Paulo")
+# "dtjulgamento desc"/"asc" e "derelevancia" são os valores literais que o próprio e-SAJ usa (ver
+# campo "ordenacoes" na resposta) - não são um enum nosso.
+JURISPRUDENCIA_TJSP_ORDENACAO = {
+    "recente": "dtjulgamento desc",
+    "antiga": "dtjulgamento asc",
+    "relevancia": "derelevancia",
+}
+# O e-SAJ não tem filtro de texto livre por relator/classe/comarca/órgão julgador: todos são
+# seleção exata de um valor devolvido pela faceta da própria busca (campo "subfiltros" da
+# resposta, chave "subFilter" no próximo request) - não há correspondência parcial no servidor.
+_RE_JURISPRUDENCIA_TJSP_HIGHLIGHT = re.compile(r'<span id="highlighter">(.*?)</span>', re.DOTALL)
+_RE_JURISPRUDENCIA_TJSP_BR = re.compile(r"<br\s*/?>", re.IGNORECASE)
+
+
+def _jurisprudencia_tjsp_epoch_ms(data_ddmmaaaa: str, fim_do_dia: bool = False) -> int | None:
+    m = re.match(r"^(\d{2})/(\d{2})/(\d{4})$", data_ddmmaaaa.strip())
+    if not m:
+        return None
+    dia, mes, ano = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    hora_min_seg = (23, 59, 59) if fim_do_dia else (0, 0, 0)
+    dt = datetime(ano, mes, dia, *hora_min_seg, tzinfo=JURISPRUDENCIA_TJSP_TZ)
+    return int(dt.timestamp() * 1000)
+
+
+def _jurisprudencia_tjsp_trecho_destacado(bruto: str | None) -> str | None:
+    """Escapa o HTML devolvido pelo e-SAJ, preservando só o destaque de termo buscado (que o
+    próprio servidor marca com <span id="highlighter">) como <mark> - nunca repassa HTML arbitrário
+    do tribunal direto para o navegador do usuário."""
+    if not bruto:
+        return None
+    bruto = _RE_JURISPRUDENCIA_TJSP_BR.sub(" ", bruto)
+    partes: list[str] = []
+    pos = 0
+    for m in _RE_JURISPRUDENCIA_TJSP_HIGHLIGHT.finditer(bruto):
+        partes.append(_escapar(bruto[pos : m.start()]))
+        partes.append(f"<mark>{_escapar(m.group(1))}</mark>")
+        pos = m.end()
+    partes.append(_escapar(bruto[pos:]))
+    return "".join(partes)
 
 
 def _jurisprudencia_tjsp_campos_resultado(item: dict) -> dict:
     return {
         "cdJurisprudencia": item.get("cdJurisprudencia"),
         "cdAcordao": item.get("cdAcordao"),
-        "classe": item.get("dsClasse") or item.get("nmClasse"),
-        "relator": item.get("nmMagistrado") or item.get("nmRelator"),
+        "classe": item.get("deClasse"),
+        "relator": item.get("deRelator"),
         "comarca": item.get("nmComarca"),
         "orgao_julgador": item.get("nmOrgaoJulgador"),
         "data_julgamento": item.get("dtJulgamento"),
         "ementa": item.get("deEmentaJuris"),
+        "trecho_destacado_html": _jurisprudencia_tjsp_trecho_destacado(item.get("highlightedDesc")),
         "segredo_justica": item.get("flSegredoJustica") == "S",
-        "foro": item.get("cdForo", 0),
         "pdf_url": (
             f"{JURISPRUDENCIA_TJSP_BASE_URL}/mat-report/publico/gcn/api/v1.0/jurisprudencia"
             f"?cdJurisprudenciaList={item.get('cdJurisprudencia')}&formato=S"
@@ -1542,8 +1583,9 @@ async def consultar_jurisprudencia_tjsp(
     data_julgamento_fim: str | None = None,
     relator: str | None = None,
     classe: str | None = None,
-    comarca: str | None = None,
+    comarcas: list[str] | None = None,
     orgao_julgador: str | None = None,
+    ordenacao: str = "recente",
     pagina: int = 1,
 ) -> dict:
     """Busca acórdãos na base "Jurisprudência Selecionada" do TJSP (e-SAJ/GCN - API interna não
@@ -1554,36 +1596,67 @@ async def consultar_jurisprudencia_tjsp(
     - buscar_em: "ementa" (padrão), "inteiro_teor" ou "ambos" - define em quais campos o termo é
       buscado.
     - data_julgamento_inicio / data_julgamento_fim: formato dd/mm/aaaa.
-    - relator / classe / comarca / orgao_julgador: filtros em texto livre (correspondência feita
-      pelo próprio servidor do e-SAJ).
+    - relator / classe / orgao_julgador: seleção exata de um valor de faceta do e-SAJ (sem busca
+      parcial - um valor que não exista exatamente na base devolve zero resultados).
+    - comarcas: lista de comarcas (seleção múltipla, mesma regra de correspondência exata; combinam
+      em OU entre si).
+    - ordenacao: "recente" (padrão, julgamento mais recente primeiro), "antiga" (julgamento mais
+      antigo primeiro) ou "relevancia".
     - pagina: página de 10 resultados (1-indexada).
 
     Cada resultado já traz a ementa pronta (campo "ementa") quando o acórdão tiver uma cadastrada -
     não há geração automática de ementa pelo TJSP, só exibição da que foi redigida pelo tribunal.
-    Resultados com "segredo_justica": true não têm PDF de acórdão disponível.
+    "trecho_destacado_html" marca com <mark> os termos buscados encontrados no inteiro teor (HTML
+    já escapado, seguro para renderizar). Resultados com "segredo_justica": true não têm PDF de
+    acórdão disponível.
     """
     try:
         if not termo or not termo.strip():
             return _erro("Informe o termo de pesquisa.")
         if pagina < 1:
             return _erro("pagina deve ser >= 1.")
+        if ordenacao not in JURISPRUDENCIA_TJSP_ORDENACAO:
+            return _erro(f"ordenacao deve ser uma de: {', '.join(JURISPRUDENCIA_TJSP_ORDENACAO)}.")
 
-        corpo = {
+        sub_filter: dict[str, list[str]] = {}
+        comarcas_limpas = [c.strip() for c in (comarcas or []) if c and c.strip()]
+        if comarcas_limpas:
+            sub_filter["comarcas"] = comarcas_limpas
+        if relator and relator.strip():
+            sub_filter["relatores"] = [relator.strip()]
+        if classe and classe.strip():
+            sub_filter["classes"] = [classe.strip()]
+        if orgao_julgador and orgao_julgador.strip():
+            sub_filter["orgaosJulgadores"] = [orgao_julgador.strip()]
+
+        corpo: dict[str, Any] = {
             "dePesquisaTermos": termo.strip(),
             "flEmenta": buscar_em in ("ementa", "ambos"),
             "flInteiroTeor": buscar_em in ("inteiro_teor", "ambos"),
-            "ordenacao": "dtJulgamento_DESC",
-            "numPag": pagina,
-            "tamanhoPagina": JURISPRUDENCIA_TJSP_TAMANHO_PAGINA,
-            "subFilter": {},
-            "legislativasNormativas": [],
-            "dtJulgamentoInicio": (data_julgamento_inicio or "").strip() or None,
-            "dtJulgamentoFim": (data_julgamento_fim or "").strip() or None,
-            "nmRelator": (relator or "").strip() or None,
-            "nmClasse": (classe or "").strip() or None,
-            "nmComarca": (comarca or "").strip() or None,
-            "nmOrgaoJulgador": (orgao_julgador or "").strip() or None,
+            "relatorSelected": [],
+            "tipoCartorioSelected": [],
+            "varaSelected": [],
+            "comarcaSelected": [],
+            "classeSelected": [],
+            "tipoBoletimSelected": [],
+            "numPag": pagina - 1,
+            "ordenacao": JURISPRUDENCIA_TJSP_ORDENACAO[ordenacao],
+            "flPesquisaPlurais": "N",
+            "legislativasNormativas": [
+                {"tipoNorma": {}, "nuNorma": "", "deArtigo": "", "deParagrafo": "", "deInciso": "", "deAlinea": "", "deNumero": ""}
+            ],
+            "subFilter": sub_filter,
         }
+        if data_julgamento_inicio and data_julgamento_inicio.strip():
+            epoch = _jurisprudencia_tjsp_epoch_ms(data_julgamento_inicio)
+            if epoch is None:
+                return _erro("data_julgamento_inicio deve estar no formato dd/mm/aaaa.")
+            corpo["dtJulgamentoInicio"] = epoch
+        if data_julgamento_fim and data_julgamento_fim.strip():
+            epoch = _jurisprudencia_tjsp_epoch_ms(data_julgamento_fim, fim_do_dia=True)
+            if epoch is None:
+                return _erro("data_julgamento_fim deve estar no formato dd/mm/aaaa.")
+            corpo["dtJulgamentoFim"] = epoch
 
         async with _cliente(JURISPRUDENCIA_TJSP_TIMEOUT_S, headers=JURISPRUDENCIA_TJSP_HEADERS) as cliente:
             resp = await cliente.post(
@@ -1594,11 +1667,18 @@ async def consultar_jurisprudencia_tjsp(
             dados = resp.json()
 
         itens = dados.get("jurisprudencias") or []
+        comarcas_disponiveis = next(
+            (f.get("valoresSubFiltroResponseDTO") for f in dados.get("subfiltros") or [] if f.get("campo") == "comarcas"),
+            [],
+        )
         return {
             "total_servidor": dados.get("totalHits"),
             "pagina": pagina,
             "tamanho_pagina": JURISPRUDENCIA_TJSP_TAMANHO_PAGINA,
             "resultados": [_jurisprudencia_tjsp_campos_resultado(item) for item in itens],
+            "comarcas_disponiveis": [
+                {"comarca": f.get("descricao"), "quantidade": f.get("quantidade")} for f in comarcas_disponiveis
+            ],
         }
 
     except httpx.HTTPError as exc:

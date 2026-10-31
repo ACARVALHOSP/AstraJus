@@ -343,3 +343,18 @@
 .aj-layout-61 {
   max-width: calc(11ch + 3.5rem);
 }
+
+.aj-layout-62 {
+  row-gap: spacing.$spacing-05;
+}
+
+// Destaque de termo buscado nos resultados de jurisprudência: tokens Carbon, não o amarelo padrão
+// do navegador para <mark>.
+.juris-trecho mark {
+  background: var(--cds-support-warning);
+  // Texto escuro fixo: o token de aviso do Carbon fica em tons de amarelo/dourado nos dois temas,
+  // então preto garante contraste em ambos (ao contrário de herdar a cor de texto do tema).
+  color: #161616;
+  border-radius: 2px;
+  padding: 0 0.125rem;
+}
