@@ -33,12 +33,12 @@ export default function Acesso() {
   return (
     <Stack gap={6}>
       <div>
-        <h2>Acesso</h2>
+        <h1>Acesso</h1>
         <p>Cole o token recebido por e-mail para liberar as consultas. Ele fica só neste navegador.</p>
       </div>
       <Form onSubmit={aoEnviar}>
         <Stack gap={5}>
-          <PasswordInput
+          <PasswordInput showPasswordLabel="Mostrar token" hidePasswordLabel="Ocultar token"
             id="token"
             labelText="Seu token de acesso"
             placeholder="cole aqui o token recebido por e-mail"

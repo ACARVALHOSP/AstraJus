@@ -1,5 +1,6 @@
+import Carregamento from '../../Carregamento'
 import { useCallback, useState } from 'react'
-import { Button, InlineLoading, InlineNotification, Stack } from '@carbon/react'
+import { Button, InlineNotification, Stack } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson } from '../../api/rest'
@@ -73,18 +74,18 @@ export default function MovimentacoesCaso({ casoId }: { casoId: string }) {
 
   return (
     <Stack gap={5}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="aj-layout-24">
         <h3>Movimentações</h3>
         <Button kind="secondary" size="sm" onClick={buscar} disabled={carregando}>
           Buscar no DataJud
         </Button>
       </div>
       <div aria-live="polite">
-        {carregando && <InlineLoading description="Consultando…" />}
+        {carregando && <Carregamento tipo="cartoes" descricao="Consultando…" />}
         {status && <InlineNotification kind="info" title="Status" subtitle={status} lowContrast hideCloseButton />}
         {avisos.length > 0 && <InlineNotification kind="warning" title="Aviso" subtitle={avisos.join(' | ')} lowContrast hideCloseButton />}
       </div>
-      {movimentos && movimentos.length > 0 && (
+      {!carregando && movimentos && movimentos.length > 0 && (
         <Stack gap={3}>
           {movimentos.map((m, i) => (
             <div key={i} className="cds--tile">

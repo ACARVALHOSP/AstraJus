@@ -1,0 +1,38 @@
+@use '@carbon/react/scss/spacing' as spacing;
+@use '@carbon/react/scss/type' as type;
+.casos-titulo-linha { display:flex; align-items:center; justify-content:space-between; gap:spacing.$spacing-05; flex-wrap:wrap; }
+.casos-ajuda { @include type.type-style('body-01'); color:var(--cds-text-secondary); margin-block-start:spacing.$spacing-03; }
+.casos-contagem { @include type.type-style('label-01'); color:var(--cds-text-secondary); padding-block-end:spacing.$spacing-04; }
+.app-content .casos-lista .casos-tabela { min-inline-size:0; }
+.casos-lista .casos-celula-principal { min-inline-size:0; }
+.casos-celula-secundaria { @include type.type-style('label-01'); color:var(--cds-text-secondary); margin-block-start:spacing.$spacing-02; }
+.casos-detalhe-cabecalho { display:flex; flex-direction:column; align-items:flex-start; gap:spacing.$spacing-03; }
+.casos-detalhe-cabecalho h1 { max-inline-size:38ch; }
+.casos-cnj { @include type.type-style('body-01'); color:var(--cds-text-secondary); font-variant-numeric:tabular-nums; }
+.casos-resumo { padding:spacing.$spacing-05; background:var(--cds-layer); }
+.casos-resumo h2 { margin-block-end:spacing.$spacing-05; }
+.casos-resumo dt { @include type.type-style('label-01'); color:var(--cds-text-secondary); }
+.casos-resumo dd { @include type.type-style('body-01'); margin-block-start:spacing.$spacing-02; }
+.casos-acoes-cadastro { display:flex; align-items:center; justify-content:space-between; gap:spacing.$spacing-05; flex-wrap:wrap; }
+.casos-atividade { display:flex; justify-content:space-between; gap:spacing.$spacing-05; padding:spacing.$spacing-05; border-block-end:1px solid var(--cds-border-subtle); background:var(--cds-layer); }
+.casos-publicacao-linha { display:flex; align-items:start; justify-content:space-between; gap:spacing.$spacing-05; flex-wrap:wrap; }
+.casos-detalhe .casos-vinculos-tabela { min-inline-size:0; }
+@media (max-width:671px) { .casos-titulo-linha { align-items:flex-start; } .casos-atividade {flex-direction:column;} .casos-acoes-cadastro {align-items:stretch;} }
+
+.casos-resumo dl { padding-block:spacing.$spacing-03; }
+
+.casos-formulario-grade { row-gap:spacing.$spacing-05; }
+
+// Mantém o cálculo de rolagem das abas relativo à própria faixa no celular.
+.casos-abas { position:relative; }
+
+.capa-processo { min-inline-size:0; }
+.capa-processo .casos-titulo-linha h2 { margin:0; }
+.capa-numero { @include type.type-style('heading-03'); margin-block:spacing.$spacing-06; overflow-wrap:anywhere; }
+.capa-processo dd { overflow-wrap:anywhere; margin-block-end:spacing.$spacing-04; }
+.capa-parte { display:inline-flex; align-items:baseline; flex-wrap:wrap; gap:spacing.$spacing-02; margin-inline-end:spacing.$spacing-05; }
+.capa-mais { margin-block:spacing.$spacing-06; }
+.capa-mais summary { @include type.type-style('body-01'); cursor:pointer; padding-block:spacing.$spacing-04; color:var(--cds-link-primary); }
+.capa-mais summary:focus-visible { outline:2px solid var(--cds-focus); outline-offset:2px; }
+.capa-acoes { display:flex; align-items:center; flex-wrap:wrap; gap:spacing.$spacing-05; margin-block:spacing.$spacing-05; }
+@media (max-width:671px) { .capa-processo .casos-titulo-linha { align-items:stretch; } .capa-processo .casos-titulo-linha button { inline-size:100%; max-inline-size:none; } }

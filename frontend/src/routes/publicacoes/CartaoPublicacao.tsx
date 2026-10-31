@@ -103,7 +103,7 @@ export default function CartaoPublicacao({ item }: { item: ItemPublicacao }) {
             </AccordionItem>
           </Accordion>
         )}
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="aj-layout-55">
           {item.texto && (
             <Button kind="ghost" size="sm" onClick={copiarTexto}>
               {copiado ? 'Copiado!' : 'Copiar texto'}

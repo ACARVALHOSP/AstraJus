@@ -1,9 +1,12 @@
+import TabelaResponsiva from '../TabelaResponsiva'
+import TextoTabela from '../TextoTabela'
+import AcoesTabela from '../AcoesTabela'
+import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
 import {
   Button,
   Checkbox,
   DataTable,
-  InlineLoading,
   InlineNotification,
   Modal,
   Stack,
@@ -111,14 +114,14 @@ export default function Financeiro() {
 
   return (
     <Stack gap={6}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>Lançamentos</h2>
+      <div className="aj-layout-38">
+        <h1>Lançamentos</h1>
         <Button size="sm" onClick={() => setModalNovoAberto(true)}>
           Novo lançamento
         </Button>
       </div>
       <div aria-live="polite">
-        {carregando && <InlineLoading description="Carregando…" />}
+        {carregando && <Carregamento tipo="tabela" descricao="Carregando…" />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
         {!carregando && lancamentos && lancamentos.length === 0 && (
           <InlineNotification kind="info" title="Nenhum lançamento cadastrado" lowContrast hideCloseButton />
@@ -134,7 +137,7 @@ export default function Financeiro() {
           />
         )}
       </div>
-      <Modal
+      <Modal closeButtonLabel="Fechar"
         open={paraExcluir !== null}
         danger
         modalHeading="Excluir lançamento"
@@ -201,7 +204,7 @@ function TabelaLancamentos({
     <DataTable rows={linhas} headers={CABECALHOS_LANCAMENTOS} isSortable>
       {({ rows, headers, getHeaderProps, getRowProps, getTableProps }) => (
         <TableContainer>
-          <Table {...getTableProps()} aria-label="Lançamentos">
+          <TabelaResponsiva principais={['Descrição', 'Valor']}><Table {...getTableProps()} aria-label="Lançamentos">
             <TableHead>
               <TableRow>
                 {headers.map((header) => (
@@ -235,30 +238,21 @@ function TabelaLancamentos({
                           </div>
                         </TableCell>
                       ) : (
-                        <TableCell key={cell.id}>{cell.value}</TableCell>
+                        <TableCell key={cell.id}>{['descricao', 'cliente', 'processo', 'responsavel'].includes(cell.info.header) ? <TextoTabela texto={String(cell.value ?? '')} /> : cell.value}</TableCell>
                       ),
                     )}
                     <TableCell>
-                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                        {lanc.asaas_cobranca_id ? (
-                          <span title={`Cobrança ${lanc.asaas_cobranca_id}`}>Cobrança gerada</span>
-                        ) : (
-                          !lanc.pago && (
-                            <Button kind="tertiary" size="sm" onClick={() => onGerarCobranca(lanc)}>
-                              Gerar cobrança
-                            </Button>
-                          )
-                        )}
-                        <Button kind="danger--tertiary" size="sm" onClick={() => onExcluir(lanc)}>
-                          Excluir
-                        </Button>
-                      </div>
+                      {lanc.asaas_cobranca_id && <span title={`Cobrança ${lanc.asaas_cobranca_id}`}>Cobrança gerada</span>}
+                      <AcoesTabela rotulo={lanc.descricao} acoes={[
+                        ...(!lanc.asaas_cobranca_id && !lanc.pago ? [{ texto: 'Gerar cobrança', executar: () => onGerarCobranca(lanc) }] : []),
+                        { texto: 'Excluir', executar: () => onExcluir(lanc), perigo: true },
+                      ]} />
                     </TableCell>
                   </TableRow>
                 )
               })}
             </TableBody>
-          </Table>
+          </Table></TabelaResponsiva>
         </TableContainer>
       )}
     </DataTable>

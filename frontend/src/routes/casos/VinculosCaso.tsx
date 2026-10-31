@@ -1,5 +1,9 @@
+import TabelaResponsiva from '../../TabelaResponsiva'
+import TextoTabela from '../../TextoTabela'
+import AcoesTabela from '../../AcoesTabela'
+import Carregamento from '../../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Column, Grid, InlineNotification, Select, SelectItem, Stack, TextInput } from '@carbon/react'
+import { Button, Column, Grid, InlineNotification, Select, SelectItem, Stack, TextInput, Table, TableHead, TableHeader, TableRow, TableBody, TableCell } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -122,46 +126,37 @@ export default function VinculosCaso({ casoId, onAbrirCaso }: { casoId: string; 
     <Stack gap={5}>
       <h3>Processos vinculados</h3>
       <div aria-live="polite">
-        {carregando && <p>Carregando…</p>}
+        {carregando && <Carregamento />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
         {!carregando && vinculos && vinculos.length === 0 && <InlineNotification kind="info" title="Nenhum processo vinculado" lowContrast hideCloseButton />}
         {!carregando && vinculos && vinculos.length > 0 && (
           <div className="tabela-responsiva-wrap">
-            <table className="tabela-responsiva tabela-vinculos">
-              <thead>
-                <tr>
-                  <th>Caso</th>
-                  <th>Cliente</th>
-                  <th>Ação / Tipo</th>
-                  <th>Vínculo</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
+            <TabelaResponsiva principais={['Processo']}><Table size="lg" className="casos-vinculos-tabela" aria-label="Processos vinculados">
+              <TableHead>
+                <TableRow>
+                  <TableHeader>Processo</TableHeader>
+                  <TableHeader>Cliente</TableHeader>
+                  <TableHeader>Ação / Tipo</TableHeader>
+                  <TableHeader>Vínculo</TableHeader>
+                  <TableHeader>Ações</TableHeader>
+                </TableRow>
+              </TableHead>
+              <TableBody>
                 {vinculos.map((v) => (
-                  <tr key={v.caso_id}>
-                    <td>
-                      <button
-                        type="button"
-                        className="cds--link"
-                        onClick={() => onAbrirCaso(v.caso_id)}
-                        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
-                      >
-                        {v.titulo || '(sem título)'}
-                      </button>
-                    </td>
-                    <td>{v.cliente_nome || '—'}</td>
-                    <td>{v.acao || '—'}</td>
-                    <td>{ROTULO_TIPO[v.tipo] ?? v.tipo}</td>
-                    <td>
-                      <Button kind="ghost" size="sm" disabled={removendo === v.caso_id} onClick={() => removerVinculo(v)}>
-                        Remover
-                      </Button>
-                    </td>
-                  </tr>
+                  <TableRow key={v.caso_id}>
+                    <TableCell>
+                      <TextoTabela texto={v.titulo || '(sem título)'} onClick={() => onAbrirCaso(v.caso_id)} />
+                    </TableCell>
+                    <TableCell><TextoTabela texto={v.cliente_nome || '—'} /></TableCell>
+                    <TableCell><TextoTabela texto={v.acao || '—'} /></TableCell>
+                    <TableCell>{ROTULO_TIPO[v.tipo] ?? v.tipo}</TableCell>
+                    <TableCell>
+                      <AcoesTabela rotulo={v.titulo || 'vínculo'} acoes={[{ texto: 'Remover', executar: () => removerVinculo(v), desabilitada: removendo === v.caso_id }]} />
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table></TabelaResponsiva>
           </div>
         )}
       </div>

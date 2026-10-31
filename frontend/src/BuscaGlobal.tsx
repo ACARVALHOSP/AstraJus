@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
-import { HeaderGlobalAction, Search } from '@carbon/react'
+import Carregamento from './Carregamento'
+import { usePainelShell } from './usePainelShell'
+import { useState } from 'react'
+import { Button, HeaderGlobalAction, Search } from '@carbon/react'
 import { Search as IconeBusca } from '@carbon/icons-react'
 import { useCliente } from './api/ClienteContext'
 import { useNavegacao } from './api/NavegacaoContext'
@@ -21,20 +23,13 @@ export default function BuscaGlobal() {
   const [clientes, setClientes] = useState<ClienteOpcao[]>([])
   const [casos, setCasos] = useState<CasoOpcao[]>([])
   const [carregando, setCarregando] = useState(false)
-  const raiz = useRef<HTMLDivElement>(null)
+  const [erro, setErro] = useState<string | null>(null)
+  const raiz = usePainelShell(aberta, () => setAberta(false))
 
-  useEffect(() => {
-    function aoClicarFora(ev: MouseEvent) {
-      if (raiz.current && !raiz.current.contains(ev.target as Node)) setAberta(false)
-    }
-    document.addEventListener('click', aoClicarFora)
-    return () => document.removeEventListener('click', aoClicarFora)
-  }, [])
 
-  async function abrir() {
-    const abrindo = !aberta
-    setAberta(abrindo)
-    if (!abrindo || !cliente) return
+  async function carregar() {
+    setErro(null)
+    if (!cliente) { setErro('Conecte-se para buscar clientes e processos.'); return }
     setCarregando(true)
     try {
       const [rc, rp] = await Promise.all([
@@ -44,11 +39,17 @@ export default function BuscaGlobal() {
       setClientes(rc.clientes ?? [])
       setCasos(rp.casos ?? [])
     } catch {
+      setErro('Não foi possível carregar a busca. Tente novamente.')
       setClientes([])
       setCasos([])
     } finally {
       setCarregando(false)
     }
+  }
+
+  function abrir() {
+    setAberta(!aberta)
+    if (!aberta) void carregar()
   }
 
   const consulta = normalizar(termo)
@@ -65,24 +66,12 @@ export default function BuscaGlobal() {
     : []
 
   return (
-    <div ref={raiz} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+    <div ref={raiz} className="shell-action">
       <HeaderGlobalAction aria-label="Busca global" aria-expanded={aberta} onClick={abrir}>
         <IconeBusca size={20} />
       </HeaderGlobalAction>
       {aberta && (
-        <div
-          style={{
-            position: 'absolute',
-            insetInlineEnd: 0,
-            top: '100%',
-            inlineSize: '20rem',
-            maxInlineSize: '90vw',
-            background: 'var(--cds-layer, #f4f4f4)',
-            boxShadow: '0 4px 8px rgba(0,0,0,.15)',
-            padding: '0.75rem',
-            zIndex: 8100,
-          }}
-        >
+        <div className="shell-panel" role="region" aria-label="Busca global">
           <Search
             size="lg"
             labelText="Buscar cliente ou processo"
@@ -91,15 +80,15 @@ export default function BuscaGlobal() {
             onChange={(e) => setTermo(e.target.value)}
             autoFocus
           />
-          <div style={{ marginTop: '0.5rem', maxHeight: '16rem', overflowY: 'auto' }}>
-            {carregando && <p>Carregando…</p>}
-            {!carregando && consulta && clientesFiltrados.length === 0 && casosFiltrados.length === 0 && <p>Nenhum resultado.</p>}
+          <div className="aj-layout-1">
+            {carregando && <Carregamento tipo="texto" descricao="Consultando…" />}
+            {erro && <div role="alert"><p>{erro}</p><Button kind="ghost" size="sm" onClick={carregar}>Tentar novamente</Button></div>}
+            {!erro && !carregando && consulta && clientesFiltrados.length === 0 && casosFiltrados.length === 0 && <p>Nenhum resultado.</p>}
             {clientesFiltrados.map((c) => (
               <button
                 key={`cliente-${c.id}`}
                 type="button"
                 className="header-busca-resultado-item"
-                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '0.5rem', background: 'none', border: 'none', cursor: 'pointer' }}
                 onClick={() => {
                   setAberta(false)
                   setTermo('')
@@ -113,14 +102,14 @@ export default function BuscaGlobal() {
               <button
                 key={`caso-${c.id}`}
                 type="button"
-                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '0.5rem', background: 'none', border: 'none', cursor: 'pointer' }}
+                className="header-busca-resultado-item"
                 onClick={() => {
                   setAberta(false)
                   setTermo('')
                   irPara('casos', { id: c.id })
                 }}
               >
-                {formatarNomeExibicao(c.titulo || '(sem título)')} · Caso
+                {formatarNomeExibicao(c.titulo || '(sem título)')} · Processo
               </button>
             ))}
           </div>

@@ -1,3 +1,5 @@
+import { Add } from '@carbon/icons-react'
+import { Close } from '@carbon/icons-react'
 import { useRef, useState } from 'react'
 import { Button, Column, Grid, Select, SelectItem, TextInput } from '@carbon/react'
 import { mascaraCep } from '../../utils/mascaras'
@@ -45,7 +47,7 @@ export default function EnderecosRepetivel({
   return (
     <div>
       <span className="cds--label">Endereço</span>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '0.5rem' }}>
+      <div className="aj-layout-33">
         {itens.map((item, indice) => (
           <CardEndereco
             key={indice}
@@ -56,8 +58,8 @@ export default function EnderecosRepetivel({
           />
         ))}
       </div>
-      <Button kind="ghost" size="sm" onClick={onAdicionar} style={{ marginTop: '0.5rem' }}>
-        + Adicionar endereço
+      <Button kind="ghost" size="sm" onClick={onAdicionar} renderIcon={Add} className="aj-layout-34">
+        Adicionar endereço
       </Button>
     </div>
   )
@@ -109,7 +111,7 @@ function CardEndereco({
   return (
     <div className="endereco-card">
       <Grid narrow fullWidth className="endereco-card-topo">
-        <Column sm={4} md={3} lg={4}>
+        <Column sm={4} md={3} lg={8} xlg={4}>
           <Select id={`endereco-tipo-${indice}`} labelText="Tipo" value={item.tipo} onChange={(e) => onAlterar({ tipo: e.target.value })}>
             <SelectItem value="" text="Tipo" />
             <SelectItem value="residencial" text="Residencial" />
@@ -128,23 +130,23 @@ function CardEndereco({
             onChange={(e) => aoMudarCep(e.target.value)}
           />
         </Column>
-        <Column sm={1} md={1} lg={1} style={{ display: 'flex', alignItems: 'flex-end' }}>
+        <Column sm={1} md={1} lg={1} className="aj-layout-35">
           <Button kind="ghost" size="sm" hasIconOnly iconDescription="Remover" onClick={onRemover}>
-            ✕
+            <Close size={16} />
           </Button>
         </Column>
       </Grid>
       <Grid narrow fullWidth className="endereco-grade">
-        <Column sm={4} md={4} lg={7}>
+        <Column sm={4} md={4} lg={8} xlg={7}>
           <TextInput id={`endereco-rua-${indice}`} labelText="Rua" placeholder="Digite a rua" autoComplete="address-line1" value={item.rua} onChange={(e) => onAlterar({ rua: e.target.value })} />
         </Column>
-        <Column sm={4} md={2} lg={3}>
+        <Column sm={4} md={2} lg={8} xlg={3}>
           <TextInput id={`endereco-numero-${indice}`} labelText="Número" placeholder="Digite o número" value={item.numero} onChange={(e) => onAlterar({ numero: e.target.value })} />
         </Column>
-        <Column sm={4} md={2} lg={6}>
+        <Column sm={4} md={2} lg={8} xlg={6}>
           <TextInput id={`endereco-bairro-${indice}`} labelText="Bairro" placeholder="Digite o bairro" value={item.bairro} onChange={(e) => onAlterar({ bairro: e.target.value })} />
         </Column>
-        <Column sm={4} md={4} lg={6}>
+        <Column sm={4} md={4} lg={8} xlg={6}>
           <TextInput
             id={`endereco-complemento-${indice}`}
             labelText="Complemento"
@@ -154,13 +156,13 @@ function CardEndereco({
             onChange={(e) => onAlterar({ complemento: e.target.value })}
           />
         </Column>
-        <Column sm={4} md={3} lg={5}>
+        <Column sm={4} md={3} lg={8} xlg={5}>
           <TextInput id={`endereco-cidade-${indice}`} labelText="Cidade" placeholder="Digite a cidade" autoComplete="address-level2" value={item.cidade} onChange={(e) => onAlterar({ cidade: e.target.value })} />
         </Column>
-        <Column sm={4} md={3} lg={3}>
+        <Column sm={4} md={3} lg={8} xlg={3}>
           <TextInput id={`endereco-estado-${indice}`} labelText="Estado" placeholder="Digite o estado" autoComplete="address-level1" value={item.estado} onChange={(e) => onAlterar({ estado: e.target.value })} />
         </Column>
-        <Column sm={4} md={2} lg={2}>
+        <Column sm={4} md={2} lg={8} xlg={2}>
           <TextInput id={`endereco-pais-${indice}`} labelText="País" placeholder="Digite o país" autoComplete="country-name" value={item.pais} onChange={(e) => onAlterar({ pais: e.target.value })} />
         </Column>
       </Grid>

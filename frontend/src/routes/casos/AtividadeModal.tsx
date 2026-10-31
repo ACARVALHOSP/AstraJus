@@ -77,7 +77,7 @@ export default function AtividadeModal({
   }
 
   return (
-    <Modal
+    <Modal closeButtonLabel="Fechar"
       open={open}
       modalHeading={atividade ? 'Editar atividade' : 'Nova atividade'}
       primaryButtonText="Salvar"

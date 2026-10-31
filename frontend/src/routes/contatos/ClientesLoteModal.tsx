@@ -1,3 +1,5 @@
+import TabelaResponsiva from '../../TabelaResponsiva'
+import TextoTabela from '../../TextoTabela'
 import { useState } from 'react'
 import { Checkbox, InlineNotification, Modal, RadioButton, RadioButtonGroup, Select, SelectItem, Stack, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
@@ -79,7 +81,7 @@ export default function ClientesLoteModal({
   }
 
   return (
-    <Modal
+    <Modal closeButtonLabel="Fechar"
       open={open}
       modalHeading={tipo === 'perfil' ? 'Atualizar perfil' : 'Gerenciar etiquetas'}
       primaryButtonText={previa ? 'Confirmar alterações' : 'Revisar alterações'}
@@ -141,7 +143,7 @@ export default function ClientesLoteModal({
         )}
         {!previa && tipo === 'perfil' && (
           <>
-            <div style={{ maxWidth: 'calc(7ch + 3.5rem)' }}>
+            <div className="aj-layout-32">
               <Select id="clientes-lote-novo-perfil" labelText="Novo perfil" value={novoPerfil} onChange={(e) => setNovoPerfil(e.target.value)}>
                 <SelectItem value="cliente" text="Cliente" />
                 <SelectItem value="contato" text="Contato" />
@@ -157,7 +159,7 @@ export default function ClientesLoteModal({
             </p>
             <p>Confira os valores antes de confirmar. Nenhuma alteração foi aplicada ainda.</p>
             <div className="tabela-responsiva-wrap">
-              <table className="tabela-responsiva clientes-lote-preview">
+              <TabelaResponsiva principais={['Cliente', 'Após confirmar']}><table className="tabela-responsiva clientes-lote-preview">
                 <thead>
                   <tr>
                     <th>Cliente</th>
@@ -168,16 +170,15 @@ export default function ClientesLoteModal({
                 <tbody>
                   {previa.mudancas.map((m) => (
                     <tr key={m.id}>
-                      <td data-label="Cliente">{m.nome}</td>
-                      <td data-label="Atual">{formatarValor(m.atual)}</td>
+                      <td data-label="Cliente"><TextoTabela texto={m.nome} /></td>
+                      <td data-label="Atual"><TextoTabela texto={formatarValor(m.atual)} /></td>
                       <td data-label="Após confirmar">
-                        {formatarValor(m.depois)}
-                        {m.alterado ? '' : ' · Sem alteração'}
+                        <TextoTabela texto={formatarValor(m.depois) + (m.alterado ? '' : ' · Sem alteração')} />
                       </td>
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></TabelaResponsiva>
             </div>
           </Stack>
         )}

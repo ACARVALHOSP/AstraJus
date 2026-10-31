@@ -1,1 +1,159 @@
 @use '@carbon/react';
+@use '@carbon/react/scss/spacing' as spacing;
+@use '@carbon/react/scss/type' as type;
+@use '@carbon/motion' as motion;
+@use '@carbon/react/scss/theme' as theme;
+@use '@carbon/react/scss/themes' as themes;
+@use './interface';
+@use './notificacoes';
+@use './routes/casos/processos';
+
+.contato-vinculos-resumo {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: spacing.$spacing-02;
+  > div { padding: spacing.$spacing-05; background: var(--cds-layer); }
+  dt { @include type.type-style('label-01'); }
+  dd { @include type.type-style('heading-03'); margin: spacing.$spacing-04 0 0; }
+}
+.contato-vinculos-tabela {
+  overflow-x: auto;
+  &:focus-visible { outline: 2px solid var(--cds-focus); outline-offset: 2px; }
+  table { border-collapse: collapse; inline-size: 100%; min-inline-size: 0; }
+  caption { text-align: start; padding-block-end: spacing.$spacing-04; }
+  th, td { text-align: start; padding: spacing.$spacing-05; border-block-end: 1px solid var(--cds-border-subtle); }
+  th { background: var(--cds-layer-accent); @include type.type-style('heading-compact-01'); }
+  td { background: var(--cds-layer); @include type.type-style('body-compact-01'); }
+}
+
+.app-theme { min-block-size: 100dvh; background: var(--cds-background); color: var(--cds-text-primary); }
+.app-content {
+  @include type.type-style('body-01');
+  min-inline-size: 0;
+  min-block-size: calc(100dvh - 3rem);
+  background: var(--cds-background);
+  overflow-wrap: anywhere;
+  * { min-inline-size: 0; }
+  .cds--stack-vertical { inline-size: 100%; }
+  > *, .cds--stack, .cds--stack-item, .cds--data-table-container { min-inline-size: 0; max-inline-size: 100%; }
+  h1 { @include type.type-style('heading-04'); }
+  h2, h3 { @include type.type-style('heading-02'); }
+  .cds--css-grid { row-gap: spacing.$spacing-05; }
+  .cds--data-table-container { inline-size: 100%; }
+  .cds--data-table-content { max-inline-size: 100%; overflow-x: auto; }
+  .cds--data-table { inline-size: 100%; min-inline-size: 0; overflow-wrap: anywhere; }
+  .cds--batch-actions { overflow-x: auto; white-space: nowrap; }
+  .cds--batch-summary, .cds--action-list { flex-shrink: 0; }
+}
+.shell-status { display: flex; align-items: center; margin-inline-end: spacing.$spacing-05; }
+.shell-action { display: flex; align-items: center; }
+.shell-panel {
+  position: fixed;
+  inset-block-start: 3rem;
+  inset-inline-end: spacing.$spacing-05;
+  inline-size: 26rem;
+  max-inline-size: calc(100vw - 2rem);
+  max-block-size: calc(100dvh - 4rem);
+  overflow: auto;
+  padding: spacing.$spacing-05;
+  background: var(--cds-layer);
+  color: var(--cds-text-primary);
+  border: 1px solid var(--cds-border-subtle);
+  z-index: 8100;
+  animation: shell-panel-enter motion.$duration-fast-02 motion.motion(entrance, productive);
+  h2 { @include type.type-style('heading-02'); }
+}
+@keyframes shell-panel-enter { from { opacity: 0; transform: translateY(-0.25rem); } to { opacity: 1; transform: none; } }
+.header-busca-resultado-item, .contato-nome-link {
+  font: inherit; color: var(--cds-link-primary); background: transparent; border: 0; cursor: pointer; text-align: start;
+  &:hover { background: var(--cds-layer-hover); }
+  &:focus-visible { outline: 2px solid var(--cds-focus); outline-offset: -2px; }
+}
+.header-busca-resultado-item { display: block; inline-size: 100%; padding: spacing.$spacing-03; }
+.oab-table {
+  .cds--data-table { @include type.type-style('label-01'); }
+  .cds--data-table thead, .cds--data-table tbody { font-size: inherit; line-height: inherit; }
+  .cds--data-table td { padding-block: 0; }
+  .cds--data-table .cds--tag, .cds--select-input, .oab-inteiro-teor { font-size: 0.625rem; }
+  .oab-inteiro-teor { line-height: 1rem; white-space: pre-wrap; }
+}
+.shell-notification-count { color: var(--cds-text-on-color); }
+@media (max-width: 1055px) {
+  // O menu móvel sobrepõe o conteúdo; não reserva os 256 px da navegação desktop.
+  #main-content { margin-inline-start: 0; padding: spacing.$spacing-05; }
+  .shell-status { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+}
+
+// Os skeletons usam o tema e a animação nativos do Carbon. A regra global
+// prefers-reduced-motion acima também abrange seus pseudo-elementos.
+.carregamento { inline-size: 100%; min-inline-size: 0; }
+.carregamento-conteudo { overflow: hidden; }
+.carregamento-cartao { padding: spacing.$spacing-05; background: var(--cds-layer); }
+.carregamento-status {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.previa-parcelas .previa-parcelas-tabela {
+  min-inline-size: 0;
+  inline-size: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.previa-parcelas-data, .previa-parcelas-valor { white-space: nowrap; }
+.previa-parcelas .previa-parcelas-valor { text-align: end; }
+.previa-parcelas-valor-cabecalho { display: block; inline-size: 100%; text-align: end; }
+
+.texto-tabela {
+  display: block;
+  max-inline-size: 16rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  &:focus-visible { outline: 2px solid var(--cds-focus); outline-offset: -2px; }
+}
+.texto-tabela-dica { display: inline-block; max-inline-size: 100%; }
+
+// O menu flutuante é renderizado no body e precisa receber o tema do acionador.
+.acoes-tabela-menu--g100 { @include theme.theme(themes.$g100); }
+.acoes-tabela-menu--white { @include theme.theme(themes.$white); }
+
+.shell-conta__acionador {
+  @include type.type-style('body-compact-01');
+  display: flex;
+  align-items: center;
+  gap: spacing.$spacing-03;
+  block-size: 3rem;
+  padding-inline: spacing.$spacing-05;
+  border: 0;
+  background: transparent;
+  color: var(--cds-text-primary);
+  cursor: pointer;
+  svg { flex-shrink: 0; }
+  &:hover, &[aria-expanded='true'] { background: var(--cds-background-hover); }
+  &:focus-visible { outline: 2px solid var(--cds-focus); outline-offset: -2px; }
+}
+.shell-conta__nome {
+  max-inline-size: 12rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.shell-conta__painel {
+  inline-size: 20rem;
+  overflow-wrap: anywhere;
+  p { margin-block: spacing.$spacing-03; }
+  .cds--btn { display: flex; inline-size: 100%; margin-block-start: spacing.$spacing-03; }
+}
+@media (max-width: 671px) {
+  .shell-conta__nome { display: none; }
+}

@@ -4,7 +4,7 @@ import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { enviarJson } from '../../api/rest'
 import { mascaraCpfCnpj } from '../../utils/mascaras'
-import { formatarMoeda } from '../../utils/formatadores'
+import TabelaParcelas from '../../PreviaParcelas'
 import { calcularValoresParcelas, somarMeses } from '../../utils/parcelas'
 
 type Cliente = { id: string; nome?: string; cpf_cnpj?: string }
@@ -85,7 +85,7 @@ export default function NovaCobrancaModal({
   }
 
   return (
-    <Modal
+    <Modal closeButtonLabel="Fechar"
       open={open}
       modalHeading="Nova cobrança"
       primaryButtonText="Criar cobrança"
@@ -171,28 +171,14 @@ function PreviaParcelas({ parcelar, valor, parcelas, vencimento }: { parcelar: b
   if (!parcelar || !(total > 0) || !(parcelas >= 2) || !/^\d{4}-\d{2}-\d{2}$/.test(vencimento)) return null
   const valoresCentavos = calcularValoresParcelas(Math.round(total * 100), parcelas)
   return (
-    <div>
-      <p>Prévia das parcelas (quem gera de fato é o Asaas, ao confirmar):</p>
-      <table className="tabela-responsiva">
-        <thead>
-          <tr>
-            <th>Parcela</th>
-            <th>Vencimento</th>
-            <th>Valor</th>
-          </tr>
-        </thead>
-        <tbody>
-          {valoresCentavos.map((centavos, i) => (
-            <tr key={i}>
-              <td>
-                {i + 1}/{parcelas}
-              </td>
-              <td>{somarMeses(vencimento, i)}</td>
-              <td>{formatarMoeda(centavos / 100)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <TabelaParcelas
+      quantidade={parcelas}
+      descricao="As parcelas serão geradas pelo Asaas ao confirmar a cobrança."
+      parcelas={valoresCentavos.map((centavos, i) => ({
+        numero: i + 1,
+        vencimento: somarMeses(vencimento, i),
+        valor: centavos / 100,
+      }))}
+    />
   )
 }

@@ -1,3 +1,4 @@
+import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
 import { Button, Column, Grid, InlineNotification, Modal, Select, SelectItem, Stack, Tab, TabList, TabPanel, TabPanels, Tabs, TextInput } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
@@ -124,6 +125,11 @@ export default function CadastroContato({
   }
 
   async function salvar() {
+    if (!(registro.nome ?? '').trim()) {
+      setMensagem({ tipo: 'erro', texto: 'Informe o nome antes de salvar.' })
+      document.getElementById('contato-nome')?.focus()
+      return
+    }
     setSalvando(true)
     setMensagem(null)
     const corpo = {
@@ -165,7 +171,7 @@ export default function CadastroContato({
     }
   }
 
-  if (carregando) return <p>Carregando…</p>
+  if (carregando) return <Carregamento tipo="detalhe" />
   if (erroCarregar) return <InlineNotification kind="error" title="Erro ao carregar cliente" subtitle={erroCarregar} lowContrast hideCloseButton />
 
   return (
@@ -322,7 +328,7 @@ export default function CadastroContato({
           </TabPanel>
         </TabPanels>
       </Tabs>
-      <div style={{ display: 'flex', gap: '0.5rem' }}>
+      <div className="aj-layout-28">
         <Button onClick={salvar} disabled={salvando}>
           {criando ? 'Cadastrar cliente' : 'Salvar alterações'}
         </Button>
@@ -343,7 +349,7 @@ export default function CadastroContato({
           />
         )}
       </div>
-      <Modal
+      <Modal closeButtonLabel="Fechar"
         open={paraExcluir}
         danger
         modalHeading="Excluir cliente"

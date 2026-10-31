@@ -1,3 +1,4 @@
+import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
 import { Button, InlineNotification, Link, Stack, Tag, Tile } from '@carbon/react'
 import { useCliente } from '../api/ClienteContext'
@@ -13,6 +14,7 @@ const TOM_SELO: Record<StatusSelo, { texto: string; tom: 'blue' | 'green' | 'gra
 }
 
 function Selo({ status }: { status: StatusSelo }) {
+  if (status === 'verificando') return <Carregamento tipo="texto" descricao="Verificando integração…" />
   const { texto, tom } = TOM_SELO[status]
   return <Tag type={tom}>{texto}</Tag>
 }
@@ -39,6 +41,7 @@ export default function Integracoes() {
     }
     setGoogleStatus('verificando')
     setAsaasStatus('verificando')
+    setZapsignStatus('verificando')
     try {
       const resposta = await fetch('/integracoes/status', { headers: { Authorization: `Bearer ${cliente.token}` } })
       if (!resposta.ok) {
@@ -60,6 +63,7 @@ export default function Integracoes() {
       setErro(mensagem)
       setGoogleStatus('falha')
       setAsaasStatus('falha')
+      setZapsignStatus('falha')
     }
   }, [cliente])
 
@@ -91,7 +95,7 @@ export default function Integracoes() {
   return (
     <Stack gap={6}>
       <div>
-        <h2>Integrações</h2>
+        <h1>Integrações</h1>
         <p>Conexões com serviços externos usados pelo escritório.</p>
       </div>
       <div>
@@ -112,8 +116,8 @@ export default function Integracoes() {
         {aviso && <InlineNotification kind="warning" title="Aviso" subtitle={aviso} lowContrast hideCloseButton />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
       </div>
-      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-        <Tile style={{ width: '16rem' }}>
+      <div className="aj-layout-43">
+        <Tile className="aj-layout-44">
           <Stack gap={3}>
             <img src="/static/icons/google.svg" alt="" width={40} height={40} />
             <h3>Google</h3>
@@ -121,7 +125,7 @@ export default function Integracoes() {
             <Selo status={googleStatus} />
           </Stack>
         </Tile>
-        <Tile style={{ width: '16rem' }}>
+        <Tile className="aj-layout-45">
           <Stack gap={3}>
             <img src="/static/icons/asaas.png" alt="" width={40} height={40} />
             <h3>Asaas</h3>
@@ -129,7 +133,7 @@ export default function Integracoes() {
             <Selo status={asaasStatus} />
           </Stack>
         </Tile>
-        <Tile style={{ width: '16rem' }}>
+        <Tile className="aj-layout-46">
           <Stack gap={3}>
             <img src="/static/icons/zapsign.svg" alt="" width={40} height={40} />
             <h3>ZapSign</h3>
@@ -137,12 +141,12 @@ export default function Integracoes() {
             <Selo status={zapsignStatus} />
           </Stack>
         </Tile>
-        <Tile style={{ width: '16rem' }}>
+        <Tile className="aj-layout-47">
           <Stack gap={3}>
             <h3>Minha agenda Google</h3>
             <p>Conecte sua conta individual para criar eventos no seu calendário.</p>
             <p role="status">{agendaStatus}</p>
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <div className="aj-layout-48">
               <Button kind="tertiary" size="sm" onClick={() => minhaAgendaGoogle('conectar')}>
                 Conectar minha agenda
               </Button>

@@ -1,5 +1,10 @@
-import { useEffect, useState } from 'react'
-import { ActionableNotification, Button, InlineNotification, Modal, Stack, Tag, TextInput } from '@carbon/react'
+import TabelaResponsiva from '../../TabelaResponsiva'
+import TextoTabela from '../../TextoTabela'
+import AcoesTabela from '../../AcoesTabela'
+import Carregamento from '../../Carregamento'
+import { Star, StarFilled } from '@carbon/icons-react'
+import { useEffect, useRef, useState } from 'react'
+import { ActionableNotification, Button, InlineNotification, Modal, Stack, Tag, TextInput, Grid, Column, Table, TableHead, TableHeader, TableRow, TableBody, TableCell } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { useNavegacao } from '../../api/NavegacaoContext'
@@ -65,6 +70,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
   const [excluindo, setExcluindo] = useState(false)
   const [modalNovoAberto, setModalNovoAberto] = useState(false)
   const [casoCriado, setCasoCriado] = useState<Caso | null>(null)
+  const botaoNovo = useRef<HTMLButtonElement>(null)
 
   const carregar = () => {
     setCarregando(true)
@@ -104,21 +110,24 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
     }
   }
 
-  const termo = busca.toLowerCase().trim()
+  const normalizarFiltro = (texto: string) => texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').trim()
+  const termo = normalizarFiltro(busca)
+  const numeroFiltro = /^[\d.\-/\s]+$/.test(busca) ? busca.replace(/\D/g, '') : ''
   const filtrados = (casos ?? []).filter((c) => {
     if (!termo) return true
+    if (numeroFiltro.length >= 4 && c.processos?.some((numero) => numero.replace(/\D/g, '').includes(numeroFiltro))) return true
     const textos = [c.titulo, c.acao, c.foro, c.responsavel, nomeCliente(c.cliente_id), ...(c.clientes_adicionais ?? []).map(nomeCliente), ...(c.processos ?? [])].map(
-      (t) => (t || '').toLowerCase(),
+      (t) => normalizarFiltro(t || ''),
     )
     return textos.some((t) => t.includes(termo))
   })
   const ordenados = [...filtrados].sort((a, b) => (b.ultima_movimentacao || '').localeCompare(a.ultima_movimentacao || ''))
 
   return (
-    <Stack gap={6}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>Processos</h2>
-        <Button size="sm" onClick={() => setModalNovoAberto(true)}>
+    <Grid fullWidth narrow className="casos-lista"><Column sm={4} md={8} lg={16}><Stack gap={6}>
+      <div className="casos-titulo-linha">
+        <div><h1 tabIndex={-1}>Processos</h1><p className="casos-ajuda">Cadastros, atividades e acompanhamento do escritório.</p></div>
+        <Button ref={botaoNovo} size="sm" onClick={() => setModalNovoAberto(true)}>
           Novo processo
         </Button>
       </div>
@@ -143,31 +152,32 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
         onChange={(e) => setBusca(e.target.value)}
       />
       <div aria-live="polite">
-        {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
+        {carregando && <Carregamento colunas={6} />}
+        {erro && <Stack gap={4}><InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton /><Button kind="tertiary" size="sm" onClick={carregar} disabled={carregando}>Tentar novamente</Button></Stack>}
         {!carregando && casos && casos.length === 0 && <InlineNotification kind="info" title="Nenhum processo cadastrado ainda" lowContrast hideCloseButton />}
         {!carregando && casos && casos.length > 0 && ordenados.length === 0 && (
           <InlineNotification kind="info" title="Nenhum processo corresponde ao filtro." lowContrast hideCloseButton />
         )}
         {!carregando && ordenados.length > 0 && (
-          <div className="tabela-responsiva-wrap">
-            <table className="tabela-responsiva tabela-casos">
-              <thead>
-                <tr>
-                  <th>Favorito</th>
-                  <th>Título</th>
-                  <th>Cliente/Pasta</th>
-                  <th>Ação/Foro</th>
-                  <th>Últ. mov.</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
+          <section aria-label="Processos cadastrados"><p className="casos-contagem">{ordenados.length} {ordenados.length === 1 ? 'processo' : 'processos'}</p>
+            <TabelaResponsiva principais={['Título']}><Table size="xl" className="casos-tabela" aria-label="Processos cadastrados">
+              <TableHead>
+                <TableRow>
+                  <TableHeader>Favorito</TableHeader>
+                  <TableHeader>Título</TableHeader>
+                  <TableHeader>Cliente e pasta</TableHeader>
+                  <TableHeader>Classe e foro</TableHeader>
+                  <TableHeader>Última movimentação</TableHeader>
+                  <TableHeader>Ações</TableHeader>
+                </TableRow>
+              </TableHead>
+              <TableBody>
                 {ordenados.map((caso) => {
                   const nomes = [caso.cliente_id, ...(caso.clientes_adicionais ?? [])].map(nomeCliente).filter(Boolean).map(formatarNomeExibicao)
                   const favoritado = ehCasoFavorito(caso.id)
                   return (
-                    <tr key={caso.id}>
-                      <td data-label="Favorito">
+                    <TableRow key={caso.id}>
+                      <TableCell data-label="Favorito">
                         <Button
                           kind="ghost"
                           size="sm"
@@ -175,13 +185,11 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                           iconDescription={favoritado ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}
                           onClick={() => favoritar(caso.id)}
                         >
-                          {favoritado ? '★' : '☆'}
+                          {favoritado ? <StarFilled size={16} /> : <Star size={16} />}
                         </Button>
-                      </td>
-                      <td data-label="Título">
-                        <button type="button" className="contato-nome-link" onClick={() => onAbrir(caso.id)}>
-                          {caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)'}
-                        </button>
+                      </TableCell>
+                      <TableCell className="casos-celula-principal" data-label="Título">
+                        <TextoTabela texto={caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)'} onClick={() => onAbrir(caso.id)} />
                         {caso.monitorado && <Tag type="green" size="sm">Monitorado</Tag>}
                         {caso.desfecho && ROTULO_DESFECHO[caso.desfecho] && (
                           <Tag type="purple" size="sm">
@@ -204,30 +212,26 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                             </span>
                           ))}
                         </div>
-                      </td>
-                      <td data-label="Cliente/Pasta">
-                        {nomes.join(', ') || 'Sem cliente vinculado'}
-                        {caso.pasta ? ` · ${caso.pasta}` : ''}
-                      </td>
-                      <td data-label="Ação/Foro">
-                        {formatarClasse(caso.acao) || 'Classe não informada'}
-                        {caso.foro ? ` · ${caso.foro}` : ''}
-                      </td>
-                      <td data-label="Últ. mov.">{formatarDataSimples(caso.ultima_movimentacao)}</td>
-                      <td data-label="Ações">
-                        <Button kind="danger--tertiary" size="sm" onClick={() => setParaExcluir(caso)}>
-                          Excluir
-                        </Button>
-                      </td>
-                    </tr>
+                      </TableCell>
+                      <TableCell data-label="Cliente e pasta">
+                        <TextoTabela texto={nomes.join(', ') || 'Sem cliente vinculado'} />{caso.pasta && <div className="casos-celula-secundaria"><TextoTabela texto={caso.pasta} /></div>}
+                      </TableCell>
+                      <TableCell data-label="Classe e foro">
+                        <TextoTabela texto={formatarClasse(caso.acao) || 'Classe não informada'} />{caso.foro && <div className="casos-celula-secundaria"><TextoTabela texto={caso.foro} /></div>}
+                      </TableCell>
+                      <TableCell data-label="Última movimentação">{formatarDataSimples(caso.ultima_movimentacao)}</TableCell>
+                      <TableCell data-label="Ações">
+                        <AcoesTabela rotulo={caso.titulo || 'processo'} acoes={[{ texto: 'Excluir', executar: () => setParaExcluir(caso), perigo: true }]} />
+                      </TableCell>
+                    </TableRow>
                   )
                 })}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table></TabelaResponsiva>
+          </section>
         )}
       </div>
-      <Modal
+      <Modal closeButtonLabel="Fechar"
         open={paraExcluir !== null}
         danger
         modalHeading="Excluir processo"
@@ -241,6 +245,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
       </Modal>
       <NovoProcessoModal
         open={modalNovoAberto}
+        launcherButtonRef={botaoNovo}
         clientes={clientes.map((c) => ({ id: c.id, nome: c.nome ?? '' }))}
         onClose={() => setModalNovoAberto(false)}
         onCriado={(novoCaso) => {
@@ -249,6 +254,6 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
           setCasoCriado(novoCaso)
         }}
       />
-    </Stack>
+    </Stack></Column></Grid>
   )
 }

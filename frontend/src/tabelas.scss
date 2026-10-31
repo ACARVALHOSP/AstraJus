@@ -1,0 +1,58 @@
+@use '@carbon/react/scss/spacing' as spacing;
+@use '@carbon/react/scss/type' as type;
+
+.tabela-adaptavel {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  inline-size: 100%;
+  .tabela-fluida { inline-size: 100%; min-inline-size: 0; table-layout: fixed; }
+  .tabela-fluida :is(th, td) { block-size: auto; padding-block: spacing.$spacing-04; white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+  .texto-tabela { max-inline-size: 100%; white-space: normal; overflow: visible; text-overflow: clip; }
+  .texto-tabela-dica { display: block; }
+  .tabela-fluida .tabela-controle { inline-size: spacing.$spacing-09; padding-inline: spacing.$spacing-03; }
+  .tabela-fluida .tabela-acoes { inline-size: 7rem; }
+  .tabela-fluida .tabela-numero { inline-size: 8.5rem; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  .tabela-numero .cds--table-header-label { overflow-wrap: normal; }
+  .cds--table-sort { block-size: auto; min-block-size: spacing.$spacing-09; align-items: flex-start; }
+  .cds--table-header-label { white-space: normal; overflow-wrap: anywhere; }
+  .cds--table-sort__icon, .cds--table-sort__icon-unsorted { flex-shrink: 0; }
+  .tabela-detalhes-botao { white-space: nowrap; overflow-wrap: normal; padding-inline: spacing.$spacing-03; margin-block-start: spacing.$spacing-02; }
+  .tabela-detalhes-linha[hidden] { display: none; }
+  .tabela-detalhes-linha > td { background: var(--cds-layer); padding: spacing.$spacing-05; }
+}
+.tabela-detalhes-lista {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: spacing.$spacing-05;
+  dt { @include type.type-style('label-01'); color: var(--cds-text-secondary); margin-block-end: spacing.$spacing-02; }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  .texto-tabela { max-inline-size: 100%; white-space: normal; }
+}
+.tabela-ordenacao {
+  background: var(--cds-layer);
+  padding: spacing.$spacing-04;
+  border-block-end: 1px solid var(--cds-border-subtle);
+  summary { cursor: pointer; @include type.type-style('body-compact-01'); }
+  > div { display: flex; flex-wrap: wrap; gap: spacing.$spacing-02; padding-block-start: spacing.$spacing-03; }
+  summary:focus-visible { outline: 2px solid var(--cds-focus); outline-offset: 2px; }
+}
+.tabela-adaptavel--compacta {
+  .tabela-fluida :is(th, td) { padding-inline: spacing.$spacing-03; }
+  .tabela-fluida .tabela-numero { inline-size: 6.5rem; }
+  .tabela-fluida .tabela-acoes { inline-size: 6rem; }
+  .tabela-fluida .tabela-controle { inline-size: 2.5rem; }
+  .tabela-numero { white-space: nowrap; }
+  .tabela-acoes > .cds--btn { max-inline-size: 100%; padding-inline: spacing.$spacing-03; }
+}
+
+// Tabelas curtas (parcelas, revisões e acessos) dividem a largura disponível.
+.tabela-adaptavel--simples .tabela-fluida .tabela-numero { inline-size: auto; }
+
+// Ações em lote continuam visíveis sem criar uma faixa de rolagem no modo compacto.
+.cds--data-table-container:has(.tabela-adaptavel--compacta) {
+  .cds--table-toolbar:has(.cds--batch-actions--active) { block-size: auto; min-block-size: spacing.$spacing-09; }
+  .cds--batch-actions--active { position: relative; block-size: auto; flex-wrap: wrap; overflow: visible; inline-size: 100%; }
+  .cds--batch-actions--active .cds--batch-summary { position: static; }
+  .cds--batch-actions--active .cds--action-list { flex-wrap: wrap; }
+  .cds--batch-actions--active ~ .cds--toolbar-content { display: none; }
+}

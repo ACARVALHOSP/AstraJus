@@ -1,3 +1,7 @@
+import TabelaResponsiva from '../TabelaResponsiva'
+import TextoTabela from '../TextoTabela'
+import AcoesTabela from '../AcoesTabela'
+import Carregamento from '../Carregamento'
 import { useEffect, useState } from 'react'
 import {
   Button,
@@ -37,15 +41,22 @@ export default function Historico() {
   const [historico] = useState<ItemHistorico[]>(() => lerHistorico())
   const [casosFavoritos, setCasosFavoritos] = useState<CasoFavorito[]>([])
 
+  const [carregandoFavoritos, setCarregandoFavoritos] = useState(() => !!cliente && lerCasosFavoritos().length > 0)
+
   useEffect(() => {
+    let atual = true
     const ids = lerCasosFavoritos()
     if (!ids.length || !cliente) {
       setCasosFavoritos([])
+      setCarregandoFavoritos(false)
       return
     }
+    setCarregandoFavoritos(true)
     buscarJson<{ casos: CasoFavorito[] }>(cliente, '/casos')
-      .then((r) => setCasosFavoritos((r.casos ?? []).filter((c) => ids.includes(c.id))))
-      .catch(() => setCasosFavoritos([]))
+      .then((r) => { if (atual) setCasosFavoritos((r.casos ?? []).filter((c) => ids.includes(c.id))) })
+      .catch(() => { if (atual) setCasosFavoritos([]) })
+      .finally(() => { if (atual) setCarregandoFavoritos(false) })
+    return () => { atual = false }
   }, [cliente])
 
   function removerCasoFavorito(id: string) {
@@ -74,20 +85,20 @@ export default function Historico() {
   return (
     <Stack gap={7}>
       <div>
-        <h2>Histórico e favoritos</h2>
+        <h1>Histórico e favoritos</h1>
       </div>
 
       <section>
-        <h3>Casos favoritos</h3>
-        <p>Casos marcados com ★ na lista de Casos. Abrir pula direto para o caso.</p>
-        {casosFavoritos.length === 0 ? (
-          <p>Nenhum caso favorito ainda.</p>
+        <h3>Processos favoritos</h3>
+        <p>Processos marcados como favoritos na lista de Processos. Abrir leva diretamente ao processo.</p>
+        {carregandoFavoritos ? <Carregamento descricao="Carregando processos favoritos…" /> : casosFavoritos.length === 0 ? (
+          <p>Nenhum processo favorito ainda.</p>
         ) : (
           <Stack gap={3}>
             {casosFavoritos.map((caso) => (
-              <div key={caso.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+              <div key={caso.id} className="aj-layout-40">
                 <span>{caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)'}</span>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div className="aj-layout-41">
                   <Button kind="ghost" size="sm" onClick={() => irPara('casos', { id: caso.id })}>
                     Abrir
                   </Button>
@@ -117,7 +128,7 @@ export default function Historico() {
           >
             {({ rows, headers, getHeaderProps, getRowProps, getTableProps }) => (
               <TableContainer>
-                <Table {...getTableProps()} aria-label="Favoritos de consulta">
+                <TabelaResponsiva principais={['Número do processo', 'Consulta']}><Table {...getTableProps()} aria-label="Favoritos de consulta">
                   <TableHead>
                     <TableRow>
                       {headers.map((header) => (
@@ -134,25 +145,21 @@ export default function Historico() {
                       return (
                         <TableRow {...getRowProps({ row })}>
                           {row.cells.map((cell) => (
-                            <TableCell key={cell.id}>{cell.value}</TableCell>
+                            <TableCell key={cell.id}>{cell.info.header === 'resumo' ? <TextoTabela texto={String(cell.value ?? '')} /> : cell.value}</TableCell>
                           ))}
                           <TableCell>
                             {fav && (
-                              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                <Button kind="ghost" size="sm" onClick={() => consultarFavorito(fav)}>
-                                  Consultar
-                                </Button>
-                                <Button kind="ghost" size="sm" onClick={() => remover(fav)}>
-                                  Remover
-                                </Button>
-                              </div>
+                              <AcoesTabela rotulo={`favorito ${fav.numero}`} acoes={[
+                                { texto: 'Consultar', executar: () => consultarFavorito(fav) },
+                                { texto: 'Remover', executar: () => remover(fav) },
+                              ]} />
                             )}
                           </TableCell>
                         </TableRow>
                       )
                     })}
                   </TableBody>
-                </Table>
+                </Table></TabelaResponsiva>
               </TableContainer>
             )}
           </DataTable>
@@ -175,7 +182,7 @@ export default function Historico() {
           >
             {({ rows, headers, getHeaderProps, getRowProps, getTableProps }) => (
               <TableContainer>
-                <Table {...getTableProps()} aria-label="Histórico recente">
+                <TabelaResponsiva principais={['Número do processo', 'Consulta']}><Table {...getTableProps()} aria-label="Histórico recente">
                   <TableHead>
                     <TableRow>
                       {headers.map((header) => (
@@ -192,20 +199,18 @@ export default function Historico() {
                       return (
                         <TableRow {...getRowProps({ row })}>
                           {row.cells.map((cell) => (
-                            <TableCell key={cell.id}>{cell.value}</TableCell>
+                            <TableCell key={cell.id}>{cell.info.header === 'resumo' ? <TextoTabela texto={String(cell.value ?? '')} /> : cell.value}</TableCell>
                           ))}
                           <TableCell>
                             {item && (
-                              <Button kind="ghost" size="sm" onClick={() => repetirItem(item)}>
-                                Repetir
-                              </Button>
+                              <AcoesTabela rotulo={item.resumo} acoes={[{ texto: 'Repetir', executar: () => repetirItem(item) }]} />
                             )}
                           </TableCell>
                         </TableRow>
                       )
                     })}
                   </TableBody>
-                </Table>
+                </Table></TabelaResponsiva>
               </TableContainer>
             )}
           </DataTable>

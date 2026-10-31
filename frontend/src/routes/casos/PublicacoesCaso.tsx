@@ -1,5 +1,6 @@
+import Carregamento from '../../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
-import { Button, InlineLoading, InlineNotification, Modal, Stack, Tile } from '@carbon/react'
+import { Button, InlineNotification, Modal, Stack, Tile } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -49,7 +50,7 @@ export default function PublicacoesCaso({ casoId }: { casoId: string }) {
     <Stack gap={5}>
       <h3>Publicações vinculadas</h3>
       <div aria-live="polite">
-        {carregando && <InlineLoading description="Carregando…" />}
+        {carregando && <Carregamento tipo="cartoes" descricao="Carregando…" />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
         {!carregando && publicacoes && publicacoes.length === 0 && (
           <InlineNotification kind="info" title="Nenhuma publicação vinculada a este processo." lowContrast hideCloseButton />
@@ -60,7 +61,7 @@ export default function PublicacoesCaso({ casoId }: { casoId: string }) {
               const texto = pub.dados?.texto || pub.dados?.teor || pub.dados?.conteudo || ''
               return (
                 <Tile key={pub.hash}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+                  <div className="casos-publicacao-linha">
                     <div>
                       <strong>{pub.numero_processo || pub.nome_pesquisado || 'Publicação'}</strong>{' '}
                       <span>{(pub.criado_em ?? '').substring(0, 10)}</span>
@@ -76,7 +77,7 @@ export default function PublicacoesCaso({ casoId }: { casoId: string }) {
           </Stack>
         )}
       </div>
-      <Modal
+      <Modal closeButtonLabel="Fechar"
         open={paraDesvincular !== null}
         danger
         modalHeading="Desvincular publicação"

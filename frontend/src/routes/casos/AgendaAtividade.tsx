@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Button, Link } from '@carbon/react'
+import { Button, Link, Modal } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { formatarDataSimples } from '../../utils/formatadores'
 
@@ -45,15 +45,14 @@ export default function AgendaAtividade({
 }) {
   const { cliente } = useCliente()
   const [carregando, setCarregando] = useState(false)
+  const [confirmacao, setConfirmacao] = useState<{ metodo: 'POST' | 'PATCH' | 'DELETE'; comando?: string; texto: string } | null>(null)
   const chaveIdempotencia = useRef<string | null>(null)
 
   const ativo = agenda && agenda.estado !== 'cancelado'
 
-  async function executar(metodo: 'POST' | 'PATCH' | 'DELETE', comando?: string) {
-    if (metodo === 'DELETE' && !window.confirm('Cancelar o evento na agenda? A atividade será preservada.')) return
-    if (metodo === 'PATCH' && !window.confirm(comando === 'aceitar_data_da_agenda' ? 'Usar a data e o título da agenda nesta atividade?' : 'Substituir a data e o título do evento pelos dados desta atividade?')) return
-    if (metodo === 'POST' && comando === 'reconciliar_institucional' && !window.confirm('Associar o vínculo institucional à sua agenda individual? A conta Google precisa ser a mesma; o evento será preservado.')) return
-
+  async function executar(metodo: 'POST' | 'PATCH' | 'DELETE', comando?: string, confirmado = false) {
+    const texto = metodo === 'DELETE' ? 'Cancelar o evento na agenda? A atividade será preservada.' : metodo === 'PATCH' ? (comando === 'aceitar_data_da_agenda' ? 'Usar a data e o título da agenda nesta atividade?' : 'Substituir a data e o título do evento pelos dados desta atividade?') : comando === 'reconciliar_institucional' ? 'Associar o vínculo institucional à sua agenda individual? A conta Google precisa ser a mesma; o evento será preservado.' : ''
+    if (texto && !confirmado) { setConfirmacao({ metodo, comando, texto }); return }
     setCarregando(true)
     try {
       let corpo: Record<string, unknown> = {}
@@ -84,6 +83,9 @@ export default function AgendaAtividade({
 
   return (
     <div data-agenda-atividade={atividadeId}>
+      <Modal closeButtonLabel="Fechar" open={confirmacao !== null} modalHeading="Confirmar alteração na agenda" primaryButtonText={confirmacao?.metodo === 'DELETE' ? 'Cancelar evento' : 'Confirmar'} secondaryButtonText="Voltar" danger={confirmacao?.metodo === 'DELETE'} onRequestClose={() => setConfirmacao(null)} onRequestSubmit={() => { if (!confirmacao) return; const { metodo, comando } = confirmacao; setConfirmacao(null); void executar(metodo, comando, true) }}>
+        <p>{confirmacao?.texto}</p>
+      </Modal>
       {agenda && <p>Agenda: {ROTULO_ESTADO[agenda.estado] ?? agenda.estado}</p>}
       {agenda?.erro && <p>{agenda.erro}</p>}
       {agenda?.estado === 'divergente' && (
@@ -92,7 +94,7 @@ export default function AgendaAtividade({
         </p>
       )}
       {!agendaDisponivel && <p>Conecte sua agenda individual em Integrações e atualize as atividades.</p>}
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+      <div className="aj-layout-16">
         {agendaInstitucionalAnterior ? (
           <>
             <p>Vínculo institucional anterior preservado. Reconcilie usando a conta Google original.</p>

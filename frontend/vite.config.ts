@@ -1,14 +1,19 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
+import { fileURLToPath } from 'node:url'
 
 // https://vite.dev/config/
 export default defineConfig({
   base: '/novo/',
   plugins: [react()],
+  resolve: {
+    alias: { '~@ibm/plex': fileURLToPath(new URL('./node_modules/@ibm/plex', import.meta.url)) },
+  },
   server: {
     proxy: {
       // backend Python (server.py) rodando em paralelo durante o desenvolvimento
       '/mcp': 'http://localhost:8000',
+      '/admin': 'http://localhost:8000',
       '/integracoes': 'http://localhost:8000',
       '/cep': 'http://localhost:8000',
       '/static': 'http://localhost:8000',

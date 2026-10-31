@@ -1,3 +1,5 @@
+import Carregamento from '../Carregamento'
+import { Star, StarFilled } from '@carbon/icons-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import {
   Accordion,
@@ -6,7 +8,6 @@ import {
   Column,
   Form,
   Grid,
-  InlineLoading,
   InlineNotification,
   Select,
   SelectItem,
@@ -103,7 +104,7 @@ export default function Processo() {
   return (
     <Stack gap={6}>
       <div>
-        <h2>Consultar processo</h2>
+        <h1>Consultar processo</h1>
       </div>
       <Form onSubmit={aoEnviar}>
         <Stack gap={5}>
@@ -138,15 +139,15 @@ export default function Processo() {
       </Form>
       <p>A consulta ao DataJud pode levar até dois minutos em horários de pico.</p>
       <div aria-live="polite">
-        {consultando && <InlineLoading description="Consultando o DataJud (pode levar até dois minutos)…" />}
+        {consultando && <Carregamento tipo="detalhe" descricao="Consultando o DataJud (pode levar até dois minutos)…" />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
         {resultado?.erro && (
           <InlineNotification kind="error" title="Erro na consulta ao DataJud" subtitle={resultado.mensagem} lowContrast hideCloseButton />
         )}
-        {resultado && !resultado.erro && !resultado.encontrado && (
+        {!consultando && resultado && !resultado.erro && !resultado.encontrado && (
           <InlineNotification kind="info" title="Processo não encontrado" subtitle={resultado.mensagem} lowContrast hideCloseButton />
         )}
-        {resultado && !resultado.erro && resultado.encontrado && (
+        {!consultando && resultado && !resultado.erro && resultado.encontrado && (
           <Stack gap={5}>
             <InlineNotification
               kind="success"
@@ -201,8 +202,8 @@ function CartaoProcesso({ proc }: { proc: ProcessoEncontrado }) {
         )}
         {proc.numeroProcesso && (
           <div>
-            <Button kind="ghost" size="sm" onClick={alternarFavoritoClick}>
-              {favorito ? '★ Favorito' : '☆ Favoritar'}
+            <Button kind="ghost" size="sm" renderIcon={favorito ? StarFilled : Star} onClick={alternarFavoritoClick}>
+              {favorito ? 'Favorito' : 'Favoritar'}
             </Button>
           </div>
         )}

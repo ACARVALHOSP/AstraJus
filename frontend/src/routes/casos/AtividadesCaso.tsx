@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Button, Checkbox, InlineLoading, InlineNotification, Modal, Stack } from '@carbon/react'
+import AcoesTabela from '../../AcoesTabela'
+import Carregamento from '../../Carregamento'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Button, Checkbox, InlineNotification, Modal, Stack } from '@carbon/react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -22,7 +24,7 @@ export type Atividade = {
 
 const ROTULO_TIPO: Record<string, string> = { tarefa: 'Tarefa', prazo: 'Prazo', audiencia: 'Audiência', reuniao: 'Reunião', outro: 'Outro' }
 
-export default function AtividadesCaso({ casoId }: { casoId: string }) {
+export default function AtividadesCaso({ casoId, atividadeInicialId }: { casoId: string; atividadeInicialId?: string | number }) {
   const { cliente } = useCliente()
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
@@ -32,6 +34,7 @@ export default function AtividadesCaso({ casoId }: { casoId: string }) {
   const [editando, setEditando] = useState<Atividade | null>(null)
   const [paraExcluir, setParaExcluir] = useState<Atividade | null>(null)
   const [excluindo, setExcluindo] = useState(false)
+  const destinoConsumido = useRef(false)
 
   const carregar = useCallback(() => {
     setCarregando(true)
@@ -46,6 +49,18 @@ export default function AtividadesCaso({ casoId }: { casoId: string }) {
   }, [cliente, casoId])
 
   useEffect(carregar, [carregar])
+
+  useEffect(() => {
+    if (atividadeInicialId == null || !atividades || carregando || destinoConsumido.current) return
+    destinoConsumido.current = true
+    const atividade = atividades.find(item => String(item.id) === String(atividadeInicialId))
+    if (!atividade) {
+      setErro('A atividade desta notificação não está mais disponível. Atualize as notificações.')
+      return
+    }
+    setEditando(atividade)
+    setModalAberto(true)
+  }, [atividadeInicialId, atividades, carregando])
 
   async function alternarConcluida(atv: Atividade, concluida: boolean) {
     const novoStatus = concluida ? 'concluida' : 'pendente'
@@ -74,7 +89,7 @@ export default function AtividadesCaso({ casoId }: { casoId: string }) {
 
   return (
     <Stack gap={5}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="casos-titulo-linha">
         <h3>Atividades</h3>
         <Button
           size="sm"
@@ -87,13 +102,13 @@ export default function AtividadesCaso({ casoId }: { casoId: string }) {
         </Button>
       </div>
       <div aria-live="polite">
-        {carregando && <InlineLoading description="Carregando…" />}
+        {carregando && <Carregamento tipo="cartoes" descricao="Carregando…" />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
         {!carregando && atividades && atividades.length === 0 && <InlineNotification kind="info" title="Nenhuma atividade cadastrada" lowContrast hideCloseButton />}
         {!carregando && atividades && atividades.length > 0 && (
           <Stack gap={4}>
             {atividades.map((atv) => (
-              <div key={atv.id} className="cds--tile" style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+              <div key={atv.id} className="casos-atividade" >
                 <div>
                   <Checkbox
                     id={`atividade-concluida-${atv.id}`}
@@ -122,21 +137,10 @@ export default function AtividadesCaso({ casoId }: { casoId: string }) {
                     />
                   )}
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
-                  <Button
-                    kind="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setEditando(atv)
-                      setModalAberto(true)
-                    }}
-                  >
-                    Editar
-                  </Button>
-                  <Button kind="ghost" size="sm" hasIconOnly iconDescription="Excluir atividade" onClick={() => setParaExcluir(atv)}>
-                    ✕
-                  </Button>
-                </div>
+                <AcoesTabela rotulo={atv.titulo} acoes={[
+                  { texto: 'Editar', executar: () => { setEditando(atv); setModalAberto(true) } },
+                  { texto: 'Excluir', executar: () => setParaExcluir(atv), perigo: true },
+                ]} />
               </div>
             ))}
           </Stack>
@@ -152,7 +156,7 @@ export default function AtividadesCaso({ casoId }: { casoId: string }) {
           carregar()
         }}
       />
-      <Modal
+      <Modal closeButtonLabel="Fechar"
         open={paraExcluir !== null}
         danger
         modalHeading="Excluir atividade"

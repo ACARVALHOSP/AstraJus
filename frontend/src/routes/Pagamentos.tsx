@@ -1,3 +1,7 @@
+import TabelaResponsiva from '../TabelaResponsiva'
+import TextoTabela from '../TextoTabela'
+import AcoesTabela from '../AcoesTabela'
+import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
 import {
   Button,
@@ -5,7 +9,6 @@ import {
   DataTable,
   Grid,
   InlineNotification,
-  Link,
   Modal,
   Select,
   SelectItem,
@@ -138,8 +141,8 @@ export default function Pagamentos() {
 
   return (
     <Stack gap={6}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>Pagamentos</h2>
+      <div className="aj-layout-53">
+        <h1>Pagamentos</h1>
         <Button size="sm" onClick={() => setModalNovaAberto(true)}>
           Nova cobrança
         </Button>
@@ -172,13 +175,14 @@ export default function Pagamentos() {
         </Column>
       </Grid>
       <div aria-live="polite">
+        {carregando && <Carregamento />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
         {!carregando && cobrancas && cobrancas.length === 0 && (
           <InlineNotification kind="info" title="Nenhuma cobrança encontrada" lowContrast hideCloseButton />
         )}
         {!carregando && cobrancas && cobrancas.length > 0 && <TabelaCobrancas cobrancas={cobrancas} onCancelar={setParaCancelar} />}
       </div>
-      <Modal
+      <Modal closeButtonLabel="Fechar"
         open={paraCancelar !== null}
         danger
         modalHeading="Cancelar cobrança"
@@ -226,7 +230,7 @@ function TabelaCobrancas({ cobrancas, onCancelar }: { cobrancas: Cobranca[]; onC
     <DataTable rows={linhas} headers={CABECALHOS_COBRANCAS} isSortable>
       {({ rows, headers, getHeaderProps, getRowProps, getTableProps }) => (
         <TableContainer>
-          <Table {...getTableProps()} aria-label="Cobranças">
+          <TabelaResponsiva principais={['Cliente', 'Valor']}><Table {...getTableProps()} aria-label="Cobranças">
             <TableHead>
               <TableRow>
                 {headers.map((header) => (
@@ -253,28 +257,20 @@ function TabelaCobrancas({ cobrancas, onCancelar }: { cobrancas: Cobranca[]; onC
                           </Tag>
                         </TableCell>
                       ) : (
-                        <TableCell key={cell.id}>{cell.value}</TableCell>
+                        <TableCell key={cell.id}>{cell.info.header === 'cliente' ? <TextoTabela texto={String(cell.value ?? '')} /> : cell.value}</TableCell>
                       ),
                     )}
                     <TableCell>
-                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                        {link && (
-                          <Link href={link} target="_blank" rel="noopener">
-                            Ver cobrança
-                          </Link>
-                        )}
-                        {!STATUS_FINALIZADOS.has(cobranca.status ?? '') && (
-                          <Button kind="danger--tertiary" size="sm" onClick={() => onCancelar(cobranca)}>
-                            Cancelar
-                          </Button>
-                        )}
-                      </div>
+                      <AcoesTabela rotulo={`cobrança ${cobranca.id}`} acoes={[
+                        ...(link ? [{ texto: 'Ver cobrança', href: link }] : []),
+                        ...(!STATUS_FINALIZADOS.has(cobranca.status ?? '') ? [{ texto: 'Cancelar', executar: () => onCancelar(cobranca), perigo: true }] : []),
+                      ]} />
                     </TableCell>
                   </TableRow>
                 )
               })}
             </TableBody>
-          </Table>
+          </Table></TabelaResponsiva>
         </TableContainer>
       )}
     </DataTable>

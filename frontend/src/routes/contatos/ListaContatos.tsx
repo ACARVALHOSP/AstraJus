@@ -1,3 +1,7 @@
+import TabelaResponsiva from '../../TabelaResponsiva'
+import TextoTabela from '../../TextoTabela'
+import AcoesTabela from '../../AcoesTabela'
+import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
 import {
   Button,
@@ -95,13 +99,13 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
 
   return (
     <Stack gap={6}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="aj-layout-36">
         <h2>Clientes</h2>
         <Button size="sm" onClick={onNovo}>
           Novo cliente
         </Button>
       </div>
-      <div role="group" aria-label="Filtrar clientes pela inicial do nome" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+      <div role="group" aria-label="Filtrar clientes pela inicial do nome" className="aj-layout-37">
         {['TODOS', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((l) => (
           <Button key={l} kind={l === letra ? 'primary' : 'ghost'} size="sm" onClick={() => setLetra(l)}>
             {l}
@@ -127,6 +131,7 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
         </Button>
       )}
       <div aria-live="polite">
+        {carregando && <Carregamento colunas={8} />}
         {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
         {!carregando && clientes && clientes.length === 0 && (
           <InlineNotification kind="info" title="Nenhum cliente cadastrado ainda" lowContrast hideCloseButton />
@@ -152,7 +157,7 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
           />
         )}
       </div>
-      <Modal
+      <Modal closeButtonLabel="Fechar"
         open={paraExcluir !== null}
         danger
         modalHeading="Excluir cliente"
@@ -238,7 +243,7 @@ function TabelaContatos({
               </TableBatchActions>
               <TableToolbarContent aria-hidden={batchActionProps.shouldShowBatchActions}>{null}</TableToolbarContent>
             </TableToolbar>
-            <Table {...getTableProps()} aria-label="Clientes">
+            <TabelaResponsiva principais={['Nome']}><Table {...getTableProps()} aria-label="Clientes">
               <TableHead>
                 <TableRow>
                   <TableSelectAll {...getSelectionProps()} aria-label="Selecionar todas as linhas" />
@@ -259,30 +264,26 @@ function TabelaContatos({
                       {row.cells.map((cell) =>
                         cell.info.header === 'nome' && c ? (
                           <TableCell key={cell.id}>
-                            <button type="button" className="contato-nome-link" onClick={() => onAbrir(c.id)}>
-                              {cell.value}
-                            </button>
+                            <TextoTabela texto={String(cell.value ?? '')} onClick={() => onAbrir(c.id)} />
                           </TableCell>
                         ) : cell.info.header === 'etiquetas' && c ? (
                           <TableCell key={cell.id}>
                             {(c.etiquetas ?? []).length ? (c.etiquetas ?? []).map((et) => <Tag key={et} size="sm">{et}</Tag>) : 'Sem etiquetas'}
                           </TableCell>
                         ) : (
-                          <TableCell key={cell.id}>{cell.value}</TableCell>
+                          <TableCell key={cell.id}>{cell.info.header === 'email' ? <TextoTabela texto={String(cell.value ?? '')} /> : cell.value}</TableCell>
                         ),
                       )}
                       <TableCell>
                         {c && (
-                          <Button kind="danger--tertiary" size="sm" onClick={() => onExcluir(c)}>
-                            Excluir
-                          </Button>
+                          <AcoesTabela rotulo={c.nome || 'contato'} acoes={[{ texto: 'Excluir', executar: () => onExcluir(c), perigo: true }]} />
                         )}
                       </TableCell>
                     </TableRow>
                   )
                 })}
               </TableBody>
-            </Table>
+            </Table></TabelaResponsiva>
           </TableContainer>
         )
       }}
