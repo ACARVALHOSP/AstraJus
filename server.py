@@ -1773,7 +1773,13 @@ async def consultar_jurisprudencia_tjsp(
                 pass
 
         resp.raise_for_status()
-        dados = resp.json()
+        try:
+            dados = resp.json()
+        except ValueError:
+            # Sintaxe de busca que o e-SAJ não reconhece (ex.: "PROX") faz o TJSP devolver uma
+            # resposta não-JSON em vez de um erro estruturado - sem isso, o usuário veria a
+            # exceção crua de parsing.
+            return _erro("Não foi possível processar essa busca - revise a sintaxe dos termos e tente novamente.")
 
         itens = dados.get("jurisprudencias") or []
         subfiltros = dados.get("subfiltros") or []

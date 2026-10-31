@@ -14,8 +14,9 @@ import {
   Tag,
   TextInput,
   Tile,
+  Tooltip,
 } from '@carbon/react'
-import { Filter } from '@carbon/icons-react'
+import { Filter, Information } from '@carbon/icons-react'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 import { formatarDdMmAaaa } from '../utils/formatadores'
@@ -247,7 +248,7 @@ export default function Jurisprudencia() {
             <Column sm={4} md={6} lg={11}>
               <TextInput
                 id="juris-termo"
-                labelText="Pesquisa por termos (obrigatório)"
+                labelText={<LabelTermoComAjuda />}
                 placeholder="Ex.: danos morais, rescisão contratual, guarda compartilhada"
                 autoComplete="off"
                 required
@@ -472,5 +473,45 @@ export default function Jurisprudencia() {
         )}
       </div>
     </Stack>
+  )
+}
+
+const OPERADORES_BUSCA: { operador: string; exemplo: string }[] = [
+  { operador: 'OU', exemplo: 'dano OU prejuízo' },
+  { operador: 'NÃO', exemplo: 'dano NÃO moral' },
+  { operador: '"frase exata"', exemplo: '"dano moral"' },
+  { operador: '*', exemplo: 'indeniz*' },
+  { operador: '?', exemplo: 'indeniza??o' },
+]
+
+function LabelTermoComAjuda() {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+      Pesquisa por termos (obrigatório)
+      <Tooltip
+        autoAlign
+        align="top"
+        label={
+          <div>
+            <p>Operadores de busca suportados pelo TJSP:</p>
+            <ul style={{ margin: '0.25rem 0 0', paddingLeft: '1rem' }}>
+              {OPERADORES_BUSCA.map(({ operador, exemplo }) => (
+                <li key={operador}>
+                  <strong>{operador}</strong> — ex.: {exemplo}
+                </li>
+              ))}
+            </ul>
+          </div>
+        }
+      >
+        <button
+          type="button"
+          aria-label="Operadores de busca suportados"
+          style={{ display: 'inline-flex', alignItems: 'center', border: 'none', background: 'none', padding: 0, cursor: 'pointer' }}
+        >
+          <Information size={16} />
+        </button>
+      </Tooltip>
+    </span>
   )
 }
