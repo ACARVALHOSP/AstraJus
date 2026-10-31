@@ -1554,6 +1554,20 @@ def _jurisprudencia_tjsp_trecho_destacado(bruto: str | None) -> str | None:
     return "".join(partes)
 
 
+def _extrair_lista_strings(valores: Any) -> list[str]:
+    if not valores or not isinstance(valores, list):
+        return []
+    resultado: list[str] = []
+    for v in valores:
+        if isinstance(v, str) and v.strip():
+            resultado.append(v.strip())
+        elif isinstance(v, dict):
+            nome = v.get("nmProlator") or v.get("deProlator") or v.get("deBoletim") or v.get("descricao") or v.get("nome")
+            if nome and str(nome).strip():
+                resultado.append(str(nome).strip())
+    return resultado
+
+
 def _jurisprudencia_tjsp_campos_resultado(item: dict) -> dict:
     return {
         "cdJurisprudencia": item.get("cdJurisprudencia"),
@@ -1564,6 +1578,12 @@ def _jurisprudencia_tjsp_campos_resultado(item: dict) -> dict:
         "orgao_julgador": item.get("nmOrgaoJulgador"),
         "data_julgamento": item.get("dtJulgamento"),
         "ementa": item.get("deEmentaJuris"),
+        "nu_processo_origem": item.get("nuProcOrigem"),
+        "votacao": item.get("deVotacao"),
+        "voto": item.get("deVoto"),
+        "prolatores": _extrair_lista_strings(item.get("prolatores")),
+        "boletins": _extrair_lista_strings(item.get("boletimList")),
+        "ativo": item.get("flAtivo") != "N",
         "trecho_destacado_html": _jurisprudencia_tjsp_trecho_destacado(item.get("highlightedDesc")),
         "segredo_justica": item.get("flSegredoJustica") == "S",
         "pdf_url": (
@@ -1582,9 +1602,12 @@ async def consultar_jurisprudencia_tjsp(
     data_julgamento_inicio: str | None = None,
     data_julgamento_fim: str | None = None,
     relator: str | None = None,
+    relatores: list[str] | None = None,
     classe: str | None = None,
+    classes: list[str] | None = None,
     comarcas: list[str] | None = None,
     orgao_julgador: str | None = None,
+    orgaos_julgadores: list[str] | None = None,
     ordenacao: str = "recente",
     pagina: int = 1,
 ) -> dict:
@@ -1619,15 +1642,36 @@ async def consultar_jurisprudencia_tjsp(
             return _erro(f"ordenacao deve ser uma de: {', '.join(JURISPRUDENCIA_TJSP_ORDENACAO)}.")
 
         sub_filter: dict[str, list[str]] = {}
-        comarcas_limpas = [c.strip() for c in (comarcas or []) if c and c.strip()]
+
+        def _combinar_lista(singular: str | None, plural: list[str] | None) -> list[str]:
+            res: list[str] = []
+            if plural and isinstance(plural, list):
+                for x in plural:
+                    if x and str(x).strip():
+                        s = str(x).strip()
+                        if s not in res:
+                            res.append(s)
+            if singular and str(singular).strip():
+                s = str(singular).strip()
+                if s not in res:
+                    res.append(s)
+            return res
+
+        comarcas_limpas = _combinar_lista(None, comarcas)
         if comarcas_limpas:
             sub_filter["comarcas"] = comarcas_limpas
-        if relator and relator.strip():
-            sub_filter["relatores"] = [relator.strip()]
-        if classe and classe.strip():
-            sub_filter["classes"] = [classe.strip()]
-        if orgao_julgador and orgao_julgador.strip():
-            sub_filter["orgaosJulgadores"] = [orgao_julgador.strip()]
+
+        relatores_limpos = _combinar_lista(relator, relatores)
+        if relatores_limpos:
+            sub_filter["relatores"] = relatores_limpos
+
+        classes_limpas = _combinar_lista(classe, classes)
+        if classes_limpas:
+            sub_filter["classes"] = classes_limpas
+
+        orgaos_limpos = _combinar_lista(orgao_julgador, orgaos_julgadores)
+        if orgaos_limpos:
+            sub_filter["orgaosJulgadores"] = orgaos_limpos
 
         corpo: dict[str, Any] = {
             "dePesquisaTermos": termo.strip(),
@@ -1663,8 +1707,30 @@ async def consultar_jurisprudencia_tjsp(
                 f"{JURISPRUDENCIA_TJSP_BASE_URL}/gcn-services/api/publico/jurisprudencia/find/jurisprudencias",
                 json=corpo,
             )
-            resp.raise_for_status()
-            dados = resp.json()
+
+        # O TJSP retorna HTTP 400 com "Consulta sem resultado." quando a busca não encontra acórdãos
+        if resp.status_code == 400:
+            try:
+                dados_erro = resp.json()
+                msg = dados_erro.get("message") or dados_erro.get("debugMessage") or ""
+                if "sem resultado" in msg.lower():
+                    return {
+                        "total_servidor": 0,
+                        "pagina": pagina,
+                        "tamanho_pagina": JURISPRUDENCIA_TJSP_TAMANHO_PAGINA,
+                        "resultados": [],
+                        "comarcas_disponiveis": [],
+                        "relatores_disponiveis": [],
+                        "classes_disponiveis": [],
+                        "orgaos_disponiveis": [],
+                    }
+                if msg:
+                    return _erro(f"TJSP: {msg}")
+            except Exception:
+                pass
+
+        resp.raise_for_status()
+        dados = resp.json()
 
         itens = dados.get("jurisprudencias") or []
         subfiltros = dados.get("subfiltros") or []
@@ -1707,6 +1773,26 @@ async def consultar_jurisprudencia_tjsp(
             "orgaos_disponiveis": orgaos_disponiveis,
         }
 
+    except httpx.HTTPStatusError as exc:
+        try:
+            corpo_erro = exc.response.json()
+            msg = corpo_erro.get("message") or corpo_erro.get("debugMessage")
+            if msg:
+                if "sem resultado" in str(msg).lower():
+                    return {
+                        "total_servidor": 0,
+                        "pagina": pagina,
+                        "tamanho_pagina": JURISPRUDENCIA_TJSP_TAMANHO_PAGINA,
+                        "resultados": [],
+                        "comarcas_disponiveis": [],
+                        "relatores_disponiveis": [],
+                        "classes_disponiveis": [],
+                        "orgaos_disponiveis": [],
+                    }
+                return _erro(f"TJSP: {msg}")
+        except Exception:
+            pass
+        return _erro(f"Erro ao consultar a jurisprudência do TJSP (HTTP {exc.response.status_code}).")
     except httpx.HTTPError as exc:
         return _erro(f"Erro de rede ao consultar a jurisprudência do TJSP: {exc}")
     except Exception as exc:
