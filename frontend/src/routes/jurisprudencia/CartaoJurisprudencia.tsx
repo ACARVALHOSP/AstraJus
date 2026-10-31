@@ -23,9 +23,9 @@ export function CartaoJurisprudencia({ item }: { item: ResultadoJurisprudencia }
     if (item.ementa && item.ementa.trim()) {
       return item.ementa.trim()
     }
-    if (item.trecho_destacado_html) {
+    if (item.ementa_html) {
       const div = document.createElement('div')
-      div.innerHTML = item.trecho_destacado_html
+      div.innerHTML = item.ementa_html
       return (div.textContent || div.innerText || '').trim()
     }
     return ''
@@ -55,7 +55,7 @@ export function CartaoJurisprudencia({ item }: { item: ResultadoJurisprudencia }
     }
   }
 
-  const temTextoEmenta = Boolean((item.ementa && item.ementa.trim()) || item.trecho_destacado_html)
+  const temTextoEmenta = Boolean((item.ementa && item.ementa.trim()) || item.ementa_html)
 
   return (
     <Tile>
@@ -95,12 +95,8 @@ export function CartaoJurisprudencia({ item }: { item: ResultadoJurisprudencia }
           </div>
         )}
 
-        {/* Ementa ou Trecho Destacado */}
-        {item.trecho_destacado_html ? (
-          <p className="juris-trecho" dangerouslySetInnerHTML={{ __html: item.trecho_destacado_html }} />
-        ) : (
-          item.ementa && <p>{item.ementa}</p>
-        )}
+        {/* Ementa completa, com os termos buscados marcados pelo backend */}
+        {item.ementa_html && <p className="juris-trecho" dangerouslySetInnerHTML={{ __html: item.ementa_html }} />}
 
         {/* Metadados (Relator, Comarca, Órgão, Voto, Prolatores) */}
         {atribuicoes.length > 0 && (

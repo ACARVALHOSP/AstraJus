@@ -1554,6 +1554,38 @@ def _jurisprudencia_tjsp_trecho_destacado(bruto: str | None) -> str | None:
     return "".join(partes)
 
 
+def _jurisprudencia_tjsp_termos_destacados(bruto: str | None) -> list[str]:
+    """Extrai os termos que o e-SAJ marcou como encontrados (dentro de <span id="highlighter">),
+    para reaplicá-los sobre a ementa completa."""
+    if not bruto:
+        return []
+    termos: list[str] = []
+    for m in _RE_JURISPRUDENCIA_TJSP_HIGHLIGHT.finditer(bruto):
+        termo = m.group(1).strip()
+        if termo and termo not in termos:
+            termos.append(termo)
+    return termos
+
+
+def _jurisprudencia_tjsp_marcar_termos(texto: str, termos: list[str]) -> str:
+    """Escapa `texto` e marca (<mark>, estilizado via token Carbon - ver .juris-trecho no SCSS) as
+    ocorrências de `termos`, para destacar o termo buscado sem truncar a ementa completa."""
+    if not termos:
+        return _escapar(texto)
+    padrao = re.compile(
+        "|".join(re.escape(t) for t in sorted(set(termos), key=len, reverse=True)),
+        re.IGNORECASE,
+    )
+    partes: list[str] = []
+    pos = 0
+    for m in padrao.finditer(texto):
+        partes.append(_escapar(texto[pos : m.start()]))
+        partes.append(f"<mark>{_escapar(m.group(0))}</mark>")
+        pos = m.end()
+    partes.append(_escapar(texto[pos:]))
+    return "".join(partes)
+
+
 def _extrair_lista_strings(valores: Any) -> list[str]:
     if not valores or not isinstance(valores, list):
         return []
@@ -1569,6 +1601,16 @@ def _extrair_lista_strings(valores: Any) -> list[str]:
 
 
 def _jurisprudencia_tjsp_campos_resultado(item: dict) -> dict:
+    ementa = (item.get("deEmentaJuris") or "").strip()
+    termos = _jurisprudencia_tjsp_termos_destacados(item.get("highlightedDesc"))
+    # Mostra sempre a ementa completa; quando o termo buscado bate nela, marca-o (<mark>) em vez de
+    # trocar a ementa pelo trecho truncado que o e-SAJ devolve em "highlightedDesc". Se não houver
+    # ementa cadastrada, cai para esse trecho truncado como única informação disponível.
+    ementa_html = (
+        _jurisprudencia_tjsp_marcar_termos(ementa, termos)
+        if ementa
+        else _jurisprudencia_tjsp_trecho_destacado(item.get("highlightedDesc"))
+    )
     return {
         "cdJurisprudencia": item.get("cdJurisprudencia"),
         "cdAcordao": item.get("cdAcordao"),
@@ -1577,14 +1619,14 @@ def _jurisprudencia_tjsp_campos_resultado(item: dict) -> dict:
         "comarca": item.get("nmComarca"),
         "orgao_julgador": item.get("nmOrgaoJulgador"),
         "data_julgamento": item.get("dtJulgamento"),
-        "ementa": item.get("deEmentaJuris"),
+        "ementa": ementa or None,
+        "ementa_html": ementa_html,
         "nu_processo_origem": item.get("nuProcOrigem"),
         "votacao": item.get("deVotacao"),
         "voto": item.get("deVoto"),
         "prolatores": _extrair_lista_strings(item.get("prolatores")),
         "boletins": _extrair_lista_strings(item.get("boletimList")),
         "ativo": item.get("flAtivo") != "N",
-        "trecho_destacado_html": _jurisprudencia_tjsp_trecho_destacado(item.get("highlightedDesc")),
         "segredo_justica": item.get("flSegredoJustica") == "S",
         "pdf_url": (
             f"{JURISPRUDENCIA_TJSP_BASE_URL}/mat-report/publico/gcn/api/v1.0/jurisprudencia"
@@ -1629,8 +1671,9 @@ async def consultar_jurisprudencia_tjsp(
 
     Cada resultado já traz a ementa pronta (campo "ementa") quando o acórdão tiver uma cadastrada -
     não há geração automática de ementa pelo TJSP, só exibição da que foi redigida pelo tribunal.
-    "trecho_destacado_html" marca com <mark> os termos buscados encontrados no inteiro teor (HTML
-    já escapado, seguro para renderizar). Resultados com "segredo_justica": true não têm PDF de
+    "ementa_html" traz essa mesma ementa completa (ou, na ausência dela, o trecho do inteiro teor
+    devolvido pelo e-SAJ) com os termos buscados marcados em <mark> (HTML já escapado, seguro para
+    renderizar). Resultados com "segredo_justica": true não têm PDF de
     acórdão disponível.
     """
     try:

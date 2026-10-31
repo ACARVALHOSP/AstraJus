@@ -7,7 +7,7 @@ export type ResultadoJurisprudencia = {
   orgao_julgador?: string
   data_julgamento?: string
   ementa?: string
-  trecho_destacado_html?: string | null
+  ementa_html?: string | null
   segredo_justica?: boolean
   pdf_url?: string | null
   nu_processo_origem?: string | null
