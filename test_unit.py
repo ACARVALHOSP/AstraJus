@@ -171,7 +171,7 @@ class DataJudTest(_Simulado, unittest.TestCase):
         req = self.chamadas[0]
         self.assertEqual(str(req.url), f"{server.DATAJUD_BASE_URL}/api_publica_tjsp/_search")
         self.assertTrue(req.headers["Authorization"].startswith("APIKey "))
-        self.assertEqual(json.loads(req.content), {"query": {"match": {"numeroProcesso": "10063142720238260005"}}})
+        self.assertEqual(json.loads(req.content), {"_source": True, "size": 100, "query": {"match": {"numeroProcesso": "10063142720238260005"}}})
 
     def test_chave_pode_ser_sobrescrita_por_ambiente(self):
         self.responder(_json(200, DATAJUD_OK))
@@ -678,8 +678,13 @@ class PaginaAdministrativaTest(_RegistroTemporario):
         return urlencode(campos).encode()
 
     def test_sem_admin_token_configurado_a_pagina_nao_existe(self):
-        mw = server._AutenticacaoBearer(self.mw.app, self.registro, None, None)
+        registro_vazio = db.RegistroUsuarios(self.registro.caminho.with_name('sem-admin.db'))
+        mw = server._AutenticacaoBearer(self.mw.app, registro_vazio, None, None)
         self.assertEqual(_chamar_asgi(mw, "GET", "/admin")[0], 404)
+
+    def test_hash_persistido_habilita_pagina_sem_variavel(self):
+        mw = server._AutenticacaoBearer(self.mw.app, self.registro, None, None)
+        self.assertEqual(_chamar_asgi(mw, "GET", "/admin")[0], 200)
 
     def test_get_admin_sem_token_nao_lista_usuarios(self):
         status, corpo, _ = _chamar_asgi(self.mw, "GET", "/admin")
@@ -2214,6 +2219,35 @@ class PublicacaoCadastroInlineTest(unittest.TestCase):
         self.assertIn("texto", dados["campos_djen"])
         self.assertEqual(dados["hashes_disponiveis"], ["pub-inline"])
 
+    def test_calendario_filtra_antes_de_paginar_e_ordena_por_disponibilizacao(self):
+        for hash_, dia, status in [("nova", "2026-10-28", "nao_tratada"),
+                                   ("antiga", "2026-10-23", "tratada"),
+                                   ("nova-2", "2026-10-28T12:00:00", "tratada")]:
+            self.publicacoes.registrar(hash_, None, None, self.numero,
+                {"data_disponibilizacao": dia}, status, None, self.agora)
+        self.assertEqual([p["hash"] for p in self.publicacoes.listar(None, 2)], ["nova-2", "nova"])
+        self.assertEqual(self.publicacoes.contar(data="2026-10-28"), 2)
+        self.assertEqual(self.publicacoes.contar("tratada", "2026-10-28"), 1)
+        self.assertEqual(self.publicacoes.listar(None, 1, 1, "2026-10-28")[0]["hash"], "nova")
+        self.assertEqual(self.publicacoes.hashes_disponiveis("tratada", "2026-10-28"), ["nova-2"])
+        self.assertEqual(self.publicacoes.datas_disponiveis(), {"2026-10-23": 1, "2026-10-28": 2})
+        self.assertEqual(self.publicacoes.datas_disponiveis("tratada"), {"2026-10-23": 1, "2026-10-28": 1})
+        mw = server._AutenticacaoBearer(None, None, gestao=self.gestao, publicacoes=self.publicacoes)
+        async def consultar(query):
+            respostas = []
+            async def send(mensagem):
+                respostas.append(mensagem)
+            await mw._publicacoes_oab({"method": "GET", "query_string": query.encode()}, send)
+            return respostas[0]["status"], json.loads(respostas[1]["body"])
+        for data in ("2026-02-30", "28/10/2026", "2026-1-1", "2026-10-28' OR 1=1"):
+            self.assertEqual(_rodar(consultar("data=" + data))[0], 400)
+        status, resultado = _rodar(consultar("data=2026-10-28&tamanho=1&pagina=2"))
+        self.assertEqual(status, 200)
+        self.assertEqual(resultado["total"], 2)
+        self.assertEqual(resultado["publicacoes"][0]["hash"], "nova")
+        self.assertIn("2026-10-23", resultado["datas_disponiveis"])
+        self.assertEqual(_rodar(consultar("data=2026-10-24"))[1]["total"], 0)
+
     def test_cadastro_preenche_dados_capa_e_vincula_publicacao(self):
         publicacao = self.publicacoes.obter("pub-inline")
         caso, erro = server._criar_caso_de_publicacao(self.gestao, self.publicacoes, publicacao,
@@ -2685,10 +2719,13 @@ class AtualizarMovimentosProcessosTest(unittest.TestCase):
         self.numero = "10063142720238260005"
         self.caso = self.gestao.criar_caso(cliente["id"], "Caso Teste", None, [self.numero], self.agora)
 
-    def test_sem_capa_vinculada_nao_consulta_nada(self):
-        with mock.patch.object(server, "consultar_processo_unificado") as mocked:
+    def test_sem_capa_vinculada_consulta_datajud(self):
+        fonte = {"numeroProcesso": self.numero, "tribunal": "TJSP", "grau": "G1"}
+        resultado = {"encontrado": True, "processos": [server._extrair_processo_datajud(fonte)]}
+        with mock.patch.object(server, "consultar_processo_datajud", new=mock.AsyncMock(return_value=resultado)) as consulta:
             asyncio.run(server._atualizar_movimentos_processos(self.gestao, self.agora))
-        mocked.assert_not_called()
+        consulta.assert_awaited_once_with("tjsp", self.numero)
+        self.assertEqual(self.gestao.obter_datajud(self.numero, "TJSP")[0]["numeroProcesso"], self.numero)
 
     def test_movimento_novo_atualiza_capa_e_registra_evento(self):
         self.gestao.salvar_capa_processo(

@@ -75,6 +75,8 @@ def conectar(caminho: Path) -> sqlite3.Connection:
     conexao = sqlite3.connect(caminho, check_same_thread=False)
     conexao.execute("PRAGMA foreign_keys = ON")
     _criar_schema(conexao)
+    from usuarios_admin import migrar
+    migrar(conexao)
     return conexao
 
 
@@ -384,8 +386,12 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
             );
             """
         )
+        conexao.execute("""CREATE TABLE IF NOT EXISTS processos_datajud (
+            numero_processo TEXT NOT NULL, tribunal TEXT NOT NULL,
+            instancias TEXT NOT NULL, atualizado_em TEXT NOT NULL,
+            PRIMARY KEY (numero_processo, tribunal))""")
         colunas_capa = {r[1] for r in conexao.execute("PRAGMA table_info(caso_processo_capa)")}
-        for campo in ("movimentos", "partes", "advogados"):
+        for campo in ("movimentos", "partes", "advogados", "datajud"):
             if campo not in colunas_capa:
                 conexao.execute(f"ALTER TABLE caso_processo_capa ADD COLUMN {campo} TEXT")
         if "orgao_julgador" not in {c[1] for c in conexao.execute("PRAGMA table_info(caso_processo_capa)")}:
@@ -744,13 +750,27 @@ class RegistroUsuarios(_RegistroJSON):
     _tabela = "usuarios"
     _coluna_chave = "nome"
 
+    def salvar(self, dados: dict) -> None:
+        from usuarios_admin import gravar
+        with _abrir(self.caminho) as conexao, conexao:
+            conexao.execute("BEGIN IMMEDIATE")
+            anteriores = {n: json.loads(r) for n, r in conexao.execute("SELECT nome, dados FROM usuarios")}
+            for nome, registro in dados.items():
+                # Preserva metadados quando um cliente legado envia apenas hash/status.
+                anterior = anteriores.get(nome, {})
+                from usuarios_admin import CAMPOS
+                registro = {**{k: anterior[k] for k in CAMPOS if k in anterior}, **registro}
+                gravar(conexao, nome, registro)
+            for nome in anteriores.keys() - dados.keys():
+                conexao.execute("DELETE FROM usuarios WHERE nome=?", (nome,))
+
     def identificar(self, token: str) -> str | None:
         """Devolve o nome do usuário dono do token, ou None se não existe ou foi revogado."""
         h = _hash_token(token)
         with _abrir(self.caminho) as conexao:
             row = conexao.execute(
                 "SELECT nome FROM usuarios "
-                "WHERE json_extract(dados, '$.hash') = ? "
+                "WHERE json_extract(dados, '$.hash') = ? AND status = 'ativo' "
                 "AND (json_extract(dados, '$.revogado') IS NULL "
                 "     OR json_extract(dados, '$.revogado') = 0)",
                 (h,),
@@ -758,7 +778,7 @@ class RegistroUsuarios(_RegistroJSON):
         return row[0] if row else None
 
     def ativos(self) -> list[str]:
-        return [nome for nome, r in self.carregar().items() if not r.get("revogado")]
+        return [nome for nome, r in self.carregar().items() if not r.get("revogado") and r.get("status", "ativo") == "ativo"]
 
 
 class RegistroMonitoramentos(_RegistroJSON):
@@ -1100,8 +1120,36 @@ class RegistroClientesCasos:
     _CAMPOS_CAPA = (
         "tribunal", "classe", "assuntos", "grau", "data_distribuicao", "nivel_sigilo", "nome_processo", "orgao_julgador",
         "area_direito", "magistrado", "tipo_justica", "cidade", "uf", "valor_causa", "fase", "status_processo",
-        "movimentos", "partes", "advogados",
+        "movimentos", "partes", "advogados", "datajud",
     )
+
+    def salvar_datajud(self, numero: str, tribunal: str, instancias: list[dict]) -> None:
+        """Snapshot durável completo por processo/tribunal, independente do cache."""
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute(
+                "INSERT INTO processos_datajud VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(numero_processo, tribunal) DO UPDATE SET "
+                "instancias=excluded.instancias, atualizado_em=excluded.atualizado_em",
+                (numero, tribunal.lower(), json.dumps(instancias, ensure_ascii=False), datetime.now(timezone.utc).isoformat()),
+            )
+
+    def obter_datajud(self, numero: str, tribunal: str) -> list[dict]:
+        with _abrir(self.caminho) as conexao:
+            linha = conexao.execute("SELECT instancias FROM processos_datajud WHERE numero_processo=? AND tribunal=?",
+                                    (numero, tribunal.lower())).fetchone()
+            return json.loads(linha[0]) if linha else []
+
+    def processos_datajud_pendentes(self) -> list[tuple[str, str | None]]:
+        """Todos os CNJs cadastrados ou monitorados, inclusive os sem capa."""
+        with _abrir(self.caminho) as conexao:
+            itens = {(n, t) for n, t in conexao.execute(
+                "SELECT p.numero_processo, c.tribunal FROM caso_processos p LEFT JOIN caso_processo_capa c "
+                "ON c.caso_id=p.caso_id AND c.numero_processo=p.numero_processo WHERE c.tribunal IS NULL")}
+            for (dados,) in conexao.execute("SELECT dados FROM monitoramentos"):
+                criterio = json.loads(dados).get("criterio") or {}
+                if criterio.get("numero_processo"):
+                    itens.add((criterio["numero_processo"], criterio.get("sigla_tribunal")))
+            return sorted(itens, key=lambda item: (item[0], item[1] or ""))
 
     def capas_vinculadas(self) -> list[dict]:
         """Processos cuja capa já foi preenchida ao menos uma vez a partir de um tribunal
@@ -1126,8 +1174,14 @@ class RegistroClientesCasos:
             if not linha:
                 return None
             capa = dict(zip((*self._CAMPOS_CAPA, "atualizado_em"), linha))
-            for campo in ("assuntos", "movimentos", "partes", "advogados"):
+            for campo in ("assuntos", "movimentos", "partes", "advogados", "datajud"):
                 capa[campo] = json.loads(capa[campo]) if capa[campo] else []
+            if capa.get("tribunal") and not capa["datajud"]:
+                linha_datajud = conexao.execute(
+                    "SELECT instancias FROM processos_datajud WHERE numero_processo=? AND tribunal=?",
+                    (numero_processo, capa["tribunal"].lower())).fetchone()
+                if linha_datajud:
+                    capa["datajud"] = json.loads(linha_datajud[0])
             return capa
 
     def salvar_capa_processo(self, caso_id: str, numero_processo: str, agora, **campos) -> dict:
@@ -1137,7 +1191,7 @@ class RegistroClientesCasos:
         invalidos = set(campos) - set(self._CAMPOS_CAPA)
         if invalidos:
             raise ValueError(f"Campos inválidos para capa de processo: {sorted(invalidos)}")
-        for campo in ("assuntos", "movimentos", "partes", "advogados"):
+        for campo in ("assuntos", "movimentos", "partes", "advogados", "datajud"):
             if campos.get(campo) is not None:
                 campos[campo] = json.dumps(campos[campo])
         atualizado_em = agora().isoformat()
@@ -1918,22 +1972,37 @@ class RegistroPublicacoesOAB:
                                       caso_id=destino[0], publicacao_hash=hash_publicacao, agora=agora())
             return inseriu
 
-    def listar(self, status: str | None = None, limite: int = 300, deslocamento: int = 0) -> list[dict]:
+    @staticmethod
+    def _filtro_data(status=None, data=None):
+        filtros, valores = [], []
+        if status:
+            filtros.append("status = ?")
+            valores.append(status)
+        if data:
+            filtros.append("substr(json_extract(dados, '$.data_disponibilizacao'), 1, 10) = ?")
+            valores.append(data)
+        return (" WHERE " + " AND ".join(filtros) if filtros else ""), valores
+
+    def listar(self, status: str | None = None, limite: int = 300, deslocamento: int = 0,
+               data: str | None = None) -> list[dict]:
+        filtro, valores = self._filtro_data(status, data)
         with _abrir(self.caminho) as conexao:
-            if status:
-                cursor = conexao.execute(
-                    "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, "
-                    "caso_id, criado_em FROM publicacoes_capturadas WHERE status = ? "
-                    "ORDER BY criado_em DESC, hash DESC LIMIT ? OFFSET ?",
-                    (status, limite, deslocamento),
-                )
-            else:
-                cursor = conexao.execute(
-                    "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, "
-                    "caso_id, criado_em FROM publicacoes_capturadas ORDER BY criado_em DESC, hash DESC LIMIT ? OFFSET ?",
-                    (limite, deslocamento),
-                )
+            cursor = conexao.execute(
+                "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, "
+                "caso_id, criado_em FROM publicacoes_capturadas" + filtro +
+                " ORDER BY coalesce(nullif(substr(json_extract(dados, '$.data_disponibilizacao'), 1, 10), ''), "
+                "substr(criado_em, 1, 10)) DESC, criado_em DESC, hash DESC LIMIT ? OFFSET ?",
+                (*valores, limite, deslocamento),
+            )
             return [_linha_publicacao(linha) for linha in cursor.fetchall()]
+
+    def datas_disponiveis(self, status: str | None = None) -> dict[str, int]:
+        filtro, valores = self._filtro_data(status)
+        with _abrir(self.caminho) as conexao:
+            return {data: quantidade for data, quantidade in conexao.execute(
+                "SELECT substr(json_extract(dados, '$.data_disponibilizacao'), 1, 10) AS dia, COUNT(*) "
+                "FROM publicacoes_capturadas" + filtro + " GROUP BY dia", valores
+            ) if data}
 
     def campos_djen(self) -> list[str]:
         """Catálogo completo, independente da página e do filtro atuais."""
@@ -1943,11 +2012,11 @@ class RegistroPublicacoesOAB:
                 "json_each(publicacoes_capturadas.dados) AS campo ORDER BY campo.key"
             )]
 
-    def hashes_disponiveis(self, status: str | None = None) -> list[str]:
+    def hashes_disponiveis(self, status: str | None = None, data: str | None = None) -> list[str]:
+        filtro, valores = self._filtro_data(status, data)
         with _abrir(self.caminho) as conexao:
             return [r[0] for r in conexao.execute(
-                "SELECT hash FROM publicacoes_capturadas" + (" WHERE status = ?" if status else ""),
-                (status,) if status else ())]
+                "SELECT hash FROM publicacoes_capturadas" + filtro, valores)]
 
     def atualizar_status_detalhado(self, hashes: list[str], status: str, usuario: str | None = None) -> dict:
         """Atualização atômica com identificação dos registros ausentes."""
@@ -1969,15 +2038,10 @@ class RegistroPublicacoesOAB:
         return {"atualizadas": len(existentes), "hashes_atualizados": existentes,
                 "hashes_falharam": [h for h in hashes if h not in encontrados]}
 
-    def contar(self, status: str | None = None) -> int:
+    def contar(self, status: str | None = None, data: str | None = None) -> int:
+        filtro, valores = self._filtro_data(status, data)
         with _abrir(self.caminho) as conexao:
-            if status:
-                linha = conexao.execute(
-                    "SELECT COUNT(*) FROM publicacoes_capturadas WHERE status = ?", (status,)
-                ).fetchone()
-            else:
-                linha = conexao.execute("SELECT COUNT(*) FROM publicacoes_capturadas").fetchone()
-            return linha[0] if linha else 0
+            return conexao.execute("SELECT COUNT(*) FROM publicacoes_capturadas" + filtro, valores).fetchone()[0]
 
     def obter(self, hash_publicacao: str) -> dict | None:
         with _abrir(self.caminho) as conexao:

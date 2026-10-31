@@ -1,5 +1,4 @@
 """Rotas administrativas de integrações; segredos nunca retornam ao navegador."""
-import hmac
 import json
 import secrets
 import time
@@ -29,8 +28,11 @@ async def tratar(app, scope, receive, send):
     token = auth[7:] if auth.startswith('Bearer ') else ''
     usuario = app.registro.identificar(token) if token else None
     registros = app.registro.carregar() if usuario else {}
-    admin_nomeado = bool(usuario and registros.get(usuario, {}).get('administrador_integracoes') is True)
-    bootstrap = bool(token and app.admin_token and hmac.compare_digest(token.encode(), app.admin_token.encode()))
+    admin_nomeado = bool(usuario and (registros.get(usuario, {}).get('administrador_integracoes') is True or registros.get(usuario, {}).get('nivel_acesso') == 'administrador'))
+    if usuario and registros[usuario].get('nivel_acesso') == 'consulta':
+        admin_nomeado = False
+    from usuarios_admin import validar_token_admin
+    bootstrap = validar_token_admin(app.registro, token)
     if not (admin_nomeado or bootstrap):
         if app.falhas:
             app.falhas.verificar('integracoes:' + s._ip_cliente(scope))

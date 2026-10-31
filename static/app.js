@@ -801,7 +801,12 @@ async function selecionarAba(alvo, { registrarHistorico = true } = {}) {
   if (alvo.painel.id === "aba-contatos") { voltarParaContatos(); carregarContatos("pagina"); }
   if (alvo.painel.id === "aba-casos") carregarCasosPagina("pagina");
   if (alvo.painel.id === "aba-atividades") carregarAtividadesAbertas("pagina");
-  if (alvo.painel.id === "aba-publicacoes-oab") carregarPublicacoesOab("pagina");
+  if (alvo.painel.id === "aba-publicacoes-oab") {
+    _pubOabData = ""; _pubOabMes = ""; _pubOabPagina = 1;
+    _publicacoesOabSelecionadas.clear(); _pubOabExpandidas.clear();
+    document.getElementById("pub-oab-filtro-status").value = "";
+    carregarPublicacoesOab("pagina");
+  }
   if (alvo.painel.id === "aba-integracoes") carregarStatusIntegracoes("pagina");
   if (alvo.painel.id === "aba-financeiro") carregarLancamentos("pagina");
   if (alvo.painel.id === "aba-pagamentos") carregarPagamentos("pagina");
@@ -2233,6 +2238,7 @@ function abrirModal(id) {
   const secao = document.getElementById(id);
   if (!secao || secao.classList.contains("is-visible")) return;
   const origem = document.activeElement;
+  const primeiroModal = secoesAbertas.length === 0;
   const anterior = secoesAbertas.at(-1)?.secao;
   if (secao.matches("cds-modal.app-modal")) secao.open = true;
   else if (anterior && !anterior.matches("cds-modal.app-modal")) anterior.after(secao);
@@ -2242,10 +2248,9 @@ function abrirModal(id) {
     .map((item) => ({ item, inert: item.inert })) : [];
   for (const { item } of fundo) item.inert = true;
   secoesAbertas.push({ secao, origem, fundo });
-  if (secao.matches("cds-modal.app-modal")) {
-    secao.style.zIndex = String(9000 + secoesAbertas.length);
-    if (anterior) anterior.inert = true;
-  }
+  secao.style.zIndex = String(9000 + secoesAbertas.length);
+  if (anterior) anterior.inert = true;
+  if (primeiroModal) document.body.classList.add("sem-rolagem");
   secao.classList.add("is-visible");
   secao.tabIndex = -1;
   for (const form of secao.querySelectorAll("form")) marcarFormularioSalvo(form, true);
@@ -2267,6 +2272,7 @@ async function fecharModal(id) {
   secao.inert = false;
   const anterior = secoesAbertas.at(-1)?.secao;
   if (anterior) anterior.inert = false;
+  if (!secoesAbertas.length) document.body.classList.remove("sem-rolagem");
   if (entrada?.origem?.isConnected && entrada.origem.getClientRects().length) entrada.origem.focus();
   return true;
 }
@@ -2281,7 +2287,10 @@ document.addEventListener("keydown", (ev) => {
 
 document.addEventListener("click", (ev) => {
   const alvo = ev.target.closest("[data-fechar-modal]");
-  if (alvo) fecharModal(alvo.dataset.fecharModal);
+  if (alvo) { fecharModal(alvo.dataset.fecharModal); return; }
+  if (ev.target.classList.contains("fluxo-pagina") && ev.target.classList.contains("is-visible")) {
+    fecharModal(ev.target.id);
+  }
 });
 
 window.cnjUI.fecharModal = fecharModal;
@@ -3199,36 +3208,6 @@ const _ROTULOS_STATUS_PAGAMENTO = {
 };
 const _ROTULOS_TIPO_PAGAMENTO = { BOLETO: "Boleto", PIX: "Pix", UNDEFINED: "A definir" };
 
-async function carregarPagamentos(tipoFeedback = "interno") {
-  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-pagamentos") };
-  const container = document.getElementById("lista-pagamentos");
-  const aviso = document.getElementById("pagamentos-aviso-integracao");
-  limpar(aviso);
-  limpar(container);
-  try {
-    if (!_cache.clientes.length) {
-      const { clientes } = await _buscarJson("/clientes", feedback);
-      _cache.clientes = clientes || [];
-    }
-    const params = new URLSearchParams();
-    const status = document.getElementById("pagamentos-filtro-status").value;
-    const clienteId = document.getElementById("pagamentos-filtro-cliente").value;
-    if (status) params.set("status", status);
-    if (clienteId) params.set("cliente_id", clienteId);
-    const url = "/pagamentos" + (params.toString() ? `?${params}` : "");
-    const { cobrancas } = await _buscarJson(url, { ...feedback, tipo: tipoFeedback === "pagina" ? "pagina" : "externo" });
-    limpar(container);
-    _renderizarPagamentos(cobrancas || []);
-  } catch (erro) {
-    if (erro.status === 404) {
-      limpar(container);
-      aviso.appendChild(notificacao("info", "Integração Asaas não configurada", erro.message));
-    } else {
-      mostrarErro(container, erro.message);
-    }
-  }
-}
-
 // Campo de cliente por CPF/CNPJ: mascara, resolve contra _cache.clientes e mantém um input
 // hidden com o cliente_id (o que os formulários/filtros de fato enviam). `aoResolver` roda a
 // cada digitação, já com o cliente encontrado (ou null).
@@ -3249,9 +3228,59 @@ function _ligarCampoClientePorCpf(idTexto, idHidden, idStatus, aoResolver) {
   });
 }
 
-_ligarCampoClientePorCpf(
-  "pagamentos-filtro-cliente-cpf", "pagamentos-filtro-cliente", "pagamentos-filtro-cliente-status",
-  () => carregarPagamentos(),
+let _pagamentosOffset = 0;
+let _pagamentosAcumuladas = [];
+let _pagamentosTemMais = false;
+
+async function carregarPagamentos(tipoFeedback = "interno") {
+  _pagamentosOffset = 0;
+  _pagamentosAcumuladas = [];
+  await _buscarPaginaPagamentos(tipoFeedback);
+}
+
+async function _buscarPaginaPagamentos(tipoFeedback = "interno") {
+  const feedback = { tipo: tipoFeedback === "pagina" ? "pagina" : "interno", regiao: document.getElementById("lista-pagamentos") };
+  const container = document.getElementById("lista-pagamentos");
+  const aviso = document.getElementById("pagamentos-aviso-integracao");
+  const botaoMais = document.getElementById("pagamentos-carregar-mais");
+  limpar(aviso);
+  if (_pagamentosOffset === 0) limpar(container);
+  try {
+    if (!_cache.clientes.length) {
+      const { clientes } = await _buscarJson("/clientes", feedback);
+      _cache.clientes = clientes || [];
+    }
+    const params = new URLSearchParams();
+    const status = document.getElementById("pagamentos-filtro-status").value;
+    const clienteId = document.getElementById("pagamentos-filtro-cliente").value;
+    if (status) params.set("status", status);
+    if (clienteId) params.set("cliente_id", clienteId);
+    if (_pagamentosOffset) params.set("offset", _pagamentosOffset);
+    const url = "/pagamentos" + (params.toString() ? `?${params}` : "");
+    const dados = await _buscarJson(url, { ...feedback, tipo: tipoFeedback === "pagina" ? "pagina" : "externo" });
+    const cobrancas = dados.cobrancas || [];
+    _pagamentosAcumuladas = _pagamentosAcumuladas.concat(cobrancas);
+    _pagamentosTemMais = Boolean(dados.hasMore);
+    _pagamentosOffset += cobrancas.length;
+    limpar(container);
+    _renderizarPagamentos(_pagamentosAcumuladas);
+    botaoMais.hidden = !_pagamentosTemMais;
+  } catch (erro) {
+    botaoMais.hidden = true;
+    if (erro.status === 404) {
+      limpar(container);
+      aviso.appendChild(notificacao("info", "Integração Asaas não configurada"));
+    } else {
+      mostrarErro(container, erro.message);
+    }
+  }
+}
+
+document.getElementById("pagamentos-carregar-mais").addEventListener("click", () => _buscarPaginaPagamentos());
+
+_ligarBuscaCliente(
+  "pagamentos-filtro-cliente-busca", "pagamentos-filtro-cliente", "pagamentos-filtro-cliente-resultados",
+  "pagamentos-filtro-cliente-status", () => carregarPagamentos(),
 );
 
 function _renderizarPagamentos(cobrancas) {
@@ -3513,30 +3542,27 @@ function _renderizarProcessosDoCliente(clienteId) {
   }
 }
 
-function _selecionarClienteHonorario(cliente) {
-  const campoBusca = document.getElementById("honorario-cliente-busca");
-  const campoHidden = document.getElementById("honorario-cliente");
-  const status = document.getElementById("honorario-cliente-status");
-  const resultados = document.getElementById("honorario-cliente-resultados");
-  campoBusca.value = formatarNomeExibicao(cliente.nome);
-  campoHidden.value = cliente.id;
-  status.textContent = `Cliente selecionado: ${formatarNomeExibicao(cliente.nome)}`;
-  limpar(resultados);
-  resultados.hidden = true;
-  _renderizarProcessosDoCliente(cliente.id);
-}
-
-(function () {
-  const campoBusca = document.getElementById("honorario-cliente-busca");
-  const campoHidden = document.getElementById("honorario-cliente");
-  const status = document.getElementById("honorario-cliente-status");
-  const resultados = document.getElementById("honorario-cliente-resultados");
+// Liga um campo de busca de cliente por nome ou CPF/CNPJ (com dropdown de resultados) a um
+// input hidden com o cliente_id. `aoSelecionar(cliente|null)` roda ao escolher um resultado ou
+// ao limpar o campo (nesse caso com `null`).
+function _ligarBuscaCliente(idBusca, idHidden, idResultados, idStatus, aoSelecionar) {
+  const campoBusca = document.getElementById(idBusca);
+  const campoHidden = document.getElementById(idHidden);
+  const status = document.getElementById(idStatus);
+  const resultados = document.getElementById(idResultados);
+  const selecionar = (cliente) => {
+    campoBusca.value = formatarNomeExibicao(cliente.nome);
+    campoHidden.value = cliente.id;
+    status.textContent = `Cliente selecionado: ${formatarNomeExibicao(cliente.nome)}`;
+    limpar(resultados);
+    resultados.hidden = true;
+    aoSelecionar(cliente);
+  };
   campoBusca.addEventListener("input", () => {
     campoHidden.value = "";
-    _renderizarProcessosDoCliente("");
     const termo = campoBusca.value.trim();
     limpar(resultados);
-    if (!termo) { resultados.hidden = true; status.textContent = ""; return; }
+    if (!termo) { resultados.hidden = true; status.textContent = ""; aoSelecionar(null); return; }
     const termoNormalizado = _normalizarTexto(termo);
     const digitos = termo.replace(/\D/g, "");
     const encontrados = _cache.clientes.filter((cliente) => (
@@ -3553,13 +3579,18 @@ function _selecionarClienteHonorario(cliente) {
       resultados.appendChild(el("button", {
         type: "button",
         texto: `${formatarNomeExibicao(cliente.nome)}${cliente.cpf_cnpj ? ` — ${cliente.cpf_cnpj}` : ""}`,
-        onclick: () => _selecionarClienteHonorario(cliente),
+        onclick: () => selecionar(cliente),
       }));
     }
     resultados.hidden = false;
   });
   campoBusca.addEventListener("blur", () => setTimeout(() => { resultados.hidden = true; }, 150));
-})();
+}
+
+_ligarBuscaCliente(
+  "honorario-cliente-busca", "honorario-cliente", "honorario-cliente-resultados", "honorario-cliente-status",
+  (cliente) => _renderizarProcessosDoCliente(cliente ? cliente.id : ""),
+);
 
 function _atualizarPreviewParcelasHonorario() {
   const preview = document.getElementById("honorario-parcelas-preview");
@@ -4142,16 +4173,24 @@ const resultadoCaso = document.getElementById("resultado-caso");
 registrarSalvamento(formCaso, async (evento) => {
   evento.preventDefault();
   if (!exigirCliente(resultadoCaso)) return;
-  const clienteId = document.getElementById("caso-cliente").value;
-  if (!clienteId) {
-    mostrarErro(resultadoCaso, "Selecione um cliente.");
-    document.getElementById("caso-cliente-busca").focus();
+  const buscaCliente = document.getElementById("caso-cliente-busca");
+  const clienteIdExistente = document.getElementById("caso-cliente").value;
+  const nomePrincipalDigitado = buscaCliente.value.trim();
+  const nomePrincipalCapturado = _partesCapturadasNovoCaso.find(
+    (p) => p.nome.trim().toUpperCase() === nomePrincipalDigitado.toUpperCase()
+  );
+  if (!clienteIdExistente && !(nomePrincipalDigitado && nomePrincipalCapturado)) {
+    mostrarErro(resultadoCaso, "Selecione um cliente existente ou escolha uma parte capturada externamente.");
+    buscaCliente.focus();
     return;
   }
   const botao = document.querySelector("button[form='form-caso'][type='submit']");
   const numeros = document.getElementById("caso-processos").value.split(",").map((s) => s.trim()).filter(Boolean);
   const corpo = {
-    cliente_id: clienteId,
+    ...(clienteIdExistente ? { cliente_id: clienteIdExistente } : { cliente_novo: { nome: nomePrincipalDigitado } }),
+    clientes_adicionais: _partesCapturadasNovoCaso
+      .filter((p) => p.nome.trim().toUpperCase() !== nomePrincipalDigitado.toUpperCase())
+      .map((p) => ({ cliente_novo: { nome: p.nome.trim() } })),
     titulo: document.getElementById("caso-titulo").value.trim(),
     responsavel: document.getElementById("caso-responsavel").value.trim(),
     acao: document.getElementById("caso-acao").value.trim(),
@@ -4166,6 +4205,7 @@ registrarSalvamento(formCaso, async (evento) => {
     formCaso.reset();
     document.getElementById("caso-cliente-busca").value = "";
     document.getElementById("caso-cliente").value = "";
+    _resetarIndicadoresCapturaExterna();
     marcarFormularioSalvo(formCaso, true);
     _cache.casos = [..._cache.casos, novoCaso];
     _renderizarTabelaCasosPagina();
@@ -4192,11 +4232,28 @@ registrarSalvamento(formCaso, async (evento) => {
   }
 });
 
+// Partes capturadas externamente para o "Novo processo": a escolhida vira o cliente
+// principal, as demais são enviadas como clientes_adicionais no POST /casos.
+let _partesCapturadasNovoCaso = [];
+
+function _resetarIndicadoresCapturaExterna() {
+  _partesCapturadasNovoCaso = [];
+  limpar(document.getElementById("status-datajud-modal"));
+  const partesEl = document.getElementById("caso-partes-captura");
+  limpar(partesEl);
+  partesEl.hidden = true;
+  document.getElementById("caso-titulo-aviso").hidden = true;
+  document.getElementById("caso-acao-tag").hidden = true;
+  document.getElementById("caso-foro-tag").hidden = true;
+  document.getElementById("caso-titulo-tag").hidden = true;
+}
+
 document.getElementById("btn-novo-contato").addEventListener("click", abrirNovoContato);
 document.getElementById("btn-novo-caso").addEventListener("click", async () => {
   if (!_cache.clientes.length) {
     try { const { clientes } = await _buscarJson("/clientes"); _cache.clientes = clientes || []; } catch { /* segue */ }
   }
+  _resetarIndicadoresCapturaExterna();
   abrirModal("modal-novo-caso");
 });
 document.getElementById("modal-novo-caso-fechar").addEventListener("click", () => fecharModal("modal-novo-caso"));
@@ -4609,6 +4666,9 @@ const _publicacoesOabSelecionadas = new Set();
 let _pubOabCarregando = false;
 let _pubOabAtualizando = false;
 let _pubOabInlineEnviando = false;
+let _pubOabData = "";
+let _pubOabMes = "";
+let _pubOabDatas = {};
 let _pubOabPagina = 1;
 let _pubOabTamanho = 5;
 let _pubOabRequisicao = 0;
@@ -5331,8 +5391,12 @@ async function carregarPublicacoesOab(tipoFeedback = "interno") {
   try {
     const query = new URLSearchParams({ pagina: String(_pubOabPagina), tamanho: String(_pubOabTamanho) });
     if (filtroStatus) query.set("status", filtroStatus);
+    if (_pubOabData) query.set("data", _pubOabData);
     const dados = await _buscarJson(`/publicacoes-oab?${query}`, feedback);
     if (requisicao !== _pubOabRequisicao) return;
+    _pubOabDatas = dados.datas_disponiveis || {};
+    if (!_pubOabMes) _pubOabMes = Object.keys(_pubOabDatas).sort().at(-1)?.slice(0, 7) || new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" }).slice(0, 7);
+    _renderizarCalendarioPubOab();
     const publicacoes = dados.publicacoes || [], total = dados.total ?? publicacoes.length;
     _pubOabPagina = dados.pagina || Math.min(_pubOabPagina, Math.max(1, Math.ceil(total / _pubOabTamanho)));
     if (dados.hashes_disponiveis) {
@@ -5344,8 +5408,8 @@ async function carregarPublicacoesOab(tipoFeedback = "interno") {
     limpar(container);
     container.appendChild(el("div", { id: "pub-oab-status-geral" }));
     if (!publicacoes.length) {
-      container.appendChild(notificacao("info", filtroStatus ? "Nenhuma publicação com este status" : "Nenhuma publicação encontrada",
-        filtroStatus ? "Selecione Todos no filtro de status para ver as demais publicações." : "Use a captura manual para adicionar publicações à lista."));
+      container.appendChild(notificacao("info", _pubOabData ? "Nenhuma publicação nesta data" : filtroStatus ? "Nenhuma publicação com este status" : "Nenhuma publicação encontrada",
+        _pubOabData ? "Escolha outra data ou clique em Últimas publicações para remover o filtro de data." : filtroStatus ? "Selecione Todos no filtro de status para ver as demais publicações." : "Use a captura manual para adicionar publicações à lista."));
       container.appendChild(_paginacaoPubOab(total));
       return;
     }
@@ -5384,6 +5448,83 @@ async function carregarPublicacoesOab(tipoFeedback = "interno") {
   }
 }
 
+function _filtrarDataPubOab(data) {
+  _pubOabData = data; _pubOabPagina = 1;
+  _publicacoesOabSelecionadas.clear(); _pubOabExpandidas.clear();
+  _atualizarBotoesLotePubOab();
+  carregarPublicacoesOab();
+}
+
+function _renderizarCalendarioPubOab() {
+  const container = document.getElementById("pub-oab-calendario");
+  const diaComFoco = container.contains(document.activeElement) ? document.activeElement.dataset.data : null;
+  limpar(container);
+  document.getElementById("pub-oab-periodo").textContent = _pubOabData ? "Publicações de " + formatarDataSimples(_pubOabData) : "Últimas publicações";
+  const [ano, mes] = _pubOabMes.split("-").map(Number);
+  document.getElementById("pub-oab-mes-titulo").textContent = new Date(ano, mes - 1, 1).toLocaleDateString("pt-BR", {month:"long", year:"numeric"});
+  for (const nome of ["D", "S", "T", "Q", "Q", "S", "S"]) container.appendChild(el("span", {texto:nome, "aria-hidden":"true"}));
+  for (let i = 0; i < new Date(ano, mes - 1, 1).getDay(); i++) container.appendChild(el("span", {"aria-hidden":"true"}));
+  for (let dia = 1; dia <= new Date(ano, mes, 0).getDate(); dia++) {
+    const data = `${_pubOabMes}-${String(dia).padStart(2, "0")}`;
+    const quantidade = _pubOabDatas[data] || 0;
+    const botao = el("button", {type:"button", texto:String(dia), "aria-pressed":String(data === _pubOabData), "aria-label":`${formatarDataSimples(data)}, ${quantidade} publicações`});
+    botao.dataset.data = data;
+    if (quantidade) botao.dataset.publicacoes = String(quantidade);
+    botao.addEventListener("click", () => _filtrarDataPubOab(data));
+    container.appendChild(botao);
+    if (data === diaComFoco) botao.focus();
+  }
+}
+let _pubOabRecolhimentoVersao = 0;
+function _definirCalendarioPubOab(recolhido, instantaneo = false) {
+  const painel = document.getElementById("pub-oab-calendario-painel");
+  const layout = document.getElementById("pub-oab-layout");
+  const botao = document.getElementById("pub-oab-calendario-toggle");
+  const versao = ++_pubOabRecolhimentoVersao;
+  instantaneo ||= matchMedia("(prefers-reduced-motion: reduce)").matches;
+  botao.setAttribute("aria-expanded", String(!recolhido));
+  botao.textContent = recolhido ? "Mostrar calendário" : "Ocultar calendário";
+  painel.style.transitionDuration = instantaneo ? "0ms" : "";
+  if (recolhido) {
+    painel.inert = true;
+    if (painel.contains(document.activeElement)) botao.focus();
+    painel.classList.add("pub-oab-calendario-painel--saindo");
+    const concluir = () => {
+      if (versao !== _pubOabRecolhimentoVersao) return;
+      painel.hidden = true;
+      layout.classList.add("pub-oab-layout--recolhido");
+      painel.classList.remove("pub-oab-calendario-painel--saindo");
+    };
+    const duracao = parseFloat(getComputedStyle(painel).transitionDuration) * 1000;
+    if (instantaneo || !duracao) concluir(); else setTimeout(concluir, duracao);
+  } else {
+    const estavaOculto = painel.hidden;
+    painel.hidden = false;
+    layout.classList.remove("pub-oab-layout--recolhido");
+    painel.inert = false;
+    if (estavaOculto && !instantaneo) {
+      painel.classList.add("pub-oab-calendario-painel--saindo");
+      // Aplica a posição inicial antes de iniciar a transição CSS.
+      void painel.offsetWidth;
+    }
+    painel.classList.remove("pub-oab-calendario-painel--saindo");
+  }
+}
+document.getElementById("pub-oab-calendario-toggle").addEventListener("click", (evento) => {
+  _definirCalendarioPubOab(evento.currentTarget.getAttribute("aria-expanded") === "true", evento.detail === 0);
+});
+_definirCalendarioPubOab(matchMedia("(max-width: 671px)").matches, true);
+for (const [id, delta] of [["pub-oab-mes-anterior", -1], ["pub-oab-mes-proximo", 1]]) {
+  document.getElementById(id).addEventListener("click", () => {
+    if (!_pubOabMes) return;
+    const [ano, mes] = _pubOabMes.split("-").map(Number);
+    const novo = new Date(ano, mes - 1 + delta, 1);
+    _pubOabMes = `${novo.getFullYear()}-${String(novo.getMonth() + 1).padStart(2, "0")}`;
+    _renderizarCalendarioPubOab();
+  });
+}
+document.getElementById("pub-oab-ultimas").addEventListener("click", () => _filtrarDataPubOab(""));
+
 document.getElementById("pub-oab-filtro-status").addEventListener("change", () => {
   _pubOabPagina = 1;
   _pubOabExpandidas.clear();
@@ -5416,47 +5557,126 @@ document.getElementById("form-pub-oab-manual").addEventListener("submit", async 
   }
 });
 
-// ─── DataJud: busca ação/foro a partir de número de processo ─────────────────
+// ─── Captura externa: ação/foro/título/partes a partir de número de processo ─
 
-async function buscarAcaoForoDataJud(numerosCampo, campAcao, campForo, statusEl, botao) {
-  if (!cliente) { mostrarErro(statusEl, "Conecte-se em Acesso antes de consultar o DataJud."); return; }
+function _preencherClienteCapturado(nome, statusEl) {
+  const busca = document.getElementById("caso-cliente-busca");
+  const hidden = document.getElementById("caso-cliente");
+  if (busca.value.trim()) { mostrarAviso(statusEl, "Campo Cliente já preenchido — não alterado."); return; }
+  const correspondencia = _cache.clientes.find((c) => c.nome.trim().toUpperCase() === nome.trim().toUpperCase());
+  busca.value = nome;
+  hidden.value = correspondencia ? correspondencia.id : "";
+  if (!correspondencia) busca.dispatchEvent(new Event("input"));
+}
+
+async function capturarDadosExternos() {
+  const numerosCampo = document.getElementById("caso-processos");
+  const campAcao = document.getElementById("caso-acao");
+  const campForo = document.getElementById("caso-foro");
+  const campTitulo = document.getElementById("caso-titulo");
+  const tagAcao = document.getElementById("caso-acao-tag");
+  const tagForo = document.getElementById("caso-foro-tag");
+  const tagTitulo = document.getElementById("caso-titulo-tag");
+  const tituloAviso = document.getElementById("caso-titulo-aviso");
+  const partesEl = document.getElementById("caso-partes-captura");
+  const statusEl = document.getElementById("status-datajud-modal");
+  const botao = document.getElementById("btn-datajud-modal");
+
+  if (!cliente) { mostrarErro(statusEl, "Conecte-se em Acesso antes de capturar externamente."); return; }
   const numeros = numerosCampo.value.split(",").map((s) => s.trim()).filter(Boolean);
   if (numeros.length !== 1) { mostrarAviso(statusEl, "Informe um único número CNJ para consultar."); return; }
   const numero = numeros[0];
   const tribunal = _siglaTribunal(numero);
   if (!tribunal) { mostrarAviso(statusEl, "Não foi possível determinar o tribunal pelo número informado."); return; }
+
   botao.disabled = true;
   limpar(statusEl);
-  statusEl.appendChild(notificacao("info", "Consultando DataJud…"));
+  limpar(partesEl);
+  partesEl.hidden = true;
+  // Nova captura substitui as partes da anterior, mesmo que não haja resultado.
+  _partesCapturadasNovoCaso = [];
+  tituloAviso.hidden = true;
+  tagAcao.hidden = true;
+  tagForo.hidden = true;
+  tagTitulo.hidden = true;
+  const progresso = document.getElementById("captura-progresso");
+  progresso.hidden = false;
   try {
-    const dados = await cliente.chamarTool("consultar_processo_datajud", { numero_processo: numero, tribunal });
-    if (dados.erro) { mostrarErro(statusEl, dados.mensagem || "Erro no DataJud."); return; }
-    const proc = (dados.processos || [])[0];
-    if (!proc) { mostrarAviso(statusEl, dados.mensagem || "Processo não encontrado."); return; }
-    if (proc.classe && !campAcao.value) {
-      const partes = [proc.classe, ...(proc.assuntos || [])].filter(Boolean);
-      campAcao.value = partes.join(" - ");
+    const dados = await cliente.chamarTool("consultar_processo_unificado", { numero_processo: numero, tribunal });
+    progresso.hidden = true;
+    limpar(statusEl);
+    if (dados.erro) { mostrarErro(statusEl, dados.mensagem || "Erro ao consultar DataJud/DJEN."); return; }
+
+    const instancia = (dados.instancias || [])[0];
+    if (instancia) {
+      if (instancia.classe && !campAcao.value) {
+        campAcao.value = [instancia.classe, ...(instancia.assuntos || [])].filter(Boolean).join(" - ");
+        tagAcao.hidden = false;
+      }
+      if (!campForo.value) {
+        if (instancia.orgaoJulgador) {
+          campForo.value = instancia.orgaoJulgador;
+          tagForo.textContent = "auto · DataJud";
+          tagForo.hidden = false;
+        } else if (dados.orgao_julgador_djen) {
+          campForo.value = dados.orgao_julgador_djen;
+          tagForo.textContent = "auto · DJEN (reserva)";
+          tagForo.hidden = false;
+        }
+      }
+    } else if (!campForo.value && dados.orgao_julgador_djen) {
+      campForo.value = dados.orgao_julgador_djen;
+      tagForo.textContent = "auto · DJEN (reserva)";
+      tagForo.hidden = false;
     }
-    if (proc.orgaoJulgador && !campForo.value) campForo.value = proc.orgaoJulgador;
+
+    const partes = dados.partes || [];
+    const poloAtivo = (p) => /^(A|AT|ATIVO)$/i.test(p.polo || "");
+    const poloPassivo = (p) => /^(P|PA|PASSIVO)$/i.test(p.polo || "");
+    const autores = [...new Set(partes.filter(poloAtivo).map((p) => (p.nome || "").trim()).filter(Boolean))];
+    const reus = [...new Set(partes.filter(poloPassivo).map((p) => (p.nome || "").trim()).filter(Boolean))];
+
+    if (!instancia && !partes.length) {
+      statusEl.appendChild(notificacao("warning", "Atenção", "Nada encontrado no DataJud nem no DJEN para este número."));
+    } else {
+      statusEl.appendChild(notificacao("success", instancia ? "Dados localizados em DataJud e DJEN." : "Dados localizados no DJEN (DataJud sem este processo)."));
+    }
+
+    if (!campTitulo.value) {
+      if (autores.length || reus.length) {
+        campTitulo.value = `${autores.join(" / ") || "Parte autora não informada"} x ${reus.join(" / ") || "Parte ré não informada"}`;
+        tagTitulo.hidden = false;
+      } else {
+        tituloAviso.hidden = false;
+      }
+    }
+
+    if (partes.length) {
+      partesEl.hidden = false;
+      partesEl.appendChild(el("p", { class: "campo-ajuda" }, [document.createTextNode("Partes encontradas no DJEN — clique para escolher o cliente principal (todas as partes são cadastradas como clientes do processo):")]));
+      const nomesUnicos = [...new Map(partes.map((p) => [(p.nome || "").trim().toUpperCase(), p])).values()];
+      _partesCapturadasNovoCaso = nomesUnicos.filter((p) => p.nome);
+      nomesUnicos.filter((p) => p.nome).forEach((p) => {
+        const polo = poloAtivo(p) ? "Autor" : poloPassivo(p) ? "Réu" : "Polo não informado";
+        const btn = el("button", { class: "cds--btn cds--btn--ghost cds--btn--sm", type: "button", texto: `${formatarNomeExibicao(p.nome)} · ${polo}` });
+        btn.addEventListener("click", () => _preencherClienteCapturado(p.nome, statusEl));
+        partesEl.appendChild(btn);
+      });
+    }
+
     const form = campAcao.closest("form");
     if (form) atualizarIndicadorEdicao(form);
-    proc.classe ? mostrarSucesso(statusEl, "Preenchido.") : mostrarAviso(statusEl, "Sem dados de classe/órgão.");
   } catch (err) {
-    mostrarErro(statusEl, err.message || "Erro ao consultar DataJud.");
+    progresso.hidden = true;
+    limpar(statusEl);
+    mostrarErro(statusEl, err.message || "Erro ao consultar DataJud/DJEN.");
   } finally {
+    progresso.hidden = true;
     botao.disabled = false;
   }
 }
 
-document.getElementById("btn-datajud-modal").addEventListener("click", () =>
-  buscarAcaoForoDataJud(
-    document.getElementById("caso-processos"),
-    document.getElementById("caso-acao"),
-    document.getElementById("caso-foro"),
-    document.getElementById("status-datajud-modal"),
-    document.getElementById("btn-datajud-modal"),
-  )
-);
+document.getElementById("btn-datajud-modal").addEventListener("click", capturarDadosExternos);
 
 // ─── Vista de detalhe do caso ────────────────────────────────────────────────
 

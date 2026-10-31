@@ -181,6 +181,10 @@ nav.cds--side-nav.cds--side-nav--expanded { inline-size: 16rem; }
 .contatos-az button[aria-pressed="true"] { color: var(--cds-interactive, #0f62fe); font-weight: 700; }
 .contatos-busca-campo { margin: 0; min-width: 240px; flex: 0 1 280px; }
 .caso-cliente-campo { position: relative; }
+/* Botão "Capturar externamente": ícone leading (o Carbon posiciona .cds--btn__icon no fim por padrão). */
+#btn-datajud-modal { justify-content: flex-start; gap: var(--cds-spacing-03, 0.5rem); }
+#btn-datajud-modal .cds--btn__icon { position: static; margin-block-start: 0; }
+#captura-progresso { margin-block-start: var(--cds-spacing-03, 0.5rem); }
 .cliente-sugestoes {
   position: absolute; top: 100%; left: 0; right: 0; z-index: 9999; background: var(--cds-layer, #f4f4f4); border: 1px solid var(--cds-border-subtle, #e0e0e0); max-height: 12rem; overflow-y: auto; box-shadow: 0 4px 8px rgba(0,0,0,.12);
   transform-origin: top;
@@ -777,10 +781,11 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
   .pub-oab-colunas-trigger { min-block-size: 2.75rem; }
 }
 
-/* Fluxos no documento: sem sobreposição, fundo bloqueado ou foco preso. */
-.fluxo-pagina { display: none; margin-block: 0 var(--cds-spacing-07, 2rem); scroll-margin-top: var(--cds-spacing-10, 4rem); }
-.fluxo-pagina.is-visible { display: block; }
-.fluxo-pagina-container { inline-size: 100%; max-inline-size: 64rem; background: var(--cds-layer, #f4f4f4); padding: var(--cds-spacing-06, 1.5rem); }
+/* Fluxos como diálogo flutuante sobre a página, com fundo escurecido. */
+.sem-rolagem { overflow: hidden; }
+.fluxo-pagina { display: none; position: fixed; inset: 0; z-index: 8000; align-items: flex-start; justify-content: center; overflow-y: auto; background: rgba(22, 22, 22, .55); padding: var(--cds-spacing-07, 2rem) var(--cds-spacing-05, 1rem); }
+.fluxo-pagina.is-visible { display: flex; }
+.fluxo-pagina-container { inline-size: 100%; max-inline-size: 64rem; background: var(--cds-layer, #f4f4f4); padding: var(--cds-spacing-06, 1.5rem); margin-block: auto; box-shadow: 0 4px 24px rgba(0,0,0,.3); max-block-size: calc(100vh - 4rem); overflow-y: auto; }
 .fluxo-pagina-header { display: flex; align-items: start; justify-content: space-between; gap: var(--cds-spacing-05, 1rem); margin-block-end: var(--cds-spacing-06, 1.5rem); }
 .fluxo-pagina-header__heading { font-size: 1.5rem; line-height: 1.3; }
 .fluxo-pagina-close { background: transparent; border: 0; cursor: pointer; padding: .75rem; color: inherit; }
@@ -815,9 +820,14 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
   display: grid; grid-template-columns: repeat(var(--app-grid-colunas), minmax(0, 1fr));
   gap: var(--cds-spacing-05, 1rem); min-inline-size: 0; max-inline-size: 100%;
 }
-:is(.app-formulario, .cadastro-painel, .endereco-grade, .capa-card-campos) > * {
+:is(.app-formulario, .cadastro-painel, .endereco-grade, .capa-card-campos) > *:not(.cds--css-grid-column) {
   grid-column: 1 / -1; min-inline-size: 0;
 }
+/* Colunas explícitas do Carbon Grid (#form-caso) preservam o span declarado. */
+:is(.app-formulario, .cadastro-painel, .endereco-grade, .capa-card-campos) > .cds--css-grid-column { min-inline-size: 0; }
+/* No "Novo processo" o espaçamento vem do gap de .app-formulario; as margens
+   internas do Carbon somariam um segundo gutter (e recuariam a borda direita). */
+#form-caso > .cds--css-grid-column { --cds-grid-gutter-start: 0; --cds-grid-gutter-end: 0; }
 :is(.app-formulario, .cadastro-painel, .endereco-grade, .capa-card-campos) > .cds--form-item { grid-column: span 4; }
 :is(.app-formulario, .cadastro-painel, .endereco-grade, .capa-card-campos) > .campo-ajuda--largo { grid-column: 1 / -1; }
 @media (min-width: 672px) { :root { --app-grid-colunas: 8; } }
@@ -868,6 +878,43 @@ body :is(.sub-aba-botao, .sub-tab-link, .contatos-az button, .contato-nome-link,
 .lancamento-data { inline-size: 100%; }
 #honorario-carregamento:empty, #resultado-honorario:empty { display: none; }
 
+/* Calendário: dimensões do menu Carbon (288px), dias 40px, motion produtivo. */
+.pub-oab-pagina-cabecalho { display:flex; justify-content:space-between; align-items:center; gap:var(--cds-spacing-05, 1rem); flex-wrap:wrap; margin-bottom:var(--cds-spacing-06, 1.5rem); }
+.pub-oab-pagina-cabecalho .lista-rapida-titulo { flex:1; width:auto; margin:0; font-size:var(--cds-heading-04-font-size, 1.75rem); line-height:var(--cds-heading-04-line-height, 1.28572); font-weight:400; }
+.pub-oab-layout { display:grid; grid-template-columns:minmax(0, 1fr) 18rem; gap:var(--cds-spacing-06, 1.5rem); overflow-x:clip; }
+.pub-oab-layout--recolhido { grid-template-columns:minmax(0, 1fr); }
+.pub-oab-principal { min-width:0; }
+#lista-publicacoes-oab { margin-top:0; }
+.pub-oab-topo-lista { display:grid; grid-template-columns:minmax(0,1fr) 10.5rem auto; align-items:end; gap:var(--cds-spacing-05, 1rem); margin-bottom:var(--cds-spacing-05, 1rem); }
+.pub-oab-topo-lista .pub-oab-barra { display:contents; }
+.pub-oab-topo-lista .pub-oab-filtros { min-width:0; display:grid; gap:var(--cds-spacing-03, .5rem); }
+.pub-oab-topo-lista .pub-oab-filtros label { margin:0; }
+.pub-oab-topo-lista .pub-oab-filtros select { height:2.5rem; }
+.pub-oab-topo-lista .pub-oab-acoes-lote { padding-bottom:var(--cds-spacing-02, .25rem); }
+#pub-oab-periodo { font-size:var(--cds-heading-02-font-size, 1rem); line-height:var(--cds-heading-02-line-height, 1.5); font-weight:600; margin:0 0 var(--cds-spacing-02, .25rem); }
+.pub-oab-periodo-resumo .campo-ajuda { margin:0; }
+.pub-oab-calendario-painel { align-self:start; box-sizing:border-box; width:18rem; max-width:100%; padding:var(--cds-spacing-02, .25rem); background:var(--cds-layer); border-inline-start:1px solid var(--cds-border-subtle); transform:translateX(0); opacity:1; transition:transform var(--cds-duration-moderate-01, 150ms) var(--cds-ease-standard), opacity var(--cds-duration-moderate-01, 150ms) var(--cds-ease-standard); }
+.pub-oab-calendario-painel--saindo { transform:translateX(1rem); opacity:0; pointer-events:none; }
+.pub-oab-calendario-painel h3 { font-size:var(--cds-heading-02-font-size, 1rem); line-height:var(--cds-heading-02-line-height, 1.5); font-weight:600; margin:var(--cds-spacing-03, .5rem) var(--cds-spacing-04, .75rem); }
+.pub-oab-mes { display:flex; justify-content:space-between; align-items:center; }
+.pub-oab-mes strong { font-size:var(--cds-body-compact-01-font-size, .875rem); }
+.pub-oab-mes button, .pub-oab-calendario button { border:0; color:var(--cds-text-primary); background:transparent; cursor:pointer; font:inherit; padding:0; }
+.pub-oab-mes button { width:2.5rem; height:2rem; font-size:1.25rem; }
+.pub-oab-calendario { display:grid; grid-template-columns:repeat(7,2.5rem); gap:0; margin:var(--cds-spacing-02, .25rem) 0 var(--cds-spacing-03, .5rem); }
+.pub-oab-calendario span { text-align:center; font-size:var(--cds-label-01-font-size, .75rem); line-height:1rem; height:1.5rem; padding:var(--cds-spacing-02, .25rem) 0; box-sizing:border-box; color:var(--cds-text-secondary); }
+.pub-oab-calendario button { position:relative; box-sizing:border-box; width:2.5rem; height:2.5rem; font-size:var(--cds-body-compact-01-font-size, .875rem); line-height:var(--cds-body-compact-01-line-height, 1.28572); }
+@media(hover:hover) and (pointer:fine) { .pub-oab-calendario button:hover, .pub-oab-mes button:hover { background:var(--cds-layer-hover); } }
+.pub-oab-calendario button[data-publicacoes]::after, .pub-oab-data-indicador { content:''; width:.25rem; height:.25rem; border-radius:50%; background:var(--cds-link-primary); }
+.pub-oab-calendario button[data-publicacoes]::after { position:absolute; bottom:.1875rem; left:calc(50% - .125rem); }
+.pub-oab-calendario button[aria-pressed="true"] { background:var(--cds-background-brand); color:var(--cds-text-on-color); }
+.pub-oab-calendario button[aria-pressed="true"]::after { background:var(--cds-text-on-color); }
+.pub-oab-calendario button:focus-visible, .pub-oab-mes button:focus-visible { outline:2px solid var(--cds-focus); outline-offset:-2px; }
+.pub-oab-calendario-rodape { display:flex; justify-content:space-between; align-items:center; gap:var(--cds-spacing-02, .25rem); border-top:1px solid var(--cds-border-subtle); margin:0 var(--cds-spacing-02, .25rem); padding:var(--cds-spacing-02, .25rem) 0; }
+.pub-oab-calendario-legenda { display:flex; align-items:center; gap:var(--cds-spacing-03, .5rem); margin:0; white-space:nowrap; font-size:var(--cds-label-01-font-size, .75rem); color:var(--cds-text-secondary); }
+.pub-oab-ultimas { min-width:0; padding-inline:var(--cds-spacing-03, .5rem); font-size:var(--cds-label-01-font-size, .75rem); white-space:nowrap; }
+@media(max-width:1055px) { .pub-oab-layout { gap:var(--cds-spacing-05, 1rem); } .pub-oab-topo-lista { grid-template-columns:minmax(0,1fr) 10.5rem; } .pub-oab-topo-lista .pub-oab-acoes-lote { grid-column:1 / -1; justify-self:end; } }
+@media(max-width:671px) { .pub-oab-layout { grid-template-columns:minmax(0,1fr); } .pub-oab-calendario-painel { grid-row:1; justify-self:end; border-inline-start:0; border-bottom:1px solid var(--cds-border-subtle); } .pub-oab-topo-lista { grid-template-columns:minmax(0,1fr); } .pub-oab-pagina-cabecalho { align-items:flex-start; } }
+@media(prefers-reduced-motion:reduce) { .pub-oab-calendario-painel { transition:none; } }
 </style>
 <link rel="stylesheet" href="/static/search-fields.css">
 <script src="/static/theme.js"></script>
@@ -1476,7 +1523,7 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <button class="cds--btn cds--btn--primary cds--btn--sm" type="button" id="btn-nova-cobranca">Nova cobrança</button>
 </div>
 <p class="campo-ajuda">Cobranças (boleto ou Pix) emitidas via Asaas para os clientes cadastrados.</p>
-<div id="pagamentos-aviso-integracao" class="app-resultado"></div>
+<div id="pagamentos-aviso-integracao" class="app-resultado" aria-live="polite"></div>
 <div class="contatos-barra">
 <div class="cds--form-item">
 <label class="cds--label" for="pagamentos-filtro-status">Status</label>
@@ -1490,13 +1537,15 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </select>
 </div>
 <div class="cds--form-item">
-<label class="cds--label" for="pagamentos-filtro-cliente-cpf">Cliente (CPF/CNPJ)</label>
-<input class="cds--text-input" type="text" id="pagamentos-filtro-cliente-cpf" inputmode="numeric" placeholder="Ex.: 123.456.789-00" autocomplete="off">
+<label class="cds--label" for="pagamentos-filtro-cliente-busca">Cliente</label>
+<input class="cds--text-input" type="text" id="pagamentos-filtro-cliente-busca" placeholder="Busque por nome ou CPF/CNPJ" autocomplete="off">
 <input type="hidden" id="pagamentos-filtro-cliente">
+<div id="pagamentos-filtro-cliente-resultados" class="busca-resultados" hidden></div>
 <span class="campo-ajuda" id="pagamentos-filtro-cliente-status"></span>
 </div>
 </div>
-<div id="lista-pagamentos" class="app-resultado"></div>
+<div id="lista-pagamentos" class="app-resultado" aria-live="polite"></div>
+<button class="cds--btn cds--btn--tertiary cds--btn--sm" type="button" id="pagamentos-carregar-mais" hidden>Carregar mais</button>
 </section>
 
 <section id="aba-contatos" role="tabpanel" aria-labelledby="aba-contatos-botao" hidden>
@@ -1806,7 +1855,26 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </section>
 
 <section id="aba-publicacoes-oab" role="tabpanel" aria-labelledby="aba-publicacoes-oab-botao" hidden>
-<h2 class="lista-rapida-titulo">Publicações monitoradas</h2>
+<div class="pub-oab-pagina-cabecalho"><h2 class="lista-rapida-titulo">Publicações monitoradas</h2>
+<button class="cds--btn cds--btn--ghost cds--btn--sm" id="pub-oab-calendario-toggle" type="button" aria-expanded="true" aria-controls="pub-oab-calendario-painel">Ocultar calendário</button></div>
+<div class="pub-oab-layout" id="pub-oab-layout"><div class="pub-oab-principal">
+<div class="pub-oab-topo-lista"><div class="pub-oab-periodo-resumo"><h3 id="pub-oab-periodo">Últimas publicações</h3><p class="campo-ajuda">Da mais recente para a mais antiga no DJEN.</p></div>
+<div class="pub-oab-barra">
+<div class="pub-oab-filtros">
+<label class="cds--label" for="pub-oab-filtro-status">Status</label>
+<select class="cds--select-input" id="pub-oab-filtro-status" autocomplete="off">
+<option value="">Todos</option>
+<option value="nao_tratada">Não tratada</option>
+<option value="tratada">Tratada</option>
+<option value="arquivada">Arquivada</option>
+</select>
+</div>
+<div class="pub-oab-acoes-lote">
+<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="pub-oab-atualizar">Atualizar lista</button>
+</div>
+</div>
+</div><div id="lista-publicacoes-oab" class="app-resultado"></div>
+<p class="campo-ajuda">Selecione publicações na lista para alterar o status em lote.</p>
 <div class="cds--accordion pub-oab-ajuda">
 <details class="cds--accordion__item">
 <summary class="cds--accordion__heading"><svg class="cds--accordion__arrow" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 11 3 6l.7-.7L8 9.6l4.3-4.3.7.7z"></path></svg><span class="cds--accordion__title">Como funciona a captura</span></summary>
@@ -1861,22 +1929,14 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <div id="pub-oab-manual-status" class="campo-ajuda" role="status"></div>
 </details>
 
-<p class="campo-ajuda">Selecione publicações na lista para alterar o status em lote.</p>
-<div class="pub-oab-barra">
-<div class="pub-oab-filtros">
-<label class="cds--label" for="pub-oab-filtro-status">Status</label>
-<select class="cds--select-input" id="pub-oab-filtro-status" autocomplete="off">
-<option value="">Todos</option>
-<option value="nao_tratada">Não tratada</option>
-<option value="tratada">Tratada</option>
-<option value="arquivada">Arquivada</option>
-</select>
 </div>
-<div class="pub-oab-acoes-lote">
-<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="pub-oab-atualizar">Atualizar lista</button>
-</div>
-</div>
-<div id="lista-publicacoes-oab" class="app-resultado"></div>
+<aside id="pub-oab-calendario-painel" class="pub-oab-calendario-painel" aria-label="Filtrar publicações por data">
+<h3>Publicações por dia</h3>
+<div class="pub-oab-mes"><button type="button" id="pub-oab-mes-anterior" aria-label="Mês anterior">‹</button><strong id="pub-oab-mes-titulo"></strong><button type="button" id="pub-oab-mes-proximo" aria-label="Próximo mês">›</button></div>
+<div id="pub-oab-calendario" class="pub-oab-calendario"></div>
+<div class="pub-oab-calendario-rodape"><p class="pub-oab-calendario-legenda"><span class="pub-oab-data-indicador" aria-hidden="true"></span>Com publicações</p>
+<button class="cds--btn cds--btn--ghost cds--btn--sm pub-oab-ultimas" type="button" id="pub-oab-ultimas">Últimas publicações</button></div>
+</aside></div>
 </section>
 
 </main>
@@ -1905,35 +1965,36 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 </button>
 </div>
 <div class="fluxo-pagina-content">
-<form id="form-caso" class="app-formulario cds--css-grid">
-<div class="cds--form-item caso-cliente-campo">
+<form id="form-caso" class="app-formulario cds--css-grid cds--css-grid--narrow">
+<div class="cds--css-grid-column cds--sm:col-span-4 cds--md:col-span-8 cds--lg:col-span-16"><div class="cds--form-item caso-cliente-campo">
 <label class="cds--label" for="caso-cliente-busca">Cliente</label>
 <input class="cds--text-input" id="caso-cliente-busca" autocomplete="off" placeholder="Digite para buscar...">
 <input type="hidden" id="caso-cliente" name="cliente_id">
 <div id="caso-cliente-sugestoes" class="cliente-sugestoes" hidden></div>
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="caso-titulo">Título</label>
+</div></div>
+<div class="cds--css-grid-column cds--sm:col-span-4 cds--md:col-span-4 cds--lg:col-span-8"><div class="cds--form-item">
+<label class="cds--label" for="caso-titulo">Título <span id="caso-titulo-tag" class="cds--tag cds--tag--blue cds--tag--sm" hidden>auto · DJEN</span></label>
 <input class="cds--text-input" id="caso-titulo" name="titulo" placeholder="Ex.: Cobrança de honorários" autocomplete="off">
-</div>
-<div class="cds--form-item">
+<span id="caso-titulo-aviso" class="campo-ajuda" hidden>Não foi possível montar o título automaticamente — o DJEN não trouxe partes para este processo. Informe manualmente.</span>
+</div></div>
+<div class="cds--css-grid-column cds--sm:col-span-4 cds--md:col-span-4 cds--lg:col-span-8"><div class="cds--form-item">
 <label class="cds--label" for="caso-responsavel">Responsável</label>
 <input class="cds--text-input" id="caso-responsavel" name="responsavel" placeholder="Ex.: Dra. Fernanda Reis" autocomplete="off">
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="caso-acao">Ação</label>
+</div></div>
+<div class="cds--css-grid-column cds--sm:col-span-4 cds--md:col-span-4 cds--lg:col-span-8"><div class="cds--form-item">
+<label class="cds--label" for="caso-acao">Ação <span id="caso-acao-tag" class="cds--tag cds--tag--blue cds--tag--sm" hidden>auto · DataJud</span></label>
 <input class="cds--text-input" id="caso-acao" name="acao" placeholder="Ex.: Cumprimento de sentença" autocomplete="off">
-</div>
-<div class="cds--form-item">
-<label class="cds--label" for="caso-foro">Foro</label>
+</div></div>
+<div class="cds--css-grid-column cds--sm:col-span-4 cds--md:col-span-4 cds--lg:col-span-8"><div class="cds--form-item">
+<label class="cds--label" for="caso-foro">Foro <span id="caso-foro-tag" class="cds--tag cds--tag--blue cds--tag--sm" hidden>auto · DataJud</span></label>
 <input class="cds--text-input" id="caso-foro" name="foro" placeholder="Ex.: 3ª Vara Cível" autocomplete="off">
-</div>
-<div class="cds--form-item">
+</div></div>
+<div class="cds--css-grid-column cds--sm:col-span-4 cds--md:col-span-4 cds--lg:col-span-8"><div class="cds--form-item">
 <label class="cds--label" for="caso-pasta">Pasta (opcional)</label>
 <input class="cds--text-input" id="caso-pasta" name="pasta" placeholder="Ex.: Trabalhista 2026" autocomplete="off">
 <span class="campo-ajuda">Só para organizar e facilitar a busca - não cria pastas de verdade no sistema.</span>
-</div>
-<div class="cds--form-item">
+</div></div>
+<div class="cds--css-grid-column cds--sm:col-span-4 cds--md:col-span-4 cds--lg:col-span-8"><div class="cds--form-item">
 <label class="cds--label" for="caso-acesso">Acesso</label>
 <select class="cds--select-input" id="caso-acesso" name="acesso">
 <option value="equipe" selected>Equipe</option>
@@ -1941,14 +2002,18 @@ Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias 
 <option value="privado">Privado</option>
 </select>
 <span class="campo-ajuda">Só para organizar - o sistema ainda não restringe quem vê o processo pelo acesso escolhido.</span>
-</div>
-<div class="cds--form-item">
+</div></div>
+<div class="cds--css-grid-column cds--sm:col-span-4 cds--md:col-span-8 cds--lg:col-span-16"><div class="cds--form-item">
 <label class="cds--label" for="caso-processos">Número CNJ (opcional)</label>
 <input class="cds--text-input" id="caso-processos" name="numeros_processo" placeholder="1006314-27.2023.8.26.0005" autocomplete="off">
-<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="btn-datajud-modal">Consultar ação/foro no DataJud</button>
-<div id="status-datajud-modal" class="campo-ajuda"></div>
-<span class="campo-ajuda">Informe um único número ou deixe em branco se ainda não existir.</span>
+<button class="cds--btn cds--btn--ghost cds--btn--sm" type="button" id="btn-datajud-modal"><svg class="cds--btn__icon" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="16" height="16" fill="currentColor"><path d="M26 24v4H6v-4H4v4a2 2 0 0 0 2 2h20a2 2 0 0 0 2-2v-4Zm-1-9-1.41-1.41L17 21.17V2h-2v19.17l-6.59-7.58L7 15l9 9 9-9z"/></svg>Capturar externamente</button>
+<div id="captura-progresso" class="cds--progress-bar cds--progress-bar--indeterminate cds--progress-bar--small" role="progressbar" aria-label="Capturando dados externos" hidden>
+<div class="cds--progress-bar__track"><div class="cds--progress-bar__bar"></div></div>
 </div>
+<div id="status-datajud-modal" class="campo-ajuda" role="status"></div>
+<div id="caso-partes-captura" class="app-resultado" hidden></div>
+<span class="campo-ajuda">Informe um único número ou deixe em branco se ainda não existir. "Capturar externamente" busca ação, foro, título e partes no DataJud e no DJEN.</span>
+</div></div>
 </form>
 <div id="resultado-caso" class="app-resultado" aria-live="polite"></div>
 </div>

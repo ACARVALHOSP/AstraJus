@@ -47,6 +47,7 @@ import db as _db
 import google_integracao
 import integracoes
 import integracoes_http
+import usuarios_admin
 from _util import _hash_token, hash_origem_djen_valido, origem_djen_legada
 from db import (
     CacheDataJud, ConflitoClientesLote, RegistroClientesCasos, RegistroIntegracaoGoogle, RegistroMonitoramentos,
@@ -367,7 +368,7 @@ async def consultar_processo_datajud(tribunal: str, numero_processo: str) -> dic
     """
     try:
         tribunal_norm = (tribunal or "").strip().lower()
-        if not re.fullmatch(r"[a-z0-9]+", tribunal_norm):
+        if not re.fullmatch(r"[a-z0-9]+(?:-[a-z]{2})?", tribunal_norm):
             return _erro("Tribunal inválido. Use a sigla minúscula, como 'tjsp', 'trf1' ou 'stj'.")
 
         numero = _so_digitos(numero_processo)
@@ -377,7 +378,7 @@ async def consultar_processo_datajud(tribunal: str, numero_processo: str) -> dic
                 "Formato CNJ: NNNNNNN-DD.AAAA.J.TR.OOOO."
             )
 
-        chave_cache = f"{tribunal_norm}:{numero}"
+        chave_cache = f"v2:{tribunal_norm}:{numero}"
         if _CACHE_DATAJUD is not None:
             resultado_cache = await asyncio.to_thread(_CACHE_DATAJUD.obter, chave_cache)
             if resultado_cache is not None:
@@ -389,7 +390,7 @@ async def consultar_processo_datajud(tribunal: str, numero_processo: str) -> dic
             "Authorization": f"APIKey {_datajud_api_key()}",
             "Content-Type": "application/json",
         }
-        corpo = {"query": {"match": {"numeroProcesso": numero}}}
+        corpo = {"_source": True, "size": 100, "query": {"match": {"numeroProcesso": numero}}}
 
         resposta = await _datajud_post_com_retry(url, headers, corpo)
         if isinstance(resposta, dict):  # erro estruturado já montado
@@ -415,6 +416,9 @@ async def consultar_processo_datajud(tribunal: str, numero_processo: str) -> dic
 
         processos = [_extrair_processo_datajud(h.get("_source") or {}) for h in hits.get("hits") or []]
         resultado = {"encontrado": True, "total": total, "processos": processos}
+        if _CACHE_DATAJUD is not None:
+            await asyncio.to_thread(RegistroClientesCasos(_CACHE_DATAJUD.caminho).salvar_datajud,
+                                    numero, tribunal_norm, [p["datajud"] for p in processos])
         if _CACHE_DATAJUD is not None:
             await asyncio.to_thread(_CACHE_DATAJUD.gravar, chave_cache, resultado)
         return resultado
@@ -473,14 +477,21 @@ async def _datajud_post_com_retry(url: str, headers: dict, corpo: dict):
 def _extrair_processo_datajud(fonte: dict) -> dict:
     movimentos = []
     for mov in fonte.get("movimentos") or []:
-        item = {"codigo": mov.get("codigo"), "nome": mov.get("nome"), "dataHora": mov.get("dataHora")}
-        if mov.get("complementosTabelados"):
-            item["complementosTabelados"] = mov["complementosTabelados"]
+        item = dict(mov)
         movimentos.append(item)
 
     assuntos = [(a.get("nome") or "") for a in (fonte.get("assuntos") or []) if a.get("nome")]
 
     return {
+        # Estrutura original completa, inclusive códigos e objetos aninhados.
+        # Os campos de apresentação abaixo preservam o contrato da interface.
+        "datajud": {**{campo: fonte.get(campo) for campo in (
+            "tribunal", "numeroProcesso", "dataAjuizamento", "grau", "nivelSigilo",
+            "formato", "sistema", "classe", "assuntos", "orgaoJulgador", "movimentos",
+        )}, **fonte},
+        "nivelSigilo": fonte.get("nivelSigilo"),
+        "formato": fonte.get("formato"),
+        "sistema": fonte.get("sistema"),
         "numeroProcesso": fonte.get("numeroProcesso"),
         "tribunal": fonte.get("tribunal"),
         "grau": fonte.get("grau"),
@@ -692,8 +703,10 @@ async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> d
 
     Retorno: dicionário com "numero_processo", "encontrado_datajud" (bool), "instancias" (lista de
     capa+movimentos por grau, igual a "processos" de consultar_processo_datajud), "partes"
-    (nome e polo, deduplicadas por nome) e "advogados" (nome, numero_oab e uf_oab, deduplicados
-    por OAB). Para o texto das publicações, use consultar_publicacoes_djen separadamente.
+    (nome e polo, deduplicadas por nome), "advogados" (nome, numero_oab e uf_oab, deduplicados
+    por OAB) e "orgao_julgador_djen" (nomeOrgao da publicação do DJEN mais recente; serve de reserva
+    quando o DataJud não traz órgão julgador). Para o texto das publicações, use
+    consultar_publicacoes_djen separadamente.
 
     Limitações:
     - "partes" e "advogados" vêm do DJEN e só existem se já houve ao menos uma publicação desse
@@ -714,6 +727,8 @@ async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> d
 
         partes: dict[str, dict] = {}
         advogados: dict[str, dict] = {}
+        orgao_julgador_djen = None
+        data_mais_recente = None
         for item in resultado_djen.get("itens") or []:
             for parte in item.get("destinatarios") or []:
                 chave = (parte.get("nome") or "").strip().upper()
@@ -723,13 +738,28 @@ async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> d
                 chave = advogado.get("numero_oab") or advogado.get("nome")
                 if chave:
                     advogados[chave] = advogado
+            data_item = item.get("data_disponibilizacao") or ""
+            if item.get("nomeOrgao") and (data_mais_recente is None or data_item > data_mais_recente):
+                orgao_julgador_djen = item.get("nomeOrgao")
+                data_mais_recente = data_item
+
+        # Cada campo usa a publicação mais recente que efetivamente o informa.
+        capa_djen = {}
+        for item in sorted(resultado_djen.get("itens") or [],
+                           key=lambda i: i.get("data_disponibilizacao") or "", reverse=True):
+            for destino, origem in (("tribunal", "siglaTribunal"), ("orgao_julgador", "nomeOrgao"),
+                                    ("classe", "nomeClasse")):
+                if item.get(origem) and destino not in capa_djen:
+                    capa_djen[destino] = item[origem]
 
         return {
+            "capa_djen": capa_djen,
             "numero_processo": _so_digitos(numero_processo),
             "encontrado_datajud": bool(resultado_datajud.get("encontrado")),
             "instancias": resultado_datajud.get("processos") or [],
             "partes": list(partes.values()),
             "advogados": list(advogados.values()),
+            "orgao_julgador_djen": orgao_julgador_djen,
         }
     except Exception as exc:
         log.exception("Falha inesperada em consultar_processo_unificado")
@@ -1467,6 +1497,115 @@ async def consultar_jurimetria_cjpg(
     except Exception as exc:
         log.exception("Falha inesperada em consultar_jurimetria_cjpg")
         return _erro(f"Erro inesperado ao consultar o CJPG: {exc}")
+
+
+JURISPRUDENCIA_TJSP_BASE_URL = "https://esaj.tjsp.jus.br"
+JURISPRUDENCIA_TJSP_TIMEOUT_S = 30.0
+JURISPRUDENCIA_TJSP_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Content-Type": "application/json;charset=UTF-8",
+    "Referer": f"{JURISPRUDENCIA_TJSP_BASE_URL}/gcn-frontend-vue/jurisprudencia-selecionada/consulta",
+}
+JURISPRUDENCIA_TJSP_TAMANHO_PAGINA = 10
+
+
+def _jurisprudencia_tjsp_campos_resultado(item: dict) -> dict:
+    return {
+        "cdJurisprudencia": item.get("cdJurisprudencia"),
+        "cdAcordao": item.get("cdAcordao"),
+        "classe": item.get("dsClasse") or item.get("nmClasse"),
+        "relator": item.get("nmMagistrado") or item.get("nmRelator"),
+        "comarca": item.get("nmComarca"),
+        "orgao_julgador": item.get("nmOrgaoJulgador"),
+        "data_julgamento": item.get("dtJulgamento"),
+        "ementa": item.get("deEmentaJuris"),
+        "segredo_justica": item.get("flSegredoJustica") == "S",
+        "foro": item.get("cdForo", 0),
+        "pdf_url": (
+            f"{JURISPRUDENCIA_TJSP_BASE_URL}/mat-report/publico/gcn/api/v1.0/jurisprudencia"
+            f"?cdJurisprudenciaList={item.get('cdJurisprudencia')}&formato=S"
+            if item.get("flSegredoJustica") != "S" and item.get("cdJurisprudencia")
+            else None
+        ),
+    }
+
+
+@mcp.tool()
+async def consultar_jurisprudencia_tjsp(
+    termo: str,
+    buscar_em: str = "ementa",
+    data_julgamento_inicio: str | None = None,
+    data_julgamento_fim: str | None = None,
+    relator: str | None = None,
+    classe: str | None = None,
+    comarca: str | None = None,
+    orgao_julgador: str | None = None,
+    pagina: int = 1,
+) -> dict:
+    """Busca acórdãos na base "Jurisprudência Selecionada" do TJSP (e-SAJ/GCN - API interna não
+    documentada publicamente, obtida por engenharia reversa; sem SLA de estabilidade).
+
+    Parâmetros:
+    - termo: pesquisa por termos (obrigatório).
+    - buscar_em: "ementa" (padrão), "inteiro_teor" ou "ambos" - define em quais campos o termo é
+      buscado.
+    - data_julgamento_inicio / data_julgamento_fim: formato dd/mm/aaaa.
+    - relator / classe / comarca / orgao_julgador: filtros em texto livre (correspondência feita
+      pelo próprio servidor do e-SAJ).
+    - pagina: página de 10 resultados (1-indexada).
+
+    Cada resultado já traz a ementa pronta (campo "ementa") quando o acórdão tiver uma cadastrada -
+    não há geração automática de ementa pelo TJSP, só exibição da que foi redigida pelo tribunal.
+    Resultados com "segredo_justica": true não têm PDF de acórdão disponível.
+    """
+    try:
+        if not termo or not termo.strip():
+            return _erro("Informe o termo de pesquisa.")
+        if pagina < 1:
+            return _erro("pagina deve ser >= 1.")
+
+        corpo = {
+            "dePesquisaTermos": termo.strip(),
+            "flEmenta": buscar_em in ("ementa", "ambos"),
+            "flInteiroTeor": buscar_em in ("inteiro_teor", "ambos"),
+            "ordenacao": "dtJulgamento_DESC",
+            "numPag": pagina,
+            "tamanhoPagina": JURISPRUDENCIA_TJSP_TAMANHO_PAGINA,
+            "subFilter": {},
+            "legislativasNormativas": [],
+            "dtJulgamentoInicio": (data_julgamento_inicio or "").strip() or None,
+            "dtJulgamentoFim": (data_julgamento_fim or "").strip() or None,
+            "nmRelator": (relator or "").strip() or None,
+            "nmClasse": (classe or "").strip() or None,
+            "nmComarca": (comarca or "").strip() or None,
+            "nmOrgaoJulgador": (orgao_julgador or "").strip() or None,
+        }
+
+        async with _cliente(JURISPRUDENCIA_TJSP_TIMEOUT_S, headers=JURISPRUDENCIA_TJSP_HEADERS) as cliente:
+            resp = await cliente.post(
+                f"{JURISPRUDENCIA_TJSP_BASE_URL}/gcn-services/api/publico/jurisprudencia/find/jurisprudencias",
+                json=corpo,
+            )
+            resp.raise_for_status()
+            dados = resp.json()
+
+        itens = dados.get("jurisprudencias") or []
+        return {
+            "total_servidor": dados.get("totalHits"),
+            "pagina": pagina,
+            "tamanho_pagina": JURISPRUDENCIA_TJSP_TAMANHO_PAGINA,
+            "resultados": [_jurisprudencia_tjsp_campos_resultado(item) for item in itens],
+        }
+
+    except httpx.HTTPError as exc:
+        return _erro(f"Erro de rede ao consultar a jurisprudência do TJSP: {exc}")
+    except Exception as exc:
+        log.exception("Falha inesperada em consultar_jurisprudencia_tjsp")
+        return _erro(f"Erro inesperado ao consultar a jurisprudência do TJSP: {exc}")
 
 
 CJPG_CATEGORIAS_DESFECHO = ["procedente", "parcial", "improcedente", "acordo", "extinto"]
@@ -2874,7 +3013,7 @@ class ServidorOAuth:
             return None
         usuario = registro["usuario"]
         conta = self.registro.carregar().get(usuario)
-        if not conta or conta.get("revogado"):
+        if not conta or conta.get("revogado") or conta.get("status", "ativo") != "ativo":
             return None
         return usuario
 
@@ -3310,7 +3449,11 @@ async def _montar_capa_via_tribunal(numero: str, tribunal: str) -> tuple[dict | 
     resultado = await consultar_processo_unificado(tribunal=tribunal, numero_processo=numero)
     if resultado.get("erro"):
         return None, resultado
-    instancia = (resultado.get("instancias") or [{}])[0]
+    instancias = resultado.get("instancias") or []
+    capa_djen = resultado.get("capa_djen") or {}
+    if not instancias and not (capa_djen or resultado.get("partes") or resultado.get("advogados")):
+        return None, _erro("Nenhum dado encontrado no DataJud ou no DJEN. A capa anterior foi preservada.")
+    instancia = (instancias or [{}])[0]
     municipios = json.loads((Path(__file__).parent / "static" / "municipios.json").read_text(encoding="utf-8"))["data"]
     codigo = str(instancia.get("codigoMunicipioIBGE") or "")
     municipio = next((m for m in municipios if str(m["Codigo"]) == codigo), None)
@@ -3326,17 +3469,21 @@ async def _montar_capa_via_tribunal(numero: str, tribunal: str) -> tuple[dict | 
     segmento = numero[13:14]
     automaticos = {
         "tipo_justica": _TIPO_JUSTICA_POR_SEGMENTO.get(segmento),
-        "orgao_julgador": instancia.get("orgaoJulgador"),
+        "orgao_julgador": instancia.get("orgaoJulgador") or capa_djen.get("orgao_julgador") or resultado.get("orgao_julgador_djen"),
     }
     campos = {
         **{k: v for k, v in automaticos.items() if v},
-        "tribunal": instancia.get("tribunal"), "classe": instancia.get("classe"),
+        "tribunal": instancia.get("tribunal") or capa_djen.get("tribunal") or tribunal.upper(),
+        "classe": instancia.get("classe") or capa_djen.get("classe"),
         "assuntos": instancia.get("assuntos"), "grau": instancia.get("grau"),
-        "data_distribuicao": instancia.get("dataAjuizamento"), "nivel_sigilo": instancia.get("nivel_sigilo"),
+        "data_distribuicao": instancia.get("dataAjuizamento"), "nivel_sigilo": instancia.get("nivelSigilo"),
         **({"nome_processo": nome_processo} if nome_processo else {}),
         **localidade, "movimentos": movimentos, "partes": resultado.get("partes") or [],
         "advogados": resultado.get("advogados") or [],
+        **({"datajud": [i["datajud"] for i in instancias if "datajud" in i]} if instancias else {}),
     }
+    # Uma fonte sem determinado campo não deve apagar o último valor conhecido.
+    campos = {k: v for k, v in campos.items() if v is not None and v != [] and v != "" or k == "datajud"}
     return campos, None
 
 
@@ -3347,14 +3494,39 @@ def _movimentos_novos(antigos: list[dict] | None, novos: list[dict] | None) -> l
     return [m for m in novos or [] if (m.get("codigo"), m.get("dataHora")) not in vistos]
 
 
+def _tribunal_do_numero(numero: str) -> str | None:
+    """Resolve segmentos CNJ atendidos pela API pública; não presume tribunal."""
+    if len(numero) != 20 or not numero.isdigit():
+        return None
+    segmento, regiao = numero[13], int(numero[14:16])
+    if segmento == "8" and 1 <= regiao <= 27:
+        return "tjdft" if regiao == 7 else "tj" + ("ac al ap am ba ce df es go ma mt ms mg pa pb pr pe pi rj rn rs ro rr sc se sp to".split()[regiao - 1])
+    if segmento == "4" and 1 <= regiao <= 6:
+        return f"trf{regiao}"
+    if segmento == "5" and 1 <= regiao <= 24:
+        return f"trt{regiao}"
+    if segmento == "6" and 1 <= regiao <= 27:
+        return "tre-" + ("ac al ap am ba ce df es go ma mt ms mg pa pb pr pe pi rj rn rs ro rr sc se sp to".split()[regiao - 1])
+    return {"3": "stj", "7": "stm"}.get(segmento) if regiao == 0 else None
+
+
 async def _atualizar_movimentos_processos(gestao: "RegistroClientesCasos", agora=lambda: datetime.now(timezone.utc)) -> None:
-    """Job periódico (Fase 1 do roadmap de buscas): para cada processo cuja capa já foi
-    vinculada a um tribunal ao menos uma vez, consulta de novo o DataJud/DJEN e atualiza a capa
-    se houver movimento novo - sem isso, a capa só mudava com o clique manual em "Atualizar
-    capa". Não manda e-mail: o caso não tem um "dono" único no modelo atual (é a conta
+    """Preenche snapshots completos dos CNJs cadastrados ou monitorados e atualiza
+    as capas vinculadas a um tribunal, preservando os campos manuais. Não manda e-mail: o caso não tem um "dono" único no modelo atual (é a conta
     institucional do escritório inteiro, ver google_integracao.py), só o Monitoramento tem
     usuário - o movimento novo aparece na capa do processo e na linha do tempo do caso."""
     falhou = False
+    # Inclui cadastros antigos sem capa e processos apenas monitorados.
+    for numero, tribunal in gestao.processos_datajud_pendentes():
+        try:
+            tribunal = tribunal or _tribunal_do_numero(numero)
+            if tribunal:
+                resultado = await consultar_processo_datajud(tribunal.lower(), numero)
+                if resultado.get("encontrado"):
+                    gestao.salvar_datajud(numero, tribunal, [p["datajud"] for p in resultado["processos"]])
+        except Exception:
+            falhou = True
+            log.exception("DataJud: falha ao preencher processo %s", numero)
     for vinculo in gestao.capas_vinculadas():
         caso_id, numero, tribunal = vinculo["caso_id"], vinculo["numero_processo"], vinculo["tribunal"]
         try:
@@ -3366,6 +3538,8 @@ async def _atualizar_movimentos_processos(gestao: "RegistroClientesCasos", agora
                 continue
             novos = _movimentos_novos(capa_atual.get("movimentos"), campos.get("movimentos"))
             gestao.salvar_capa_processo(caso_id, numero, agora=agora, **campos)
+            if campos.get("datajud"):
+                gestao.salvar_datajud(numero, tribunal, campos["datajud"])
             if novos:
                 gestao.registrar_evento_no_caso(
                     caso_id, numero, "movimento_processual",
@@ -3383,7 +3557,7 @@ class _AutenticacaoBearer:
 
     - /mcp exige 'Authorization: Bearer <token>' de um usuário ativo e aplica os limites de uso.
     - /cadastro (se houver SMTP configurado) permite pedir o token pelo e-mail.
-    - /admin (se houver CNJ_MCP_ADMIN_TOKEN) é a página administrativa.
+    - /admin (se houver hash administrativo no SQLite) é a página administrativa.
     - /healthz é liberado para o health check da hospedagem.
     """
 
@@ -3399,7 +3573,8 @@ class _AutenticacaoBearer:
         self.app = app
         self.registro = registro
         self.limitador = limitador
-        self.admin_token = admin_token
+        if admin_token:
+            usuarios_admin.configurar_token_admin(registro, admin_token, somente_se_ausente=True)
         self.cadastro = cadastro
         self.oauth = oauth
         self.captcha = captcha
@@ -3584,6 +3759,10 @@ class _AutenticacaoBearer:
             # acesso por link assinado e temporário (sem token de usuário)
             await _servir_certidao(scope, send)
             return
+        if caminho.startswith('/admin/usuarios/') or caminho.startswith('/admin/banco/'):
+            import usuarios_admin
+            await usuarios_admin.tratar(self, scope, receive, send, sys.modules[__name__])
+            return
         if caminho.startswith("/admin"):
             await self._admin(scope, receive, send)
             return
@@ -3622,6 +3801,30 @@ class _AutenticacaoBearer:
             return
 
         scope["usuario"] = usuario
+        import usuarios_admin
+        usuarios_admin.registrar_acesso(self.registro, usuario)
+        perfil = self.registro.carregar().get(usuario, {})
+        if perfil.get('nivel_acesso') == 'consulta' and scope.get('method') not in ('GET', 'HEAD', 'OPTIONS'):
+            if caminho != '/mcp' or scope.get('method') != 'POST':
+                await _json(send, 403, _erro('Seu nível de acesso permite somente consulta.'))
+                return
+            corpo_consulta = await _ler_corpo(receive)
+            try:
+                permitido = corpo_consulta is not None and usuarios_admin.mcp_consulta_permitido(json.loads(corpo_consulta))
+            except (ValueError, UnicodeDecodeError):
+                permitido = False
+            if not permitido:
+                await _json(send, 403, _erro('Seu nível de acesso permite somente consulta.'))
+                return
+            receive_original = receive
+            entregue = False
+            async def receber_consulta():
+                nonlocal entregue
+                if not entregue:
+                    entregue = True
+                    return {'type': 'http.request', 'body': corpo_consulta, 'more_body': False}
+                return await receive_original()
+            receive = receber_consulta
 
         if caminho.startswith('/integracoes/calendar') and self.integracoes:
             if caminho == '/integracoes/calendar/status' and scope.get('method') == 'GET':
@@ -3665,6 +3868,15 @@ class _AutenticacaoBearer:
         if caminho == "/integracoes/status" and scope.get("method") == "GET":
             await _json(send, 200, {"google": self._google_configurado(), "asaas": _asaas_config() is not None,
                                    'zapsign': bool(self.integracoes and self.integracoes.ativo('zapsign'))})
+            return
+
+        if caminho == "/responsaveis/me" and scope.get("method") == "GET":
+            await _responder(send, 200, json.dumps({"usuario": {
+                "login": usuario,
+                "nome_completo": perfil.get("nome_completo") or usuario,
+                "nivel_acesso": perfil.get("nivel_acesso") or "operador",
+            }}, ensure_ascii=False).encode("utf-8"), tipo="application/json; charset=utf-8",
+                cabecalhos_extra=[(b"cache-control", b"no-store")])
             return
 
         if caminho == "/responsaveis" and scope.get("method") == "GET":
@@ -3837,7 +4049,7 @@ class _AutenticacaoBearer:
     # --- Página administrativa -------------------------------------------------
 
     async def _admin(self, scope, receive, send):
-        if self.admin_token is None:
+        if not usuarios_admin.token_admin_configurado(self.registro):
             await _responder(send, 404, b"Nao encontrado")
             return
 
@@ -3877,7 +4089,7 @@ class _AutenticacaoBearer:
                 await _responder(send, 413, b"Formulario grande demais")
                 return
             campos = {k: v[0] for k, v in parse_qs(corpo.decode("utf-8", "replace"), keep_blank_values=True).items()}
-            if not hmac.compare_digest(campos.get("token_admin", "").encode("utf-8"), self.admin_token.encode("utf-8")):
+            if not usuarios_admin.validar_token_admin(self.registro, campos.get("token_admin", "")):
                 if self.falhas is not None:
                     self.falhas.verificar(chave_admin)
                 log.warning("Ação administrativa negada: token administrativo inválido")
@@ -3916,7 +4128,7 @@ class _AutenticacaoBearer:
             return
         corpo = await _ler_corpo(receive)
         campos = {k: v[0] for k, v in parse_qs((corpo or b"").decode("utf-8", "replace"), keep_blank_values=True).items()}
-        if not hmac.compare_digest(campos.get("token_admin", "").encode("utf-8"), (self.admin_token or "").encode("utf-8")):
+        if not usuarios_admin.validar_token_admin(self.registro, campos.get("token_admin", "")):
             await _responder(send, 401, b"Token administrativo invalido.")
             return
         self._limpar_estados_expirados()
@@ -3963,7 +4175,7 @@ class _AutenticacaoBearer:
     async def _google_desconectar(self, scope, receive, send) -> None:
         corpo = await _ler_corpo(receive)
         campos = {k: v[0] for k, v in parse_qs((corpo or b"").decode("utf-8", "replace"), keep_blank_values=True).items()}
-        if not hmac.compare_digest(campos.get("token_admin", "").encode("utf-8"), (self.admin_token or "").encode("utf-8")):
+        if not usuarios_admin.validar_token_admin(self.registro, campos.get("token_admin", "")):
             await _responder(send, 401, b"Token administrativo invalido.")
             return
         if self.registro_google is not None:
@@ -4838,7 +5050,9 @@ class _AutenticacaoBearer:
                 }.items() if v})
                 self.gestao.atualizar_caso(caso_id, **atualizaveis)
             await _json(send, 200, {
-                **capa, "partes": campos.get("partes") or [], "advogados": campos.get("advogados") or [],
+                **capa,
+                **({"aviso": "Capa atualizada com os dados disponíveis no DJEN. Processo não encontrado no DataJud; os dados anteriores foram preservados."}
+                   if "datajud" not in campos else {}),
                 "monitorando": self._processo_monitorando(scope, numero),
             })
             return
@@ -5049,12 +5263,21 @@ class _AutenticacaoBearer:
         except ValueError:
             await _json(send, 400, _erro("Paginação inválida: página deve ser positiva e tamanho entre 1 e 300."))
             return
-        total = self.publicacoes.contar(status)
+        data = parametros.get("data") or None
+        if data:
+            try:
+                if datetime.strptime(data, "%Y-%m-%d").strftime("%Y-%m-%d") != data:
+                    raise ValueError
+            except ValueError:
+                await _json(send, 400, _erro("Data inválida: use AAAA-MM-DD."))
+                return
+        total = self.publicacoes.contar(status, data)
         pagina = min(pagina, max(1, (total + tamanho - 1) // tamanho))
-        publicacoes = self.publicacoes.listar(status, tamanho, (pagina - 1) * tamanho)
+        publicacoes = self.publicacoes.listar(status, tamanho, (pagina - 1) * tamanho, data)
         await _json(send, 200, {"publicacoes": publicacoes, "total": total,
                               "pagina": pagina, "tamanho": tamanho, "campos_djen": self.publicacoes.campos_djen(),
-                              "hashes_disponiveis": self.publicacoes.hashes_disponiveis(status)})
+                              "datas_disponiveis": self.publicacoes.datas_disponiveis(status),
+                              "hashes_disponiveis": self.publicacoes.hashes_disponiveis(status, data)})
 
     async def _publicacoes_oab_status(self, scope, receive, send):
         """POST /publicacoes-oab/status: atualização em lote - {hashes: [...], status: "..."}."""
@@ -5747,6 +5970,7 @@ def _criar_usuario_core(registro: RegistroUsuarios, nome: str) -> tuple[bool, st
             "criado_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "revogado": False,
             "origem": "admin",
+            "status": "ativo",
         }
         resultado["ok"] = True
 
@@ -5921,6 +6145,7 @@ def _principal() -> int:
     parser.add_argument("--criar-usuario", metavar="NOME", help="Cria um usuário e mostra o token uma vez.")
     parser.add_argument("--revogar-usuario", metavar="NOME", help="Revoga o token de um usuário.")
     parser.add_argument("--listar-usuarios", action="store_true", help="Lista os usuários cadastrados.")
+    parser.add_argument("--gerar-token-admin", action="store_true", help="Gera um novo token administrativo, grava somente o hash no banco e mostra o token uma vez. Invalida o anterior.")
     parser.add_argument(
         "--atualizar-arvores-cjpg", action="store_true",
         help="Baixa e salva as árvores de Vara/Classe/Assunto/Magistrado do CJPG (TJSP), usadas pelo autocomplete da aba Jurimetria.",
@@ -5933,6 +6158,9 @@ def _principal() -> int:
     banco_caminho = dados_dir / os.environ.get("CNJ_MCP_BANCO", "cnj.db")
     _db.migrar_de_json_se_necessario(banco_caminho, dados_dir)
     registro = RegistroUsuarios(banco_caminho)
+    if args.gerar_token_admin:
+        print(usuarios_admin.gerar_token_admin(registro))
+        return 0
     global _COFRE_INTEGRACOES
     chave_integracoes = os.environ.get('CNJ_INTEGRACOES_CHAVE', '').strip()
     if chave_integracoes:
@@ -5982,8 +6210,16 @@ def _principal() -> int:
         mcp.run(transport="stdio")
         return 0
 
+    # Importação única para instalações antigas; o banco prevalece nas partidas seguintes.
+    legado_admin = os.environ.pop("CNJ_MCP_ADMIN_TOKEN", "").strip()
+    if legado_admin and not usuarios_admin.token_admin_configurado(registro):
+        if len(legado_admin) < 24:
+            sys.exit("Erro: o token administrativo legado precisa ter pelo menos 24 caracteres.")
+        usuarios_admin.configurar_token_admin(registro, legado_admin, somente_se_ausente=True)
+    del legado_admin
+    admin_habilitado = usuarios_admin.token_admin_configurado(registro)
     smtp = _smtp_do_ambiente()
-    if not registro.ativos() and smtp is None and not (_COFRE_INTEGRACOES and os.environ.get('CNJ_MCP_ADMIN_TOKEN')):
+    if not registro.ativos() and smtp is None and not admin_habilitado:
         print(
             "Erro: nenhum usuário ativo e cadastro público desligado (sem CNJ_SMTP_HOST). "
             "Crie um usuário com --criar-usuario NOME ou configure o SMTP.",
@@ -5991,9 +6227,6 @@ def _principal() -> int:
         )
         return 1
 
-    admin_token = os.environ.get("CNJ_MCP_ADMIN_TOKEN", "").strip() or None
-    if admin_token and len(admin_token) < 24:
-        sys.exit("Erro: CNJ_MCP_ADMIN_TOKEN precisa ter pelo menos 24 caracteres.")
     limitador = LimitadorUso(
         por_minuto=_inteiro_env("CNJ_MCP_LIMITE_POR_MINUTO", 20),
         por_dia=_inteiro_env("CNJ_MCP_LIMITE_DIARIO", 300),
@@ -6052,7 +6285,7 @@ def _principal() -> int:
     registro_monitoramentos.atualizar(normalizar_datas)
 
     app = _montar_app_http(
-        registro, limitador, admin_token, cadastro, oauth,
+        registro, limitador, None, cadastro, oauth,
         captcha, site_captcha or None, falhas, gestao,
         registro_google, google_client_id, google_client_secret, publicacoes,
         registro_monitoramentos=registro_monitoramentos,
@@ -6060,7 +6293,7 @@ def _principal() -> int:
     log.info(
         "Servidor HTTP em http://%s:%d/mcp (%d usuário(s) ativo(s); cadastro %s; admin %s; monitoramento %s)",
         args.host, args.port, len(registro.ativos()),
-        "habilitado" if cadastro else "desabilitado", "habilitado" if admin_token else "desabilitado",
+        "habilitado" if cadastro else "desabilitado", "habilitado" if admin_habilitado else "desabilitado",
         "habilitado" if smtp else "desabilitado",
     )
 
