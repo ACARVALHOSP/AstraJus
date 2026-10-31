@@ -1683,8 +1683,30 @@ async def consultar_jurisprudencia_tjsp(
                 f"{JURISPRUDENCIA_TJSP_BASE_URL}/gcn-services/api/publico/jurisprudencia/find/jurisprudencias",
                 json=corpo,
             )
-            resp.raise_for_status()
-            dados = resp.json()
+
+        # O TJSP retorna HTTP 400 com "Consulta sem resultado." quando a busca não encontra acórdãos
+        if resp.status_code == 400:
+            try:
+                dados_erro = resp.json()
+                msg = dados_erro.get("message") or dados_erro.get("debugMessage") or ""
+                if "sem resultado" in msg.lower():
+                    return {
+                        "total_servidor": 0,
+                        "pagina": pagina,
+                        "tamanho_pagina": JURISPRUDENCIA_TJSP_TAMANHO_PAGINA,
+                        "resultados": [],
+                        "comarcas_disponiveis": [],
+                        "relatores_disponiveis": [],
+                        "classes_disponiveis": [],
+                        "orgaos_disponiveis": [],
+                    }
+                if msg:
+                    return _erro(f"TJSP: {msg}")
+            except Exception:
+                pass
+
+        resp.raise_for_status()
+        dados = resp.json()
 
         itens = dados.get("jurisprudencias") or []
         subfiltros = dados.get("subfiltros") or []
@@ -1727,6 +1749,26 @@ async def consultar_jurisprudencia_tjsp(
             "orgaos_disponiveis": orgaos_disponiveis,
         }
 
+    except httpx.HTTPStatusError as exc:
+        try:
+            corpo_erro = exc.response.json()
+            msg = corpo_erro.get("message") or corpo_erro.get("debugMessage")
+            if msg:
+                if "sem resultado" in str(msg).lower():
+                    return {
+                        "total_servidor": 0,
+                        "pagina": pagina,
+                        "tamanho_pagina": JURISPRUDENCIA_TJSP_TAMANHO_PAGINA,
+                        "resultados": [],
+                        "comarcas_disponiveis": [],
+                        "relatores_disponiveis": [],
+                        "classes_disponiveis": [],
+                        "orgaos_disponiveis": [],
+                    }
+                return _erro(f"TJSP: {msg}")
+        except Exception:
+            pass
+        return _erro(f"Erro ao consultar a jurisprudência do TJSP (HTTP {exc.response.status_code}).")
     except httpx.HTTPError as exc:
         return _erro(f"Erro de rede ao consultar a jurisprudência do TJSP: {exc}")
     except Exception as exc:
