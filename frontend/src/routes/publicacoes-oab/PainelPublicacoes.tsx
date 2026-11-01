@@ -119,10 +119,13 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
     <Column sm={4} md={8} lg={16}>
     <Stack gap={6}>
     <div><h1>Publicações monitoradas</h1><p>Revise as publicações capturadas pelos monitoramentos por OAB.</p></div>
-    <details className="oab-ajuda"><summary>Sobre a captura e os status</summary><Stack gap={3}>
-      <p>A captura dos monitoramentos por OAB ocorre a cada 24 horas. Os avisos por e-mail são verificados a cada 6 horas.</p>
-      <p>Não tratada: aguarda revisão, mesmo quando vinculada a um processo. Tratada: revisão confirmada ou atividade criada. Arquivada: dispensada, preservando dados e vínculos. É possível reabrir.</p>
-    </Stack></details>
+    <InlineNotification
+      kind="info"
+      title="Sobre a captura e os status"
+      subtitle="A captura dos monitoramentos por OAB ocorre a cada 24 horas. Os avisos por e-mail são verificados a cada 6 horas. Não tratada: aguarda revisão, mesmo quando vinculada a um processo. Tratada: revisão confirmada ou atividade criada. Arquivada: dispensada, preservando dados e vínculos. É possível reabrir."
+      lowContrast
+      hideCloseButton
+    />
     <fieldset className="oab-captura" disabled={ocupada || lote}><Captura onCapturado={carregar} /></fieldset>
     <section aria-label="Lista de publicações" aria-busy={carregando || operacao}>
       <DataTable rows={dadosTabela} headers={cabecalhos} size="md" isSortable>
@@ -159,7 +162,7 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
                 {colunas.map(c => <TableCell key={c.key} className={`oab-celula oab-celula-${c.key.split(':')[0]}`}>{c.key === 'processo' || c.key === 'tribunal' ? c.valor(p) : <TextoTabela texto={c.valor(p)} />}</TableCell>)}
                 <TableCell><div className="oab-acoes">
                   <Button kind="ghost" size="sm" hasIconOnly renderIcon={Launch} iconDescription={link ? `Abrir publicação DJEN ${p.hash} em nova aba` : 'Publicação sem link DJEN disponível'} disabled={bloqueada || !link} onClick={() => { if (!bloqueada && link) window.open(link, '_blank', 'noopener,noreferrer') }} />
-                  <OverflowMenu menuOptionsClass={`acoes-tabela-menu--${theme} oab-menu`} key={bloqueada ? 'bloqueado' : 'disponivel'} disabled={bloqueada} flipped size="sm" aria-label={`Ações da publicação ${p.hash}`} iconDescription={`Ações da publicação ${p.hash}`}>
+                  <OverflowMenu menuOptionsClass={`acoes-tabela-menu--${theme} oab-menu`} key={bloqueada ? 'bloqueado' : 'disponivel'} disabled={bloqueada} flipped size="sm" aria-label="Ações da publicação" iconDescription="Ações da publicação">
                     <OverflowMenuItem itemText={p.caso_id ? 'Abrir processo' : 'Criar / vincular processo'} disabled={bloqueada || (!p.caso_id && numeroPublicacao(p).length !== 20)} onClick={() => abrirAcao('processo', p)} />
                     <OverflowMenuItem itemText={p.caso_id ? 'Criar atividade' : 'Criar atividade (vincule um processo)'} disabled={bloqueada || !p.caso_id} onClick={() => abrirAcao('atividade', p)} />
                     <OverflowMenuItem itemText="Marcar como tratada" disabled={bloqueada || p.status === 'tratada'} onClick={() => mudarStatus([p.hash], 'tratada')} />

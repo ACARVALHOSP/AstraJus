@@ -3,8 +3,6 @@
 @use '@carbon/react/scss/breakpoint' as breakpoint;
 
 .oab-painel { min-inline-size: 0; }
-.oab-ajuda { border-block: 1px solid var(--cds-border-subtle); padding-block: spacing.$spacing-05; }
-.oab-ajuda summary { cursor: pointer; padding-block: spacing.$spacing-03; }
 .oab-captura { border: 0; padding: 0; min-inline-size: 0; }
 .oab-toolbar-area > section { block-size: auto; min-block-size: spacing.$spacing-09; }
 .oab-painel .oab-toolbar { display: flex; flex-wrap: wrap; align-items: center; block-size: auto; gap: spacing.$spacing-04; padding: spacing.$spacing-04 spacing.$spacing-05; min-block-size: spacing.$spacing-09; }

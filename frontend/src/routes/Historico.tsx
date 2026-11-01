@@ -26,6 +26,7 @@ import {
   lerCasosFavoritos,
   lerFavoritos,
   lerHistorico,
+  limparHistorico,
   removerFavorito,
   type Favorito,
   type ItemHistorico,
@@ -38,7 +39,7 @@ export default function Historico() {
   const { cliente } = useCliente()
   const { irPara } = useNavegacao()
   const [favoritos, setFavoritos] = useState<Favorito[]>(() => lerFavoritos())
-  const [historico] = useState<ItemHistorico[]>(() => lerHistorico())
+  const [historico, setHistorico] = useState<ItemHistorico[]>(() => lerHistorico())
   const [casosFavoritos, setCasosFavoritos] = useState<CasoFavorito[]>([])
 
   const [carregandoFavoritos, setCarregandoFavoritos] = useState(() => !!cliente && lerCasosFavoritos().length > 0)
@@ -72,6 +73,11 @@ export default function Historico() {
   function consultarFavorito(fav: Favorito) {
     const payload: PayloadProcesso = { tribunal: fav.tribunal, numero_processo: fav.numero }
     irPara('processo', payload)
+  }
+
+  function apagarHistorico() {
+    limparHistorico()
+    setHistorico([])
   }
 
   function repetirItem(item: ItemHistorico) {
@@ -167,7 +173,14 @@ export default function Historico() {
       </section>
 
       <section>
-        <h3>Histórico recente</h3>
+        <div className="aj-layout-40">
+          <h3>Histórico recente</h3>
+          {historico.length > 0 && (
+            <Button kind="danger--ghost" size="sm" onClick={apagarHistorico}>
+              Apagar histórico
+            </Button>
+          )}
+        </div>
         <p>Últimas consultas feitas neste navegador. Clique para repetir.</p>
         {historico.length === 0 ? (
           <p>Nenhuma consulta recente.</p>
