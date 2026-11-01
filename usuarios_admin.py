@@ -17,6 +17,11 @@ CAMPOS = ('usuario_id', 'nome_completo', 'email', 'email_verificado_em', 'criado
 EDITAVEIS = {'nome_completo', 'email', 'nivel_acesso', 'status'}
 NIVEIS = {'administrador', 'operador', 'consulta'}
 STATUS = {'pendente', 'ativo', 'bloqueado', 'revogado'}
+CATEGORIAS_LIMPEZA = {
+    'publicacoes': ('publicacoes_capturadas', 'publicacao_revisoes', 'origem_djen_migracao_pendencias'),
+    'monitoramento_tecnico': ('monitoramento_entregas', 'monitoramento_coletas', 'automacao_execucoes', 'automacao_leases'),
+    'notificacoes': ('notificacoes', 'notificacao_eventos'),
+}
 
 
 def agora():
@@ -240,6 +245,26 @@ async def tratar(app, scope, receive, send, s):
             with _abrir(app.registro.caminho) as c:
                 resultado = [r[0] for r in c.execute('PRAGMA quick_check')]
             await s._json(send, 200, {'integro': resultado == ['ok'], 'verificado_em': agora()})
+        elif path == '/admin/banco/limpar' and method == 'POST':
+            raw = await s._ler_corpo(receive)
+            if raw is None:
+                await s._json(send, 413, {'mensagem': 'Corpo da requisição grande demais.'})
+                return
+            dados = json.loads(raw) if raw else {}
+            categorias = dados.get('categorias')
+            if not isinstance(categorias, list) or not categorias or not set(categorias) <= set(CATEGORIAS_LIMPEZA):
+                await s._json(send, 400, {'mensagem': 'Informe ao menos uma categoria válida: ' + ', '.join(CATEGORIAS_LIMPEZA)})
+                return
+            apagados = {}
+            with _abrir(app.registro.caminho) as c, c:
+                for categoria in categorias:
+                    total = 0
+                    for tabela in CATEGORIAS_LIMPEZA[categoria]:
+                        total += c.execute(f'DELETE FROM {tabela}').rowcount
+                    apagados[categoria] = total
+                c.execute('INSERT INTO usuarios_auditoria (ocorrido_em, ator, usuario, acao, campos) VALUES (?, ?, ?, ?, ?)',
+                          (agora(), ator, '(sistema)', 'limpar_banco', json.dumps(apagados, ensure_ascii=False)))
+            await s._json(send, 200, {'apagados': apagados})
         elif path == '/admin/banco/backup' and method == 'POST':
             with tempfile.TemporaryDirectory() as tmp:
                 destino = Path(tmp) / 'cnj-backup.db'
