@@ -98,6 +98,7 @@ _NOME_CERTIDAO = re.compile(r"certidao_[A-Za-z0-9]+\.pdf")
 MONITORAMENTO_MAX_POR_USUARIO = 5
 MONITORAMENTO_INTERVALO_HORAS = 6
 MONITORAMENTO_EXPIRACAO_DIAS = 180
+MONITORAMENTO_RETROATIVO_DIAS = 90
 MONITORAMENTO_MAX_HASHES_LEMBRADOS = 50
 
 DATAJUD_CACHE_TTL_S = 3600.0  # resultados do DataJud ficam em cache por 1 hora
@@ -2537,9 +2538,11 @@ def _parametros_coleta(criterio, estado, agora_dt, tamanho):
         'numeroOab': criterio.get('numero_oab'), 'ufOab': criterio.get('uf_oab'),
         'itensPorPagina': tamanho,
     }.items() if v is not None}
-    # Primeira coleta mantém a abrangência anterior; próximas coletas sobrepõem dois dias.
+    # Primeira coleta busca os últimos 90 dias (retroativo); próximas coletas sobrepõem dois dias.
     if estado.get('checkpoint') and estado.get('ultima_reconciliacao') and (monitoramento_runtime.utc(agora_dt) - monitoramento_runtime.utc(estado['ultima_reconciliacao'])).days < 7:
         params['dataDisponibilizacaoInicio'] = (monitoramento_runtime.utc(estado['checkpoint']) - timedelta(days=2)).date().isoformat()
+    else:
+        params['dataDisponibilizacaoInicio'] = (monitoramento_runtime.utc(agora_dt) - timedelta(days=MONITORAMENTO_RETROATIVO_DIAS)).date().isoformat()
     params['dataDisponibilizacaoFim'] = monitoramento_runtime.utc(agora_dt).date().isoformat()
     return params
 

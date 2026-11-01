@@ -1,6 +1,6 @@
 import TabelaResponsiva from '../TabelaResponsiva'
 import { useState } from 'react'
-import { Button, TextInput, Select, SelectItem, InlineNotification, Tabs, TabList, Tab, TabPanels, TabPanel, Modal } from '@carbon/react'
+import { Button, TextInput, Select, SelectItem, InlineNotification, Tabs, TabList, Tab, TabPanels, TabPanel, Modal, Checkbox } from '@carbon/react'
 import { useCliente } from '../api/ClienteContext'
 import './administracao.scss'
 
@@ -30,6 +30,12 @@ export default function Administracao() {
   const [editor, setEditor] = useState<{ login: string | null; campos: typeof VAZIO } | null>(null)
   const [tokenNovo, setTokenNovo] = useState('')
   const [confirmarBackup, setConfirmarBackup] = useState(false)
+  const [limpeza, setLimpeza] = useState<{ categorias: string[]; texto: string; resultado: Record<string, number> | null } | null>(null)
+  const CATEGORIAS_LIMPEZA: [string, string][] = [
+    ['publicacoes', 'Publicações capturadas'],
+    ['monitoramento_tecnico', 'Dados técnicos de monitoramento'],
+    ['notificacoes', 'Notificações'],
+  ]
 
   async function requisicao(url: string, token: string, metodo = 'GET', corpo?: unknown) {
     const r = await fetch(url, { method: metodo, cache: 'no-store', headers: {
@@ -55,7 +61,7 @@ export default function Administracao() {
   }
   function sair() {
     setSessao(null); setCredencial(''); setUsuarios([]); setHistorico([]); setAcessos([]); setBanco(null)
-    setEditor(null); setTokenNovo(''); setErro(''); setMensagem(''); setConfirmarBackup(false)
+    setEditor(null); setTokenNovo(''); setErro(''); setMensagem(''); setConfirmarBackup(false); setLimpeza(null)
   }
   async function salvar() {
     if (!editor || !sessao) return
@@ -98,7 +104,7 @@ export default function Administracao() {
           </tbody></table></TabelaResponsiva></div>
         </TabPanel>
         <TabPanel><h2>Banco de dados</h2><p>Consulte o estado do SQLite e gere uma cópia consistente dos dados.</p>
-          <div className="administracao__acoes"><Button disabled={ocupado} onClick={() => void executar(async () => { setBanco(await (await requisicao('/admin/banco/api', sessao)).json()) })}>Carregar informações</Button><Button kind="tertiary" disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/banco/integridade', sessao, 'POST')).json(); if (!r.integro) throw new Error('A verificação identificou inconsistências no banco.'); setMensagem(`Integridade verificada em ${data(r.verificado_em)}.`) })}>Verificar integridade</Button><Button kind="tertiary" disabled={ocupado} onClick={() => setConfirmarBackup(true)}>Baixar backup</Button></div>
+          <div className="administracao__acoes"><Button disabled={ocupado} onClick={() => void executar(async () => { setBanco(await (await requisicao('/admin/banco/api', sessao)).json()) })}>Carregar informações</Button><Button kind="tertiary" disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/banco/integridade', sessao, 'POST')).json(); if (!r.integro) throw new Error('A verificação identificou inconsistências no banco.'); setMensagem(`Integridade verificada em ${data(r.verificado_em)}.`) })}>Verificar integridade</Button><Button kind="tertiary" disabled={ocupado} onClick={() => setConfirmarBackup(true)}>Baixar backup</Button><Button kind="danger--tertiary" disabled={ocupado} onClick={() => setLimpeza({ categorias: [], texto: '', resultado: null })}>Limpar dados</Button></div>
           {banco && <dl className="administracao__resumo"><div><dt>Banco</dt><dd>{banco.tipo}</dd></div><div><dt>Tamanho</dt><dd>{(banco.tamanho_bytes / 1024 / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} MB</dd></div><div><dt>Tabelas</dt><dd>{banco.tabelas}</dd></div></dl>}
         </TabPanel>
         <TabPanel><h2>Histórico administrativo</h2><p>Até 100 alterações de cadastro, com data e responsável.</p><Button disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/usuarios/historico', sessao)).json(); setHistorico(r.historico) })}>Carregar histórico</Button><div className="administracao__tabela" role="region" aria-label="Histórico administrativo" tabIndex={0}><TabelaResponsiva principais={['Nome e login', 'Status', 'Data', 'Usuário']}><table className="cds--data-table"><thead><tr>{['Data', 'Responsável', 'Usuário', 'Ação', 'Campos alterados'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>{historico.map((h, i) => <tr key={i}><td>{data(h.ocorrido_em)}</td><td>{h.ator}</td><td>{h.usuario}</td><td>{h.acao}</td><td>{JSON.parse(h.campos).join(', ')}</td></tr>)}{!historico.length && <tr><td colSpan={5}>Carregue o histórico para consultar os registros disponíveis.</td></tr>}</tbody></table></TabelaResponsiva></div></TabPanel>
@@ -133,5 +139,26 @@ export default function Administracao() {
       const r = await requisicao('/admin/banco/backup', sessao, 'POST')
       const url = URL.createObjectURL(await r.blob()); const a = document.createElement('a'); a.href = url; a.download = 'cnj-backup.db'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); setConfirmarBackup(false); setMensagem('Backup gerado para download.')
     })}><p>O arquivo contém os dados do sistema, incluindo informações pessoais e credenciais cifradas ou hashes. Guarde-o em um local de acesso restrito.</p>{erro && <InlineNotification kind="error" title="Falha no backup" subtitle={erro} hideCloseButton />}</Modal>
+    <Modal open={limpeza !== null} modalHeading="Limpar dados do banco" danger primaryButtonText={ocupado ? 'Limpando…' : 'Limpar dados selecionados'} secondaryButtonText="Cancelar"
+      primaryButtonDisabled={ocupado || !limpeza?.categorias.length || limpeza?.texto !== 'LIMPAR'}
+      onRequestClose={() => { if (!ocupado) setLimpeza(null) }}
+      onRequestSubmit={() => void executar(async () => {
+        if (!sessao || !limpeza) return
+        const r = await requisicao('/admin/banco/limpar', sessao, 'POST', { categorias: limpeza.categorias })
+        const resultado = await r.json() as { apagados: Record<string, number> }
+        setLimpeza({ ...limpeza, resultado: resultado.apagados })
+        setMensagem('Dados selecionados foram apagados.')
+      })}>
+      {limpeza && <div className="administracao__formulario">
+        <p>Esta ação apaga permanentemente os dados das categorias marcadas. Não afeta usuários, clientes, casos, financeiro ou os cadastros de monitoramento.</p>
+        {erro && <InlineNotification kind="error" title="Falha ao limpar" subtitle={erro} hideCloseButton />}
+        {CATEGORIAS_LIMPEZA.map(([chave, rotulo]) => <Checkbox key={chave} id={`limpeza-${chave}`} labelText={rotulo} disabled={ocupado}
+          checked={limpeza.categorias.includes(chave)}
+          onChange={(_e, { checked }) => setLimpeza({ ...limpeza, categorias: checked ? [...limpeza.categorias, chave] : limpeza.categorias.filter(c => c !== chave) })} />)}
+        <TextInput id="limpeza-confirmacao" labelText='Digite "LIMPAR" para confirmar' value={limpeza.texto} disabled={ocupado}
+          onChange={e => setLimpeza({ ...limpeza, texto: e.target.value })} />
+        {limpeza.resultado && <dl className="administracao__resumo">{Object.entries(limpeza.resultado).map(([chave, total]) => <div key={chave}><dt>{CATEGORIAS_LIMPEZA.find(c => c[0] === chave)?.[1] || chave}</dt><dd>{total} registro(s) apagado(s)</dd></div>)}</dl>}
+      </div>}
+    </Modal>
   </section>
 }

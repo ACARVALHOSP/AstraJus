@@ -111,7 +111,9 @@ class MonitoramentoConfiavelTest(unittest.TestCase):
         p = server._parametros_coleta(c, estado, self.agora + timedelta(days=1), 50)
         self.assertEqual(p['numeroProcesso'], c['numero_processo'])
         self.assertEqual(p['dataDisponibilizacaoInicio'], '2026-10-28')
-        self.assertNotIn('dataDisponibilizacaoInicio', server._parametros_coleta(c, estado, self.agora + timedelta(days=8), 50))
+        p_sem_checkpoint_recente = server._parametros_coleta(c, estado, self.agora + timedelta(days=8), 50)
+        self.assertEqual(p_sem_checkpoint_recente['dataDisponibilizacaoInicio'],
+                          (self.agora + timedelta(days=8) - timedelta(days=server.MONITORAMENTO_RETROATIVO_DIAS)).date().isoformat())
 
     def test_hash_ausente_e_pagina_repetida_nao_confirmam_completude(self):
         for resposta in ({'count': 1, 'items': [{}]}, {'count': 2, 'items': [{'hash': 'repetido'}]}):
