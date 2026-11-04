@@ -1,26 +1,11 @@
 import { useEffect, useState } from 'react'
+import { Theme } from '@radix-ui/themes'
 import {
-  Content,
-  SkipToContent,
-  Header,
-  HeaderName,
-  HeaderGlobalBar,
-  HeaderGlobalAction,
-  HeaderMenuButton,
-  SideNav,
-  SideNavItems,
-  SideNavMenu,
-  SideNavMenuItem,
-  SideNavLink,
-  Tag,
-  Theme,
-} from '@carbon/react'
-import { Asleep, Light } from '@carbon/icons-react'
-import { Enterprise } from "@carbon/icons-react";
-import { Search } from "@carbon/icons-react";
-import { Notification } from "@carbon/icons-react";
-import { Currency } from "@carbon/icons-react";
-import { Settings } from "@carbon/icons-react";
+  Scale, Users, CalendarCheck, Folder, Search,
+  Newspaper, BarChart2, BookOpen, Bell, ClipboardList,
+  Settings, Link, Wallet, CreditCard, Shield, Menu, X,
+  Sun, Moon, ChevronDown, ChevronRight,
+} from 'lucide-react'
 import { ClienteProvider, useCliente } from './api/ClienteContext'
 import { CHAVE_TEMA } from './api/mcpClient'
 import BuscaGlobal from './BuscaGlobal'
@@ -43,225 +28,280 @@ import PublicacoesOab from './routes/PublicacoesOab'
 import Contatos from './routes/Contatos'
 import Casos from './routes/Casos'
 import Home from './routes/Home'
+import './app-radix.css'
+
+export type AccentColor = 'indigo' | 'violet' | 'teal' | 'crimson'
+
+const CHAVE_ACCENT = 'astrajus-accent'
 
 const GRUPOS_NAVEGACAO = [
   {
-    id: 'escritorio', label: 'Escritório', icone: Enterprise,
+    id: 'escritorio', label: 'Escritório', icone: Scale,
     abas: [
-      { id: 'casos', label: 'Processos' },
-      { id: 'contatos', label: 'Contatos' },
-      { id: 'atividades', label: 'Atividades' },
+      { id: 'casos', label: 'Processos', icone: Scale },
+      { id: 'contatos', label: 'Contatos', icone: Users },
+      { id: 'atividades', label: 'Atividades', icone: CalendarCheck },
+      { id: 'pastas', label: 'Pastas', icone: Folder },
     ],
   },
   {
     id: 'consultas', label: 'Consultas', icone: Search,
     abas: [
-      { id: 'processo', label: 'Consultar processo' },
-      { id: 'publicacoes', label: 'Consultar publicações' },
-      { id: 'jurimetria', label: 'Jurimetria' },
-      { id: 'jurisprudencia', label: 'Jurisprudência' },
-      { id: 'historico', label: 'Histórico' },
+      { id: 'processo', label: 'Consultar processo', icone: Search },
+      { id: 'publicacoes', label: 'Publicações', icone: Newspaper },
+      { id: 'jurimetria', label: 'Jurimetria', icone: BarChart2 },
+      { id: 'jurisprudencia', label: 'Jurisprudência', icone: BookOpen },
+      { id: 'historico', label: 'Histórico', icone: ClipboardList },
     ],
   },
   {
-    id: 'acompanhamento', label: 'Acompanhamento', icone: Notification,
+    id: 'acompanhamento', label: 'Acompanhamento', icone: Bell,
     abas: [
-      { id: 'monitoramentos', label: 'Monitoramentos' },
-      { id: 'publicacoes-oab', label: 'Publicações OAB' },
+      { id: 'monitoramentos', label: 'Monitoramentos', icone: Bell },
+      { id: 'publicacoes-oab', label: 'Publicações OAB', icone: ClipboardList },
     ],
   },
   {
-    id: 'financeiro', label: 'Financeiro', icone: Currency,
+    id: 'financeiro', label: 'Financeiro', icone: Wallet,
     abas: [
-      { id: 'financeiro', label: 'Lançamentos' },
-      { id: 'pagamentos', label: 'Pagamentos' },
+      { id: 'financeiro', label: 'Lançamentos', icone: Wallet },
+      { id: 'pagamentos', label: 'Pagamentos', icone: CreditCard },
     ],
   },
   {
     id: 'configuracoes', label: 'Configurações', icone: Settings,
     abas: [
-      { id: 'acesso', label: 'Acesso' },
-      { id: 'integracoes', label: 'Integrações' },
-      { id: 'administracao', label: 'Administração' },
+      { id: 'acesso', label: 'Acesso', icone: Shield },
+      { id: 'integracoes', label: 'Integrações', icone: Link },
+      { id: 'administracao', label: 'Administração', icone: Settings },
     ],
   },
 ]
-const ABAS = GRUPOS_NAVEGACAO.flatMap((grupo) => grupo.abas)
 
-const TOM_STATUS = {
-  'sem-token': { texto: 'Sem token', tom: 'gray' as const },
-  verificando: { texto: 'Verificando…', tom: 'gray' as const },
-  conectado: { texto: 'Conectado', tom: 'green' as const },
-  'nao-conectado': { texto: 'Não conectado', tom: 'red' as const },
-}
+const ABAS = GRUPOS_NAVEGACAO.flatMap((g) => g.abas)
 
-function StatusConexaoTag() {
+function StatusConexao() {
   const { status } = useCliente()
-  const { texto, tom } = TOM_STATUS[status]
-  return <Tag type={tom}>{texto}</Tag>
+  const cores: Record<string, string> = {
+    conectado: 'var(--green-9)',
+    'nao-conectado': 'var(--red-9)',
+    verificando: 'var(--yellow-9)',
+    'sem-token': 'var(--gray-8)',
+  }
+  const labels: Record<string, string> = {
+    conectado: 'Conectado',
+    'nao-conectado': 'Desconectado',
+    verificando: 'Verificando…',
+    'sem-token': 'Sem token',
+  }
+  return (
+    <div className="aj-status-pill">
+      <span className="aj-status-dot" style={{ background: cores[status] ?? cores['sem-token'] }} />
+      <span>{labels[status] ?? status}</span>
+    </div>
+  )
 }
 
 function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
   switch (abaAtiva) {
-    case 'inicio':
-      return <Home />
-    case 'administracao':
-      return <Administracao />
-    case 'acesso':
-      return <Acesso />
-    case 'processo':
-      return <Processo />
-    case 'publicacoes':
-      return <Publicacoes />
-    case 'historico':
-      return <Historico />
-    case 'monitoramentos':
-      return <Monitoramentos />
-    case 'jurimetria':
-      return <Jurimetria />
-    case 'jurisprudencia':
-      return <Jurisprudencia />
-    case 'integracoes':
-      return <Integracoes />
-    case 'financeiro':
-      return <Financeiro />
-    case 'pagamentos':
-      return <Pagamentos />
-    case 'atividades':
-      return <Atividades />
-    case 'publicacoes-oab':
-      return <PublicacoesOab />
-    case 'contatos':
-      return <Contatos />
-    case 'casos':
-      return <Casos />
+    case 'inicio': return <Home />
+    case 'administracao': return <Administracao />
+    case 'acesso': return <Acesso />
+    case 'processo': return <Processo />
+    case 'publicacoes': return <Publicacoes />
+    case 'historico': return <Historico />
+    case 'monitoramentos': return <Monitoramentos />
+    case 'jurimetria': return <Jurimetria />
+    case 'jurisprudencia': return <Jurisprudencia />
+    case 'integracoes': return <Integracoes />
+    case 'financeiro': return <Financeiro />
+    case 'pagamentos': return <Pagamentos />
+    case 'atividades': return <Atividades />
+    case 'publicacoes-oab': return <PublicacoesOab />
+    case 'contatos': return <Contatos />
+    case 'casos': return <Casos />
     default:
       return (
-        <div>
-          <h1>Aba: {ABAS.find((a) => a.id === abaAtiva)?.label}</h1>
-          <p>Ainda não migrada — pendente conforme docs/migracao-react-carbon.md.</p>
+        <div style={{ padding: '2rem' }}>
+          <h1>{ABAS.find((a) => a.id === abaAtiva)?.label ?? abaAtiva}</h1>
+          <p>Ainda não migrada.</p>
         </div>
       )
   }
 }
 
-function SideNavAstraJus({ expandida, fechar }: { expandida: boolean; fechar: () => void }) {
+function SidebarAstraJus({ aberta, fechar }: { aberta: boolean; fechar: () => void }) {
   const { abaAtiva, irPara } = useNavegacao()
+  const [gruposAbertos, setGruposAbertos] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(GRUPOS_NAVEGACAO.map((g) => [g.id, g.abas.some((a) => a.id === abaAtiva)]))
+  )
+
+  function toggleGrupo(id: string) {
+    setGruposAbertos((prev) => ({ ...prev, [id]: !prev[id] }))
+  }
+
+  function navegar(abaId: string) {
+    irPara(abaId)
+    if (window.innerWidth < 1056) fechar()
+  }
+
   return (
-    <SideNav aria-label="Navegação principal" expanded={expandida} isPersistent={false} onOverlayClick={fechar}>
-      {/* Reabre o grupo de destino também ao navegar por links internos ou pela hash. */}
-      <SideNavItems key={abaAtiva}>
-        <SideNavLink href="#/inicio" isActive={abaAtiva === 'inicio'} aria-current={abaAtiva === 'inicio' ? 'page' : undefined} onClick={(e) => {
-          if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return
-          e.preventDefault(); irPara('inicio'); fechar()
-        }}>Início</SideNavLink>
+    <>
+      {aberta && window.innerWidth < 1056 && (
+        <div className="aj-overlay" onClick={fechar} />
+      )}
+      <nav className={`aj-sidebar${aberta ? ' aj-sidebar--open' : ''}`} aria-label="Navegação principal">
         {GRUPOS_NAVEGACAO.map((grupo) => {
-          const ativo = grupo.abas.some((aba) => aba.id === abaAtiva)
+          const GrupoIcon = grupo.icone
+          const aberto = gruposAbertos[grupo.id]
           return (
-            <SideNavMenu key={grupo.id} title={grupo.label} renderIcon={grupo.icone} defaultExpanded={ativo} isActive={ativo}>
-              {grupo.abas.map((aba) => (
-                <SideNavMenuItem
-                  key={aba.id}
-                  href={`#/${aba.id}`}
-                  isActive={aba.id === abaAtiva}
-                  aria-current={aba.id === abaAtiva ? 'page' : undefined}
-                  onClick={(e) => {
-                    // Preserva abrir em nova aba/janela com os atalhos nativos do navegador.
-                    if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return
-                    e.preventDefault()
-                    irPara(aba.id)
-                    fechar()
-                  }}
-                >
-                  {aba.label}
-                </SideNavMenuItem>
-              ))}
-            </SideNavMenu>
+            <div key={grupo.id} className="aj-nav-group">
+              <button
+                className={`aj-nav-group-btn${grupo.abas.some((a) => a.id === abaAtiva) ? ' aj-nav-group-btn--ativo' : ''}`}
+                onClick={() => toggleGrupo(grupo.id)}
+                aria-expanded={aberto}
+              >
+                <GrupoIcon size={15} />
+                <span>{grupo.label}</span>
+                {aberto ? <ChevronDown size={13} className="aj-chevron" /> : <ChevronRight size={13} className="aj-chevron" />}
+              </button>
+              {aberto && (
+                <div className="aj-nav-items">
+                  {grupo.abas.map((aba) => {
+                    const AbaIcon = aba.icone
+                    return (
+                      <a
+                        key={aba.id}
+                        href={`#/${aba.id}`}
+                        className={`aj-nav-item${aba.id === abaAtiva ? ' aj-nav-item--ativo' : ''}`}
+                        aria-current={aba.id === abaAtiva ? 'page' : undefined}
+                        onClick={(e) => {
+                          if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return
+                          e.preventDefault()
+                          navegar(aba.id)
+                        }}
+                      >
+                        <AbaIcon size={14} />
+                        {aba.label}
+                      </a>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           )
         })}
-      </SideNavItems>
-    </SideNav>
+      </nav>
+    </>
   )
 }
 
-function ConteudoPrincipal() {
-  const { abaAtiva } = useNavegacao()
-  return (
-    <Content id="main-content" tabIndex={-1} className="app-content">
-      <ConteudoAba abaAtiva={abaAtiva} />
-    </Content>
-  )
-}
-
-function temaSalvo(): 'white' | 'g100' {
+function accentSalvo(): AccentColor {
   try {
-    return localStorage.getItem(CHAVE_TEMA) === 'g100' ? 'g100' : 'white'
+    const v = localStorage.getItem(CHAVE_ACCENT)
+    if (v === 'indigo' || v === 'violet' || v === 'teal' || v === 'crimson') return v
+  } catch { /* noop */ }
+  return 'indigo'
+}
+
+function temaSalvo(): 'light' | 'dark' {
+  try {
+    return localStorage.getItem(CHAVE_TEMA) === 'g100' ? 'dark' : 'light'
   } catch {
-    return 'white'
+    return 'light'
   }
 }
 
 export default function App() {
-  const [tema, setTema] = useState<'white' | 'g100'>(temaSalvo)
-  const [navExpandida, setNavExpandida] = useState(() => window.matchMedia('(min-width: 1056px)').matches)
+  const [aparencia, setAparencia] = useState<'light' | 'dark'>(temaSalvo)
+  const [accent, setAccent] = useState<AccentColor>(accentSalvo)
+  const [navAberta, setNavAberta] = useState(() => window.matchMedia('(min-width: 1056px)').matches)
 
   useEffect(() => {
-    function teclado(evento: KeyboardEvent) {
-      if (evento.key === 'Escape' && navExpandida) {
-        setNavExpandida(false)
-        document.querySelector<HTMLButtonElement>('.cds--header__menu-toggle')?.focus()
-      }
-    }
     const media = window.matchMedia('(min-width: 1056px)')
-    const redimensionar = () => setNavExpandida(media.matches)
-    media.addEventListener('change', redimensionar)
-    document.addEventListener('keydown', teclado)
-    return () => { media.removeEventListener('change', redimensionar); document.removeEventListener('keydown', teclado) }
-  }, [navExpandida])
+    const resize = () => setNavAberta(media.matches)
+    media.addEventListener('change', resize)
+    return () => media.removeEventListener('change', resize)
+  }, [])
 
   useEffect(() => {
-    try {
-      localStorage.setItem(CHAVE_TEMA, tema)
-    } catch {
-      // armazenamento indisponível: tema aplicado só nesta sessão
-    }
-  }, [tema])
+    try { localStorage.setItem(CHAVE_TEMA, aparencia === 'dark' ? 'g100' : 'white') } catch { /* noop */ }
+  }, [aparencia])
+
+  useEffect(() => {
+    try { localStorage.setItem(CHAVE_ACCENT, accent) } catch { /* noop */ }
+  }, [accent])
+
+  const ACCENTS: { key: AccentColor; label: string; cor: string }[] = [
+    { key: 'indigo',  label: 'Índigo',   cor: 'var(--indigo-9)' },
+    { key: 'violet',  label: 'Violeta',  cor: 'var(--violet-9)' },
+    { key: 'teal',    label: 'Teal',     cor: 'var(--teal-9)' },
+    { key: 'crimson', label: 'Carmesim', cor: 'var(--crimson-9)' },
+  ]
 
   return (
-    <Theme theme={tema} className="app-theme">
+    <Theme accentColor={accent} grayColor="slate" radius="medium" appearance={aparencia}>
       <ClienteProvider>
         <NavegacaoProvider abaInicial="inicio">
-          <Header aria-label="AstraJus">
-            <SkipToContent href="#main-content">Pular para o conteúdo</SkipToContent>
-            <HeaderMenuButton
-              isCollapsible
-              aria-label={navExpandida ? 'Fechar menu' : 'Abrir menu'}
-              isActive={navExpandida}
-              aria-expanded={navExpandida}
-              onClick={() => setNavExpandida((atual) => !atual)}
-            />
-            <HeaderName href="#/inicio" prefix="">
-              AstraJus
-            </HeaderName>
-            <HeaderGlobalBar>
-              <div className="shell-status">
-                <StatusConexaoTag />
-              </div>
-              <BuscaGlobal />
-              <CentralNotificacoes />
-              <HeaderGlobalAction
-                aria-label="Alternar tema"
-                onClick={() => setTema(tema === 'white' ? 'g100' : 'white')}
+          <div className="aj-shell">
+            {/* Topbar */}
+            <header className="aj-topbar">
+              <button
+                className="aj-ib"
+                aria-label={navAberta ? 'Fechar menu' : 'Abrir menu'}
+                onClick={() => setNavAberta((v) => !v)}
               >
-                {tema === 'white' ? <Asleep size={20} /> : <Light size={20} />}
-              </HeaderGlobalAction>
-              <ContaUsuario />
-            </HeaderGlobalBar>
-          </Header>
-          <SideNavAstraJus expandida={navExpandida} fechar={() => setNavExpandida(false)} />
-          <ConteudoPrincipal />
+                {navAberta ? <X size={18} /> : <Menu size={18} />}
+              </button>
+              <a href="#/inicio" className="aj-logo">Astra<span>Jus</span></a>
+
+              <div className="aj-topbar-right">
+                <StatusConexao />
+                <BuscaGlobal />
+                <CentralNotificacoes />
+
+                {/* Seletor de accent */}
+                <div className="aj-accent-picker" role="group" aria-label="Escolher tema de cor">
+                  {ACCENTS.map((a) => (
+                    <button
+                      key={a.key}
+                      className={`aj-accent-dot${accent === a.key ? ' aj-accent-dot--sel' : ''}`}
+                      style={{ background: a.cor }}
+                      title={a.label}
+                      aria-label={a.label}
+                      aria-pressed={accent === a.key}
+                      onClick={() => setAccent(a.key)}
+                    />
+                  ))}
+                </div>
+
+                {/* Toggle claro/escuro */}
+                <button
+                  className="aj-ib"
+                  aria-label="Alternar tema"
+                  onClick={() => setAparencia((v) => v === 'light' ? 'dark' : 'light')}
+                >
+                  {aparencia === 'light' ? <Moon size={17} /> : <Sun size={17} />}
+                </button>
+
+                <ContaUsuario />
+              </div>
+            </header>
+
+            <div className="aj-body">
+              <SidebarAstraJus aberta={navAberta} fechar={() => setNavAberta(false)} />
+              <main id="main-content" className="aj-content" tabIndex={-1}>
+                <NavConteudo />
+              </main>
+            </div>
+          </div>
         </NavegacaoProvider>
       </ClienteProvider>
     </Theme>
   )
+}
+
+function NavConteudo() {
+  const { abaAtiva } = useNavegacao()
+  return <ConteudoAba abaAtiva={abaAtiva} />
 }
