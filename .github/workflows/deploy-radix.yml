@@ -1,0 +1,56 @@
+name: Deploy Radix (C)
+
+on:
+  push:
+    branches: [astrajus-radix]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-radix
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verifica sintaxe Python
+        run: python3 -m py_compile server.py db.py _util.py google_integracao.py agenda_atividades.py notificacoes.py monitoramento_runtime.py asaas_integracao.py integracoes.py integracoes_http.py
+
+      - name: Configura chave SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy via SSH (git pull + rebuild + restart)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "admin@${{ secrets.VPS_HOST }}" '
+            set -e
+            echo "== git pull =="
+            sudo git -C /root/apps/astrajus-radix pull --ff-only origin astrajus-radix
+
+            echo "== docker build =="
+            sudo docker build -t astrajus-radix /root/apps/astrajus-radix
+
+            echo "== restart container =="
+            sudo docker rm -f astrajus-radix || true
+            sudo docker run -d --name astrajus-radix --restart unless-stopped \
+              -p 127.0.0.1:8001:8000 \
+              -v /root/apps/astrajus-radix/dados:/data \
+              --env-file /root/apps/astrajus-radix/.env \
+              astrajus-radix
+
+            sleep 3
+            echo "== credencial administrativa no banco =="
+            sudo python3 /root/apps/astrajus-radix/deploy_token_admin.py
+            echo "== status =="
+            sudo docker ps --filter name=astrajus-radix
+          '
+
+      - name: Checa saúde do servidor
+        run: |
+          sleep 2
+          curl -fsS -o /dev/null -w "HTTP %{http_code}\n" "http://${{ secrets.VPS_HOST }}:8001/healthz"
