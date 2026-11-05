@@ -18,6 +18,12 @@ jobs:
       - name: Verifica sintaxe Python
         run: python3 -m py_compile server.py db.py _util.py google_integracao.py agenda_atividades.py notificacoes.py monitoramento_runtime.py asaas_integracao.py integracoes.py integracoes_http.py
 
+      - name: Instala dependências e builda frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
       - name: Configura chave SSH
         run: |
           mkdir -p ~/.ssh
@@ -25,26 +31,21 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Deploy via SSH (git pull + build frontend + atualiza estáticos)
+      - name: Copia arquivos estáticos para o VPS
         run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "admin@${{ secrets.VPS_HOST }}" \
+            "sudo mkdir -p /srv/astrajus-radix/current /srv/astrajus-radix/assets"
+          rsync -a --delete -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
+            frontend/dist/assets/ "admin@${{ secrets.VPS_HOST }}:/tmp/radix-assets/"
+          rsync -a --delete --exclude assets -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
+            frontend/dist/ "admin@${{ secrets.VPS_HOST }}:/tmp/radix-current/"
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "admin@${{ secrets.VPS_HOST }}" '
-            set -e
-
-            echo "== git pull =="
-            sudo git -C /root/apps/astrajus-radix pull --ff-only origin astrajus-radix
-
-            echo "== build frontend =="
-            sudo npm --prefix /root/apps/astrajus-radix/frontend ci --prefer-offline
-            sudo npm --prefix /root/apps/astrajus-radix/frontend run build
-
-            echo "== deploy arquivos estáticos =="
-            sudo mkdir -p /srv/astrajus-radix/assets
-            sudo rsync -a --delete /root/apps/astrajus-radix/frontend/dist/assets/ /srv/astrajus-radix/assets/
-            sudo rsync -a --delete --exclude assets /root/apps/astrajus-radix/frontend/dist/ /srv/astrajus-radix/current/
-
-            echo "== reload caddy =="
+            sudo rsync -a --delete /tmp/radix-assets/ /srv/astrajus-radix/assets/
+            sudo rsync -a --delete /tmp/radix-current/ /srv/astrajus-radix/current/
             sudo systemctl reload caddy
-
-            echo "== status =="
-            curl -fsS -o /dev/null -w "HTTP %{http_code}\n" https://191-252-110-22.sslip.io/radix/
           '
+
+      - name: Checa saúde do servidor
+        run: |
+          sleep 2
+          curl -fsS -o /dev/null -w "HTTP %{http_code}\n" https://191-252-110-22.sslip.io/radix/
