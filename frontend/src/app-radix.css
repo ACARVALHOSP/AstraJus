@@ -62,6 +62,12 @@
   padding: 3px 10px;
   font-size: 11px;
   color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+@media (max-width: 560px) {
+  .aj-status-pill { display: none; }
 }
 .aj-status-dot {
   width: 6px;

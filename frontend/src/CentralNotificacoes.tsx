@@ -67,7 +67,7 @@ function PainelNotificacoes({ cliente }: { cliente: ClienteMCP | null }) {
                   <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
                   <Callout.Text>{erro}</Callout.Text>
                 </Callout.Root>
-                <Button variant="ghost" size="1" disabled={ocupado} onClick={() => carregar()}>Tentar novamente</Button>
+                <Button variant="ghost" size="1" disabled={ocupado} onClick={() => carregar()} style={{ alignSelf: 'flex-start' }}>Tentar novamente</Button>
               </Flex>
             )}
             {carregando && <Carregamento tipo="texto" descricao="Carregando notificações…" />}
@@ -75,7 +75,7 @@ function PainelNotificacoes({ cliente }: { cliente: ClienteMCP | null }) {
               {!erro && !carregando && carregou && itens.length === 0 && (
                 <Flex direction="column" gap="2" role="status">
                   <Text size="2" color="gray">{somenteNaoLidas ? 'Nenhuma notificação não lida.' : 'Nenhuma notificação nos últimos 180 dias.'}</Text>
-                  {somenteNaoLidas && <Button variant="ghost" size="1" onClick={() => setSomenteNaoLidas(false)}>Mostrar todas</Button>}
+                  {somenteNaoLidas && <Button variant="ghost" size="1" onClick={() => setSomenteNaoLidas(false)} style={{ alignSelf: 'flex-start' }}>Mostrar todas</Button>}
                 </Flex>
               )}
               <Flex direction="column" gap="3" asChild>
@@ -97,7 +97,7 @@ function PainelNotificacoes({ cliente }: { cliente: ClienteMCP | null }) {
                   ))}
                 </ul>
               </Flex>
-              {cursor && <Button variant="ghost" size="1" onClick={() => carregar(true)} disabled={ocupado}>Carregar mais</Button>}
+              {cursor && <Button variant="ghost" size="1" onClick={() => carregar(true)} disabled={ocupado} style={{ alignSelf: 'flex-start' }}>Carregar mais</Button>}
             </Flex>
             <Text size="1" color="gray">Notificações dos últimos 180 dias</Text>
           </>}

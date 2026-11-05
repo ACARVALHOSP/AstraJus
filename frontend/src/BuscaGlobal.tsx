@@ -85,7 +85,7 @@ export default function BuscaGlobal() {
           {erro && (
             <Flex direction="column" gap="2" role="alert">
               <Text size="2" color="red">{erro}</Text>
-              <Button variant="ghost" size="1" onClick={carregar}>Tentar novamente</Button>
+              <Button variant="ghost" size="1" onClick={carregar} style={{ alignSelf: 'flex-start' }}>Tentar novamente</Button>
             </Flex>
           )}
           {!erro && !carregando && consulta && clientesFiltrados.length === 0 && casosFiltrados.length === 0 && (

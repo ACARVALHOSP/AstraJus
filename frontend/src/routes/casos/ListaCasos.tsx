@@ -169,7 +169,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                 <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
                 <Callout.Text>{erro}</Callout.Text>
               </Callout.Root>
-              <Button variant="outline" size="1" onClick={carregar} disabled={carregando}>Tentar novamente</Button>
+              <Button variant="outline" size="1" onClick={carregar} disabled={carregando} style={{ alignSelf: 'flex-start' }}>Tentar novamente</Button>
             </Flex>
           )}
           {!carregando && casos && casos.length === 0 && (
