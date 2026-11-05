@@ -34,14 +34,13 @@ jobs:
             sudo git -C /root/apps/astrajus-radix pull --ff-only origin astrajus-radix
 
             echo "== build frontend =="
-            cd /root/apps/astrajus-radix/frontend
-            sudo npm ci --prefer-offline
-            sudo npm run build
+            sudo npm --prefix /root/apps/astrajus-radix/frontend ci --prefer-offline
+            sudo npm --prefix /root/apps/astrajus-radix/frontend run build
 
             echo "== deploy arquivos estáticos =="
             sudo mkdir -p /srv/astrajus-radix/assets
-            sudo rsync -a --delete dist/assets/ /srv/astrajus-radix/assets/
-            sudo rsync -a --delete --exclude assets dist/ /srv/astrajus-radix/current/
+            sudo rsync -a --delete /root/apps/astrajus-radix/frontend/dist/assets/ /srv/astrajus-radix/assets/
+            sudo rsync -a --delete --exclude assets /root/apps/astrajus-radix/frontend/dist/ /srv/astrajus-radix/current/
 
             echo "== reload caddy =="
             sudo systemctl reload caddy
