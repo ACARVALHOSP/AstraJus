@@ -216,3 +216,23 @@
   outline: none;
   background: var(--gray-1);
 }
+
+/* ── Callouts: largura de conteúdo, não da página ── */
+.rt-CalloutRoot {
+  width: fit-content;
+  max-width: 100%;
+  align-self: flex-start;
+}
+
+/* ── Data tables: acabamento "surface", como o Card/Table do Radix ── */
+.tabela-adaptavel {
+  background: var(--color-panel-solid);
+  border: 1px solid var(--gray-a5);
+  border-radius: var(--radius-3);
+  overflow: hidden;
+}
+.tabela-adaptavel .tabela-ordenacao { border-bottom: 1px solid var(--gray-a5); }
+.tabela-adaptavel .tabela-fluida { border-collapse: collapse; }
+.tabela-adaptavel .tabela-fluida thead { background: var(--gray-a2); }
+.tabela-adaptavel .tabela-fluida :is(th, td) { border-bottom: 1px solid var(--gray-a4); }
+.tabela-adaptavel .tabela-fluida tbody tr:last-child :is(th, td) { border-bottom: none; }

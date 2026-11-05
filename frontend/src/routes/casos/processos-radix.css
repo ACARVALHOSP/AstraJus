@@ -20,16 +20,6 @@
 .casos-resumo dl { margin: 0; }
 
 .casos-acoes-cadastro { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-.casos-atividade {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.875rem 1rem;
-  border-bottom: 1px solid var(--gray-a4);
-  background: var(--color-panel-solid);
-  border-radius: var(--radius-2);
-  border: 1px solid var(--gray-a4);
-}
 .casos-publicacao-linha { display: flex; align-items: start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .casos-formulario-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
 .casos-abas { position: relative; }
@@ -58,7 +48,6 @@
 
 @media (max-width: 672px) {
   .casos-titulo-linha { align-items: flex-start; }
-  .casos-atividade { flex-direction: column; }
   .casos-acoes-cadastro { align-items: stretch; }
   .casos-formulario-grade { grid-template-columns: 1fr; }
 }

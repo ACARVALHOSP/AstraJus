@@ -1,7 +1,7 @@
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AlertDialog, Button, Callout, Checkbox, Flex, Heading, Text } from '@radix-ui/themes'
+import { AlertDialog, Box, Button, Callout, Card, Checkbox, Flex, Heading, Text } from '@radix-ui/themes'
 import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
@@ -92,7 +92,7 @@ export default function AtividadesCaso({ casoId, atividadeInicialId }: { casoId:
     <Flex direction="column" gap="5">
       <div className="casos-titulo-linha">
         <Heading as="h3" size="3">Atividades</Heading>
-        <Button size="1" onClick={() => { setEditando(null); setModalAberto(true) }}>
+        <Button size="2" onClick={() => { setEditando(null); setModalAberto(true) }}>
           Nova atividade
         </Button>
       </div>
@@ -113,43 +113,45 @@ export default function AtividadesCaso({ casoId, atividadeInicialId }: { casoId:
         {!carregando && atividades && atividades.length > 0 && (
           <Flex direction="column" gap="4">
             {atividades.map((atv) => (
-              <div key={atv.id} className="casos-atividade">
-                <div>
-                  <Text as="label" size="2">
-                    <Flex gap="2" align="center">
-                      <Checkbox
-                        checked={atv.status === 'concluida'}
-                        onCheckedChange={(checked) => alternarConcluida(atv, Boolean(checked))}
+              <Card key={atv.id} variant="surface">
+                <Flex justify="between" gap="4" wrap="wrap">
+                  <Box>
+                    <Text as="label" size="2">
+                      <Flex gap="2" align="center">
+                        <Checkbox
+                          checked={atv.status === 'concluida'}
+                          onCheckedChange={(checked) => alternarConcluida(atv, Boolean(checked))}
+                        />
+                        {formatarNomeExibicao(atv.titulo)}
+                      </Flex>
+                    </Text>
+                    <p>
+                      {ROTULO_TIPO[atv.tipo] ?? atv.tipo}
+                      {atv.data ? ` · ${formatarDataSimples(atv.data)}` : ''}
+                      {atv.hora ? ` · ${atv.hora}` : ''}
+                    </p>
+                    {atv.responsavel && <p>Responsável: {formatarNomeExibicao(atv.responsavel)}</p>}
+                    {atv.observacoes && <p>{atv.observacoes}</p>}
+                    {(atv.agenda || agendaDisponivel) && (
+                      <AgendaAtividade
+                        casoId={casoId}
+                        atividadeId={atv.id}
+                        titulo={atv.titulo}
+                        data={atv.data}
+                        hora={atv.hora}
+                        agenda={atv.agenda}
+                        agendaInstitucionalAnterior={atv.agenda_institucional_anterior}
+                        agendaDisponivel={agendaDisponivel}
+                        onAtualizado={carregar}
                       />
-                      {formatarNomeExibicao(atv.titulo)}
-                    </Flex>
-                  </Text>
-                  <p>
-                    {ROTULO_TIPO[atv.tipo] ?? atv.tipo}
-                    {atv.data ? ` · ${formatarDataSimples(atv.data)}` : ''}
-                    {atv.hora ? ` · ${atv.hora}` : ''}
-                  </p>
-                  {atv.responsavel && <p>Responsável: {formatarNomeExibicao(atv.responsavel)}</p>}
-                  {atv.observacoes && <p>{atv.observacoes}</p>}
-                  {(atv.agenda || agendaDisponivel) && (
-                    <AgendaAtividade
-                      casoId={casoId}
-                      atividadeId={atv.id}
-                      titulo={atv.titulo}
-                      data={atv.data}
-                      hora={atv.hora}
-                      agenda={atv.agenda}
-                      agendaInstitucionalAnterior={atv.agenda_institucional_anterior}
-                      agendaDisponivel={agendaDisponivel}
-                      onAtualizado={carregar}
-                    />
-                  )}
-                </div>
-                <AcoesTabela rotulo={atv.titulo} acoes={[
-                  { texto: 'Editar', executar: () => { setEditando(atv); setModalAberto(true) } },
-                  { texto: 'Excluir', executar: () => setParaExcluir(atv), perigo: true },
-                ]} />
-              </div>
+                    )}
+                  </Box>
+                  <AcoesTabela rotulo={atv.titulo} acoes={[
+                    { texto: 'Editar', executar: () => { setEditando(atv); setModalAberto(true) } },
+                    { texto: 'Excluir', executar: () => setParaExcluir(atv), perigo: true },
+                  ]} />
+                </Flex>
+              </Card>
             ))}
           </Flex>
         )}

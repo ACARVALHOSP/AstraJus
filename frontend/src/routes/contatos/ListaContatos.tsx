@@ -91,7 +91,7 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
     <Flex direction="column" gap="6">
       <div className="aj-layout-36">
         <Heading as="h2" size="5">Clientes</Heading>
-        <Button size="1" onClick={onNovo}>Novo cliente</Button>
+        <Button size="2" onClick={onNovo}>Novo cliente</Button>
       </div>
       <div role="group" aria-label="Filtrar clientes pela inicial do nome" className="aj-layout-37 clientes-filtro-letra">
         {['TODOS', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((l) => (

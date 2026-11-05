@@ -132,7 +132,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
             <Heading as="h1" size="6" tabIndex={-1}>Processos</Heading>
             <p className="casos-ajuda">Cadastros, atividades e acompanhamento do escritório.</p>
           </div>
-          <Button ref={botaoNovo} size="1" onClick={() => setModalNovoAberto(true)}>
+          <Button ref={botaoNovo} size="2" onClick={() => setModalNovoAberto(true)}>
             Novo processo
           </Button>
         </div>

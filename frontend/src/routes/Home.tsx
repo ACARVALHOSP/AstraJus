@@ -166,7 +166,7 @@ function PainelHome() {
           </Text>
         </div>
         <Button
-          size="3"
+          size="2"
           disabled={!cliente || carregando || salvando.size > 0}
           onClick={() => { setProcessoNovo(''); setEscolhendoProcesso(true) }}
         >
@@ -184,7 +184,7 @@ function PainelHome() {
               As atividades e publicações do escritório aparecem aqui após a conexão.
             </Callout.Text>
           </Callout.Root>
-          <Button variant="outline" size="3" onClick={() => irPara('acesso')}>Ir para Acesso</Button>
+          <Button variant="outline" size="2" onClick={() => irPara('acesso')}>Ir para Acesso</Button>
         </Box>
       ) : (
         <>
