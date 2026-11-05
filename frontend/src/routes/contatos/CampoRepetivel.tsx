@@ -9,7 +9,7 @@ type Campo = {
   tipo: 'select' | 'texto'
   rotulo: string
   opcoes?: OpcaoTipo[]
-  tipoInput?: React.InputHTMLAttributes<HTMLInputElement>['type']
+  tipoInput?: string
 }
 
 export default function CampoRepetivel<T extends Record<string, string>>({
@@ -54,7 +54,7 @@ export default function CampoRepetivel<T extends Record<string, string>>({
                   <label className="form-campo-label" htmlFor={`${titulo}-${indice}-${campo.chave}`}>{campo.rotulo}</label>
                   <TextField.Root
                     id={`${titulo}-${indice}-${campo.chave}`}
-                    type={campo.tipoInput ?? 'text'}
+                    type={campo.tipoInput as React.ComponentProps<typeof TextField.Root>['type'] ?? 'text'}
                     value={item[campo.chave] ?? ''}
                     onChange={(e) => onAlterar(indice, campo.chave, e.target.value)}
                   />
