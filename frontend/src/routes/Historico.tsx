@@ -3,7 +3,7 @@ import TextoTabela from '../TextoTabela'
 import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
 import { useEffect, useState } from 'react'
-import { Button, Flex, Heading, Text } from '@radix-ui/themes'
+import { Button, Flex, Heading, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { buscarJson } from '../api/rest'
@@ -30,6 +30,8 @@ export default function Historico() {
   const [favoritos, setFavoritos] = useState<Favorito[]>(() => lerFavoritos())
   const [historico, setHistorico] = useState<ItemHistorico[]>(() => lerHistorico())
   const [casosFavoritos, setCasosFavoritos] = useState<CasoFavorito[]>([])
+  const [filtroFavoritos, setFiltroFavoritos] = useState('')
+  const [filtroHistorico, setFiltroHistorico] = useState('')
 
   const [carregandoFavoritos, setCarregandoFavoritos] = useState(() => !!cliente && lerCasosFavoritos().length > 0)
 
@@ -111,7 +113,11 @@ export default function Historico() {
         {favoritos.length === 0 ? (
           <Text as="p" size="2">Nenhum favorito ainda.</Text>
         ) : (
-          <TabelaResponsiva principais={['Número do processo', 'Consulta']}>
+          <Flex direction="column" gap="3">
+            <div className="form-campo" style={{ maxWidth: 320 }}>
+              <TextField.Root placeholder="Filtrar por tribunal ou número…" value={filtroFavoritos} onChange={(e) => setFiltroFavoritos(e.target.value)} />
+            </div>
+            <TabelaResponsiva principais={['Número do processo', 'Consulta']}>
             <table aria-label="Favoritos de consulta">
               <thead>
                 <tr>
@@ -121,7 +127,11 @@ export default function Historico() {
                 </tr>
               </thead>
               <tbody>
-                {favoritos.map((fav) => (
+                {favoritos.filter((fav) => {
+                  const q = filtroFavoritos.trim().toLowerCase()
+                  if (!q) return true
+                  return (fav.tribunal || '').toLowerCase().includes(q) || formatarNumeroCNJ(fav.numero).toLowerCase().includes(q)
+                }).map((fav) => (
                   <tr key={`${fav.tribunal}:${fav.numero}`}>
                     <td>{(fav.tribunal || '?').toUpperCase()}</td>
                     <td><TextoTabela texto={formatarNumeroCNJ(fav.numero)} /></td>
@@ -135,7 +145,8 @@ export default function Historico() {
                 ))}
               </tbody>
             </table>
-          </TabelaResponsiva>
+            </TabelaResponsiva>
+          </Flex>
         )}
       </section>
 
@@ -152,28 +163,35 @@ export default function Historico() {
         {historico.length === 0 ? (
           <Text as="p" size="2">Nenhuma consulta recente.</Text>
         ) : (
-          <TabelaResponsiva principais={['Número do processo', 'Consulta']}>
-            <table aria-label="Histórico recente">
-              <thead>
-                <tr>
-                  <th>Consulta</th>
-                  <th>Quando</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {historico.map((item, i) => (
-                  <tr key={i}>
-                    <td><TextoTabela texto={item.resumo} /></td>
-                    <td>{formatarData(item.quando)}</td>
-                    <td>
-                      <AcoesTabela rotulo={item.resumo} acoes={[{ texto: 'Repetir', executar: () => repetirItem(item) }]} />
-                    </td>
+          <Flex direction="column" gap="3">
+            <div className="form-campo" style={{ maxWidth: 320 }}>
+              <TextField.Root placeholder="Filtrar histórico…" value={filtroHistorico} onChange={(e) => setFiltroHistorico(e.target.value)} />
+            </div>
+            <TabelaResponsiva principais={['Número do processo', 'Consulta']}>
+              <table aria-label="Histórico recente">
+                <thead>
+                  <tr>
+                    <th>Consulta</th>
+                    <th>Quando</th>
+                    <th>Ações</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </TabelaResponsiva>
+                </thead>
+                <tbody>
+                  {historico
+                    .filter((item) => item.resumo.toLowerCase().includes(filtroHistorico.trim().toLowerCase()))
+                    .map((item, i) => (
+                    <tr key={i}>
+                      <td><TextoTabela texto={item.resumo} /></td>
+                      <td>{formatarData(item.quando)}</td>
+                      <td>
+                        <AcoesTabela rotulo={item.resumo} acoes={[{ texto: 'Repetir', executar: () => repetirItem(item) }]} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TabelaResponsiva>
+          </Flex>
         )}
       </section>
     </Flex>
