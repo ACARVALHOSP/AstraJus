@@ -4,7 +4,7 @@ import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { Star } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { AlertDialog, Badge, Button, Callout, Flex, Text, TextField } from '@radix-ui/themes'
+import { AlertDialog, Badge, Button, Callout, Flex, Heading, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
@@ -129,7 +129,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
       <Flex direction="column" gap="6">
         <div className="casos-titulo-linha">
           <div>
-            <h1 tabIndex={-1}>Processos</h1>
+            <Heading as="h1" size="6" tabIndex={-1}>Processos</Heading>
             <p className="casos-ajuda">Cadastros, atividades e acompanhamento do escritório.</p>
           </div>
           <Button ref={botaoNovo} size="1" onClick={() => setModalNovoAberto(true)}>

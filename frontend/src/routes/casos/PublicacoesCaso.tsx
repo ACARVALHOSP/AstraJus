@@ -1,6 +1,6 @@
 import Carregamento from '../../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
-import { AlertDialog, Button, Callout, Card, Flex, Text } from '@radix-ui/themes'
+import { AlertDialog, Button, Callout, Card, Flex, Heading, Text } from '@radix-ui/themes'
 import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
@@ -49,7 +49,7 @@ export default function PublicacoesCaso({ casoId }: { casoId: string }) {
 
   return (
     <Flex direction="column" gap="4">
-      <h3>Publicações vinculadas</h3>
+      <Heading as="h3" size="3">Publicações vinculadas</Heading>
       <div aria-live="polite">
         {carregando && <Carregamento tipo="cartoes" descricao="Carregando…" />}
         {erro && (

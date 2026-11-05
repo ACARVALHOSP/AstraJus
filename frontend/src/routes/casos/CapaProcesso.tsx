@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { Badge, Button, Callout, Text, TextField } from '@radix-ui/themes'
+import { Badge, Button, Callout, Heading, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Check } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -138,7 +138,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
   ]
   return <section className="casos-resumo capa-processo" aria-label={`Capa do processo ${formatarNumeroCNJ(numero)}`} aria-busy={bloqueado}>
     <div className="casos-titulo-linha">
-      <h2>Capa do processo</h2>
+      <Heading as="h2" size="4">Capa do processo</Heading>
       <Button variant="outline" size="1" disabled={bloqueado || !capa || !tribunal || pendente} onClick={() => executar('atualizar')}>
         {operacao === 'atualizar' ? 'Atualizando capa…' : 'Atualizar capa (DataJud + DJEN)'}
       </Button>

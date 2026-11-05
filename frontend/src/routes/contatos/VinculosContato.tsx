@@ -2,7 +2,7 @@ import TabelaResponsiva from '../../TabelaResponsiva'
 import TextoTabela from '../../TextoTabela'
 import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
-import { Button, Callout, Flex } from '@radix-ui/themes'
+import { Button, Callout, Flex, Heading } from '@radix-ui/themes'
 import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { useNavegacao } from '../../api/NavegacaoContext'
@@ -65,7 +65,7 @@ export default function VinculosContato({ clienteId, tipo }: { clienteId: string
   return (
     <Flex direction="column" gap="5">
       <div className="aj-layout-38">
-        <h2>{tipo === 'processos' ? 'Processos vinculados' : 'Financeiro do cliente'}</h2>
+        <Heading as="h2" size="4">{tipo === 'processos' ? 'Processos vinculados' : 'Financeiro do cliente'}</Heading>
         <Button variant="outline" size="1" disabled={carregando} onClick={() => setRevisao((r) => r + 1)}>
           {tipo === 'processos' ? 'Atualizar processos' : 'Atualizar financeiro'}
         </Button>

@@ -1,6 +1,6 @@
 import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
-import { AlertDialog, Button, Callout, Flex, Select, Text, TextField } from '@radix-ui/themes'
+import { AlertDialog, Button, Callout, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Check } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
@@ -100,7 +100,7 @@ export default function CadastroCaso({
   return (
     <Flex direction="column" gap="6">
       <section className="casos-resumo" aria-label="Dados do processo">
-        <h2>Identificação do processo</h2>
+        <Heading as="h2" size="4">Identificação do processo</Heading>
         <div className="casos-formulario-grade">
           <dl><dt>Número CNJ</dt><dd>{caso?.processos?.length ? caso.processos.map(formatarNumeroCNJ).join(', ') : 'Ainda não informado'}</dd></dl>
           <dl><dt>Classe / ação</dt><dd>{caso?.acao || 'Não informada'}</dd></dl>
@@ -121,7 +121,7 @@ export default function CadastroCaso({
           <Callout.Text>Este processo ainda não tem número CNJ para consultar a capa.</Callout.Text>
         </Callout.Root>
       )}
-      <h2>Organização do escritório</h2>
+      <Heading as="h2" size="4">Organização do escritório</Heading>
       <div className="casos-formulario-grade">
         <div className="form-campo">
           <label className="form-campo-label" htmlFor="editar-caso-responsavel">Responsável</label>

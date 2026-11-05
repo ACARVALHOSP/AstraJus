@@ -1,7 +1,7 @@
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AlertDialog, Button, Callout, Checkbox, Flex, Text } from '@radix-ui/themes'
+import { AlertDialog, Button, Callout, Checkbox, Flex, Heading, Text } from '@radix-ui/themes'
 import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
@@ -91,7 +91,7 @@ export default function AtividadesCaso({ casoId, atividadeInicialId }: { casoId:
   return (
     <Flex direction="column" gap="5">
       <div className="casos-titulo-linha">
-        <h3>Atividades</h3>
+        <Heading as="h3" size="3">Atividades</Heading>
         <Button size="1" onClick={() => { setEditando(null); setModalAberto(true) }}>
           Nova atividade
         </Button>

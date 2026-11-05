@@ -1,6 +1,6 @@
 import { ChevronLeft } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { Button, Flex, Tabs } from '@radix-ui/themes'
+import { Button, Flex, Heading, Tabs } from '@radix-ui/themes'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { formatarNomeExibicao, formatarNumeroCNJ } from '../utils/formatadores'
 import ListaCasos, { type Caso } from './casos/ListaCasos'
@@ -76,7 +76,7 @@ export default function Casos() {
             <ChevronLeft size={16} />
             Voltar para processos
           </Button>
-          <h1 tabIndex={-1}>{titulo}</h1>
+          <Heading as="h1" size="6" tabIndex={-1}>{titulo}</Heading>
           {resumo?.processos?.map((numero) => (
             <p key={numero} className="casos-cnj">{formatarNumeroCNJ(numero)}</p>
           ))}

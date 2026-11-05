@@ -3,7 +3,7 @@ import TextoTabela from '../../TextoTabela'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Callout, Flex, Select, Text, TextField } from '@radix-ui/themes'
+import { Button, Callout, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
@@ -123,7 +123,7 @@ export default function VinculosCaso({ casoId, onAbrirCaso }: { casoId: string; 
 
   return (
     <Flex direction="column" gap="5">
-      <h3>Processos vinculados</h3>
+      <Heading as="h3" size="3">Processos vinculados</Heading>
       <div aria-live="polite">
         {carregando && <Carregamento />}
         {erro && (

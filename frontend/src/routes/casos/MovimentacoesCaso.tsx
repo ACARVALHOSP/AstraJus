@@ -1,6 +1,6 @@
 import Carregamento from '../../Carregamento'
 import { useCallback, useState } from 'react'
-import { Button, Callout, Card, Flex, Text } from '@radix-ui/themes'
+import { Button, Callout, Card, Flex, Heading, Text } from '@radix-ui/themes'
 import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
@@ -76,7 +76,7 @@ export default function MovimentacoesCaso({ casoId }: { casoId: string }) {
   return (
     <Flex direction="column" gap="4">
       <Flex align="center" justify="between" gap="3" wrap="wrap">
-        <h3>Movimentações</h3>
+        <Heading as="h3" size="3">Movimentações</Heading>
         <Button variant="outline" size="1" onClick={buscar} disabled={carregando}>
           Buscar no DataJud
         </Button>

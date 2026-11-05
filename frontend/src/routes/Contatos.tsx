@@ -1,6 +1,6 @@
 import { ChevronLeft } from 'lucide-react'
 import { useState } from 'react'
-import { Button, Flex, Tabs } from '@radix-ui/themes'
+import { Button, Flex, Heading, Tabs } from '@radix-ui/themes'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { formatarNomeExibicao } from '../utils/formatadores'
 import ListaContatos from './contatos/ListaContatos'
@@ -39,7 +39,7 @@ export default function Contatos() {
         <ChevronLeft size={16} />
         Voltar para clientes
       </Button>
-      <h1>{nomeDetalhe}</h1>
+      <Heading as="h1" size="6">{nomeDetalhe}</Heading>
       <Tabs.Root key={visao.clienteId ?? 'novo'} defaultValue="cadastro">
         <Tabs.List aria-label="Detalhes do contato">
           <Tabs.Trigger value="cadastro">Cadastro</Tabs.Trigger>

@@ -3,7 +3,7 @@ import TextoTabela from '../../TextoTabela'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
-import { AlertDialog, Badge, Button, Callout, Checkbox, Flex, Text, TextField } from '@radix-ui/themes'
+import { AlertDialog, Badge, Button, Callout, Checkbox, Flex, Heading, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Info, Pencil, Tag } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
@@ -90,7 +90,7 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
   return (
     <Flex direction="column" gap="6">
       <div className="aj-layout-36">
-        <h2>Clientes</h2>
+        <Heading as="h2" size="5">Clientes</Heading>
         <Button size="1" onClick={onNovo}>Novo cliente</Button>
       </div>
       <div role="group" aria-label="Filtrar clientes pela inicial do nome" className="aj-layout-37 clientes-filtro-letra">
