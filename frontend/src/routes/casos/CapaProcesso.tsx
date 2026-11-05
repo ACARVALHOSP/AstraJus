@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { Button, Column, Grid, InlineNotification, Tag, TextInput } from '@carbon/react'
+import { Badge, Button, Callout, Flex, Text, TextField } from '@radix-ui/themes'
+import { AlertTriangle, Check } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarNomeExibicao, formatarNumeroCNJ } from '../../utils/formatadores'
@@ -89,7 +90,6 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
         if (!vivo.current) return
         setCapa(nova)
         setEdicao(editar(nova))
-        // A atualização também pode mudar título, classe e foro no cadastro.
         try {
           const atualizado = await buscarJson<Caso>(cliente, `/casos/${encodeURIComponent(caso.id)}`)
           if (vivo.current) onAtualizado(atualizado)
@@ -118,7 +118,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
       const registro = clienteDaParte(parte, registros, vinculados)
       return <span className="capa-parte" key={`${parte.nome}-${i}`}>
         {formatarNomeExibicao(parte.nome)}
-        {registro && <Tag type="blue" size="sm" title={`Cliente vinculado ao processo: ${registro.nome ?? ''}`}>Cliente</Tag>}
+        {registro && <Badge color="blue" size="1" ml="1" title={`Cliente vinculado ao processo: ${registro.nome ?? ''}`}>Cliente</Badge>}
       </span>
     }) : 'Não informado pelo DJEN'
   }
@@ -139,42 +139,75 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
   return <section className="casos-resumo capa-processo" aria-label={`Capa do processo ${formatarNumeroCNJ(numero)}`} aria-busy={bloqueado}>
     <div className="casos-titulo-linha">
       <h2>Capa do processo</h2>
-      <Button kind="secondary" size="sm" disabled={bloqueado || !capa || !tribunal || pendente} onClick={() => executar('atualizar')}>
+      <Button variant="outline" size="1" disabled={bloqueado || !capa || !tribunal || pendente} onClick={() => executar('atualizar')}>
         {operacao === 'atualizar' ? 'Atualizando capa…' : 'Atualizar capa (DataJud + DJEN)'}
       </Button>
     </div>
     <p className="capa-numero">{formatarNumeroCNJ(numero)}</p>
     <div aria-live="polite">
       {carregando && <p>Carregando capa…</p>}
-      {mensagem && <InlineNotification kind={mensagem.erro ? 'error' : mensagem.aviso ? 'warning' : 'success'} title={mensagem.erro ? 'Não foi possível concluir' : mensagem.aviso ? 'Atualização parcial' : 'Sucesso'} subtitle={mensagem.texto} lowContrast hideCloseButton />}
+      {mensagem && (
+        <Callout.Root color={mensagem.erro ? 'red' : mensagem.aviso ? 'yellow' : 'green'} size="1">
+          <Callout.Icon>{mensagem.erro ? <AlertTriangle size={14} /> : <Check size={14} />}</Callout.Icon>
+          <Callout.Text>
+            {mensagem.erro ? 'Não foi possível concluir' : mensagem.aviso ? 'Atualização parcial' : 'Sucesso'}: {mensagem.texto}
+          </Callout.Text>
+        </Callout.Root>
+      )}
     </div>
-    {erroCarga && <Button kind="tertiary" size="sm" disabled={carregando} onClick={() => { setCarregando(true); setErroCarga(false); setTentativa(n => n + 1) }}>Tentar novamente</Button>}
+    {erroCarga && (
+      <Button variant="outline" size="1" disabled={carregando} onClick={() => { setCarregando(true); setErroCarga(false); setTentativa(n => n + 1) }}>
+        Tentar novamente
+      </Button>
+    )}
     {capa && !carregando && <>
-      <Grid withRowGap narrow fullWidth className="casos-formulario-grade">
-        {principais.map(([rotulo, valor]) => <Column key={rotulo} sm={4} md={4} lg={8}><dl><dt>{rotulo}</dt><dd>{valor || 'Não informado'}</dd></dl></Column>)}
-        <Column sm={4} md={8} lg={16}><dl>
+      <div className="casos-formulario-grade">
+        {principais.map(([rotulo, valor]) => (
+          <dl key={rotulo}><dt>{rotulo}</dt><dd>{valor || 'Não informado'}</dd></dl>
+        ))}
+        <dl style={{ gridColumn: '1 / -1' }}>
           <dt>Polo ativo</dt><dd>{participantes('ativo')}</dd>
           <dt>Polo passivo</dt><dd>{participantes('passivo')}</dd>
           {partes.some(p => poloDaParte(p) === 'outro') && <><dt>Partes sem polo informado</dt><dd>{participantes('outro')}</dd></>}
           <dt>Advogados</dt><dd>{advogados || 'Não informado pelo DJEN'}</dd>
-        </dl></Column>
-        <Column sm={4} md={8} lg={16}><dl><dt>Última movimentação</dt><dd>{ultimo ? `${dataCapa(ultimo.dataHora)} · ${ultimo.nome || 'Sem descrição'}` : 'Nenhuma movimentação disponível.'}</dd></dl>
-          <Button kind="ghost" size="sm" onClick={onMovimentacoes}>Ver movimentações</Button>
-        </Column>
-      </Grid>
+        </dl>
+        <dl style={{ gridColumn: '1 / -1' }}>
+          <dt>Última movimentação</dt>
+          <dd>{ultimo ? `${dataCapa(ultimo.dataHora)} · ${ultimo.nome || 'Sem descrição'}` : 'Nenhuma movimentação disponível.'}</dd>
+        </dl>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <Button variant="ghost" size="1" onClick={onMovimentacoes}>Ver movimentações</Button>
+        </div>
+      </div>
       {erroClientes && <p className="casos-ajuda">Não foi possível identificar os clientes vinculados. As tags de cliente estão indisponíveis.</p>}
       <details className="capa-mais"><summary>Mais informações</summary><dl>{mais.map(([rotulo, valor]) => <Fragment key={rotulo}><dt>{rotulo}</dt><dd>{valor ?? 'Não informado'}</dd></Fragment>)}</dl></details>
       <form onSubmit={e => { e.preventDefault(); void executar('salvar') }}>
-        <Grid withRowGap narrow fullWidth className="casos-formulario-grade">
-          {campos.map(([chave, rotulo]) => <Column key={chave} sm={4} md={4} lg={8}>
-            <TextInput id={`capa-${numero}-${chave}`} labelText={rotulo} value={edicao[chave]} disabled={bloqueado}
-              type={chave === 'valor_causa' ? 'number' : 'text'} min={chave === 'valor_causa' ? 0 : undefined} step={chave === 'valor_causa' ? '0.01' : undefined}
-              invalid={chave === 'valor_causa' && invalido} invalidText="Informe um valor maior ou igual a zero."
-              onChange={e => setEdicao(anterior => ({ ...anterior, [chave]: e.target.value }))} />
-          </Column>)}
-        </Grid>
-        <div className="capa-acoes"><Button kind="primary" size="sm" type="submit" disabled={bloqueado || !pendente || invalido}>{operacao === 'salvar' ? 'Salvando capa…' : 'Salvar capa'}</Button>
-          <Button kind="ghost" size="sm" type="button" disabled={bloqueado} onClick={() => executar('monitorar')}>{operacao === 'monitorar' ? 'Atualizando monitoramento…' : capa.monitorando ? 'Parar avisos de publicações' : 'Receber avisos de publicações'}</Button>
+        <div className="casos-formulario-grade">
+          {campos.map(([chave, rotulo]) => (
+            <div key={chave} className="form-campo">
+              <label className="form-campo-label" htmlFor={`capa-${numero}-${chave}`}>{rotulo}</label>
+              <TextField.Root
+                id={`capa-${numero}-${chave}`}
+                type={chave === 'valor_causa' ? 'number' : 'text'}
+                min={chave === 'valor_causa' ? 0 : undefined}
+                step={chave === 'valor_causa' ? '0.01' : undefined}
+                value={edicao[chave]}
+                disabled={bloqueado}
+                onChange={e => setEdicao(anterior => ({ ...anterior, [chave]: e.target.value }))}
+              />
+              {chave === 'valor_causa' && invalido && (
+                <Text size="1" color="red">Informe um valor maior ou igual a zero.</Text>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="capa-acoes">
+          <Button size="1" type="submit" disabled={bloqueado || !pendente || invalido}>
+            {operacao === 'salvar' ? 'Salvando capa…' : 'Salvar capa'}
+          </Button>
+          <Button variant="ghost" size="1" type="button" disabled={bloqueado} onClick={() => executar('monitorar')}>
+            {operacao === 'monitorar' ? 'Atualizando monitoramento…' : capa.monitorando ? 'Parar avisos de publicações' : 'Receber avisos de publicações'}
+          </Button>
         </div>
       </form>
       {pendente && <p className="casos-ajuda">Há alterações não salvas. Salve a capa antes de atualizar os dados externos.</p>}

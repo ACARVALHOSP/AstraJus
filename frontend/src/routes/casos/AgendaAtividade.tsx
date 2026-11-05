@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Button, Link, Modal } from '@carbon/react'
+import { AlertDialog, Button, Flex, Link } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
 import { formatarDataSimples } from '../../utils/formatadores'
 
@@ -23,25 +23,10 @@ const ROTULO_ESTADO: Record<string, string> = {
 }
 
 export default function AgendaAtividade({
-  casoId,
-  atividadeId,
-  titulo,
-  data,
-  hora,
-  agenda,
-  agendaInstitucionalAnterior,
-  agendaDisponivel,
-  onAtualizado,
+  casoId, atividadeId, titulo, data, hora, agenda, agendaInstitucionalAnterior, agendaDisponivel, onAtualizado,
 }: {
-  casoId: string
-  atividadeId: string
-  titulo: string
-  data?: string | null
-  hora?: string | null
-  agenda?: VinculoAgenda | null
-  agendaInstitucionalAnterior?: boolean
-  agendaDisponivel: boolean
-  onAtualizado: () => void
+  casoId: string; atividadeId: string; titulo: string; data?: string | null; hora?: string | null
+  agenda?: VinculoAgenda | null; agendaInstitucionalAnterior?: boolean; agendaDisponivel: boolean; onAtualizado: () => void
 }) {
   const { cliente } = useCliente()
   const [carregando, setCarregando] = useState(false)
@@ -74,7 +59,6 @@ export default function AgendaAtividade({
       })
       onAtualizado()
     } catch {
-      // erro mostrado via recarregamento; o estado "falha" vem refletido no próximo GET
       onAtualizado()
     } finally {
       setCarregando(false)
@@ -83,9 +67,30 @@ export default function AgendaAtividade({
 
   return (
     <div data-agenda-atividade={atividadeId}>
-      <Modal closeButtonLabel="Fechar" open={confirmacao !== null} modalHeading="Confirmar alteração na agenda" primaryButtonText={confirmacao?.metodo === 'DELETE' ? 'Cancelar evento' : 'Confirmar'} secondaryButtonText="Voltar" danger={confirmacao?.metodo === 'DELETE'} onRequestClose={() => setConfirmacao(null)} onRequestSubmit={() => { if (!confirmacao) return; const { metodo, comando } = confirmacao; setConfirmacao(null); void executar(metodo, comando, true) }}>
-        <p>{confirmacao?.texto}</p>
-      </Modal>
+      <AlertDialog.Root open={confirmacao !== null} onOpenChange={(open) => !open && setConfirmacao(null)}>
+        <AlertDialog.Content maxWidth="400px">
+          <AlertDialog.Title>Confirmar alteração na agenda</AlertDialog.Title>
+          <AlertDialog.Description>{confirmacao?.texto}</AlertDialog.Description>
+          <Flex gap="3" mt="4" justify="end">
+            <AlertDialog.Cancel>
+              <Button variant="soft" color="gray">Voltar</Button>
+            </AlertDialog.Cancel>
+            <AlertDialog.Action>
+              <Button
+                color={confirmacao?.metodo === 'DELETE' ? 'red' : undefined}
+                onClick={() => {
+                  if (!confirmacao) return
+                  const { metodo, comando } = confirmacao
+                  setConfirmacao(null)
+                  void executar(metodo, comando, true)
+                }}
+              >
+                {confirmacao?.metodo === 'DELETE' ? 'Cancelar evento' : 'Confirmar'}
+              </Button>
+            </AlertDialog.Action>
+          </Flex>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
       {agenda && <p>Agenda: {ROTULO_ESTADO[agenda.estado] ?? agenda.estado}</p>}
       {agenda?.erro && <p>{agenda.erro}</p>}
       {agenda?.estado === 'divergente' && (
@@ -99,32 +104,32 @@ export default function AgendaAtividade({
           <>
             <p>Vínculo institucional anterior preservado. Reconcilie usando a conta Google original.</p>
             {agendaDisponivel && (
-              <Button kind="ghost" size="sm" disabled={carregando} onClick={() => executar('POST', 'reconciliar_institucional')}>
+              <Button variant="ghost" size="1" disabled={carregando} onClick={() => executar('POST', 'reconciliar_institucional')}>
                 Reconciliar vínculo institucional
               </Button>
             )}
           </>
         ) : ativo ? (
           <>
-            <Button kind="ghost" size="sm" disabled={carregando} aria-label={`Atualizar agenda: ${titulo}`} onClick={() => executar('POST')}>
+            <Button variant="ghost" size="1" disabled={carregando} aria-label={`Atualizar agenda: ${titulo}`} onClick={() => executar('POST')}>
               Atualizar agenda
             </Button>
             {agenda?.estado === 'divergente' && (
               <>
-                <Button kind="ghost" size="sm" disabled={carregando} onClick={() => executar('PATCH', 'usar_data_da_atividade')}>
+                <Button variant="ghost" size="1" disabled={carregando} onClick={() => executar('PATCH', 'usar_data_da_atividade')}>
                   Manter dados da atividade
                 </Button>
-                <Button kind="ghost" size="sm" disabled={carregando} onClick={() => executar('PATCH', 'aceitar_data_da_agenda')}>
+                <Button variant="ghost" size="1" disabled={carregando} onClick={() => executar('PATCH', 'aceitar_data_da_agenda')}>
                   Usar data e título da agenda
                 </Button>
               </>
             )}
-            <Button kind="ghost" size="sm" disabled={carregando} onClick={() => executar('DELETE')}>
+            <Button variant="ghost" size="1" disabled={carregando} onClick={() => executar('DELETE')}>
               Cancelar evento
             </Button>
           </>
         ) : agendaDisponivel && data && !hora ? (
-          <Button kind="ghost" size="sm" disabled={carregando} onClick={() => executar('POST')}>
+          <Button variant="ghost" size="1" disabled={carregando} onClick={() => executar('POST')}>
             Vincular à agenda
           </Button>
         ) : agendaDisponivel ? (

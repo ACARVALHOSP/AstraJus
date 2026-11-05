@@ -1,6 +1,5 @@
-import { Add } from '@carbon/icons-react'
-import { Close } from '@carbon/icons-react'
-import { Button, Column, Grid, Select, SelectItem, TextInput } from '@carbon/react'
+import { Plus, X } from 'lucide-react'
+import { Button, Select, TextField } from '@radix-ui/themes'
 
 export type OpcaoTipo = { valor: string; rotulo: string }
 
@@ -10,11 +9,6 @@ type Campo = {
   rotulo: string
   opcoes?: OpcaoTipo[]
   tipoInput?: string
-}
-
-function spanSelect(opcoes: OpcaoTipo[] | undefined): number {
-  const maior = Math.max(...(opcoes?.map((o) => o.rotulo.length) ?? [8]))
-  return maior <= 7 ? 3 : maior <= 11 ? 4 : 5
 }
 
 export default function CampoRepetivel<T extends Record<string, string>>({
@@ -34,50 +28,48 @@ export default function CampoRepetivel<T extends Record<string, string>>({
 }) {
   return (
     <div>
-      <span className="cds--label">{titulo}</span>
+      <span className="form-campo-label">{titulo}</span>
       <div className="aj-layout-29">
-        {itens.map((item, indice) => {
-          const selectSpans = campos.filter((c) => c.tipo === 'select').reduce((soma, c) => soma + spanSelect(c.opcoes), 0)
-          const textos = campos.filter((c) => c.tipo === 'texto')
-          const spanTexto = Math.max(3, Math.floor((15 - selectSpans) / Math.max(textos.length, 1)))
-          return (
-            <Grid key={indice} narrow fullWidth className="campo-repetivel-linha">
-              {campos.map((campo) =>
-                campo.tipo === 'select' ? (
-                  <Column key={campo.chave} sm={4} md={spanSelect(campo.opcoes)} lg={spanSelect(campo.opcoes)}>
-                    <Select
-                      id={`${titulo}-${indice}-${campo.chave}`}
-                      labelText={campo.rotulo}
-                      value={item[campo.chave] ?? ''}
-                      onChange={(e) => onAlterar(indice, campo.chave, e.target.value)}
-                    >
+        {itens.map((item, indice) => (
+          <div key={indice} className={`campo-repetivel-linha campo-repetivel-grade--${Math.min(campos.length, 3)}`}>
+            {campos.map((campo) =>
+              campo.tipo === 'select' ? (
+                <div key={campo.chave} className="form-campo">
+                  <label className="form-campo-label" htmlFor={`${titulo}-${indice}-${campo.chave}`}>{campo.rotulo}</label>
+                  <Select.Root
+                    value={item[campo.chave] || '__empty__'}
+                    onValueChange={(v) => onAlterar(indice, campo.chave, v === '__empty__' ? '' : v)}
+                  >
+                    <Select.Trigger id={`${titulo}-${indice}-${campo.chave}`} style={{ width: '100%' }} />
+                    <Select.Content>
                       {campo.opcoes?.map((o) => (
-                        <SelectItem key={o.valor} value={o.valor} text={o.rotulo} />
+                        <Select.Item key={o.valor || '__empty__'} value={o.valor || '__empty__'}>{o.rotulo}</Select.Item>
                       ))}
-                    </Select>
-                  </Column>
-                ) : (
-                  <Column key={campo.chave} sm={4} md={spanTexto} lg={spanTexto}>
-                    <TextInput
-                      id={`${titulo}-${indice}-${campo.chave}`}
-                      type={campo.tipoInput ?? 'text'}
-                      labelText={campo.rotulo}
-                      value={item[campo.chave] ?? ''}
-                      onChange={(e) => onAlterar(indice, campo.chave, e.target.value)}
-                    />
-                  </Column>
-                ),
-              )}
-              <Column sm={4} md={1} lg={1} className="aj-layout-30">
-                <Button kind="ghost" size="sm" hasIconOnly iconDescription="Remover" onClick={() => onRemover(indice)}>
-                  <Close size={16} />
-                </Button>
-              </Column>
-            </Grid>
-          )
-        })}
+                    </Select.Content>
+                  </Select.Root>
+                </div>
+              ) : (
+                <div key={campo.chave} className="form-campo">
+                  <label className="form-campo-label" htmlFor={`${titulo}-${indice}-${campo.chave}`}>{campo.rotulo}</label>
+                  <TextField.Root
+                    id={`${titulo}-${indice}-${campo.chave}`}
+                    type={campo.tipoInput ?? 'text'}
+                    value={item[campo.chave] ?? ''}
+                    onChange={(e) => onAlterar(indice, campo.chave, e.target.value)}
+                  />
+                </div>
+              ),
+            )}
+            <div className="aj-layout-30">
+              <Button variant="ghost" size="1" aria-label="Remover" onClick={() => onRemover(indice)}>
+                <X size={16} />
+              </Button>
+            </div>
+          </div>
+        ))}
       </div>
-      <Button kind="ghost" size="sm" onClick={onAdicionar} renderIcon={Add} className="aj-layout-31">
+      <Button variant="ghost" size="1" onClick={onAdicionar} className="aj-layout-31">
+        <Plus size={16} />
         Adicionar {titulo.toLowerCase()}
       </Button>
     </div>

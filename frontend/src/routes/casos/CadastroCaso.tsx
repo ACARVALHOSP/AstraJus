@@ -1,6 +1,7 @@
 import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
-import { Button, Column, Grid, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
+import { AlertDialog, Button, Callout, Flex, Select, Text, TextField } from '@radix-ui/themes'
+import { AlertTriangle, Check } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -53,9 +54,7 @@ export default function CadastroCaso({
       .finally(() => { if (atual) setCarregando(false) })
     buscarJson<{ responsaveis: string[] }>(cliente, '/responsaveis')
       .then((r) => { if (atual) setResponsaveis(r.responsaveis ?? []) })
-      .catch(() => {
-        // segue sem a lista; o responsável já salvo continua selecionável via opção extra abaixo
-      })
+      .catch(() => {})
     return () => { atual = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cliente, casoId])
@@ -89,76 +88,102 @@ export default function CadastroCaso({
   }
 
   if (carregando) return <Carregamento tipo="detalhe" />
-  if (erroCarregar) return <InlineNotification kind="error" title="Erro ao carregar processo" subtitle={erroCarregar} lowContrast hideCloseButton />
+  if (erroCarregar) return (
+    <Callout.Root color="red" size="1">
+      <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+      <Callout.Text>Erro ao carregar processo: {erroCarregar}</Callout.Text>
+    </Callout.Root>
+  )
 
   const opcoesResponsavel = [...new Set([...responsaveis, caso?.responsavel].filter((v): v is string => Boolean(v)))]
 
   return (
-    <Stack gap={6}>
+    <Flex direction="column" gap="6">
       <section className="casos-resumo" aria-label="Dados do processo">
         <h2>Identificação do processo</h2>
-        <Grid narrow fullWidth className="casos-formulario-grade">
-          <Column sm={4} md={4} lg={8}><dl><dt>Número CNJ</dt><dd>{caso?.processos?.length ? caso.processos.map(formatarNumeroCNJ).join(', ') : 'Ainda não informado'}</dd></dl></Column>
-          <Column sm={4} md={4} lg={8}><dl><dt>Classe / ação</dt><dd>{caso?.acao || 'Não informada'}</dd></dl></Column>
-          <Column sm={4} md={8} lg={16}><dl><dt>Foro</dt><dd>{caso?.foro || 'Não informado'}</dd></dl></Column>
-        </Grid>
+        <div className="casos-formulario-grade">
+          <dl><dt>Número CNJ</dt><dd>{caso?.processos?.length ? caso.processos.map(formatarNumeroCNJ).join(', ') : 'Ainda não informado'}</dd></dl>
+          <dl><dt>Classe / ação</dt><dd>{caso?.acao || 'Não informada'}</dd></dl>
+          <dl style={{ gridColumn: '1 / -1' }}><dt>Foro</dt><dd>{caso?.foro || 'Não informado'}</dd></dl>
+        </div>
       </section>
-      {caso?.processos?.length ? caso.processos.map(numero => <CapaProcesso
-        key={`${casoId}-${numero}`} caso={caso} numero={numero} onMovimentacoes={onMovimentacoes}
-        onAtualizado={atualizado => { setCaso(atualizado); onSalvo(atualizado) }}
-      />) : <InlineNotification kind="info" title="Capa do processo" subtitle="Este processo ainda não tem número CNJ para consultar a capa." lowContrast hideCloseButton />}
+      {caso?.processos?.length ? caso.processos.map(numero => (
+        <CapaProcesso
+          key={`${casoId}-${numero}`}
+          caso={caso}
+          numero={numero}
+          onMovimentacoes={onMovimentacoes}
+          onAtualizado={atualizado => { setCaso(atualizado); onSalvo(atualizado) }}
+        />
+      )) : (
+        <Callout.Root color="blue" size="1">
+          <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+          <Callout.Text>Este processo ainda não tem número CNJ para consultar a capa.</Callout.Text>
+        </Callout.Root>
+      )}
       <h2>Organização do escritório</h2>
-      <Grid narrow fullWidth className="casos-formulario-grade">
-        <Column sm={4} md={4} lg={8} xlg={6}>
-          <Select id="editar-caso-responsavel" labelText="Responsável" value={responsavel} onChange={(e) => setResponsavel(e.target.value)}>
-            <SelectItem value="" text="Selecione um responsável" />
-            {opcoesResponsavel.map((nome) => (
-              <SelectItem key={nome} value={nome} text={nome} />
-            ))}
-          </Select>
-        </Column>
-        <Column sm={4} md={4} lg={8} xlg={6}>
-          <TextInput id="editar-caso-pasta" labelText="Pasta" autoComplete="off" value={pasta} onChange={(e) => setPasta(e.target.value)} />
-        </Column>
-        <Column sm={4} md={4} lg={8} xlg={4}>
-          <Select id="editar-caso-acesso" labelText="Acesso" helperText="Classificação interna; não altera as permissões do sistema." value={acesso} onChange={(e) => setAcesso(e.target.value)}>
-            <SelectItem value="equipe" text="Equipe" />
-            <SelectItem value="publico" text="Público" />
-            <SelectItem value="privado" text="Privado" />
-          </Select>
-        </Column>
-      </Grid>
-        <div className="casos-acoes-cadastro">
-          <Button size="sm" onClick={salvar} disabled={salvando}>
-            Salvar alterações
-          </Button>
-          <Button kind="danger--ghost" size="sm" onClick={() => setParaExcluir(true)}>
-            Excluir processo
-          </Button>
+      <div className="casos-formulario-grade">
+        <div className="form-campo">
+          <label className="form-campo-label" htmlFor="editar-caso-responsavel">Responsável</label>
+          <Select.Root value={responsavel || '__none__'} onValueChange={(v) => setResponsavel(v === '__none__' ? '' : v)}>
+            <Select.Trigger id="editar-caso-responsavel" style={{ width: '100%' }} />
+            <Select.Content>
+              <Select.Item value="__none__">Selecione um responsável</Select.Item>
+              {opcoesResponsavel.map((nome) => (
+                <Select.Item key={nome} value={nome}>{nome}</Select.Item>
+              ))}
+            </Select.Content>
+          </Select.Root>
         </div>
-        <div aria-live="polite">
-          {mensagem && (
-            <InlineNotification
-              kind={mensagem.tipo === 'erro' ? 'error' : 'success'}
-              title={mensagem.tipo === 'erro' ? 'Erro' : 'Sucesso'}
-              subtitle={mensagem.texto}
-              lowContrast
-              hideCloseButton
-            />
-          )}
+        <div className="form-campo">
+          <label className="form-campo-label" htmlFor="editar-caso-pasta">Pasta</label>
+          <TextField.Root id="editar-caso-pasta" autoComplete="off" value={pasta} onChange={(e) => setPasta(e.target.value)} />
         </div>
-      <Modal closeButtonLabel="Fechar"
-        open={paraExcluir}
-        danger
-        modalHeading="Excluir processo"
-        primaryButtonText="Excluir"
-        secondaryButtonText="Cancelar"
-        primaryButtonDisabled={excluindo}
-        onRequestClose={() => setParaExcluir(false)}
-        onRequestSubmit={confirmarExclusao}
-      >
-        <p>Excluir o processo "{caso?.titulo || '(sem título)'}"? Essa ação não pode ser desfeita.</p>
-      </Modal>
-    </Stack>
+        <div className="form-campo">
+          <label className="form-campo-label" htmlFor="editar-caso-acesso">Acesso</label>
+          <Select.Root value={acesso} onValueChange={setAcesso}>
+            <Select.Trigger id="editar-caso-acesso" style={{ width: '100%' }} />
+            <Select.Content>
+              <Select.Item value="equipe">Equipe</Select.Item>
+              <Select.Item value="publico">Público</Select.Item>
+              <Select.Item value="privado">Privado</Select.Item>
+            </Select.Content>
+          </Select.Root>
+          <Text size="1" color="gray">Classificação interna; não altera as permissões do sistema.</Text>
+        </div>
+      </div>
+      <div className="casos-acoes-cadastro">
+        <Button size="1" onClick={salvar} disabled={salvando}>
+          Salvar alterações
+        </Button>
+        <Button variant="ghost" color="red" size="1" onClick={() => setParaExcluir(true)}>
+          Excluir processo
+        </Button>
+      </div>
+      <div aria-live="polite">
+        {mensagem && (
+          <Callout.Root color={mensagem.tipo === 'erro' ? 'red' : 'green'} size="1">
+            <Callout.Icon>{mensagem.tipo === 'erro' ? <AlertTriangle size={14} /> : <Check size={14} />}</Callout.Icon>
+            <Callout.Text>{mensagem.texto}</Callout.Text>
+          </Callout.Root>
+        )}
+      </div>
+      <AlertDialog.Root open={paraExcluir} onOpenChange={(open) => !open && setParaExcluir(false)}>
+        <AlertDialog.Content maxWidth="400px">
+          <AlertDialog.Title>Excluir processo</AlertDialog.Title>
+          <AlertDialog.Description>
+            Excluir o processo "{caso?.titulo || '(sem título)'}"? Essa ação não pode ser desfeita.
+          </AlertDialog.Description>
+          <Flex gap="3" mt="4" justify="end">
+            <AlertDialog.Cancel>
+              <Button variant="soft" color="gray">Cancelar</Button>
+            </AlertDialog.Cancel>
+            <AlertDialog.Action>
+              <Button color="red" disabled={excluindo} onClick={confirmarExclusao}>Excluir</Button>
+            </AlertDialog.Action>
+          </Flex>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
+    </Flex>
   )
 }

@@ -1,4 +1,4 @@
-import { DataTableSkeleton, SkeletonText, Stack } from '@carbon/react'
+import { Flex, Skeleton } from '@radix-ui/themes'
 
 type Props = {
   tipo?: 'tabela' | 'detalhe' | 'cartoes' | 'texto'
@@ -6,25 +6,34 @@ type Props = {
   colunas?: number
 }
 
-/** Representa somente conteúdo pendente; ações mantêm seu próprio feedback. */
 export default function Carregamento({ tipo = 'tabela', descricao = 'Carregando dados…', colunas = 5 }: Props) {
   return (
     <div className={`carregamento carregamento--${tipo}`}>
       <span className="carregamento-status" role="status">{descricao}</span>
-      <div aria-hidden="true" aria-busy="true" className="carregamento-conteudo">
+      <Flex direction="column" gap="2" aria-hidden="true" aria-busy="true">
         {tipo === 'tabela' ? (
-          <DataTableSkeleton columnCount={colunas} rowCount={5} showHeader={false} showToolbar={false} />
+          Array.from({ length: 5 }, (_, i) => (
+            <Flex key={i} gap="2">
+              {Array.from({ length: colunas }, (_, j) => (
+                <Skeleton key={j} height="2.25rem" style={{ flex: 1 }} />
+              ))}
+            </Flex>
+          ))
+        ) : tipo === 'texto' ? (
+          <Flex direction="column" gap="2">
+            <Skeleton height="1rem" width="90%" />
+            <Skeleton height="1rem" width="75%" />
+          </Flex>
         ) : (
-          <Stack gap={5}>
-            {Array.from({ length: tipo === 'texto' ? 1 : 3 }, (_, i) => (
-              <div key={i} className={tipo === 'cartoes' ? 'carregamento-cartao' : undefined}>
-                {tipo !== 'texto' && <SkeletonText heading width="45%" />}
-                <SkeletonText paragraph lineCount={tipo === 'texto' ? 2 : 3} />
-              </div>
-            ))}
-          </Stack>
+          Array.from({ length: tipo === 'cartoes' ? 3 : 2 }, (_, i) => (
+            <Flex key={i} direction="column" gap="2" p="4" style={{ background: 'var(--color-panel-solid)', borderRadius: 'var(--radius-3)', border: '1px solid var(--gray-a4)' }}>
+              <Skeleton height="1.1rem" width="40%" />
+              <Skeleton height="0.9rem" />
+              <Skeleton height="0.9rem" width="80%" />
+            </Flex>
+          ))
         )}
-      </div>
+      </Flex>
     </div>
   )
 }

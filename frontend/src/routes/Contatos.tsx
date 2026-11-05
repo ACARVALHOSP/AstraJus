@@ -1,11 +1,12 @@
-import { ArrowLeft } from '@carbon/icons-react'
+import { ChevronLeft } from 'lucide-react'
 import { useState } from 'react'
-import { Button, Stack, Tab, TabList, TabPanel, TabPanels, Tabs } from '@carbon/react'
+import { Button, Flex, Tabs } from '@radix-ui/themes'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { formatarNomeExibicao } from '../utils/formatadores'
 import ListaContatos from './contatos/ListaContatos'
 import CadastroContato from './contatos/CadastroContato'
 import VinculosContato from './contatos/VinculosContato'
+import './contatos/contatos-radix.css'
 
 type Visao = { tipo: 'lista' } | { tipo: 'detalhe'; clienteId: string | null }
 
@@ -33,33 +34,40 @@ export default function Contatos() {
   }
 
   return (
-    <Stack gap={6}>
-      <Button kind="ghost" size="sm" renderIcon={ArrowLeft} onClick={() => setVisao({ tipo: 'lista' })}>
+    <Flex direction="column" gap="6">
+      <Button variant="ghost" size="1" onClick={() => setVisao({ tipo: 'lista' })}>
+        <ChevronLeft size={16} />
         Voltar para clientes
       </Button>
       <h1>{nomeDetalhe}</h1>
-      <Tabs key={visao.clienteId ?? 'novo'}>
-        <TabList aria-label="Detalhes do contato">
-          <Tab>Cadastro</Tab>
-          {visao.clienteId && <Tab>Processos vinculados</Tab>}
-          {visao.clienteId && <Tab>Financeiro</Tab>}
-        </TabList>
-        <TabPanels>
-          <TabPanel>
-            <CadastroContato
-              clienteId={visao.clienteId}
-              onCarregado={(cliente) => setNomeDetalhe(cliente.nome ? formatarNomeExibicao(cliente.nome) : '(sem nome)')}
-              onSalvo={(cliente) => {
-                setNomeDetalhe(cliente.nome ? formatarNomeExibicao(cliente.nome) : '(sem nome)')
-                setVisao({ tipo: 'detalhe', clienteId: cliente.id ?? null })
-              }}
-              onExcluido={() => setVisao({ tipo: 'lista' })}
-            />
-          </TabPanel>
-          {visao.clienteId && <TabPanel><VinculosContato clienteId={visao.clienteId} tipo="processos" /></TabPanel>}
-          {visao.clienteId && <TabPanel><VinculosContato clienteId={visao.clienteId} tipo="financeiro" /></TabPanel>}
-        </TabPanels>
-      </Tabs>
-    </Stack>
+      <Tabs.Root key={visao.clienteId ?? 'novo'} defaultValue="cadastro">
+        <Tabs.List aria-label="Detalhes do contato">
+          <Tabs.Trigger value="cadastro">Cadastro</Tabs.Trigger>
+          {visao.clienteId && <Tabs.Trigger value="processos">Processos vinculados</Tabs.Trigger>}
+          {visao.clienteId && <Tabs.Trigger value="financeiro">Financeiro</Tabs.Trigger>}
+        </Tabs.List>
+        <Tabs.Content value="cadastro">
+          <CadastroContato
+            clienteId={visao.clienteId}
+            onCarregado={(cli) => setNomeDetalhe(cli.nome ? formatarNomeExibicao(cli.nome) : '(sem nome)')}
+            onSalvo={(cli) => {
+              setNomeDetalhe(cli.nome ? formatarNomeExibicao(cli.nome) : '(sem nome)')
+              setVisao({ tipo: 'detalhe', clienteId: cli.id ?? null })
+            }}
+            onExcluido={() => setVisao({ tipo: 'lista' })}
+          />
+        </Tabs.Content>
+        {visao.clienteId && (
+          <Tabs.Content value="processos">
+            <VinculosContato clienteId={visao.clienteId} tipo="processos" />
+          </Tabs.Content>
+        )}
+        {visao.clienteId && (
+          <Tabs.Content value="financeiro">
+            <VinculosContato clienteId={visao.clienteId} tipo="financeiro" />
+          </Tabs.Content>
+        )}
+      </Tabs.Root>
+    </Flex>
   )
 }

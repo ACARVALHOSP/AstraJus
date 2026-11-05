@@ -1,6 +1,8 @@
 import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button, Column, Grid, InlineNotification, Select, SelectItem, Stack } from '@carbon/react'
+import './casos/processos-radix.css'
+import { Button, Callout, Card, Flex, Select, Text } from '@radix-ui/themes'
+import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { ErroMCP } from '../api/mcpClient'
@@ -119,10 +121,10 @@ export default function Atividades() {
   )
 
   return (
-    <Stack gap={6}>
+    <Flex direction="column" gap="6">
       <div className="aj-layout-14">
         <h1>Atividades abertas</h1>
-        <Button kind="tertiary" size="sm" onClick={carregar} disabled={carregando}>
+        <Button variant="outline" size="1" onClick={carregar} disabled={carregando}>
           Atualizar atividades
         </Button>
       </div>
@@ -130,73 +132,85 @@ export default function Atividades() {
         Atividades pendentes de todos os processos. Filtre pelo responsável pela atividade ou pelo processo. As datas
         são as cadastradas, sem cálculo de prazo.
       </p>
-      <Grid narrow fullWidth>
-        <Column sm={4} md={4} lg={4}>
-          <Select id="atividades-executor" labelText="Responsável pela atividade" value={filtroExecutor} onChange={(e) => setFiltroExecutor(e.target.value)}>
-            <SelectItem value="" text="Todos" />
-            {opcoesExecutor.map((o) => (
-              <SelectItem key={o.valor} value={o.valor} text={o.nome} />
-            ))}
-          </Select>
-        </Column>
-        <Column sm={4} md={4} lg={4}>
-          <Select id="atividades-responsavel" labelText="Responsável pelo processo" value={filtroResponsavel} onChange={(e) => setFiltroResponsavel(e.target.value)}>
-            <SelectItem value="" text="Todos" />
-            {opcoesResponsavel.map((nome) => (
-              <SelectItem key={nome} value={nome} text={nome === 'Sem responsável' ? nome : formatarNomeExibicao(nome)} />
-            ))}
-          </Select>
-        </Column>
-        <Column sm={4} md={3} lg={3}>
-          <Select id="atividades-tipo" labelText="Tipo" value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
-            <SelectItem value="" text="Todos" />
-            {Object.entries(ROTULO_TIPO).map(([valor, rotulo]) => (
-              <SelectItem key={valor} value={valor} text={rotulo} />
-            ))}
-          </Select>
-        </Column>
-      </Grid>
+      <div className="casos-formulario-grade">
+        <div className="form-campo">
+          <label className="form-campo-label" htmlFor="atividades-executor">Responsável pela atividade</label>
+          <Select.Root value={filtroExecutor || '__all__'} onValueChange={(v) => setFiltroExecutor(v === '__all__' ? '' : v)}>
+            <Select.Trigger id="atividades-executor" style={{ width: '100%' }} />
+            <Select.Content>
+              <Select.Item value="__all__">Todos</Select.Item>
+              {opcoesExecutor.map((o) => (
+                <Select.Item key={o.valor} value={o.valor}>{o.nome}</Select.Item>
+              ))}
+            </Select.Content>
+          </Select.Root>
+        </div>
+        <div className="form-campo">
+          <label className="form-campo-label" htmlFor="atividades-responsavel">Responsável pelo processo</label>
+          <Select.Root value={filtroResponsavel || '__all__'} onValueChange={(v) => setFiltroResponsavel(v === '__all__' ? '' : v)}>
+            <Select.Trigger id="atividades-responsavel" style={{ width: '100%' }} />
+            <Select.Content>
+              <Select.Item value="__all__">Todos</Select.Item>
+              {opcoesResponsavel.map((nome) => (
+                <Select.Item key={nome} value={nome}>{nome === 'Sem responsável' ? nome : formatarNomeExibicao(nome)}</Select.Item>
+              ))}
+            </Select.Content>
+          </Select.Root>
+        </div>
+        <div className="form-campo">
+          <label className="form-campo-label" htmlFor="atividades-tipo">Tipo</label>
+          <Select.Root value={filtroTipo || '__all__'} onValueChange={(v) => setFiltroTipo(v === '__all__' ? '' : v)}>
+            <Select.Trigger id="atividades-tipo" style={{ width: '100%' }} />
+            <Select.Content>
+              <Select.Item value="__all__">Todos</Select.Item>
+              {Object.entries(ROTULO_TIPO).map(([valor, rotulo]) => (
+                <Select.Item key={valor} value={valor}>{rotulo}</Select.Item>
+              ))}
+            </Select.Content>
+          </Select.Root>
+        </div>
+      </div>
       <div aria-live="polite">
         {statusTexto && (
-          <InlineNotification
-            kind={statusTexto.tipo === 'erro' ? 'error' : statusTexto.tipo === 'aviso' ? 'warning' : 'info'}
-            title={statusTexto.tipo === 'aviso' ? 'Lista incompleta' : statusTexto.tipo === 'erro' ? 'Erro' : 'Status'}
-            subtitle={statusTexto.texto}
-            lowContrast
-            hideCloseButton
-          />
+          <Callout.Root color={statusTexto.tipo === 'erro' ? 'red' : statusTexto.tipo === 'aviso' ? 'yellow' : 'blue'} size="1">
+            <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+            <Callout.Text>{statusTexto.texto}</Callout.Text>
+          </Callout.Root>
         )}
       </div>
-      <Stack gap={4}>
+      <Flex direction="column" gap="4">
         {carregando && <Carregamento tipo="cartoes" descricao="Carregando atividades…" />}
         {!carregando && itensFiltrados.length === 0 && (
-          <InlineNotification kind="info" title="Nenhuma atividade aberta nos processos carregados com estes filtros" lowContrast hideCloseButton />
+          <Callout.Root color="blue" size="1">
+            <Callout.Icon><Info size={14} /></Callout.Icon>
+            <Callout.Text>Nenhuma atividade aberta nos processos carregados com estes filtros.</Callout.Text>
+          </Callout.Root>
         )}
         {!carregando && itensFiltrados.map(({ caso, atividade }) => (
-          <div key={`${caso.id}-${atividade.id}`} className="cds--tile">
-            <Stack gap={2}>
-              <h3>{formatarNomeExibicao(atividade.titulo)}</h3>
-              <p>
+          <Card key={`${caso.id}-${atividade.id}`} size="1">
+            <Flex direction="column" gap="2">
+              <Text size="2" weight="bold">{formatarNomeExibicao(atividade.titulo)}</Text>
+              <Text as="p" size="2">
                 {caso.titulo ? formatarNomeExibicao(caso.titulo) : 'Processo sem título'} · Responsável pelo processo:{' '}
                 {caso.responsavel ? formatarNomeExibicao(caso.responsavel) : 'Não definido'}
-              </p>
-              <p>Responsável pela atividade: {atividade.responsavel || 'Sem responsável'}</p>
-              <p>
+              </Text>
+              <Text as="p" size="2">Responsável pela atividade: {atividade.responsavel || 'Sem responsável'}</Text>
+              <Text as="p" size="2">
                 {ROTULO_TIPO[atividade.tipo] ?? atividade.tipo} · {atividade.data ? formatarDataSimples(atividade.data) : 'Sem data'}
                 {atividade.hora ? ` · ${atividade.hora}` : ''}
-              </p>
+              </Text>
               <div className="aj-layout-15">
-                <Button kind="ghost" size="sm" onClick={() => irPara('casos', { abrirCasoId: caso.id })}>
+                <Button variant="ghost" size="1" onClick={() => irPara('casos', { abrirCasoId: caso.id })}>
                   Abrir processo
                 </Button>
-                <Button kind="tertiary" size="sm" onClick={() => concluir({ caso, atividade })}>
+                <Button variant="outline" size="1" onClick={() => concluir({ caso, atividade })}>
                   Concluir atividade
                 </Button>
               </div>
-            </Stack>
-          </div>
+            </Flex>
+          </Card>
         ))}
-      </Stack>
-    </Stack>
+      </Flex>
+    </Flex>
   )
 }

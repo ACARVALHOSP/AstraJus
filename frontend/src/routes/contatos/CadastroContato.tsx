@@ -1,6 +1,7 @@
 import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
-import { Button, Column, Grid, InlineNotification, Modal, Select, SelectItem, Stack, Tab, TabList, TabPanel, TabPanels, Tabs, TextInput } from '@carbon/react'
+import { AlertDialog, Button, Callout, Flex, Select, Tabs, Text, TextField } from '@radix-ui/themes'
+import { AlertTriangle, Check } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -99,19 +100,16 @@ export default function CadastroContato({
           enderecos: dados.enderecos?.length
             ? dados.enderecos
             : dados.endereco_rua
-              ? [
-                  {
-                    tipo: '',
-                    cep: '',
-                    rua: dados.endereco_rua ?? '',
-                    numero: dados.endereco_numero ?? '',
-                    bairro: dados.endereco_bairro ?? '',
-                    complemento: dados.endereco_complemento ?? '',
-                    cidade: dados.endereco_cidade ?? '',
-                    estado: dados.endereco_estado ?? '',
-                    pais: dados.endereco_pais ?? 'Brasil',
-                  },
-                ]
+              ? [{
+                  tipo: '', cep: '',
+                  rua: dados.endereco_rua ?? '',
+                  numero: dados.endereco_numero ?? '',
+                  bairro: dados.endereco_bairro ?? '',
+                  complemento: dados.endereco_complemento ?? '',
+                  cidade: dados.endereco_cidade ?? '',
+                  estado: dados.endereco_estado ?? '',
+                  pais: dados.endereco_pais ?? 'Brasil',
+                }]
               : [],
         })
         onCarregado?.(dados)
@@ -172,195 +170,226 @@ export default function CadastroContato({
   }
 
   if (carregando) return <Carregamento tipo="detalhe" />
-  if (erroCarregar) return <InlineNotification kind="error" title="Erro ao carregar cliente" subtitle={erroCarregar} lowContrast hideCloseButton />
+  if (erroCarregar) return (
+    <Callout.Root color="red" size="1">
+      <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+      <Callout.Text>Erro ao carregar cliente: {erroCarregar}</Callout.Text>
+    </Callout.Root>
+  )
 
   return (
-    <Stack gap={6}>
-      <Tabs>
-        <TabList aria-label="Seções do cadastro">
-          <Tab>Informações pessoais</Tab>
-          <Tab>Documentação</Tab>
-          <Tab>Informações complementares</Tab>
-        </TabList>
-        <TabPanels>
-          <TabPanel>
-            <Stack gap={5}>
-              <Grid narrow fullWidth>
-                <Column sm={4} md={4} lg={5}>
-                  <Select id="contato-tipo-pessoa" labelText="Pessoa física ou jurídica" value={registro.tipo_pessoa} onChange={(e) => atualizar('tipo_pessoa', e.target.value)}>
-                    <SelectItem value="fisica" text="Pessoa física" />
-                    <SelectItem value="juridica" text="Pessoa jurídica" />
-                  </Select>
-                </Column>
-                <Column sm={4} md={2} lg={3}>
-                  <Select id="contato-perfil" labelText="Perfil" value={registro.perfil} onChange={(e) => atualizar('perfil', e.target.value)}>
-                    <SelectItem value="contato" text="Contato" />
-                    <SelectItem value="cliente" text="Cliente" />
-                  </Select>
-                </Column>
-              </Grid>
-              <TextInput
+    <Flex direction="column" gap="6">
+      <Tabs.Root defaultValue="pessoais">
+        <Tabs.List aria-label="Seções do cadastro">
+          <Tabs.Trigger value="pessoais">Informações pessoais</Tabs.Trigger>
+          <Tabs.Trigger value="documentacao">Documentação</Tabs.Trigger>
+          <Tabs.Trigger value="complementares">Informações complementares</Tabs.Trigger>
+        </Tabs.List>
+        <Tabs.Content value="pessoais">
+          <Flex direction="column" gap="4" mt="4">
+            <div className="casos-formulario-grade">
+              <div className="form-campo">
+                <label className="form-campo-label" htmlFor="contato-tipo-pessoa">Pessoa física ou jurídica</label>
+                <Select.Root value={registro.tipo_pessoa} onValueChange={(v) => atualizar('tipo_pessoa', v)}>
+                  <Select.Trigger id="contato-tipo-pessoa" style={{ width: '100%' }} />
+                  <Select.Content>
+                    <Select.Item value="fisica">Pessoa física</Select.Item>
+                    <Select.Item value="juridica">Pessoa jurídica</Select.Item>
+                  </Select.Content>
+                </Select.Root>
+              </div>
+              <div className="form-campo">
+                <label className="form-campo-label" htmlFor="contato-perfil">Perfil</label>
+                <Select.Root value={registro.perfil} onValueChange={(v) => atualizar('perfil', v)}>
+                  <Select.Trigger id="contato-perfil" style={{ width: '100%' }} />
+                  <Select.Content>
+                    <Select.Item value="contato">Contato</Select.Item>
+                    <Select.Item value="cliente">Cliente</Select.Item>
+                  </Select.Content>
+                </Select.Root>
+              </div>
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="contato-nome">Nome</label>
+              <TextField.Root
                 id="contato-nome"
-                labelText="Nome"
                 placeholder="Ex.: Maria Aparecida Souza"
                 autoComplete="name"
                 required
                 value={registro.nome}
                 onChange={(e) => atualizar('nome', e.target.value)}
               />
-              <CampoRepetivel
-                titulo="Telefone"
-                itens={registro.telefones ?? []}
-                campos={[
-                  { chave: 'tipo', tipo: 'select', rotulo: 'Tipo', opcoes: [
-                    { valor: '', rotulo: 'Tipo' }, { valor: 'celular', rotulo: 'Celular' }, { valor: 'residencial', rotulo: 'Residencial' },
-                    { valor: 'comercial', rotulo: 'Comercial' }, { valor: 'whatsapp', rotulo: 'WhatsApp' }, { valor: 'outro', rotulo: 'Outro' },
-                  ] },
-                  { chave: 'telefone', tipo: 'texto', rotulo: 'Telefone', tipoInput: 'tel' },
-                  { chave: 'operadora', tipo: 'texto', rotulo: 'Operadora' },
-                ]}
-                onAdicionar={() => atualizar('telefones', [...(registro.telefones ?? []), { tipo: '', telefone: '', operadora: '' }])}
-                onRemover={(i) => atualizar('telefones', (registro.telefones ?? []).filter((_, idx) => idx !== i))}
-                onAlterar={(i, chave, valor) =>
-                  atualizar('telefones', (registro.telefones ?? []).map((t, idx) => (idx === i ? { ...t, [chave]: valor } : t)))
-                }
+            </div>
+            <CampoRepetivel
+              titulo="Telefone"
+              itens={registro.telefones ?? []}
+              campos={[
+                { chave: 'tipo', tipo: 'select', rotulo: 'Tipo', opcoes: [
+                  { valor: '', rotulo: 'Tipo' }, { valor: 'celular', rotulo: 'Celular' }, { valor: 'residencial', rotulo: 'Residencial' },
+                  { valor: 'comercial', rotulo: 'Comercial' }, { valor: 'whatsapp', rotulo: 'WhatsApp' }, { valor: 'outro', rotulo: 'Outro' },
+                ] },
+                { chave: 'telefone', tipo: 'texto', rotulo: 'Telefone', tipoInput: 'tel' },
+                { chave: 'operadora', tipo: 'texto', rotulo: 'Operadora' },
+              ]}
+              onAdicionar={() => atualizar('telefones', [...(registro.telefones ?? []), { tipo: '', telefone: '', operadora: '' }])}
+              onRemover={(i) => atualizar('telefones', (registro.telefones ?? []).filter((_, idx) => idx !== i))}
+              onAlterar={(i, chave, valor) =>
+                atualizar('telefones', (registro.telefones ?? []).map((t, idx) => (idx === i ? { ...t, [chave]: valor } : t)))
+              }
+            />
+            <CampoRepetivel
+              titulo="E-mail"
+              itens={registro.emails ?? []}
+              campos={[
+                { chave: 'tipo', tipo: 'select', rotulo: 'Tipo', opcoes: [
+                  { valor: '', rotulo: 'Tipo' }, { valor: 'pessoal', rotulo: 'Pessoal' }, { valor: 'comercial', rotulo: 'Comercial' }, { valor: 'outro', rotulo: 'Outro' },
+                ] },
+                { chave: 'email', tipo: 'texto', rotulo: 'E-mail', tipoInput: 'email' },
+              ]}
+              onAdicionar={() => atualizar('emails', [...(registro.emails ?? []), { tipo: '', email: '' }])}
+              onRemover={(i) => atualizar('emails', (registro.emails ?? []).filter((_, idx) => idx !== i))}
+              onAlterar={(i, chave, valor) =>
+                atualizar('emails', (registro.emails ?? []).map((e, idx) => (idx === i ? { ...e, [chave]: valor } : e)))
+              }
+            />
+            <CampoRepetivel
+              titulo="Site"
+              itens={registro.sites ?? []}
+              campos={[{ chave: 'site', tipo: 'texto', rotulo: 'Site', tipoInput: 'url' }]}
+              onAdicionar={() => atualizar('sites', [...(registro.sites ?? []), { site: '' }])}
+              onRemover={(i) => atualizar('sites', (registro.sites ?? []).filter((_, idx) => idx !== i))}
+              onAlterar={(i, chave, valor) =>
+                atualizar('sites', (registro.sites ?? []).map((s, idx) => (idx === i ? { ...s, [chave]: valor } : s)))
+              }
+            />
+            <EnderecosRepetivel
+              itens={registro.enderecos ?? []}
+              onAdicionar={() =>
+                atualizar('enderecos', [
+                  ...(registro.enderecos ?? []),
+                  { tipo: '', cep: '', rua: '', numero: '', bairro: '', complemento: '', cidade: '', estado: '', pais: 'Brasil' },
+                ])
+              }
+              onRemover={(i) => atualizar('enderecos', (registro.enderecos ?? []).filter((_, idx) => idx !== i))}
+              onAlterar={(i, alteracoes) =>
+                atualizar('enderecos', (registro.enderecos ?? []).map((end, idx) => (idx === i ? { ...end, ...alteracoes } : end)))
+              }
+            />
+          </Flex>
+        </Tabs.Content>
+        <Tabs.Content value="documentacao">
+          <div className="casos-formulario-grade" style={{ marginTop: 'var(--space-4)' }}>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="contato-cpf-cnpj">{registro.tipo_pessoa === 'juridica' ? 'CNPJ' : 'CPF'}</label>
+              <TextField.Root
+                id="contato-cpf-cnpj"
+                placeholder={registro.tipo_pessoa === 'juridica' ? 'Ex.: 12.345.678/0001-90' : 'Ex.: 123.456.789-00'}
+                value={registro.cpf_cnpj}
+                onChange={(e) => atualizar('cpf_cnpj', mascaraCpfCnpj(e.target.value))}
               />
-              <CampoRepetivel
-                titulo="E-mail"
-                itens={registro.emails ?? []}
-                campos={[
-                  { chave: 'tipo', tipo: 'select', rotulo: 'Tipo', opcoes: [
-                    { valor: '', rotulo: 'Tipo' }, { valor: 'pessoal', rotulo: 'Pessoal' }, { valor: 'comercial', rotulo: 'Comercial' }, { valor: 'outro', rotulo: 'Outro' },
-                  ] },
-                  { chave: 'email', tipo: 'texto', rotulo: 'E-mail', tipoInput: 'email' },
-                ]}
-                onAdicionar={() => atualizar('emails', [...(registro.emails ?? []), { tipo: '', email: '' }])}
-                onRemover={(i) => atualizar('emails', (registro.emails ?? []).filter((_, idx) => idx !== i))}
-                onAlterar={(i, chave, valor) =>
-                  atualizar('emails', (registro.emails ?? []).map((e, idx) => (idx === i ? { ...e, [chave]: valor } : e)))
-                }
-              />
-              <CampoRepetivel
-                titulo="Site"
-                itens={registro.sites ?? []}
-                campos={[{ chave: 'site', tipo: 'texto', rotulo: 'Site', tipoInput: 'url' }]}
-                onAdicionar={() => atualizar('sites', [...(registro.sites ?? []), { site: '' }])}
-                onRemover={(i) => atualizar('sites', (registro.sites ?? []).filter((_, idx) => idx !== i))}
-                onAlterar={(i, chave, valor) =>
-                  atualizar('sites', (registro.sites ?? []).map((s, idx) => (idx === i ? { ...s, [chave]: valor } : s)))
-                }
-              />
-              <EnderecosRepetivel
-                itens={registro.enderecos ?? []}
-                onAdicionar={() =>
-                  atualizar('enderecos', [
-                    ...(registro.enderecos ?? []),
-                    { tipo: '', cep: '', rua: '', numero: '', bairro: '', complemento: '', cidade: '', estado: '', pais: 'Brasil' },
-                  ])
-                }
-                onRemover={(i) => atualizar('enderecos', (registro.enderecos ?? []).filter((_, idx) => idx !== i))}
-                onAlterar={(i, alteracoes) =>
-                  atualizar('enderecos', (registro.enderecos ?? []).map((end, idx) => (idx === i ? { ...end, ...alteracoes } : end)))
-                }
-              />
-            </Stack>
-          </TabPanel>
-          <TabPanel>
-            <Grid narrow fullWidth>
-              <Column sm={4} md={3} lg={5}>
-                <TextInput
-                  id="contato-cpf-cnpj"
-                  labelText={registro.tipo_pessoa === 'juridica' ? 'CNPJ' : 'CPF'}
-                  placeholder={registro.tipo_pessoa === 'juridica' ? 'Ex.: 12.345.678/0001-90' : 'Ex.: 123.456.789-00'}
-                  value={registro.cpf_cnpj}
-                  onChange={(e) => atualizar('cpf_cnpj', mascaraCpfCnpj(e.target.value))}
-                />
-              </Column>
-              <Column sm={4} md={3} lg={4}>
-                <TextInput id="contato-rg-numero" labelText="RG — Número" value={registro.rg_numero} onChange={(e) => atualizar('rg_numero', e.target.value)} />
-              </Column>
-              <Column sm={4} md={2} lg={3}>
-                <TextInput id="contato-rg-emissao" type="date" labelText="RG — Emissão" value={registro.rg_emissao} onChange={(e) => atualizar('rg_emissao', e.target.value)} />
-              </Column>
-              <Column sm={4} md={4} lg={4}>
-                <TextInput id="contato-rg-emissor" labelText="RG — Órgão emissor" placeholder="Ex.: SSP/SP" value={registro.rg_emissor} onChange={(e) => atualizar('rg_emissor', e.target.value)} />
-              </Column>
-              <Column sm={4} md={3} lg={4}>
-                <TextInput id="contato-ctps-numero" labelText="CTPS — Número" value={registro.ctps_numero} onChange={(e) => atualizar('ctps_numero', e.target.value)} />
-              </Column>
-              <Column sm={4} md={2} lg={3}>
-                <TextInput id="contato-ctps-serie" labelText="CTPS — Série" value={registro.ctps_serie} onChange={(e) => atualizar('ctps_serie', e.target.value)} />
-              </Column>
-              <Column sm={4} md={2} lg={3}>
-                <TextInput id="contato-ctps-emissao" type="date" labelText="CTPS — Emissão" value={registro.ctps_emissao} onChange={(e) => atualizar('ctps_emissao', e.target.value)} />
-              </Column>
-              <Column sm={4} md={1} lg={2}>
-                <TextInput id="contato-ctps-uf" labelText="CTPS — UF" maxLength={2} value={registro.ctps_uf} onChange={(e) => atualizar('ctps_uf', e.target.value)} />
-              </Column>
-              <Column sm={4} md={4} lg={4}>
-                <TextInput id="contato-pis" labelText="PIS" value={registro.pis} onChange={(e) => atualizar('pis', e.target.value)} />
-              </Column>
-            </Grid>
-          </TabPanel>
-          <TabPanel>
-            <Stack gap={5}>
-              <Grid narrow fullWidth>
-                <Column sm={4} md={4} lg={6}>
-                  <Select id="contato-estado-civil" labelText="Estado civil" value={registro.estado_civil} onChange={(e) => atualizar('estado_civil', e.target.value)}>
-                    <SelectItem value="" text="— Selecione —" />
-                    <SelectItem value="solteiro" text="Solteiro(a)" />
-                    <SelectItem value="casado" text="Casado(a)" />
-                    <SelectItem value="uniao_estavel" text="União estável" />
-                    <SelectItem value="divorciado" text="Divorciado(a)" />
-                    <SelectItem value="separado" text="Separado(a) judicialmente" />
-                    <SelectItem value="viuvo" text="Viúvo(a)" />
-                  </Select>
-                </Column>
-                <Column sm={4} md={4} lg={5}>
-                  <TextInput id="contato-nacionalidade" labelText="Nacionalidade" placeholder="Ex.: Brasileira" value={registro.nacionalidade} onChange={(e) => atualizar('nacionalidade', e.target.value)} />
-                </Column>
-                <Column sm={4} md={4} lg={5}>
-                  <TextInput id="contato-profissao" labelText="Profissão" placeholder="Ex.: Engenheira civil" value={registro.profissao} onChange={(e) => atualizar('profissao', e.target.value)} />
-                </Column>
-              </Grid>
-              <TextInput id="contato-observacoes" labelText="Observações" placeholder="Ex.: indicação de cliente antigo" value={registro.observacoes} onChange={(e) => atualizar('observacoes', e.target.value)} />
-            </Stack>
-          </TabPanel>
-        </TabPanels>
-      </Tabs>
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="contato-rg-numero">RG — Número</label>
+              <TextField.Root id="contato-rg-numero" value={registro.rg_numero} onChange={(e) => atualizar('rg_numero', e.target.value)} />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="contato-rg-emissao">RG — Emissão</label>
+              <TextField.Root id="contato-rg-emissao" type="date" value={registro.rg_emissao} onChange={(e) => atualizar('rg_emissao', e.target.value)} />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="contato-rg-emissor">RG — Órgão emissor</label>
+              <TextField.Root id="contato-rg-emissor" placeholder="Ex.: SSP/SP" value={registro.rg_emissor} onChange={(e) => atualizar('rg_emissor', e.target.value)} />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="contato-ctps-numero">CTPS — Número</label>
+              <TextField.Root id="contato-ctps-numero" value={registro.ctps_numero} onChange={(e) => atualizar('ctps_numero', e.target.value)} />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="contato-ctps-serie">CTPS — Série</label>
+              <TextField.Root id="contato-ctps-serie" value={registro.ctps_serie} onChange={(e) => atualizar('ctps_serie', e.target.value)} />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="contato-ctps-emissao">CTPS — Emissão</label>
+              <TextField.Root id="contato-ctps-emissao" type="date" value={registro.ctps_emissao} onChange={(e) => atualizar('ctps_emissao', e.target.value)} />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="contato-ctps-uf">CTPS — UF</label>
+              <TextField.Root id="contato-ctps-uf" maxLength={2} value={registro.ctps_uf} onChange={(e) => atualizar('ctps_uf', e.target.value)} />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="contato-pis">PIS</label>
+              <TextField.Root id="contato-pis" value={registro.pis} onChange={(e) => atualizar('pis', e.target.value)} />
+            </div>
+          </div>
+        </Tabs.Content>
+        <Tabs.Content value="complementares">
+          <Flex direction="column" gap="4" mt="4">
+            <div className="casos-formulario-grade">
+              <div className="form-campo">
+                <label className="form-campo-label" htmlFor="contato-estado-civil">Estado civil</label>
+                <Select.Root value={registro.estado_civil || '__none__'} onValueChange={(v) => atualizar('estado_civil', v === '__none__' ? '' : v)}>
+                  <Select.Trigger id="contato-estado-civil" style={{ width: '100%' }} />
+                  <Select.Content>
+                    <Select.Item value="__none__">— Selecione —</Select.Item>
+                    <Select.Item value="solteiro">Solteiro(a)</Select.Item>
+                    <Select.Item value="casado">Casado(a)</Select.Item>
+                    <Select.Item value="uniao_estavel">União estável</Select.Item>
+                    <Select.Item value="divorciado">Divorciado(a)</Select.Item>
+                    <Select.Item value="separado">Separado(a) judicialmente</Select.Item>
+                    <Select.Item value="viuvo">Viúvo(a)</Select.Item>
+                  </Select.Content>
+                </Select.Root>
+              </div>
+              <div className="form-campo">
+                <label className="form-campo-label" htmlFor="contato-nacionalidade">Nacionalidade</label>
+                <TextField.Root id="contato-nacionalidade" placeholder="Ex.: Brasileira" value={registro.nacionalidade} onChange={(e) => atualizar('nacionalidade', e.target.value)} />
+              </div>
+              <div className="form-campo">
+                <label className="form-campo-label" htmlFor="contato-profissao">Profissão</label>
+                <TextField.Root id="contato-profissao" placeholder="Ex.: Engenheira civil" value={registro.profissao} onChange={(e) => atualizar('profissao', e.target.value)} />
+              </div>
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="contato-observacoes">Observações</label>
+              <TextField.Root id="contato-observacoes" placeholder="Ex.: indicação de cliente antigo" value={registro.observacoes} onChange={(e) => atualizar('observacoes', e.target.value)} />
+            </div>
+          </Flex>
+        </Tabs.Content>
+      </Tabs.Root>
       <div className="aj-layout-28">
         <Button onClick={salvar} disabled={salvando}>
           {criando ? 'Cadastrar cliente' : 'Salvar alterações'}
         </Button>
         {!criando && (
-          <Button kind="danger--tertiary" onClick={() => setParaExcluir(true)}>
+          <Button variant="outline" color="red" onClick={() => setParaExcluir(true)}>
             Excluir cliente
           </Button>
         )}
       </div>
       <div aria-live="polite">
         {mensagem && (
-          <InlineNotification
-            kind={mensagem.tipo === 'erro' ? 'error' : 'success'}
-            title={mensagem.tipo === 'erro' ? 'Erro' : 'Sucesso'}
-            subtitle={mensagem.texto}
-            lowContrast
-            hideCloseButton
-          />
+          <Callout.Root color={mensagem.tipo === 'erro' ? 'red' : 'green'} size="1">
+            <Callout.Icon>{mensagem.tipo === 'erro' ? <AlertTriangle size={14} /> : <Check size={14} />}</Callout.Icon>
+            <Callout.Text>{mensagem.texto}</Callout.Text>
+          </Callout.Root>
         )}
       </div>
-      <Modal closeButtonLabel="Fechar"
-        open={paraExcluir}
-        danger
-        modalHeading="Excluir cliente"
-        primaryButtonText="Excluir"
-        secondaryButtonText="Cancelar"
-        primaryButtonDisabled={excluindo}
-        onRequestClose={() => setParaExcluir(false)}
-        onRequestSubmit={confirmarExclusao}
-      >
-        <p>Excluir o cliente "{registro.nome || 'este cliente'}"? Essa ação não pode ser desfeita.</p>
-      </Modal>
-    </Stack>
+      <AlertDialog.Root open={paraExcluir} onOpenChange={(open) => !open && setParaExcluir(false)}>
+        <AlertDialog.Content maxWidth="400px">
+          <AlertDialog.Title>Excluir cliente</AlertDialog.Title>
+          <AlertDialog.Description>
+            Excluir o cliente "{registro.nome || 'este cliente'}"? Essa ação não pode ser desfeita.
+          </AlertDialog.Description>
+          <Flex gap="3" mt="4" justify="end">
+            <AlertDialog.Cancel>
+              <Button variant="soft" color="gray">Cancelar</Button>
+            </AlertDialog.Cancel>
+            <AlertDialog.Action>
+              <Button color="red" disabled={excluindo} onClick={confirmarExclusao}>Excluir</Button>
+            </AlertDialog.Action>
+          </Flex>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
+    </Flex>
   )
 }

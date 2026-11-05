@@ -1,6 +1,6 @@
-import { ArrowLeft } from '@carbon/icons-react'
+import { ChevronLeft } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { Button, Grid, Column, Stack, Tab, TabList, TabPanel, TabPanels, Tabs } from '@carbon/react'
+import { Button, Flex, Tabs } from '@radix-ui/themes'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { formatarNomeExibicao, formatarNumeroCNJ } from '../utils/formatadores'
 import ListaCasos, { type Caso } from './casos/ListaCasos'
@@ -9,13 +9,17 @@ import AtividadesCaso from './casos/AtividadesCaso'
 import PublicacoesCaso from './casos/PublicacoesCaso'
 import MovimentacoesCaso from './casos/MovimentacoesCaso'
 import VinculosCaso from './casos/VinculosCaso'
+import './casos/processos-radix.css'
+
+const ABAS = ['cadastro', 'atividades', 'publicacoes', 'movimentacoes', 'vinculos'] as const
+type AbaId = typeof ABAS[number]
 
 export default function Casos() {
   const { consumirPayload, versaoNavegacao } = useNavegacao()
   const [casoId, setCasoId] = useState<string | null>(null)
   const [destinoAtividade, setDestinoAtividade] = useState<{ id?: string | number; versao: number }>({ versao: 0 })
   const [resumo, setResumo] = useState<Caso | null>(null)
-  const [abaSelecionada, setAbaSelecionada] = useState(0)
+  const [abaSelecionada, setAbaSelecionada] = useState<AbaId>('cadastro')
   const [titulo, setTitulo] = useState('Carregando…')
   const faixaAbas = useRef<HTMLDivElement>(null)
 
@@ -25,7 +29,7 @@ export default function Casos() {
     setCasoId(destino.id)
     setResumo(null)
     setTitulo('Carregando…')
-    setAbaSelecionada(destino.aba === 'atividades' ? 1 : destino.aba === 'publicacoes' ? 2 : 0)
+    setAbaSelecionada(destino.aba === 'atividades' ? 'atividades' : destino.aba === 'publicacoes' ? 'publicacoes' : 'cadastro')
     setDestinoAtividade({ id: destino.atividadeId, versao: versaoNavegacao })
   }, [consumirPayload, versaoNavegacao])
 
@@ -54,7 +58,7 @@ export default function Casos() {
 
   function abrir(id: string) {
     setDestinoAtividade({ versao: versaoNavegacao })
-    setAbaSelecionada(0)
+    setAbaSelecionada('cadastro')
     setResumo(null)
     setTitulo('Carregando…')
     setCasoId(id)
@@ -65,47 +69,51 @@ export default function Casos() {
   }
 
   return (
-    <Grid narrow fullWidth className="casos-detalhe"><Column sm={4} md={8} lg={16}><Stack gap={6}>
-      <div className="casos-detalhe-cabecalho">
-        <Button kind="ghost" size="sm" renderIcon={ArrowLeft} onClick={() => setCasoId(null)}>
-          Voltar para processos
-        </Button>
-        <h1 tabIndex={-1}>{titulo}</h1>{resumo?.processos?.map((numero) => <p key={numero} className="casos-cnj">{formatarNumeroCNJ(numero)}</p>)}
-      </div>
-      <Tabs key={casoId} selectedIndex={abaSelecionada} onChange={({ selectedIndex }) => setAbaSelecionada(selectedIndex)}>
-        <div ref={faixaAbas}>
-        <TabList className="casos-abas" aria-label="Detalhes do processo">
-          <Tab>Cadastro</Tab>
-          <Tab>Atividades</Tab>
-          <Tab>Publicações</Tab>
-          <Tab>Movimentações</Tab>
-          <Tab>Vínculos</Tab>
-        </TabList>
+    <div className="casos-detalhe">
+      <Flex direction="column" gap="6">
+        <div className="casos-detalhe-cabecalho">
+          <Button variant="ghost" size="1" onClick={() => setCasoId(null)}>
+            <ChevronLeft size={16} />
+            Voltar para processos
+          </Button>
+          <h1 tabIndex={-1}>{titulo}</h1>
+          {resumo?.processos?.map((numero) => (
+            <p key={numero} className="casos-cnj">{formatarNumeroCNJ(numero)}</p>
+          ))}
         </div>
-        <TabPanels>
-          <TabPanel>
+        <Tabs.Root key={casoId} value={abaSelecionada} onValueChange={(v) => setAbaSelecionada(v as AbaId)}>
+          <div ref={faixaAbas}>
+            <Tabs.List className="casos-abas" aria-label="Detalhes do processo">
+              <Tabs.Trigger value="cadastro">Cadastro</Tabs.Trigger>
+              <Tabs.Trigger value="atividades">Atividades</Tabs.Trigger>
+              <Tabs.Trigger value="publicacoes">Publicações</Tabs.Trigger>
+              <Tabs.Trigger value="movimentacoes">Movimentações</Tabs.Trigger>
+              <Tabs.Trigger value="vinculos">Vínculos</Tabs.Trigger>
+            </Tabs.List>
+          </div>
+          <Tabs.Content value="cadastro">
             <CadastroCaso
               casoId={casoId}
               onCarregado={(caso) => { setResumo(caso); setTitulo(caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)') }}
               onSalvo={(caso) => { setResumo(caso); setTitulo(caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)') }}
               onExcluido={() => setCasoId(null)}
-              onMovimentacoes={() => setAbaSelecionada(3)}
+              onMovimentacoes={() => setAbaSelecionada('movimentacoes')}
             />
-          </TabPanel>
-          <TabPanel>
+          </Tabs.Content>
+          <Tabs.Content value="atividades">
             <AtividadesCaso key={`${casoId}:${destinoAtividade.versao}`} casoId={casoId} atividadeInicialId={destinoAtividade.id} />
-          </TabPanel>
-          <TabPanel>
+          </Tabs.Content>
+          <Tabs.Content value="publicacoes">
             <PublicacoesCaso casoId={casoId} />
-          </TabPanel>
-          <TabPanel>
+          </Tabs.Content>
+          <Tabs.Content value="movimentacoes">
             <MovimentacoesCaso casoId={casoId} />
-          </TabPanel>
-          <TabPanel>
+          </Tabs.Content>
+          <Tabs.Content value="vinculos">
             <VinculosCaso casoId={casoId} onAbrirCaso={abrir} />
-          </TabPanel>
-        </TabPanels>
-      </Tabs>
-    </Stack></Column></Grid>
+          </Tabs.Content>
+        </Tabs.Root>
+      </Flex>
+    </div>
   )
 }

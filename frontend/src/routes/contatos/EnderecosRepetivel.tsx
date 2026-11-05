@@ -1,7 +1,6 @@
-import { Add } from '@carbon/icons-react'
-import { Close } from '@carbon/icons-react'
+import { Plus, X } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { Button, Column, Grid, Select, SelectItem, TextInput } from '@carbon/react'
+import { Button, Select, TextField } from '@radix-ui/themes'
 import { mascaraCep } from '../../utils/mascaras'
 
 export type Endereco = {
@@ -46,7 +45,7 @@ export default function EnderecosRepetivel({
 }) {
   return (
     <div>
-      <span className="cds--label">Endereço</span>
+      <span className="form-campo-label">Endereço</span>
       <div className="aj-layout-33">
         {itens.map((item, indice) => (
           <CardEndereco
@@ -58,7 +57,8 @@ export default function EnderecosRepetivel({
           />
         ))}
       </div>
-      <Button kind="ghost" size="sm" onClick={onAdicionar} renderIcon={Add} className="aj-layout-34">
+      <Button variant="ghost" size="1" onClick={onAdicionar} className="aj-layout-34">
+        <Plus size={16} />
         Adicionar endereço
       </Button>
     </div>
@@ -110,62 +110,66 @@ function CardEndereco({
 
   return (
     <div className="endereco-card">
-      <Grid narrow fullWidth className="endereco-card-topo">
-        <Column sm={4} md={3} lg={8} xlg={4}>
-          <Select id={`endereco-tipo-${indice}`} labelText="Tipo" value={item.tipo} onChange={(e) => onAlterar({ tipo: e.target.value })}>
-            <SelectItem value="" text="Tipo" />
-            <SelectItem value="residencial" text="Residencial" />
-            <SelectItem value="comercial" text="Comercial" />
-            <SelectItem value="cobranca" text="Cobrança" />
-            <SelectItem value="outro" text="Outro" />
-          </Select>
-        </Column>
-        <Column sm={3} md={4} lg={4}>
-          <TextInput
+      <div className="endereco-card-topo">
+        <div className="form-campo">
+          <label className="form-campo-label" htmlFor={`endereco-tipo-${indice}`}>Tipo</label>
+          <Select.Root value={item.tipo || '__empty__'} onValueChange={(v) => onAlterar({ tipo: v === '__empty__' ? '' : v })}>
+            <Select.Trigger id={`endereco-tipo-${indice}`} style={{ width: '100%' }} />
+            <Select.Content>
+              <Select.Item value="__empty__">Tipo</Select.Item>
+              <Select.Item value="residencial">Residencial</Select.Item>
+              <Select.Item value="comercial">Comercial</Select.Item>
+              <Select.Item value="cobranca">Cobrança</Select.Item>
+              <Select.Item value="outro">Outro</Select.Item>
+            </Select.Content>
+          </Select.Root>
+        </div>
+        <div className="form-campo">
+          <label className="form-campo-label" htmlFor={`endereco-cep-${indice}`}>CEP</label>
+          <TextField.Root
             id={`endereco-cep-${indice}`}
-            labelText="CEP"
             placeholder="Digite o CEP"
             autoComplete="postal-code"
             value={item.cep}
             onChange={(e) => aoMudarCep(e.target.value)}
           />
-        </Column>
-        <Column sm={1} md={1} lg={1} className="aj-layout-35">
-          <Button kind="ghost" size="sm" hasIconOnly iconDescription="Remover" onClick={onRemover}>
-            <Close size={16} />
+        </div>
+        <div className="aj-layout-35">
+          <Button variant="ghost" size="1" aria-label="Remover endereço" onClick={onRemover}>
+            <X size={16} />
           </Button>
-        </Column>
-      </Grid>
-      <Grid narrow fullWidth className="endereco-grade">
-        <Column sm={4} md={4} lg={8} xlg={7}>
-          <TextInput id={`endereco-rua-${indice}`} labelText="Rua" placeholder="Digite a rua" autoComplete="address-line1" value={item.rua} onChange={(e) => onAlterar({ rua: e.target.value })} />
-        </Column>
-        <Column sm={4} md={2} lg={8} xlg={3}>
-          <TextInput id={`endereco-numero-${indice}`} labelText="Número" placeholder="Digite o número" value={item.numero} onChange={(e) => onAlterar({ numero: e.target.value })} />
-        </Column>
-        <Column sm={4} md={2} lg={8} xlg={6}>
-          <TextInput id={`endereco-bairro-${indice}`} labelText="Bairro" placeholder="Digite o bairro" value={item.bairro} onChange={(e) => onAlterar({ bairro: e.target.value })} />
-        </Column>
-        <Column sm={4} md={4} lg={8} xlg={6}>
-          <TextInput
-            id={`endereco-complemento-${indice}`}
-            labelText="Complemento"
-            placeholder="Digite o complemento"
-            autoComplete="address-line2"
-            value={item.complemento}
-            onChange={(e) => onAlterar({ complemento: e.target.value })}
-          />
-        </Column>
-        <Column sm={4} md={3} lg={8} xlg={5}>
-          <TextInput id={`endereco-cidade-${indice}`} labelText="Cidade" placeholder="Digite a cidade" autoComplete="address-level2" value={item.cidade} onChange={(e) => onAlterar({ cidade: e.target.value })} />
-        </Column>
-        <Column sm={4} md={3} lg={8} xlg={3}>
-          <TextInput id={`endereco-estado-${indice}`} labelText="Estado" placeholder="Digite o estado" autoComplete="address-level1" value={item.estado} onChange={(e) => onAlterar({ estado: e.target.value })} />
-        </Column>
-        <Column sm={4} md={2} lg={8} xlg={2}>
-          <TextInput id={`endereco-pais-${indice}`} labelText="País" placeholder="Digite o país" autoComplete="country-name" value={item.pais} onChange={(e) => onAlterar({ pais: e.target.value })} />
-        </Column>
-      </Grid>
+        </div>
+      </div>
+      <div className="endereco-grade">
+        <div className="form-campo">
+          <label className="form-campo-label" htmlFor={`endereco-rua-${indice}`}>Rua</label>
+          <TextField.Root id={`endereco-rua-${indice}`} placeholder="Digite a rua" autoComplete="address-line1" value={item.rua} onChange={(e) => onAlterar({ rua: e.target.value })} />
+        </div>
+        <div className="form-campo">
+          <label className="form-campo-label" htmlFor={`endereco-numero-${indice}`}>Número</label>
+          <TextField.Root id={`endereco-numero-${indice}`} placeholder="Digite o número" value={item.numero} onChange={(e) => onAlterar({ numero: e.target.value })} />
+        </div>
+        <div className="form-campo">
+          <label className="form-campo-label" htmlFor={`endereco-bairro-${indice}`}>Bairro</label>
+          <TextField.Root id={`endereco-bairro-${indice}`} placeholder="Digite o bairro" value={item.bairro} onChange={(e) => onAlterar({ bairro: e.target.value })} />
+        </div>
+        <div className="form-campo">
+          <label className="form-campo-label" htmlFor={`endereco-complemento-${indice}`}>Complemento</label>
+          <TextField.Root id={`endereco-complemento-${indice}`} placeholder="Digite o complemento" autoComplete="address-line2" value={item.complemento} onChange={(e) => onAlterar({ complemento: e.target.value })} />
+        </div>
+        <div className="form-campo">
+          <label className="form-campo-label" htmlFor={`endereco-cidade-${indice}`}>Cidade</label>
+          <TextField.Root id={`endereco-cidade-${indice}`} placeholder="Digite a cidade" autoComplete="address-level2" value={item.cidade} onChange={(e) => onAlterar({ cidade: e.target.value })} />
+        </div>
+        <div className="form-campo">
+          <label className="form-campo-label" htmlFor={`endereco-estado-${indice}`}>Estado</label>
+          <TextField.Root id={`endereco-estado-${indice}`} placeholder="Digite o estado" autoComplete="address-level1" value={item.estado} onChange={(e) => onAlterar({ estado: e.target.value })} />
+        </div>
+        <div className="form-campo">
+          <label className="form-campo-label" htmlFor={`endereco-pais-${indice}`}>País</label>
+          <TextField.Root id={`endereco-pais-${indice}`} placeholder="Digite o país" autoComplete="country-name" value={item.pais} onChange={(e) => onAlterar({ pais: e.target.value })} />
+        </div>
+      </div>
       <span role="status">{statusCep}</span>
     </div>
   )
