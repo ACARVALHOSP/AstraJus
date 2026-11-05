@@ -87,6 +87,7 @@
   border-top: 3px solid var(--gray-6);
   background: var(--gray-a2);
   min-height: 20rem;
+  min-width: 0;
   transition: background 0.1s;
 }
 .home-coluna-em_andamento { border-top-color: var(--blue-7); }
@@ -209,17 +210,35 @@
 .home-seletor-mobile { display: none; }
 
 @media (max-width: 1055px) {
+  .home-resumo { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* Telas médias: mantém as 4 fases visíveis e arrastáveis, com rolagem horizontal. */
+@media (min-width: 673px) and (max-width: 1055px) {
+  .home-quadro {
+    grid-auto-flow: column;
+    grid-template-columns: unset;
+    grid-auto-columns: minmax(220px, 1fr);
+    overflow-x: auto;
+    padding-bottom: 0.5rem;
+  }
+  .home-skeleton-grid {
+    grid-auto-flow: column;
+    grid-template-columns: unset;
+    grid-auto-columns: minmax(220px, 1fr);
+    overflow-x: auto;
+  }
+}
+
+/* Só em celular o espaço não comporta nem rolagem razoável: troca por seletor de coluna. */
+@media (max-width: 672px) {
   .home-quadro { grid-template-columns: 1fr; }
   .home-coluna { display: none; }
   .home-coluna-ativa { display: flex; }
   .home-seletor-mobile { display: block; }
-  .home-resumo { grid-template-columns: repeat(2, 1fr); }
-  .home-skeleton-grid { grid-template-columns: 1fr; }
-}
-
-@media (max-width: 672px) {
   .home-resumo { grid-template-columns: 1fr; }
   .home { padding: 1rem; }
+  .home-skeleton-grid { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {
