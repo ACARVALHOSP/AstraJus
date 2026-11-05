@@ -53,4 +53,4 @@ jobs:
       - name: Checa saúde do servidor
         run: |
           sleep 2
-          curl -fsS -o /dev/null -w "HTTP %{http_code}\n" "http://${{ secrets.VPS_HOST }}:8001/healthz"
+          curl -fsS -o /dev/null -w "HTTP %{http_code}\n" "https://radix.191-252-110-22.sslip.io/healthz"
