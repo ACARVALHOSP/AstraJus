@@ -224,6 +224,30 @@
   align-self: flex-start;
 }
 
+/* ── Consultas: formulários, filtros e paginação ── */
+.form-campo { display: flex; flex-direction: column; gap: 4px; }
+.form-campo-label { font-size: 13px; font-weight: 500; color: var(--gray-11); }
+
+.aj-form-grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.aj-acoes-linha { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+
+.aj-tags-filtro { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+
+.aj-paginacao { display: flex; align-items: center; gap: 0.75rem; }
+
+.aj-multiselect-lista {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 /* ── Data tables: acabamento "surface", como o Card/Table do Radix ── */
 .tabela-adaptavel {
   background: var(--color-panel-solid);

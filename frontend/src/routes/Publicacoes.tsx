@@ -1,38 +1,15 @@
 import TabelaResponsiva from '../TabelaResponsiva'
 import TextoTabela from '../TextoTabela'
 import Carregamento from '../Carregamento'
-import { Fragment, useEffect, useState, type FormEvent } from 'react'
-import {
-  Button,
-  Column,
-  DataTable,
-  DatePicker,
-  DatePickerInput,
-  Form,
-  Grid,
-  InlineNotification,
-  NumberInput,
-  Select,
-  SelectItem,
-  Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableExpandedRow,
-  TableExpandHeader,
-  TableExpandRow,
-  TableHead,
-  TableHeader,
-  TableRow,
-  TextInput,
-} from '@carbon/react'
+import { useEffect, useState, type FormEvent } from 'react'
+import { AlertTriangle, Info } from 'lucide-react'
+import { Button, Callout, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { ErroMCP } from '../api/mcpClient'
 import { TRIBUNAIS } from '../api/tribunais'
 import { UFS } from '../api/ufs'
-import { ddmmaaaaParaIso, formatarDataSimples, formatarDdMmAaaa, formatarNumeroCNJ } from '../utils/formatadores'
+import { formatarDataSimples, formatarNumeroCNJ } from '../utils/formatadores'
 import { adicionarHistorico } from '../utils/listasRapidas'
 import CartaoPublicacao, { type ItemPublicacao } from './publicacoes/CartaoPublicacao'
 
@@ -84,10 +61,8 @@ export default function Publicacoes() {
     if (oab) args.numero_oab = oab
     if (tribunal) args.sigla_tribunal = tribunal.toUpperCase()
     if (ufOab) args.uf_oab = ufOab.toUpperCase()
-    const inicio = ddmmaaaaParaIso(dataInicio)
-    if (inicio) args.data_disponibilizacao_inicio = inicio
-    const fim = ddmmaaaaParaIso(dataFim)
-    if (fim) args.data_disponibilizacao_fim = fim
+    if (dataInicio) args.data_disponibilizacao_inicio = dataInicio
+    if (dataFim) args.data_disponibilizacao_fim = dataFim
     if (itensPorPagina > 0) args.itens_por_pagina = itensPorPagina
     return args
   }
@@ -141,115 +116,122 @@ export default function Publicacoes() {
   const temPaginacao = busca && (total > itensPorPaginaBusca || busca.pagina > 1)
 
   return (
-    <Stack gap={6}>
-      <div>
-        <h1>Consultar publicações</h1>
-      </div>
-      <Form onSubmit={aoEnviar}>
-        <Stack gap={5}>
-          <Grid narrow fullWidth>
-            <Column sm={4} md={4} lg={6}>
-              <TextInput
+    <Flex direction="column" gap="6">
+      <Heading as="h1" size="6">Consultar publicações</Heading>
+      <form onSubmit={aoEnviar}>
+        <Flex direction="column" gap="5">
+          <div className="aj-form-grade">
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="pub-numero-processo">Número do processo</label>
+              <TextField.Root
                 id="pub-numero-processo"
-                labelText="Número do processo"
                 placeholder="1006314-27.2023.8.26.0005"
                 autoComplete="off"
                 value={numeroProcesso}
                 onChange={(e) => setNumeroProcesso(e.target.value)}
               />
-            </Column>
-            <Column sm={4} md={3} lg={3}>
-              <Select id="pub-sigla-tribunal" labelText="Tribunal" value={tribunal} onChange={(e) => setTribunal(e.target.value)}>
-                <SelectItem value="" text="— todos —" />
-                {TRIBUNAIS.map((t) => (
-                  <SelectItem key={t} value={t} text={t.toUpperCase()} />
-                ))}
-              </Select>
-            </Column>
-            <Column sm={4} md={2} lg={2}>
-              <TextInput
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="pub-sigla-tribunal">Tribunal</label>
+              <Select.Root value={tribunal || '__todos__'} onValueChange={(v) => setTribunal(v === '__todos__' ? '' : v)}>
+                <Select.Trigger id="pub-sigla-tribunal" style={{ width: '100%' }} />
+                <Select.Content>
+                  <Select.Item value="__todos__">— todos —</Select.Item>
+                  {TRIBUNAIS.map((t) => (
+                    <Select.Item key={t} value={t}>{t.toUpperCase()}</Select.Item>
+                  ))}
+                </Select.Content>
+              </Select.Root>
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="pub-numero-oab">Número da OAB</label>
+              <TextField.Root
                 id="pub-numero-oab"
-                labelText="Número da OAB"
                 placeholder="330659"
                 maxLength={6}
                 autoComplete="off"
                 value={numeroOab}
                 onChange={(e) => setNumeroOab(e.target.value)}
               />
-            </Column>
-            <Column sm={4} md={2} lg={2}>
-              <Select id="pub-uf-oab" labelText="UF da OAB" value={ufOab} onChange={(e) => setUfOab(e.target.value)}>
-                <SelectItem value="" text="— todas —" />
-                {UFS.map((uf) => (
-                  <SelectItem key={uf} value={uf} text={uf} />
-                ))}
-              </Select>
-            </Column>
-            <Column sm={4} md={5} lg={8}>
-              <DatePicker
-                datePickerType="range"
-                dateFormat="d/m/Y"
-                onChange={(datas: Date[]) => {
-                  const [inicio, fim] = datas
-                  setDataInicio(inicio ? formatarDdMmAaaa(inicio) : '')
-                  setDataFim(fim ? formatarDdMmAaaa(fim) : '')
-                }}
-              >
-                <DatePickerInput id="pub-data-inicio" labelText="Publicado a partir de" placeholder="dd/mm/aaaa" />
-                <DatePickerInput id="pub-data-fim" labelText="Publicado até" placeholder="dd/mm/aaaa" />
-              </DatePicker>
-            </Column>
-            <Column sm={4} md={3} lg={3}>
-              <NumberInput
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="pub-uf-oab">UF da OAB</label>
+              <Select.Root value={ufOab || '__todas__'} onValueChange={(v) => setUfOab(v === '__todas__' ? '' : v)}>
+                <Select.Trigger id="pub-uf-oab" style={{ width: '100%' }} />
+                <Select.Content>
+                  <Select.Item value="__todas__">— todas —</Select.Item>
+                  {UFS.map((uf) => (
+                    <Select.Item key={uf} value={uf}>{uf}</Select.Item>
+                  ))}
+                </Select.Content>
+              </Select.Root>
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="pub-data-inicio">Publicado a partir de</label>
+              <TextField.Root id="pub-data-inicio" type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="pub-data-fim">Publicado até</label>
+              <TextField.Root id="pub-data-fim" type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="pub-itens">Itens por página</label>
+              <TextField.Root
                 id="pub-itens"
-                label="Itens por página"
+                type="number"
                 min={1}
                 max={100}
                 value={itensPorPagina}
-                onChange={(_e, { value }) => setItensPorPagina(Number(value) || 20)}
+                onChange={(e) => setItensPorPagina(Number(e.target.value) || 20)}
               />
-            </Column>
-          </Grid>
-          <p>Informe o número do processo ou a OAB. Os demais campos são opcionais.</p>
+            </div>
+          </div>
+          <Text size="2" color="gray">Informe o número do processo ou a OAB. Os demais campos são opcionais.</Text>
           <div>
-            <Button type="submit" disabled={consultando}>
+            <Button size="2" type="submit" disabled={consultando}>
               Consultar publicações
             </Button>
           </div>
-        </Stack>
-      </Form>
+        </Flex>
+      </form>
       <div aria-live="polite">
         {consultando && <Carregamento tipo="tabela" descricao="Consultando o DJEN…" />}
-        {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
+        {erro && (
+          <Callout.Root color="red" size="1">
+            <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+            <Callout.Text>{erro}</Callout.Text>
+          </Callout.Root>
+        )}
         {resultado?.erro && (
-          <InlineNotification kind="error" title="Erro na consulta ao DJEN" subtitle={resultado.mensagem} lowContrast hideCloseButton />
+          <Callout.Root color="red" size="1">
+            <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+            <Callout.Text>{resultado.mensagem}</Callout.Text>
+          </Callout.Root>
         )}
         {!consultando && resultado && !resultado.erro && (
-          <Stack gap={5}>
-            <InlineNotification
-              kind={(resultado.itens ?? []).length ? 'success' : 'info'}
-              title={`${total} ${total === 1 ? 'publicação encontrada' : 'publicações encontradas'}`}
-              subtitle={
-                (resultado.itens ?? []).length
-                  ? `Mostrando ${resultado.itens!.length} nesta página.`
-                  : 'Tente ajustar os filtros ou o período.'
-              }
-              lowContrast
-              hideCloseButton
-            />
+          <Flex direction="column" gap="5">
+            <Callout.Root color={(resultado.itens ?? []).length ? 'green' : 'blue'} size="1">
+              <Callout.Icon><Info size={14} /></Callout.Icon>
+              <Callout.Text>
+                {total} {total === 1 ? 'publicação encontrada' : 'publicações encontradas'}
+                {(resultado.itens ?? []).length
+                  ? ` — Mostrando ${resultado.itens!.length} nesta página.`
+                  : ' — Tente ajustar os filtros ou o período.'}
+              </Callout.Text>
+            </Callout.Root>
             <TabelaPublicacoes itens={resultado.itens ?? []} />
-          </Stack>
+          </Flex>
         )}
       </div>
       {temPaginacao && busca && (
-        <nav aria-label="Páginas de publicações" className="aj-layout-56">
-          <Button kind="ghost" size="sm" disabled={busca.pagina <= 1} onClick={() => executarBusca(busca.args, busca.pagina - 1)}>
+        <nav aria-label="Páginas de publicações" className="aj-paginacao">
+          <Button variant="ghost" size="1" disabled={busca.pagina <= 1} onClick={() => executarBusca(busca.args, busca.pagina - 1)}>
             Anterior
           </Button>
-          <span>Página {busca.pagina}</span>
+          <Text size="2">Página {busca.pagina}</Text>
           <Button
-            kind="ghost"
-            size="sm"
+            variant="ghost"
+            size="1"
             disabled={busca.pagina * itensPorPaginaBusca >= total}
             onClick={() => executarBusca(busca.args, busca.pagina + 1)}
           >
@@ -257,63 +239,59 @@ export default function Publicacoes() {
           </Button>
         </nav>
       )}
-    </Stack>
+    </Flex>
   )
 }
 
-const CABECALHOS_PUBLICACOES = [
-  { key: 'tribunal', header: 'Tribunal' },
-  { key: 'tipo', header: 'Tipo' },
-  { key: 'classe', header: 'Classe' },
-  { key: 'processo', header: 'Processo' },
-  { key: 'data', header: 'Disponibilizado em' },
-]
-
 function TabelaPublicacoes({ itens }: { itens: ItemPublicacao[] }) {
   if (itens.length === 0) return null
-  const linhas = itens.map((item, i) => ({
-    id: item.hash ?? String(i),
-    tribunal: item.siglaTribunal ?? '?',
-    tipo: item.tipoComunicacao ?? '—',
-    classe: item.nomeClasse ?? 'Classe não informada',
-    processo: item.numeroprocessocommascara ?? 'não informado',
-    data: formatarDataSimples(item.data_disponibilizacao) || '—',
-  }))
-  const porId = new Map(itens.map((item, i) => [item.hash ?? String(i), item]))
 
   return (
-    <DataTable rows={linhas} headers={CABECALHOS_PUBLICACOES} isSortable>
-      {({ rows, headers, getHeaderProps, getRowProps, getTableProps, getExpandHeaderProps }) => (
-        <TableContainer>
-          <TabelaResponsiva principais={['Processo']}><Table {...getTableProps()} aria-label="Publicações encontradas">
-            <TableHead>
-              <TableRow>
-                <TableExpandHeader {...getExpandHeaderProps()} />
-                {headers.map((header) => (
-                  <TableHeader {...getHeaderProps({ header })}>
-                    {header.header}
-                  </TableHeader>
-                ))}
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {rows.map((row) => {
-                const item = porId.get(row.id)
-                return (
-                  <Fragment key={row.id}>
-                    <TableExpandRow {...getRowProps({ row })}>
-                      {row.cells.map((cell) => (
-                        <TableCell key={cell.id}>{['classe', 'tipo', 'orgao', 'nome', 'referencia'].includes(cell.info.header) ? <TextoTabela texto={String(cell.value ?? '')} /> : cell.value}</TableCell>
-                      ))}
-                    </TableExpandRow>
-                    <TableExpandedRow colSpan={headers.length + 1}>{item && <CartaoPublicacao item={item} />}</TableExpandedRow>
-                  </Fragment>
-                )
-              })}
-            </TableBody>
-          </Table></TabelaResponsiva>
-        </TableContainer>
+    <TabelaResponsiva principais={['Processo']}>
+      <table aria-label="Publicações encontradas">
+        <thead>
+          <tr>
+            <th aria-label="Expandir" />
+            <th>Tribunal</th>
+            <th>Tipo</th>
+            <th>Classe</th>
+            <th>Processo</th>
+            <th>Disponibilizado em</th>
+          </tr>
+        </thead>
+        <tbody>
+          {itens.map((item, i) => (
+            <LinhaPublicacao key={item.hash ?? i} item={item} />
+          ))}
+        </tbody>
+      </table>
+    </TabelaResponsiva>
+  )
+}
+
+function LinhaPublicacao({ item }: { item: ItemPublicacao }) {
+  const [expandida, setExpandida] = useState(false)
+  return (
+    <>
+      <tr>
+        <td>
+          <Button variant="ghost" size="1" onClick={() => setExpandida((v) => !v)} aria-expanded={expandida} aria-label={expandida ? 'Recolher' : 'Expandir'}>
+            {expandida ? '▾' : '▸'}
+          </Button>
+        </td>
+        <td>{item.siglaTribunal ?? '?'}</td>
+        <td><TextoTabela texto={item.tipoComunicacao ?? '—'} /></td>
+        <td><TextoTabela texto={item.nomeClasse ?? 'Classe não informada'} /></td>
+        <td>{item.numeroprocessocommascara ?? 'não informado'}</td>
+        <td>{formatarDataSimples(item.data_disponibilizacao) || '—'}</td>
+      </tr>
+      {expandida && (
+        <tr>
+          <td colSpan={6}>
+            <CartaoPublicacao item={item} />
+          </td>
+        </tr>
       )}
-    </DataTable>
+    </>
   )
 }

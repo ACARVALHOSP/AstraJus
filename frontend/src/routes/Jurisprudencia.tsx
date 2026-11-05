@@ -1,42 +1,36 @@
 import { useRef, useState, type FormEvent } from 'react'
+import { AlertTriangle, Info } from 'lucide-react'
 import {
+  Badge,
   Button,
-  Column,
-  DatePicker,
-  DatePickerInput,
-  Dropdown,
-  FilterableMultiSelect,
-  Form,
-  Grid,
-  InlineNotification,
-  Pagination,
-  Stack,
-  Tag,
-  TextInput,
-  Tile,
+  Callout,
+  Card,
+  Flex,
+  Heading,
+  Popover,
+  Select,
+  Text,
+  TextField,
+  Checkbox,
   Tooltip,
-} from '@carbon/react'
-import { Filter, Information } from '@carbon/icons-react'
+} from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
-import { formatarDdMmAaaa } from '../utils/formatadores'
 import { CartaoJurisprudencia } from './jurisprudencia/CartaoJurisprudencia'
 import { SkeletonJurisprudencia } from './jurisprudencia/SkeletonJurisprudencia'
 import type { ResultadoJurisprudencia } from './jurisprudencia/tipos'
 
 type BuscarEm = 'ementa' | 'inteiro_teor' | 'ambos'
-type OpcaoBuscarEm = { id: BuscarEm; label: string }
 
-const OPCOES_BUSCAR_EM: OpcaoBuscarEm[] = [
+const OPCOES_BUSCAR_EM: Array<{ id: BuscarEm; label: string }> = [
   { id: 'ementa', label: 'Ementa' },
   { id: 'inteiro_teor', label: 'Inteiro teor' },
   { id: 'ambos', label: 'Ementa e inteiro teor' },
 ]
 
 type Ordenacao = 'recente' | 'antiga' | 'relevancia'
-type OpcaoOrdenacao = { id: Ordenacao; label: string }
 
-const OPCOES_ORDENACAO: OpcaoOrdenacao[] = [
+const OPCOES_ORDENACAO: Array<{ id: Ordenacao; label: string }> = [
   { id: 'recente', label: 'Mais recente' },
   { id: 'antiga', label: 'Mais antiga' },
   { id: 'relevancia', label: 'Relevância' },
@@ -90,6 +84,65 @@ function mesclarFacetas(existentes: FacetaItem[], novas: FacetaItem[]): FacetaIt
   return Array.from(mapa.values()).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))
 }
 
+const OPERADORES_BUSCA: { operador: string; exemplo: string }[] = [
+  { operador: 'OU', exemplo: 'dano OU prejuízo' },
+  { operador: 'NÃO', exemplo: 'dano NÃO moral' },
+  { operador: '"frase exata"', exemplo: '"dano moral"' },
+  { operador: '*', exemplo: 'indeniz*' },
+  { operador: '?', exemplo: 'indeniza??o' },
+]
+
+function FiltroMultiplo({
+  rotulo,
+  opcoes,
+  selecionados,
+  onChange,
+}: {
+  rotulo: string
+  opcoes: FacetaItem[]
+  selecionados: string[]
+  onChange: (novos: string[]) => void
+}) {
+  const [filtro, setFiltro] = useState('')
+  const filtrados = opcoes.filter((o) => o.label.toLowerCase().includes(filtro.toLowerCase()))
+
+  function alternar(id: string, marcado: boolean) {
+    onChange(marcado ? [...selecionados, id] : selecionados.filter((x) => x !== id))
+  }
+
+  return (
+    <div className="form-campo">
+      <label className="form-campo-label">{rotulo}</label>
+      <Popover.Root>
+        <Popover.Trigger>
+          <Button variant="outline" color="gray" size="2" style={{ width: '100%', justifyContent: 'space-between' }}>
+            {selecionados.length ? `${selecionados.length} selecionado(s)` : opcoes.length ? 'Selecionar…' : 'Disponível após pesquisa'}
+          </Button>
+        </Popover.Trigger>
+        <Popover.Content style={{ width: 260 }}>
+          <Flex direction="column" gap="2">
+            <TextField.Root placeholder={`Buscar ${rotulo.toLowerCase()}…`} value={filtro} onChange={(e) => setFiltro(e.target.value)} />
+            <div className="aj-multiselect-lista">
+              {filtrados.length === 0 && <Text size="2" color="gray">Nenhuma opção.</Text>}
+              {filtrados.map((o) => (
+                <Text as="label" size="2" key={o.id}>
+                  <Flex gap="2" align="center">
+                    <Checkbox
+                      checked={selecionados.includes(o.id)}
+                      onCheckedChange={(checked) => alternar(o.id, Boolean(checked))}
+                    />
+                    {o.label}{o.quantidade ? ` (${o.quantidade})` : ''}
+                  </Flex>
+                </Text>
+              ))}
+            </div>
+          </Flex>
+        </Popover.Content>
+      </Popover.Root>
+    </div>
+  )
+}
+
 export default function Jurisprudencia() {
   const { cliente } = useCliente()
   const [termo, setTermo] = useState('')
@@ -100,13 +153,11 @@ export default function Jurisprudencia() {
   const [ordenacao, setOrdenacao] = useState<Ordenacao>('recente')
   const [pagina, setPagina] = useState(1)
 
-  // Filtros selecionados pelo usuário (multiselect)
   const [relatoresSelecionados, setRelatoresSelecionados] = useState<string[]>([])
   const [classesSelecionadas, setClassesSelecionadas] = useState<string[]>([])
   const [comarcasSelecionadas, setComarcasSelecionadas] = useState<string[]>([])
   const [orgaosSelecionados, setOrgaosSelecionados] = useState<string[]>([])
 
-  // Opções de facetas acumuladas (mantém as opções disponíveis mesmo ao aplicar filtros restritivos)
   const [opcoesRelatores, setOpcoesRelatores] = useState<FacetaItem[]>([])
   const [opcoesClasses, setOpcoesClasses] = useState<FacetaItem[]>([])
   const [opcoesComarcas, setOpcoesComarcas] = useState<FacetaItem[]>([])
@@ -116,7 +167,6 @@ export default function Jurisprudencia() {
   const [erro, setErro] = useState<string | null>(null)
   const [resultado, setResultado] = useState<RespostaJurisprudencia | null>(null)
 
-  // Descarta respostas de pesquisas superadas
   const requisicaoAtual = useRef(0)
 
   async function executar(
@@ -164,7 +214,6 @@ export default function Jurisprudencia() {
       if (idRequisicao !== requisicaoAtual.current) return
       setResultado(dados)
 
-      // Atualiza e acumula as opções autocompletáveis com as facetas pré-baixadas do consumível
       const novasRelatores = normalizarFacetas(dados.relatores_disponiveis, 'relator')
       const novasClasses = normalizarFacetas(dados.classes_disponiveis, 'classe')
       const novasComarcas = normalizarFacetas(dados.comarcas_disponiveis, 'comarca')
@@ -184,7 +233,6 @@ export default function Jurisprudencia() {
 
   function aoEnviarBuscaPrincipal(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault()
-    // Nova busca reseta os filtros para que o usuário veja o panorama geral e as novas facetas
     setRelatoresSelecionados([])
     setClassesSelecionadas([])
     setComarcasSelecionadas([])
@@ -230,288 +278,211 @@ export default function Jurisprudencia() {
     comarcasSelecionadas.length > 0 ||
     orgaosSelecionados.length > 0
 
+  const tamanhoPagina = resultado?.tamanho_pagina || 10
+  const total = resultado?.total_servidor ?? 0
+  const temPaginacao = total > 0
+
   return (
-    <Stack gap={6}>
+    <Flex direction="column" gap="6">
       <div>
-        <h1>Jurisprudência</h1>
-        <p>
-          Consulta a acórdãos da base &quot;Jurisprudência Selecionada&quot; do TJSP. Os resultados vêm direto do tribunal —
+        <Heading as="h1" size="6">Jurisprudência</Heading>
+        <Text as="p" size="2" color="gray" mt="1">
+          Consulta a acórdãos da base "Jurisprudência Selecionada" do TJSP. Os resultados vêm direto do tribunal —
           nada é digitado manualmente. Integração não oficial (sem API pública documentada), sujeita a mudanças sem
           aviso do tribunal.
-        </p>
+        </Text>
       </div>
 
-      {/* Formulário Principal de Pesquisa */}
-      <Form onSubmit={aoEnviarBuscaPrincipal}>
-        <Stack gap={5}>
-          <Grid narrow fullWidth className="aj-layout-62">
-            <Column sm={4} md={6} lg={11}>
-              <TextInput
+      <form onSubmit={aoEnviarBuscaPrincipal}>
+        <Flex direction="column" gap="5">
+          <div className="aj-form-grade">
+            <div className="form-campo" style={{ gridColumn: 'span 2' }}>
+              <label className="form-campo-label" htmlFor="juris-termo">
+                <Flex gap="1" align="center" display="inline-flex">
+                  Pesquisa por termos (obrigatório)
+                  <LabelAjuda />
+                </Flex>
+              </label>
+              <TextField.Root
                 id="juris-termo"
-                labelText={<LabelTermoComAjuda />}
                 placeholder="Ex.: danos morais, rescisão contratual, guarda compartilhada"
                 autoComplete="off"
                 required
-                invalid={termoTocado && !termo.trim()}
-                invalidText="Informe o termo de pesquisa."
                 value={termo}
                 onChange={(e) => setTermo(e.target.value)}
                 onBlur={() => setTermoTocado(true)}
               />
-            </Column>
-            <Column sm={4} md={2} lg={5}>
-              <Dropdown<OpcaoBuscarEm>
-                id="juris-buscar-em"
-                titleText="Buscar em"
-                label="Buscar em"
-                items={OPCOES_BUSCAR_EM}
-                itemToString={(item) => item?.label ?? ''}
-                selectedItem={OPCOES_BUSCAR_EM.find((o) => o.id === buscarEm)}
-                onChange={({ selectedItem }) => setBuscarEm(selectedItem?.id ?? 'ementa')}
-              />
-            </Column>
-          </Grid>
+              {termoTocado && !termo.trim() && <Text size="1" color="red">Informe o termo de pesquisa.</Text>}
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="juris-buscar-em">Buscar em</label>
+              <Select.Root value={buscarEm} onValueChange={(v) => setBuscarEm(v as BuscarEm)}>
+                <Select.Trigger id="juris-buscar-em" style={{ width: '100%' }} />
+                <Select.Content>
+                  {OPCOES_BUSCAR_EM.map((o) => (
+                    <Select.Item key={o.id} value={o.id}>{o.label}</Select.Item>
+                  ))}
+                </Select.Content>
+              </Select.Root>
+            </div>
+          </div>
 
-          <Grid narrow fullWidth className="aj-layout-62">
-            <Column sm={4} md={4} lg={8}>
-              <DatePicker
-                datePickerType="range"
-                dateFormat="d/m/Y"
-                onChange={(datas: Date[]) => {
-                  const [inicio, fim] = datas
-                  setDataInicio(inicio ? formatarDdMmAaaa(inicio) : '')
-                  setDataFim(fim ? formatarDdMmAaaa(fim) : '')
-                }}
-              >
-                <DatePickerInput id="juris-data-inicio" labelText="Julgamento - início" placeholder="dd/mm/aaaa" />
-                <DatePickerInput id="juris-data-fim" labelText="Julgamento - fim" placeholder="dd/mm/aaaa" />
-              </DatePicker>
-            </Column>
+          <div className="aj-form-grade">
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="juris-data-inicio">Julgamento - início</label>
+              <TextField.Root id="juris-data-inicio" type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="juris-data-fim">Julgamento - fim</label>
+              <TextField.Root id="juris-data-fim" type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="juris-ordenacao">Ordenar por</label>
+              <Select.Root value={ordenacao} onValueChange={(v) => setOrdenacao(v as Ordenacao)}>
+                <Select.Trigger id="juris-ordenacao" style={{ width: '100%' }} />
+                <Select.Content>
+                  {OPCOES_ORDENACAO.map((o) => (
+                    <Select.Item key={o.id} value={o.id}>{o.label}</Select.Item>
+                  ))}
+                </Select.Content>
+              </Select.Root>
+            </div>
+          </div>
 
-            <Column sm={4} md={4} lg={8}>
-              <Dropdown<OpcaoOrdenacao>
-                id="juris-ordenacao"
-                titleText="Ordenar por"
-                label="Ordenar por"
-                items={OPCOES_ORDENACAO}
-                itemToString={(item) => item?.label ?? ''}
-                selectedItem={OPCOES_ORDENACAO.find((o) => o.id === ordenacao)}
-                onChange={({ selectedItem }) => setOrdenacao(selectedItem?.id ?? 'recente')}
-              />
-            </Column>
-          </Grid>
-
-          <Button type="submit" disabled={consultando}>
-            {consultando ? 'Pesquisando…' : 'Pesquisar'}
-          </Button>
-        </Stack>
-      </Form>
+          <div>
+            <Button size="2" type="submit" disabled={consultando}>
+              {consultando ? 'Pesquisando…' : 'Pesquisar'}
+            </Button>
+          </div>
+        </Flex>
+      </form>
 
       <div aria-live="polite">
-        {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
+        {erro && (
+          <Callout.Root color="red" size="1">
+            <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+            <Callout.Text>{erro}</Callout.Text>
+          </Callout.Root>
+        )}
         {resultado?.erro && (
-          <InlineNotification kind="error" title="Erro" subtitle={resultado.mensagem} lowContrast hideCloseButton />
+          <Callout.Root color="red" size="1">
+            <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+            <Callout.Text>{resultado.mensagem}</Callout.Text>
+          </Callout.Root>
         )}
 
-        {/* Skeleton durante a consulta */}
         {consultando && <SkeletonJurisprudencia />}
 
-        {/* Resultados e Painel de Filtros */}
         {!consultando && resultado && !resultado.erro && (
-          <Stack gap={6}>
-            {/* Painel de Filtros Autocompletáveis / Multi-select */}
-            <Tile>
-              <Stack gap={4}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <strong>Filtrar jurisprudência por Relator, Classe, Comarca e Órgão</strong>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <Button
-                      kind="primary"
-                      size="sm"
-                      renderIcon={Filter}
-                      disabled={consultando}
-                      onClick={aplicarFiltros}
-                    >
+          <Flex direction="column" gap="6">
+            <Card variant="surface">
+              <Flex direction="column" gap="4">
+                <Flex justify="between" align="center" wrap="wrap" gap="2">
+                  <Text weight="bold">Filtrar jurisprudência por Relator, Classe, Comarca e Órgão</Text>
+                  <Flex gap="2">
+                    <Button size="1" disabled={consultando} onClick={aplicarFiltros}>
                       Aplicar filtros
                     </Button>
                     {temFiltrosAtivos && (
-                      <Button kind="ghost" size="sm" disabled={consultando} onClick={limparTodosFiltros}>
+                      <Button variant="ghost" size="1" disabled={consultando} onClick={limparTodosFiltros}>
                         Limpar filtros
                       </Button>
                     )}
-                  </div>
+                  </Flex>
+                </Flex>
+
+                <div className="aj-form-grade">
+                  <FiltroMultiplo rotulo="Relator(a)" opcoes={opcoesRelatores} selecionados={relatoresSelecionados} onChange={setRelatoresSelecionados} />
+                  <FiltroMultiplo rotulo="Classe" opcoes={opcoesClasses} selecionados={classesSelecionadas} onChange={setClassesSelecionadas} />
+                  <FiltroMultiplo rotulo="Comarca" opcoes={opcoesComarcas} selecionados={comarcasSelecionadas} onChange={setComarcasSelecionadas} />
+                  <FiltroMultiplo rotulo="Órgão julgador" opcoes={opcoesOrgaos} selecionados={orgaosSelecionados} onChange={setOrgaosSelecionados} />
                 </div>
+              </Flex>
+            </Card>
 
-                <Grid narrow fullWidth className="aj-layout-62">
-                  <Column sm={4} md={4} lg={4}>
-                    <FilterableMultiSelect<FacetaItem>
-                      id="juris-filtro-relator"
-                      titleText="Relator(a)"
-                      placeholder={opcoesRelatores.length ? 'Buscar relator(a)…' : 'Disponível após pesquisa'}
-                      items={opcoesRelatores}
-                      itemToString={(item) => (item ? `${item.label}${item.quantidade ? ` (${item.quantidade})` : ''}` : '')}
-                      selectedItems={opcoesRelatores.filter((r) => relatoresSelecionados.includes(r.id))}
-                      onChange={({ selectedItems }) => setRelatoresSelecionados((selectedItems ?? []).map((r) => r.id))}
-                    />
-                  </Column>
-
-                  <Column sm={4} md={4} lg={4}>
-                    <FilterableMultiSelect<FacetaItem>
-                      id="juris-filtro-classe"
-                      titleText="Classe"
-                      placeholder={opcoesClasses.length ? 'Buscar classe…' : 'Disponível após pesquisa'}
-                      items={opcoesClasses}
-                      itemToString={(item) => (item ? `${item.label}${item.quantidade ? ` (${item.quantidade})` : ''}` : '')}
-                      selectedItems={opcoesClasses.filter((c) => classesSelecionadas.includes(c.id))}
-                      onChange={({ selectedItems }) => setClassesSelecionadas((selectedItems ?? []).map((c) => c.id))}
-                    />
-                  </Column>
-
-                  <Column sm={4} md={4} lg={4}>
-                    <FilterableMultiSelect<FacetaItem>
-                      id="juris-filtro-comarca"
-                      titleText="Comarca"
-                      placeholder={opcoesComarcas.length ? 'Buscar comarca…' : 'Disponível após pesquisa'}
-                      items={opcoesComarcas}
-                      itemToString={(item) => (item ? `${item.label}${item.quantidade ? ` (${item.quantidade})` : ''}` : '')}
-                      selectedItems={opcoesComarcas.filter((c) => comarcasSelecionadas.includes(c.id))}
-                      onChange={({ selectedItems }) => setComarcasSelecionadas((selectedItems ?? []).map((c) => c.id))}
-                    />
-                  </Column>
-
-                  <Column sm={4} md={4} lg={4}>
-                    <FilterableMultiSelect<FacetaItem>
-                      id="juris-filtro-orgao"
-                      titleText="Órgão julgador"
-                      placeholder={opcoesOrgaos.length ? 'Buscar órgão…' : 'Disponível após pesquisa'}
-                      items={opcoesOrgaos}
-                      itemToString={(item) => (item ? `${item.label}${item.quantidade ? ` (${item.quantidade})` : ''}` : '')}
-                      selectedItems={opcoesOrgaos.filter((o) => orgaosSelecionados.includes(o.id))}
-                      onChange={({ selectedItems }) => setOrgaosSelecionados((selectedItems ?? []).map((o) => o.id))}
-                    />
-                  </Column>
-                </Grid>
-              </Stack>
-            </Tile>
-
-            {/* Sumário e Tags de Filtros Ativos */}
-            <Stack gap={3}>
-              <p>
-                <strong>{resultado.total_servidor ?? 0}</strong> acórdãos encontrados
-              </p>
+            <Flex direction="column" gap="3">
+              <Text size="2">
+                <Text weight="bold">{resultado.total_servidor ?? 0}</Text> acórdãos encontrados
+              </Text>
 
               {temFiltrosAtivos && (
-                <div className="aj-layout-48" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div className="aj-tags-filtro">
                   {relatoresSelecionados.map((rel) => (
-                    <Tag key={rel} type="teal" size="sm" onClose={() => removerFiltro('relator', rel)} filter>
-                      Relator: {rel}
-                    </Tag>
+                    <Badge key={rel} color="teal" style={{ cursor: 'pointer' }} onClick={() => removerFiltro('relator', rel)}>
+                      Relator: {rel} ✕
+                    </Badge>
                   ))}
                   {classesSelecionadas.map((cls) => (
-                    <Tag key={cls} type="purple" size="sm" onClose={() => removerFiltro('classe', cls)} filter>
-                      Classe: {cls}
-                    </Tag>
+                    <Badge key={cls} color="purple" style={{ cursor: 'pointer' }} onClick={() => removerFiltro('classe', cls)}>
+                      Classe: {cls} ✕
+                    </Badge>
                   ))}
                   {comarcasSelecionadas.map((com) => (
-                    <Tag key={com} type="blue" size="sm" onClose={() => removerFiltro('comarca', com)} filter>
-                      Comarca: {com}
-                    </Tag>
+                    <Badge key={com} color="blue" style={{ cursor: 'pointer' }} onClick={() => removerFiltro('comarca', com)}>
+                      Comarca: {com} ✕
+                    </Badge>
                   ))}
                   {orgaosSelecionados.map((org) => (
-                    <Tag key={org} type="cyan" size="sm" onClose={() => removerFiltro('orgao', org)} filter>
-                      Órgão: {org}
-                    </Tag>
+                    <Badge key={org} color="cyan" style={{ cursor: 'pointer' }} onClick={() => removerFiltro('orgao', org)}>
+                      Órgão: {org} ✕
+                    </Badge>
                   ))}
                 </div>
               )}
-            </Stack>
+            </Flex>
 
-            {/* Lista de Acórdãos */}
-            <Stack gap={4}>
+            <Flex direction="column" gap="4">
               {(resultado.resultados ?? []).map((item, i) => (
                 <CartaoJurisprudencia key={item.cdJurisprudencia ?? i} item={item} />
               ))}
 
               {(!resultado.resultados || resultado.resultados.length === 0) && (
-                <InlineNotification
-                  kind="info"
-                  title="Nenhum acórdão encontrado"
-                  subtitle="Tente ampliar o termo de busca ou remover alguns dos filtros selecionados."
-                  lowContrast
-                  hideCloseButton
-                />
+                <Callout.Root color="blue" size="1">
+                  <Callout.Icon><Info size={14} /></Callout.Icon>
+                  <Callout.Text>Nenhum acórdão encontrado. Tente ampliar o termo de busca ou remover alguns dos filtros selecionados.</Callout.Text>
+                </Callout.Root>
               )}
-            </Stack>
+            </Flex>
 
-            {/* Paginação oficial Carbon */}
-            {resultado.total_servidor && resultado.total_servidor > 0 ? (
-              <Pagination
-                id="juris-paginacao"
-                size="md"
-                page={pagina}
-                pageSize={resultado.tamanho_pagina || 10}
-                pageSizes={[resultado.tamanho_pagina || 10]}
-                totalItems={resultado.total_servidor}
-                disabled={consultando}
-                itemsPerPageText="Itens por página:"
-                backwardText="Página anterior"
-                forwardText="Próxima página"
-                pageNumberText="Página"
-                pageSelectLabelText={() => 'Selecionar página'}
-                pageRangeText={(_, totalPags) => `de ${totalPags} página(s)`}
-                itemRangeText={(min, max, totalItens) =>
-                  totalItens ? `${min}-${max} de ${totalItens} acórdãos` : '0 acórdãos'
-                }
-                onChange={({ page }) => {
-                  if (!consultando && page !== pagina) {
-                    executar(page)
-                  }
-                }}
-              />
-            ) : null}
-          </Stack>
+            {temPaginacao && (
+              <nav aria-label="Páginas de jurisprudência" className="aj-paginacao">
+                <Button variant="ghost" size="1" disabled={consultando || pagina <= 1} onClick={() => executar(pagina - 1)}>
+                  Página anterior
+                </Button>
+                <Text size="2">Página {pagina} — {total} acórdãos</Text>
+                <Button variant="ghost" size="1" disabled={consultando || pagina * tamanhoPagina >= total} onClick={() => executar(pagina + 1)}>
+                  Próxima página
+                </Button>
+              </nav>
+            )}
+          </Flex>
         )}
       </div>
-    </Stack>
+    </Flex>
   )
 }
 
-const OPERADORES_BUSCA: { operador: string; exemplo: string }[] = [
-  { operador: 'OU', exemplo: 'dano OU prejuízo' },
-  { operador: 'NÃO', exemplo: 'dano NÃO moral' },
-  { operador: '"frase exata"', exemplo: '"dano moral"' },
-  { operador: '*', exemplo: 'indeniz*' },
-  { operador: '?', exemplo: 'indeniza??o' },
-]
-
-function LabelTermoComAjuda() {
+function LabelAjuda() {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-      Pesquisa por termos (obrigatório)
-      <Tooltip
-        autoAlign
-        align="top"
-        label={
-          <div>
-            <p>Operadores de busca suportados pelo TJSP:</p>
-            <ul style={{ margin: '0.25rem 0 0', paddingLeft: '1rem' }}>
-              {OPERADORES_BUSCA.map(({ operador, exemplo }) => (
-                <li key={operador}>
-                  <strong>{operador}</strong> — ex.: {exemplo}
-                </li>
-              ))}
-            </ul>
-          </div>
-        }
+    <Tooltip
+      content={
+        <div>
+          <Text as="p" size="1" mb="1">Operadores de busca suportados pelo TJSP:</Text>
+          {OPERADORES_BUSCA.map(({ operador, exemplo }) => (
+            <Text as="p" size="1" key={operador}>
+              <Text weight="bold">{operador}</Text> — ex.: {exemplo}
+            </Text>
+          ))}
+        </div>
+      }
+    >
+      <button
+        type="button"
+        aria-label="Operadores de busca suportados"
+        style={{ display: 'inline-flex', alignItems: 'center', border: 'none', background: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent-11)' }}
       >
-        <button
-          type="button"
-          aria-label="Operadores de busca suportados"
-          style={{ display: 'inline-flex', alignItems: 'center', border: 'none', background: 'none', padding: 0, cursor: 'pointer' }}
-        >
-          <Information size={16} />
-        </button>
-      </Tooltip>
-    </span>
+        <Info size={14} />
+      </button>
+    </Tooltip>
   )
 }
