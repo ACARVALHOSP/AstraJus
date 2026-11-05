@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import { Tooltip } from '@carbon/react'
+import { Tooltip } from '@radix-ui/themes'
 
 export default function TextoTabela({ texto, onClick }: { texto: string; onClick?: () => void }) {
   const elemento = useRef<HTMLElement | null>(null)
@@ -17,13 +17,13 @@ export default function TextoTabela({ texto, onClick }: { texto: string; onClick
 
   const ref = (alvo: HTMLElement | null) => { elemento.current = alvo }
   const conteudo = onClick ? (
-    <button ref={ref} type="button" className="contato-nome-link texto-tabela" onClick={onClick}>{texto}</button>
+    <button ref={ref} type="button" className="aj-busca-item texto-tabela" onClick={onClick}>{texto}</button>
   ) : (
     <span ref={ref} className="texto-tabela" tabIndex={cortado ? 0 : undefined}>{texto}</span>
   )
 
   return cortado ? (
-    <Tooltip label={texto} autoAlign align="bottom" closeOnActivation={false} className="texto-tabela-dica" enterDelayMs={200}>
+    <Tooltip content={texto} delayDuration={200}>
       {conteudo}
     </Tooltip>
   ) : conteudo
