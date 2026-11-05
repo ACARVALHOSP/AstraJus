@@ -1,4 +1,4 @@
-import { useEffect, useState, type RefObject } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Button, Callout, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
@@ -10,10 +10,10 @@ import type { Caso } from './ListaCasos'
 type ClienteOpcao = { id: string; nome: string }
 
 export default function NovoProcessoModal({
-  open, clientes, onClose, onCriado, launcherButtonRef,
+  open, clientes, onClose, onCriado,
 }: {
   open: boolean; clientes: ClienteOpcao[]; onClose: () => void; onCriado: (caso: Caso) => void
-  launcherButtonRef?: RefObject<HTMLButtonElement | null>
+  launcherButtonRef?: React.RefObject<HTMLButtonElement | null>
 }) {
   const { cliente } = useCliente()
   const [textoBusca, setTextoBusca] = useState('')

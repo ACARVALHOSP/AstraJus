@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, Callout, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes'
+import { Button, Callout, Dialog, Flex, Select, TextField } from '@radix-ui/themes'
 import { AlertTriangle } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'

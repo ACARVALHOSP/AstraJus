@@ -1,6 +1,6 @@
 import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
-import { AlertDialog, Button, Callout, Flex, Select, Tabs, Text, TextField } from '@radix-ui/themes'
+import { AlertDialog, Button, Callout, Flex, Select, Tabs, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Check } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { Badge, Button, Callout, Flex, Text, TextField } from '@radix-ui/themes'
+import { Badge, Button, Callout, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Check } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { buscarJson, enviarJson } from '../../api/rest'

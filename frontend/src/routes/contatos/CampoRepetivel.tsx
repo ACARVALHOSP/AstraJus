@@ -1,3 +1,4 @@
+import React from 'react'
 import { Plus, X } from 'lucide-react'
 import { Button, Select, TextField } from '@radix-ui/themes'
 
@@ -8,7 +9,7 @@ type Campo = {
   tipo: 'select' | 'texto'
   rotulo: string
   opcoes?: OpcaoTipo[]
-  tipoInput?: string
+  tipoInput?: React.InputHTMLAttributes<HTMLInputElement>['type']
 }
 
 export default function CampoRepetivel<T extends Record<string, string>>({
