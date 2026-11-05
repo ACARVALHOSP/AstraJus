@@ -1,6 +1,7 @@
 import Carregamento from '../../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
-import { Button, InlineNotification, Modal, Stack, Tile } from '@carbon/react'
+import { AlertDialog, Button, Callout, Card, Flex, Heading, Text } from '@radix-ui/themes'
+import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -47,48 +48,58 @@ export default function PublicacoesCaso({ casoId }: { casoId: string }) {
   }
 
   return (
-    <Stack gap={5}>
-      <h3>Publicações vinculadas</h3>
+    <Flex direction="column" gap="4">
+      <Heading as="h3" size="3">Publicações vinculadas</Heading>
       <div aria-live="polite">
         {carregando && <Carregamento tipo="cartoes" descricao="Carregando…" />}
-        {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
+        {erro && (
+          <Callout.Root color="red" size="1">
+            <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+            <Callout.Text>{erro}</Callout.Text>
+          </Callout.Root>
+        )}
         {!carregando && publicacoes && publicacoes.length === 0 && (
-          <InlineNotification kind="info" title="Nenhuma publicação vinculada a este processo." lowContrast hideCloseButton />
+          <Callout.Root color="blue" size="1">
+            <Callout.Icon><Info size={14} /></Callout.Icon>
+            <Callout.Text>Nenhuma publicação vinculada a este processo.</Callout.Text>
+          </Callout.Root>
         )}
         {!carregando && publicacoes && publicacoes.length > 0 && (
-          <Stack gap={3}>
+          <Flex direction="column" gap="2">
             {publicacoes.map((pub) => {
               const texto = pub.dados?.texto || pub.dados?.teor || pub.dados?.conteudo || ''
               return (
-                <Tile key={pub.hash}>
+                <Card key={pub.hash} size="1">
                   <div className="casos-publicacao-linha">
                     <div>
-                      <strong>{pub.numero_processo || pub.nome_pesquisado || 'Publicação'}</strong>{' '}
-                      <span>{(pub.criado_em ?? '').substring(0, 10)}</span>
+                      <Text size="2" weight="medium">{pub.numero_processo || pub.nome_pesquisado || 'Publicação'}</Text>{' '}
+                      <Text size="2" color="gray">{(pub.criado_em ?? '').substring(0, 10)}</Text>
                     </div>
-                    <Button kind="ghost" size="sm" onClick={() => setParaDesvincular(pub)}>
+                    <Button variant="ghost" size="1" onClick={() => setParaDesvincular(pub)}>
                       Desvincular
                     </Button>
                   </div>
-                  {texto && <p>{texto.length > 300 ? `${texto.slice(0, 300)}…` : texto}</p>}
-                </Tile>
+                  {texto && <Text as="p" size="2" mt="1">{texto.length > 300 ? `${texto.slice(0, 300)}…` : texto}</Text>}
+                </Card>
               )
             })}
-          </Stack>
+          </Flex>
         )}
       </div>
-      <Modal closeButtonLabel="Fechar"
-        open={paraDesvincular !== null}
-        danger
-        modalHeading="Desvincular publicação"
-        primaryButtonText="Desvincular"
-        secondaryButtonText="Cancelar"
-        primaryButtonDisabled={desvinculando}
-        onRequestClose={() => setParaDesvincular(null)}
-        onRequestSubmit={confirmarDesvincular}
-      >
-        <p>Desvincular esta publicação do processo?</p>
-      </Modal>
-    </Stack>
+      <AlertDialog.Root open={paraDesvincular !== null} onOpenChange={(open) => !open && setParaDesvincular(null)}>
+        <AlertDialog.Content maxWidth="400px">
+          <AlertDialog.Title>Desvincular publicação</AlertDialog.Title>
+          <AlertDialog.Description>Desvincular esta publicação do processo?</AlertDialog.Description>
+          <Flex gap="3" mt="4" justify="end">
+            <AlertDialog.Cancel>
+              <Button variant="soft" color="gray">Cancelar</Button>
+            </AlertDialog.Cancel>
+            <AlertDialog.Action>
+              <Button color="red" disabled={desvinculando} onClick={confirmarDesvincular}>Desvincular</Button>
+            </AlertDialog.Action>
+          </Flex>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
+    </Flex>
   )
 }

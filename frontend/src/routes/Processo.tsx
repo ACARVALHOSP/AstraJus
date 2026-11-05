@@ -1,21 +1,7 @@
 import Carregamento from '../Carregamento'
-import { Star, StarFilled } from '@carbon/icons-react'
 import { useEffect, useState, type FormEvent } from 'react'
-import {
-  Accordion,
-  AccordionItem,
-  Button,
-  Column,
-  Form,
-  Grid,
-  InlineNotification,
-  Select,
-  SelectItem,
-  Stack,
-  Tag,
-  TextInput,
-  Tile,
-} from '@carbon/react'
+import { Badge, Button, Callout, Card, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
+import { AlertTriangle, Info, Star } from 'lucide-react'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { ErroMCP } from '../api/mcpClient'
@@ -102,66 +88,77 @@ export default function Processo() {
   }
 
   return (
-    <Stack gap={6}>
-      <div>
-        <h1>Consultar processo</h1>
-      </div>
-      <Form onSubmit={aoEnviar}>
-        <Stack gap={5}>
-          <Grid narrow fullWidth>
-            <Column sm={4} md={4} lg={6}>
-              <Select id="tribunal" labelText="Tribunal" value={tribunal} onChange={(e) => setTribunal(e.target.value)} required>
-                <SelectItem value="" text="— selecione o tribunal —" />
-                {TRIBUNAIS.map((t) => (
-                  <SelectItem key={t} value={t} text={t.toUpperCase()} />
-                ))}
-              </Select>
-            </Column>
-            <Column sm={4} md={4} lg={8}>
-              <TextInput
+    <Flex direction="column" gap="6">
+      <Heading as="h1" size="6">Consultar processo</Heading>
+      <form onSubmit={aoEnviar}>
+        <Flex direction="column" gap="5">
+          <div className="aj-form-grade">
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="tribunal">Tribunal</label>
+              <Select.Root value={tribunal || '__none__'} onValueChange={(v) => setTribunal(v === '__none__' ? '' : v)}>
+                <Select.Trigger id="tribunal" placeholder="— selecione o tribunal —" style={{ width: '100%' }} />
+                <Select.Content>
+                  <Select.Item value="__none__">— selecione o tribunal —</Select.Item>
+                  {TRIBUNAIS.map((t) => (
+                    <Select.Item key={t} value={t}>{t.toUpperCase()}</Select.Item>
+                  ))}
+                </Select.Content>
+              </Select.Root>
+            </div>
+            <div className="form-campo" style={{ gridColumn: 'span 2' }}>
+              <label className="form-campo-label" htmlFor="numero-processo">Número do processo</label>
+              <TextField.Root
                 id="numero-processo"
-                labelText="Número do processo"
-                helperText="20 dígitos, com ou sem máscara."
                 placeholder="1006314-27.2023.8.26.0005"
                 autoComplete="off"
                 required
                 value={numero}
                 onChange={(e) => setNumero(e.target.value)}
               />
-            </Column>
-          </Grid>
+              <Text size="1" color="gray">20 dígitos, com ou sem máscara.</Text>
+            </div>
+          </div>
           <div>
-            <Button type="submit" disabled={consultando}>
+            <Button size="2" type="submit" disabled={consultando}>
               Consultar processo
             </Button>
           </div>
-        </Stack>
-      </Form>
-      <p>A consulta ao DataJud pode levar até dois minutos em horários de pico.</p>
+        </Flex>
+      </form>
+      <Text size="2" color="gray">A consulta ao DataJud pode levar até dois minutos em horários de pico.</Text>
       <div aria-live="polite">
         {consultando && <Carregamento tipo="detalhe" descricao="Consultando o DataJud (pode levar até dois minutos)…" />}
-        {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
+        {erro && (
+          <Callout.Root color="red" size="1">
+            <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+            <Callout.Text>{erro}</Callout.Text>
+          </Callout.Root>
+        )}
         {resultado?.erro && (
-          <InlineNotification kind="error" title="Erro na consulta ao DataJud" subtitle={resultado.mensagem} lowContrast hideCloseButton />
+          <Callout.Root color="red" size="1">
+            <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+            <Callout.Text>{resultado.mensagem}</Callout.Text>
+          </Callout.Root>
         )}
         {!consultando && resultado && !resultado.erro && !resultado.encontrado && (
-          <InlineNotification kind="info" title="Processo não encontrado" subtitle={resultado.mensagem} lowContrast hideCloseButton />
+          <Callout.Root color="blue" size="1">
+            <Callout.Icon><Info size={14} /></Callout.Icon>
+            <Callout.Text>{resultado.mensagem}</Callout.Text>
+          </Callout.Root>
         )}
         {!consultando && resultado && !resultado.erro && resultado.encontrado && (
-          <Stack gap={5}>
-            <InlineNotification
-              kind="success"
-              title={`${resultado.total ?? resultado.processos?.length ?? 0} registro(s) encontrado(s)`}
-              lowContrast
-              hideCloseButton
-            />
+          <Flex direction="column" gap="5">
+            <Callout.Root color="green" size="1">
+              <Callout.Icon><Info size={14} /></Callout.Icon>
+              <Callout.Text>{resultado.total ?? resultado.processos?.length ?? 0} registro(s) encontrado(s)</Callout.Text>
+            </Callout.Root>
             {(resultado.processos ?? []).map((proc, i) => (
               <CartaoProcesso key={proc.numeroProcesso ?? i} proc={proc} />
             ))}
-          </Stack>
+          </Flex>
         )}
       </div>
-    </Stack>
+    </Flex>
   )
 }
 
@@ -177,37 +174,36 @@ function CartaoProcesso({ proc }: { proc: ProcessoEncontrado }) {
   }
 
   return (
-    <Tile>
-      <Stack gap={3}>
-        <div>
-          <Tag type="blue">{(proc.tribunal ?? '?').toUpperCase()}</Tag>{' '}
-          <Tag type="purple">{proc.grau_descricao ?? proc.grau ?? 'grau não informado'}</Tag>
-        </div>
-        <h3>{proc.classe ?? 'Classe não informada'}</h3>
-        <p>Número: {formatarNumeroCNJ(proc.numeroProcesso) || 'não informado'}</p>
-        <p>Órgão julgador: {proc.orgaoJulgador ?? 'não informado'}</p>
-        <p>Distribuído em: {formatarDataSimples(proc.dataAjuizamento)}</p>
+    <Card variant="surface">
+      <Flex direction="column" gap="3">
+        <Flex gap="2">
+          <Badge color="blue">{(proc.tribunal ?? '?').toUpperCase()}</Badge>
+          <Badge color="purple">{proc.grau_descricao ?? proc.grau ?? 'grau não informado'}</Badge>
+        </Flex>
+        <Heading as="h3" size="3">{proc.classe ?? 'Classe não informada'}</Heading>
+        <Text size="2">Número: {formatarNumeroCNJ(proc.numeroProcesso) || 'não informado'}</Text>
+        <Text size="2">Órgão julgador: {proc.orgaoJulgador ?? 'não informado'}</Text>
+        <Text size="2">Distribuído em: {formatarDataSimples(proc.dataAjuizamento)}</Text>
         {movimentos.length > 0 && (
-          <Accordion>
-            <AccordionItem title={`${proc.totalMovimentos ?? movimentos.length} movimentações`}>
-              <Stack gap={3}>
-                {movimentos.map((mov, i) => (
-                  <p key={i}>
-                    {formatarDataSimples(mov.dataHora)} — {mov.nome ?? 'sem descrição'}
-                  </p>
-                ))}
-              </Stack>
-            </AccordionItem>
-          </Accordion>
+          <details>
+            <summary>{proc.totalMovimentos ?? movimentos.length} movimentações</summary>
+            <Flex direction="column" gap="3" mt="2">
+              {movimentos.map((mov, i) => (
+                <Text as="p" size="2" key={i}>
+                  {formatarDataSimples(mov.dataHora)} — {mov.nome ?? 'sem descrição'}
+                </Text>
+              ))}
+            </Flex>
+          </details>
         )}
         {proc.numeroProcesso && (
           <div>
-            <Button kind="ghost" size="sm" renderIcon={favorito ? StarFilled : Star} onClick={alternarFavoritoClick}>
-              {favorito ? 'Favorito' : 'Favoritar'}
+            <Button variant="ghost" size="1" color={favorito ? 'yellow' : 'gray'} onClick={alternarFavoritoClick} style={{ alignSelf: 'flex-start' }}>
+              <Star size={14} fill={favorito ? 'currentColor' : 'none'} /> {favorito ? 'Favorito' : 'Favoritar'}
             </Button>
           </div>
         )}
-      </Stack>
-    </Tile>
+      </Flex>
+    </Card>
   )
 }

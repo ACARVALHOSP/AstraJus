@@ -1,5 +1,6 @@
-import { useEffect, useState, type RefObject } from 'react'
-import { Column, ComboBox, Grid, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
+import React, { useEffect, useState } from 'react'
+import { Button, Callout, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes'
+import { AlertTriangle } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { enviarJson } from '../../api/rest'
@@ -9,19 +10,13 @@ import type { Caso } from './ListaCasos'
 type ClienteOpcao = { id: string; nome: string }
 
 export default function NovoProcessoModal({
-  open,
-  clientes,
-  onClose,
-  onCriado,
-  launcherButtonRef,
+  open, clientes, onClose, onCriado,
 }: {
-  open: boolean
-  clientes: ClienteOpcao[]
-  onClose: () => void
-  onCriado: (caso: Caso) => void
-  launcherButtonRef?: RefObject<HTMLButtonElement | null>
+  open: boolean; clientes: ClienteOpcao[]; onClose: () => void; onCriado: (caso: Caso) => void
+  launcherButtonRef?: React.RefObject<HTMLButtonElement | null>
 }) {
   const { cliente } = useCliente()
+  const [textoBusca, setTextoBusca] = useState('')
   const [clienteSelecionado, setClienteSelecionado] = useState<ClienteOpcao | null>(null)
   const [titulo, setTitulo] = useState('')
   const [responsavel, setResponsavel] = useState('')
@@ -35,7 +30,6 @@ export default function NovoProcessoModal({
 
   useEffect(() => {
     if (!open) return
-    // O ComboBox precisa estar na camada visível para receber o foco inicial.
     let quadro: number
     const focarCliente = () => {
       const campo = document.getElementById('caso-cliente-busca')
@@ -51,6 +45,7 @@ export default function NovoProcessoModal({
 
   function limpar() {
     setClienteSelecionado(null)
+    setTextoBusca('')
     setTitulo('')
     setResponsavel('')
     setAcao('')
@@ -61,11 +56,14 @@ export default function NovoProcessoModal({
     setErro(null)
   }
 
+  function aoDigitarCliente(valor: string) {
+    setTextoBusca(valor)
+    const encontrado = clientes.find((c) => formatarNomeExibicao(c.nome).toLowerCase() === valor.toLowerCase())
+    setClienteSelecionado(encontrado ?? null)
+  }
+
   async function cadastrar() {
-    if (!clienteSelecionado) {
-      setErro('Selecione um cliente.')
-      return
-    }
+    if (!clienteSelecionado) { setErro('Selecione um cliente.'); return }
     setEnviando(true)
     setErro(null)
     try {
@@ -90,75 +88,78 @@ export default function NovoProcessoModal({
   }
 
   return (
-    <Modal closeButtonLabel="Fechar"
-      open={open}
-      modalHeading="Novo processo"
-      primaryButtonText="Cadastrar processo"
-      secondaryButtonText="Cancelar"
-      primaryButtonDisabled={enviando}
-      selectorPrimaryFocus="#caso-cliente-busca"
-      launcherButtonRef={launcherButtonRef}
-      onRequestClose={() => {
-        limpar()
-        onClose()
-      }}
-      onRequestSubmit={cadastrar}
-    >
-      <Stack gap={5}>
-        <p>Cadastre o processo e vincule um cliente. O número CNJ pode ser informado depois.</p>
-        <h3>Identificação</h3>
-        <ComboBox
-          id="caso-cliente-busca"
-          titleText="Cliente *"
-          placeholder="Digite para buscar..."
-          items={clientes}
-          itemToString={(c: ClienteOpcao | null) => (c ? formatarNomeExibicao(c.nome) : '')}
-          selectedItem={clienteSelecionado}
-          onChange={({ selectedItem }) => setClienteSelecionado(selectedItem ?? null)}
-        />
-        <TextInput id="caso-titulo" labelText="Título" placeholder="Ex.: Cobrança de honorários" autoComplete="off" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
-        <Grid narrow fullWidth className="casos-formulario-grade">
-          <Column sm={4} md={4} lg={8}>
-            <TextInput id="caso-responsavel" labelText="Responsável" placeholder="Ex.: Dra. Fernanda Reis" autoComplete="off" value={responsavel} onChange={(e) => setResponsavel(e.target.value)} />
-          </Column>
-          <Column sm={4} md={4} lg={8}>
-            <TextInput id="caso-acao" labelText="Ação" placeholder="Ex.: Cumprimento de sentença" autoComplete="off" value={acao} onChange={(e) => setAcao(e.target.value)} />
-          </Column>
-          <Column sm={4} md={4} lg={8}>
-            <TextInput id="caso-foro" labelText="Foro" placeholder="Ex.: 3ª Vara Cível" autoComplete="off" value={foro} onChange={(e) => setForo(e.target.value)} />
-          </Column>
-          <Column sm={4} md={4} lg={8}>
-            <TextInput
-              id="caso-pasta"
-              labelText="Pasta (opcional)"
-              placeholder="Ex.: Trabalhista 2026"
-              helperText="Só para organizar e facilitar a busca - não cria pastas de verdade no sistema."
+    <Dialog.Root open={open} onOpenChange={(o) => { if (!o) { limpar(); onClose() } }}>
+      <Dialog.Content maxWidth="600px">
+        <Dialog.Title>Novo processo</Dialog.Title>
+        <Flex direction="column" gap="3">
+          <Text size="2" color="gray">Cadastre o processo e vincule um cliente. O número CNJ pode ser informado depois.</Text>
+          <Text size="3" weight="medium">Identificação</Text>
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="caso-cliente-busca">Cliente *</label>
+            <TextField.Root
+              id="caso-cliente-busca"
+              list="caso-clientes-lista"
+              placeholder="Digite para buscar..."
               autoComplete="off"
-              value={pasta}
-              onChange={(e) => setPasta(e.target.value)}
+              value={textoBusca}
+              onChange={(e) => aoDigitarCliente(e.target.value)}
             />
-          </Column>
-          <Column sm={4} md={2} lg={4}>
-            <Select id="caso-acesso" labelText="Acesso" helperText="Só para organizar - o sistema ainda não restringe quem vê o processo pelo acesso escolhido." value={acesso} onChange={(e) => setAcesso(e.target.value)}>
-              <SelectItem value="equipe" text="Equipe" />
-              <SelectItem value="publico" text="Público" />
-              <SelectItem value="privado" text="Privado" />
-            </Select>
-          </Column>
-          <Column sm={4} md={6} lg={12}>
-            <TextInput
-              id="caso-processos"
-              labelText="Número CNJ (opcional)"
-              placeholder="1006314-27.2023.8.26.0005"
-              helperText="Informe um único número ou deixe em branco se ainda não existir."
-              autoComplete="off"
-              value={processos}
-              onChange={(e) => setProcessos(e.target.value)}
-            />
-          </Column>
-        </Grid>
-        {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
-      </Stack>
-    </Modal>
+            <datalist id="caso-clientes-lista">
+              {clientes.map((c) => <option key={c.id} value={formatarNomeExibicao(c.nome)} />)}
+            </datalist>
+          </div>
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="caso-titulo">Título</label>
+            <TextField.Root id="caso-titulo" placeholder="Ex.: Cobrança de honorários" autoComplete="off" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
+          </div>
+          <div className="casos-formulario-grade">
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="caso-responsavel">Responsável</label>
+              <TextField.Root id="caso-responsavel" placeholder="Ex.: Dra. Fernanda Reis" autoComplete="off" value={responsavel} onChange={(e) => setResponsavel(e.target.value)} />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="caso-acao">Ação</label>
+              <TextField.Root id="caso-acao" placeholder="Ex.: Cumprimento de sentença" autoComplete="off" value={acao} onChange={(e) => setAcao(e.target.value)} />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="caso-foro">Foro</label>
+              <TextField.Root id="caso-foro" placeholder="Ex.: 3ª Vara Cível" autoComplete="off" value={foro} onChange={(e) => setForo(e.target.value)} />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="caso-pasta">Pasta (opcional)</label>
+              <TextField.Root id="caso-pasta" placeholder="Ex.: Trabalhista 2026" autoComplete="off" value={pasta} onChange={(e) => setPasta(e.target.value)} />
+              <Text size="1" color="gray">Só para organizar e facilitar a busca.</Text>
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label">Acesso</label>
+              <Select.Root value={acesso} onValueChange={setAcesso}>
+                <Select.Trigger style={{ width: '100%' }} />
+                <Select.Content>
+                  <Select.Item value="equipe">Equipe</Select.Item>
+                  <Select.Item value="publico">Público</Select.Item>
+                  <Select.Item value="privado">Privado</Select.Item>
+                </Select.Content>
+              </Select.Root>
+              <Text size="1" color="gray">Classificação interna; não restringe permissões ainda.</Text>
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="caso-processos">Número CNJ (opcional)</label>
+              <TextField.Root id="caso-processos" placeholder="1006314-27.2023.8.26.0005" autoComplete="off" value={processos} onChange={(e) => setProcessos(e.target.value)} />
+              <Text size="1" color="gray">Informe um único número ou deixe em branco.</Text>
+            </div>
+          </div>
+          {erro && (
+            <Callout.Root color="red" size="1">
+              <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+              <Callout.Text>{erro}</Callout.Text>
+            </Callout.Root>
+          )}
+        </Flex>
+        <Flex gap="3" mt="4" justify="end">
+          <Button variant="soft" color="gray" onClick={() => { limpar(); onClose() }}>Cancelar</Button>
+          <Button onClick={cadastrar} disabled={enviando}>Cadastrar processo</Button>
+        </Flex>
+      </Dialog.Content>
+    </Dialog.Root>
   )
 }

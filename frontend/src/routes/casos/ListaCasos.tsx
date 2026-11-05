@@ -2,9 +2,10 @@ import TabelaResponsiva from '../../TabelaResponsiva'
 import TextoTabela from '../../TextoTabela'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
-import { Star, StarFilled } from '@carbon/icons-react'
+import { Star } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { ActionableNotification, Button, InlineNotification, Modal, Stack, Tag, TextInput, Grid, Column, Table, TableHead, TableHeader, TableRow, TableBody, TableCell } from '@carbon/react'
+import { AlertDialog, Badge, Button, Callout, Flex, Heading, Text, TextField } from '@radix-ui/themes'
+import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { useNavegacao } from '../../api/NavegacaoContext'
@@ -110,7 +111,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
     }
   }
 
-  const normalizarFiltro = (texto: string) => texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').trim()
+  const normalizarFiltro = (texto: string) => texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLocaleLowerCase('pt-BR').trim()
   const termo = normalizarFiltro(busca)
   const numeroFiltro = /^[\d.\-/\s]+$/.test(busca) ? busca.replace(/\D/g, '') : ''
   const filtrados = (casos ?? []).filter((c) => {
@@ -124,136 +125,166 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
   const ordenados = [...filtrados].sort((a, b) => (b.ultima_movimentacao || '').localeCompare(a.ultima_movimentacao || ''))
 
   return (
-    <Grid fullWidth narrow className="casos-lista"><Column sm={4} md={8} lg={16}><Stack gap={6}>
-      <div className="casos-titulo-linha">
-        <div><h1 tabIndex={-1}>Processos</h1><p className="casos-ajuda">Cadastros, atividades e acompanhamento do escritório.</p></div>
-        <Button ref={botaoNovo} size="sm" onClick={() => setModalNovoAberto(true)}>
-          Novo processo
-        </Button>
-      </div>
-      {casoCriado && (
-        <ActionableNotification
-          kind="success"
-          title={`Processo "${casoCriado.titulo || 'sem título'}" cadastrado.`}
-          actionButtonLabel="Abrir processo criado"
-          onActionButtonClick={() => onAbrir(casoCriado.id)}
-          onCloseButtonClick={() => setCasoCriado(null)}
-          lowContrast
-          inline
+    <div className="casos-lista">
+      <Flex direction="column" gap="6">
+        <div className="casos-titulo-linha">
+          <div>
+            <Heading as="h1" size="6" tabIndex={-1}>Processos</Heading>
+            <p className="casos-ajuda">Cadastros, atividades e acompanhamento do escritório.</p>
+          </div>
+          <Button ref={botaoNovo} size="2" onClick={() => setModalNovoAberto(true)}>
+            Novo processo
+          </Button>
+        </div>
+        {casoCriado && (
+          <Callout.Root color="green" size="1">
+            <Callout.Icon><Info size={14} /></Callout.Icon>
+            <Callout.Text>
+              Processo "{casoCriado.titulo || 'sem título'}" cadastrado.{' '}
+              <button type="button" className="contato-nome-link" onClick={() => onAbrir(casoCriado.id)}>
+                Abrir processo criado
+              </button>{' '}
+              <button type="button" className="contato-nome-link" onClick={() => setCasoCriado(null)}>
+                Fechar
+              </button>
+            </Callout.Text>
+          </Callout.Root>
+        )}
+        <div className="form-campo">
+          <label className="form-campo-label" htmlFor="casos-busca">Filtrar processos</label>
+          <TextField.Root
+            id="casos-busca"
+            placeholder="Filtrar processos"
+            autoComplete="off"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+          />
+          <Text size="1" color="gray">Filtre por título, cliente, classe/ação, órgão julgador, responsável ou número do processo.</Text>
+        </div>
+        <div aria-live="polite">
+          {carregando && <Carregamento colunas={6} />}
+          {erro && (
+            <Flex direction="column" gap="3">
+              <Callout.Root color="red" size="1">
+                <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+                <Callout.Text>{erro}</Callout.Text>
+              </Callout.Root>
+              <Button variant="outline" size="1" onClick={carregar} disabled={carregando} style={{ alignSelf: 'flex-start' }}>Tentar novamente</Button>
+            </Flex>
+          )}
+          {!carregando && casos && casos.length === 0 && (
+            <Callout.Root color="blue" size="1">
+              <Callout.Icon><Info size={14} /></Callout.Icon>
+              <Callout.Text>Nenhum processo cadastrado ainda.</Callout.Text>
+            </Callout.Root>
+          )}
+          {!carregando && casos && casos.length > 0 && ordenados.length === 0 && (
+            <Callout.Root color="blue" size="1">
+              <Callout.Icon><Info size={14} /></Callout.Icon>
+              <Callout.Text>Nenhum processo corresponde ao filtro.</Callout.Text>
+            </Callout.Root>
+          )}
+          {!carregando && ordenados.length > 0 && (
+            <section aria-label="Processos cadastrados">
+              <p className="casos-contagem">{ordenados.length} {ordenados.length === 1 ? 'processo' : 'processos'}</p>
+              <TabelaResponsiva principais={['Título']}>
+                <table aria-label="Processos cadastrados" className="casos-tabela">
+                  <thead>
+                    <tr>
+                      <th>Favorito</th>
+                      <th>Título</th>
+                      <th>Cliente e pasta</th>
+                      <th>Classe e foro</th>
+                      <th>Última movimentação</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ordenados.map((caso) => {
+                      const nomes = [caso.cliente_id, ...(caso.clientes_adicionais ?? [])].map(nomeCliente).filter(Boolean).map(formatarNomeExibicao)
+                      const favoritado = ehCasoFavorito(caso.id)
+                      return (
+                        <tr key={caso.id}>
+                          <td data-label="Favorito">
+                            <Button
+                              variant="ghost"
+                              size="1"
+                              aria-label={favoritado ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}
+                              onClick={() => favoritar(caso.id)}
+                            >
+                              <Star size={16} fill={favoritado ? 'currentColor' : 'none'} />
+                            </Button>
+                          </td>
+                          <td className="casos-celula-principal" data-label="Título">
+                            <TextoTabela texto={caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)'} onClick={() => onAbrir(caso.id)} />
+                            {caso.monitorado && <Badge color="green" size="1" ml="1">Monitorado</Badge>}
+                            {caso.desfecho && ROTULO_DESFECHO[caso.desfecho] && (
+                              <Badge color="purple" size="1" ml="1">{ROTULO_DESFECHO[caso.desfecho]}</Badge>
+                            )}
+                            <div>
+                              {(caso.processos ?? []).map((numero, i) => (
+                                <span key={numero}>
+                                  {i > 0 && ', '}
+                                  <button
+                                    type="button"
+                                    className="contato-nome-link"
+                                    onClick={() => irPara('processo', { tribunal: siglaTribunalPorNumero(numero) ?? '', numero_processo: numero })}
+                                  >
+                                    {formatarNumeroCNJ(numero)}
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td data-label="Cliente e pasta">
+                            <TextoTabela texto={nomes.join(', ') || 'Sem cliente vinculado'} />
+                            {caso.pasta && <div className="casos-celula-secundaria"><TextoTabela texto={caso.pasta} /></div>}
+                          </td>
+                          <td data-label="Classe e foro">
+                            <TextoTabela texto={formatarClasse(caso.acao) || 'Classe não informada'} />
+                            {caso.foro && <div className="casos-celula-secundaria"><TextoTabela texto={caso.foro} /></div>}
+                          </td>
+                          <td data-label="Última movimentação">{formatarDataSimples(caso.ultima_movimentacao)}</td>
+                          <td data-label="Ações">
+                            <AcoesTabela rotulo={caso.titulo || 'processo'} acoes={[{ texto: 'Excluir', executar: () => setParaExcluir(caso), perigo: true }]} />
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </TabelaResponsiva>
+            </section>
+          )}
+        </div>
+        <AlertDialog.Root open={paraExcluir !== null} onOpenChange={(open) => !open && setParaExcluir(null)}>
+          <AlertDialog.Content maxWidth="400px">
+            <AlertDialog.Title>Excluir processo</AlertDialog.Title>
+            <AlertDialog.Description>
+              Excluir o processo "{paraExcluir?.titulo || '(sem título)'}"? Essa ação não pode ser desfeita.
+            </AlertDialog.Description>
+            <Flex gap="3" mt="4" justify="end">
+              <AlertDialog.Cancel>
+                <Button variant="soft" color="gray">Cancelar</Button>
+              </AlertDialog.Cancel>
+              <AlertDialog.Action>
+                <Button color="red" disabled={excluindo} onClick={confirmarExclusao}>Excluir</Button>
+              </AlertDialog.Action>
+            </Flex>
+          </AlertDialog.Content>
+        </AlertDialog.Root>
+        <NovoProcessoModal
+          open={modalNovoAberto}
+          launcherButtonRef={botaoNovo}
+          clientes={clientes.map((c) => ({ id: c.id, nome: c.nome ?? '' }))}
+          onClose={() => setModalNovoAberto(false)}
+          onCriado={(novoCaso) => {
+            setCasos((atual) => [...(atual ?? []), novoCaso])
+            setModalNovoAberto(false)
+            setCasoCriado(novoCaso)
+          }}
         />
-      )}
-      <TextInput
-        id="casos-busca"
-        labelText="Filtrar processos"
-        placeholder="Filtrar processos"
-        helperText="Filtre por título, cliente, classe/ação, órgão julgador, responsável ou número do processo."
-        autoComplete="off"
-        value={busca}
-        onChange={(e) => setBusca(e.target.value)}
-      />
-      <div aria-live="polite">
-        {carregando && <Carregamento colunas={6} />}
-        {erro && <Stack gap={4}><InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton /><Button kind="tertiary" size="sm" onClick={carregar} disabled={carregando}>Tentar novamente</Button></Stack>}
-        {!carregando && casos && casos.length === 0 && <InlineNotification kind="info" title="Nenhum processo cadastrado ainda" lowContrast hideCloseButton />}
-        {!carregando && casos && casos.length > 0 && ordenados.length === 0 && (
-          <InlineNotification kind="info" title="Nenhum processo corresponde ao filtro." lowContrast hideCloseButton />
-        )}
-        {!carregando && ordenados.length > 0 && (
-          <section aria-label="Processos cadastrados"><p className="casos-contagem">{ordenados.length} {ordenados.length === 1 ? 'processo' : 'processos'}</p>
-            <TabelaResponsiva principais={['Título']}><Table size="xl" className="casos-tabela" aria-label="Processos cadastrados">
-              <TableHead>
-                <TableRow>
-                  <TableHeader>Favorito</TableHeader>
-                  <TableHeader>Título</TableHeader>
-                  <TableHeader>Cliente e pasta</TableHeader>
-                  <TableHeader>Classe e foro</TableHeader>
-                  <TableHeader>Última movimentação</TableHeader>
-                  <TableHeader>Ações</TableHeader>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {ordenados.map((caso) => {
-                  const nomes = [caso.cliente_id, ...(caso.clientes_adicionais ?? [])].map(nomeCliente).filter(Boolean).map(formatarNomeExibicao)
-                  const favoritado = ehCasoFavorito(caso.id)
-                  return (
-                    <TableRow key={caso.id}>
-                      <TableCell data-label="Favorito">
-                        <Button
-                          kind="ghost"
-                          size="sm"
-                          hasIconOnly
-                          iconDescription={favoritado ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}
-                          onClick={() => favoritar(caso.id)}
-                        >
-                          {favoritado ? <StarFilled size={16} /> : <Star size={16} />}
-                        </Button>
-                      </TableCell>
-                      <TableCell className="casos-celula-principal" data-label="Título">
-                        <TextoTabela texto={caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)'} onClick={() => onAbrir(caso.id)} />
-                        {caso.monitorado && <Tag type="green" size="sm">Monitorado</Tag>}
-                        {caso.desfecho && ROTULO_DESFECHO[caso.desfecho] && (
-                          <Tag type="purple" size="sm">
-                            {ROTULO_DESFECHO[caso.desfecho]}
-                          </Tag>
-                        )}
-                        <div>
-                          {(caso.processos ?? []).map((numero, i) => (
-                            <span key={numero}>
-                              {i > 0 && ', '}
-                              <button
-                                type="button"
-                                className="contato-nome-link"
-                                onClick={() =>
-                                  irPara('processo', { tribunal: siglaTribunalPorNumero(numero) ?? '', numero_processo: numero })
-                                }
-                              >
-                                {formatarNumeroCNJ(numero)}
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell data-label="Cliente e pasta">
-                        <TextoTabela texto={nomes.join(', ') || 'Sem cliente vinculado'} />{caso.pasta && <div className="casos-celula-secundaria"><TextoTabela texto={caso.pasta} /></div>}
-                      </TableCell>
-                      <TableCell data-label="Classe e foro">
-                        <TextoTabela texto={formatarClasse(caso.acao) || 'Classe não informada'} />{caso.foro && <div className="casos-celula-secundaria"><TextoTabela texto={caso.foro} /></div>}
-                      </TableCell>
-                      <TableCell data-label="Última movimentação">{formatarDataSimples(caso.ultima_movimentacao)}</TableCell>
-                      <TableCell data-label="Ações">
-                        <AcoesTabela rotulo={caso.titulo || 'processo'} acoes={[{ texto: 'Excluir', executar: () => setParaExcluir(caso), perigo: true }]} />
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table></TabelaResponsiva>
-          </section>
-        )}
-      </div>
-      <Modal closeButtonLabel="Fechar"
-        open={paraExcluir !== null}
-        danger
-        modalHeading="Excluir processo"
-        primaryButtonText="Excluir"
-        secondaryButtonText="Cancelar"
-        primaryButtonDisabled={excluindo}
-        onRequestClose={() => setParaExcluir(null)}
-        onRequestSubmit={confirmarExclusao}
-      >
-        <p>Excluir o processo "{paraExcluir?.titulo || '(sem título)'}"? Essa ação não pode ser desfeita.</p>
-      </Modal>
-      <NovoProcessoModal
-        open={modalNovoAberto}
-        launcherButtonRef={botaoNovo}
-        clientes={clientes.map((c) => ({ id: c.id, nome: c.nome ?? '' }))}
-        onClose={() => setModalNovoAberto(false)}
-        onCriado={(novoCaso) => {
-          setCasos((atual) => [...(atual ?? []), novoCaso])
-          setModalNovoAberto(false)
-          setCasoCriado(novoCaso)
-        }}
-      />
-    </Stack></Column></Grid>
+      </Flex>
+    </div>
   )
 }

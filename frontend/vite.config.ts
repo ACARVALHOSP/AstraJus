@@ -4,12 +4,14 @@ import { fileURLToPath } from 'node:url'
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/novo/',
+  base: '/radix/',
   plugins: [react()],
   resolve: {
     alias: { '~@ibm/plex': fileURLToPath(new URL('./node_modules/@ibm/plex', import.meta.url)) },
   },
   server: {
+    port: 5174,
+    strictPort: true,
     proxy: {
       // backend Python (server.py) rodando em paralelo durante o desenvolvimento
       '/mcp': 'http://localhost:8000',

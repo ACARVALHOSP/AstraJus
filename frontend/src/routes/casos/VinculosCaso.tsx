@@ -3,7 +3,8 @@ import TextoTabela from '../../TextoTabela'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Column, Grid, InlineNotification, Select, SelectItem, Stack, TextInput, Table, TableHead, TableHeader, TableRow, TableBody, TableCell } from '@carbon/react'
+import { Button, Callout, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
+import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -58,9 +59,7 @@ export default function VinculosCaso({ casoId, onAbrirCaso }: { casoId: string; 
       .finally(() => setCarregando(false))
     buscarJson<{ casos: CasoDisponivel[] }>(cliente, '/casos')
       .then((r) => setCasosDisponiveis((r.casos ?? []).filter((c) => c.id !== casoId)))
-      .catch(() => {
-        // busca por número fica indisponível até recarregar
-      })
+      .catch(() => {})
   }, [cliente, casoId])
 
   useEffect(carregar, [carregar])
@@ -123,74 +122,93 @@ export default function VinculosCaso({ casoId, onAbrirCaso }: { casoId: string; 
   const preview = previewTexto()
 
   return (
-    <Stack gap={5}>
-      <h3>Processos vinculados</h3>
+    <Flex direction="column" gap="5">
+      <Heading as="h3" size="3">Processos vinculados</Heading>
       <div aria-live="polite">
         {carregando && <Carregamento />}
-        {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
-        {!carregando && vinculos && vinculos.length === 0 && <InlineNotification kind="info" title="Nenhum processo vinculado" lowContrast hideCloseButton />}
+        {erro && (
+          <Callout.Root color="red" size="1">
+            <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+            <Callout.Text>{erro}</Callout.Text>
+          </Callout.Root>
+        )}
+        {!carregando && vinculos && vinculos.length === 0 && (
+          <Callout.Root color="blue" size="1">
+            <Callout.Icon><Info size={14} /></Callout.Icon>
+            <Callout.Text>Nenhum processo vinculado.</Callout.Text>
+          </Callout.Root>
+        )}
         {!carregando && vinculos && vinculos.length > 0 && (
           <div className="tabela-responsiva-wrap">
-            <TabelaResponsiva principais={['Processo']}><Table size="lg" className="casos-vinculos-tabela" aria-label="Processos vinculados">
-              <TableHead>
-                <TableRow>
-                  <TableHeader>Processo</TableHeader>
-                  <TableHeader>Cliente</TableHeader>
-                  <TableHeader>Ação / Tipo</TableHeader>
-                  <TableHeader>Vínculo</TableHeader>
-                  <TableHeader>Ações</TableHeader>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {vinculos.map((v) => (
-                  <TableRow key={v.caso_id}>
-                    <TableCell>
-                      <TextoTabela texto={v.titulo || '(sem título)'} onClick={() => onAbrirCaso(v.caso_id)} />
-                    </TableCell>
-                    <TableCell><TextoTabela texto={v.cliente_nome || '—'} /></TableCell>
-                    <TableCell><TextoTabela texto={v.acao || '—'} /></TableCell>
-                    <TableCell>{ROTULO_TIPO[v.tipo] ?? v.tipo}</TableCell>
-                    <TableCell>
-                      <AcoesTabela rotulo={v.titulo || 'vínculo'} acoes={[{ texto: 'Remover', executar: () => removerVinculo(v), desabilitada: removendo === v.caso_id }]} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table></TabelaResponsiva>
+            <TabelaResponsiva principais={['Processo']}>
+              <table aria-label="Processos vinculados">
+                <thead>
+                  <tr>
+                    <th>Processo</th>
+                    <th>Cliente</th>
+                    <th>Ação / Tipo</th>
+                    <th>Vínculo</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {vinculos.map((v) => (
+                    <tr key={v.caso_id}>
+                      <td><TextoTabela texto={v.titulo || '(sem título)'} onClick={() => onAbrirCaso(v.caso_id)} /></td>
+                      <td><TextoTabela texto={v.cliente_nome || '—'} /></td>
+                      <td><TextoTabela texto={v.acao || '—'} /></td>
+                      <td>{ROTULO_TIPO[v.tipo] ?? v.tipo}</td>
+                      <td>
+                        <AcoesTabela rotulo={v.titulo || 'vínculo'} acoes={[{ texto: 'Remover', executar: () => removerVinculo(v), desabilitada: removendo === v.caso_id }]} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TabelaResponsiva>
           </div>
         )}
       </div>
       <details className="vinculos-adicionar">
         <summary>Vincular outro processo</summary>
-        <Stack gap={5}>
-          <Grid narrow fullWidth>
-            <Column sm={4} md={4} lg={9}>
-              <TextInput
+        <Flex direction="column" gap="4" mt="3">
+          <div className="casos-formulario-grade">
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="vinculos-numero-processo">Número do processo</label>
+              <TextField.Root
                 id="vinculos-numero-processo"
-                labelText="Número do processo"
                 placeholder="1006314-27.2023.8.26.0005"
                 autoComplete="off"
-                helperText={preview ?? undefined}
                 value={numeroProcesso}
                 onChange={(e) => aoDigitarNumero(e.target.value)}
               />
-            </Column>
-            <Column sm={4} md={4} lg={7}>
-              <Select id="vinculos-tipo-select" labelText="Tipo de vínculo" value={tipo} onChange={(e) => setTipo(e.target.value)}>
-                {Object.entries(ROTULO_TIPO).map(([valor, rotulo]) => (
-                  <SelectItem key={valor} value={valor} text={rotulo} />
-                ))}
-              </Select>
-            </Column>
-          </Grid>
-          {erroForm && <InlineNotification kind="error" title="Erro" subtitle={erroForm} lowContrast hideCloseButton />}
+              {preview && <Text size="1" color="gray">{preview}</Text>}
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="vinculos-tipo-select">Tipo de vínculo</label>
+              <Select.Root value={tipo} onValueChange={setTipo}>
+                <Select.Trigger id="vinculos-tipo-select" style={{ width: '100%' }} />
+                <Select.Content>
+                  {Object.entries(ROTULO_TIPO).map(([valor, rotulo]) => (
+                    <Select.Item key={valor} value={valor}>{rotulo}</Select.Item>
+                  ))}
+                </Select.Content>
+              </Select.Root>
+            </div>
+          </div>
+          {erroForm && (
+            <Callout.Root color="red" size="1">
+              <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+              <Callout.Text>{erroForm}</Callout.Text>
+            </Callout.Root>
+          )}
           <div>
-            <Button size="sm" onClick={adicionarVinculo} disabled={enviando}>
+            <Button size="1" onClick={adicionarVinculo} disabled={enviando}>
               Adicionar vínculo
             </Button>
           </div>
-        </Stack>
+        </Flex>
       </details>
-    </Stack>
+    </Flex>
   )
 }

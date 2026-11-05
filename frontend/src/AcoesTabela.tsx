@@ -1,24 +1,34 @@
-import { OverflowMenu, OverflowMenuItem, useTheme } from '@carbon/react'
+import { Fragment } from 'react'
+import { DropdownMenu, IconButton } from '@radix-ui/themes'
+import { MoreVertical } from 'lucide-react'
 
 type Acao = { texto: string; executar?: () => void; href?: string; perigo?: boolean; desabilitada?: boolean }
 
 export default function AcoesTabela({ rotulo, acoes }: { rotulo: string; acoes: Acao[] }) {
-  const { theme } = useTheme()
   if (!acoes.length) return <span>—</span>
   return (
-    <OverflowMenu flipped size="sm" menuOptionsClass={`acoes-tabela-menu--${theme}`} aria-label={`Ações: ${rotulo}`} iconDescription={`Ações: ${rotulo}`}>
-      {acoes.map((acao, indice) => (
-        <OverflowMenuItem
-          key={acao.texto}
-          itemText={acao.texto}
-          onClick={acao.executar}
-          disabled={acao.desabilitada}
-          isDelete={acao.perigo}
-          hasDivider={acao.perigo && indice > 0}
-          dangerDescription="Ação destrutiva"
-          {...(acao.href ? { href: acao.href, target: '_blank', rel: 'noopener noreferrer' } : {})}
-        />
-      ))}
-    </OverflowMenu>
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger>
+        <IconButton variant="ghost" color="gray" size="2" aria-label={`Ações: ${rotulo}`}>
+          <MoreVertical size={16} />
+        </IconButton>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Content align="end">
+        {acoes.map((acao, indice) => (
+          <Fragment key={acao.texto}>
+            {acao.perigo && indice > 0 && <DropdownMenu.Separator />}
+            {acao.href ? (
+              <DropdownMenu.Item disabled={acao.desabilitada} color={acao.perigo ? 'red' : undefined} asChild>
+                <a href={acao.href} target="_blank" rel="noopener noreferrer">{acao.texto}</a>
+              </DropdownMenu.Item>
+            ) : (
+              <DropdownMenu.Item disabled={acao.desabilitada} color={acao.perigo ? 'red' : undefined} onSelect={acao.executar}>
+                {acao.texto}
+              </DropdownMenu.Item>
+            )}
+          </Fragment>
+        ))}
+      </DropdownMenu.Content>
+    </DropdownMenu.Root>
   )
 }

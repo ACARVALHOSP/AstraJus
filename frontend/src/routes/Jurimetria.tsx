@@ -1,22 +1,10 @@
 import Carregamento from '../Carregamento'
 import { useState, type FormEvent } from 'react'
-import {
-  Accordion,
-  AccordionItem,
-  Button,
-  DatePicker,
-  DatePickerInput,
-  Form,
-  InlineNotification,
-  NumberInput,
-  Stack,
-  Tag,
-  TextInput,
-  Tile,
-} from '@carbon/react'
+import { AlertTriangle } from 'lucide-react'
+import { Badge, Button, Callout, Card, Flex, Heading, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
-import { formatarDdMmAaaa, formatarNumeroCNJ, formatarPercentual, formatarReais } from '../utils/formatadores'
+import { formatarNumeroCNJ, formatarPercentual, formatarReais } from '../utils/formatadores'
 
 type Analise = 'benchmark_valor' | 'perfil_magistrado'
 
@@ -172,128 +160,130 @@ export default function Jurimetria() {
   }
 
   return (
-    <Stack gap={6}>
+    <Flex direction="column" gap="6">
       <div>
-        <h1>Jurimetria</h1>
-        <p>
+        <Heading as="h1" size="6">Jurimetria</Heading>
+        <Text as="p" size="2" color="gray" mt="1">
           Preencha os filtros abaixo e escolha a análise - todas usam a mesma busca no CJPG (julgados de 1º grau do
           TJSP). As demais ideias ao final ainda são só conceitos de próximos passos.
-        </p>
+        </Text>
       </div>
-      <Form onSubmit={(e) => aoEnviar(e, 'benchmark_valor')}>
-        <Stack gap={5}>
-          <TextInput
-            id="jur-termo"
-            labelText="Pesquisa livre"
-            placeholder="ex.: dano moral"
-            autoComplete="off"
-            value={termo}
-            onChange={(e) => setTermo(e.target.value)}
-          />
-          <TextInput
-            id="jur-magistrado"
-            labelText="Magistrado"
-            placeholder="digite o nome…"
-            helperText="O nome entra automaticamente entre aspas na pesquisa livre. Obrigatório para o perfil do magistrado."
-            autoComplete="off"
-            value={magistrado}
-            onChange={(e) => setMagistrado(e.target.value)}
-          />
-          <DatePicker
-            datePickerType="range"
-            dateFormat="d/m/Y"
-            onChange={(datas: Date[]) => {
-              const [inicio, fim] = datas
-              setDataInicio(inicio ? formatarDdMmAaaa(inicio) : '')
-              setDataFim(fim ? formatarDdMmAaaa(fim) : '')
-            }}
-          >
-            <DatePickerInput id="jur-data-inicio" labelText="Data de disponibilização - início" placeholder="dd/mm/aaaa" />
-            <DatePickerInput id="jur-data-fim" labelText="Data de disponibilização - fim" placeholder="dd/mm/aaaa" />
-          </DatePicker>
-          <NumberInput
-            id="jur-paginas"
-            label="Páginas a buscar (10 resultados cada)"
-            min={1}
-            max={15}
-            value={paginas}
-            onChange={(_e, { value }) => setPaginas(Number(value) || 1)}
-          />
-          <div className="aj-layout-49">
-            <Button type="submit" disabled={consultando}>
+      <form onSubmit={(e) => aoEnviar(e, 'benchmark_valor')}>
+        <Flex direction="column" gap="5">
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="jur-termo">Pesquisa livre</label>
+            <TextField.Root id="jur-termo" placeholder="ex.: dano moral" autoComplete="off" value={termo} onChange={(e) => setTermo(e.target.value)} />
+          </div>
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="jur-magistrado">Magistrado</label>
+            <TextField.Root id="jur-magistrado" placeholder="digite o nome…" autoComplete="off" value={magistrado} onChange={(e) => setMagistrado(e.target.value)} />
+            <Text size="1" color="gray">O nome entra automaticamente entre aspas na pesquisa livre. Obrigatório para o perfil do magistrado.</Text>
+          </div>
+          <div className="aj-form-grade">
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="jur-data-inicio">Data de disponibilização - início</label>
+              <TextField.Root id="jur-data-inicio" type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="jur-data-fim">Data de disponibilização - fim</label>
+              <TextField.Root id="jur-data-fim" type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="jur-paginas">Páginas a buscar (10 resultados cada)</label>
+              <TextField.Root id="jur-paginas" type="number" min={1} max={15} value={paginas} onChange={(e) => setPaginas(Number(e.target.value) || 1)} />
+            </div>
+          </div>
+          <div className="aj-acoes-linha">
+            <Button size="2" type="submit" disabled={consultando}>
               Benchmark de valor
             </Button>
-            <Button kind="secondary" disabled={consultando} onClick={() => executar('perfil_magistrado')}>
+            <Button size="2" variant="soft" disabled={consultando} onClick={() => executar('perfil_magistrado')}>
               Perfil do magistrado
             </Button>
           </div>
-        </Stack>
-      </Form>
+        </Flex>
+      </form>
       <div aria-live="polite">
         {consultando && <Carregamento tipo="cartoes" descricao="Consultando o CJPG — pode levar alguns segundos por página pedida…" />}
-        {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
-        {resultado?.erro && <InlineNotification kind="error" title="Erro" subtitle={resultado.mensagem} lowContrast hideCloseButton />}
+        {erro && (
+          <Callout.Root color="red" size="1">
+            <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+            <Callout.Text>{erro}</Callout.Text>
+          </Callout.Root>
+        )}
+        {resultado?.erro && (
+          <Callout.Root color="red" size="1">
+            <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+            <Callout.Text>{resultado.mensagem}</Callout.Text>
+          </Callout.Root>
+        )}
         {!consultando && resultado && !resultado.erro && analiseAtual && (
-          <Stack gap={5}>
-            <h3>Resultado: {TITULO_ANALISE[analiseAtual]}</h3>
+          <Flex direction="column" gap="5">
+            <Heading as="h3" size="4">Resultado: {TITULO_ANALISE[analiseAtual]}</Heading>
             {(resultado.avisos ?? []).map((aviso, i) => (
-              <InlineNotification key={i} kind="warning" title="Busca parcial" subtitle={aviso} lowContrast hideCloseButton />
+              <Callout.Root key={i} color="yellow" size="1">
+                <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+                <Callout.Text>{aviso}</Callout.Text>
+              </Callout.Root>
             ))}
-            <p>
+            <Text size="2">
               Total no servidor: {resultado.total_servidor ?? '?'} | Buscados nesta consulta: {resultado.buscados}
-            </p>
+            </Text>
             {resultado.agregado && <ResumoAgregado agregado={resultado.agregado} />}
             {resultado.perfil && <ResumoPerfil perfil={resultado.perfil} />}
             {(resultado.resultados ?? []).map((item, i) => (
               <CartaoJurimetria key={i} item={item} />
             ))}
             {!resultado.resultados?.length && (
-              <InlineNotification kind="info" title="Nenhum resultado" subtitle="Tente ampliar os filtros ou o termo de busca." lowContrast hideCloseButton />
+              <Callout.Root color="blue" size="1">
+                <Callout.Text>Nenhum resultado. Tente ampliar os filtros ou o termo de busca.</Callout.Text>
+              </Callout.Root>
             )}
-          </Stack>
+          </Flex>
         )}
       </div>
-      <Accordion>
-        <AccordionItem title={`Análises futuras em estudo (${CONCEITOS_FUTUROS.length} conceitos)`}>
-          <p>Ainda são só conceitos de próximos passos, não funcionalidades disponíveis.</p>
-          <Stack gap={4}>
-            {CONCEITOS_FUTUROS.map((c) => (
-              <Tile key={c.titulo}>
-                <Tag type="gray" size="sm">
-                  Conceito
-                </Tag>
-                <h4>{c.titulo}</h4>
-                <p>{c.texto}</p>
-                <p>{c.dados}</p>
-              </Tile>
-            ))}
-          </Stack>
-        </AccordionItem>
-      </Accordion>
-      <p>
+      <details>
+        <summary>Análises futuras em estudo ({CONCEITOS_FUTUROS.length} conceitos)</summary>
+        <Flex direction="column" gap="4" mt="3">
+          <Text as="p" size="2">Ainda são só conceitos de próximos passos, não funcionalidades disponíveis.</Text>
+          {CONCEITOS_FUTUROS.map((c) => (
+            <Card key={c.titulo} variant="surface">
+              <Flex direction="column" gap="2">
+                <Badge color="gray" size="1" style={{ alignSelf: 'flex-start' }}>Conceito</Badge>
+                <Heading as="h4" size="2">{c.titulo}</Heading>
+                <Text as="p" size="2">{c.texto}</Text>
+                <Text as="p" size="2" color="gray">{c.dados}</Text>
+              </Flex>
+            </Card>
+          ))}
+        </Flex>
+      </details>
+      <Text as="p" size="2" color="gray">
         Limitação conhecida: cada consulta ao CJPG tem um teto de ~10.000 resultados (limite do próprio índice de busca
         do TJSP). Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias buscas.
-      </p>
-    </Stack>
+      </Text>
+    </Flex>
   )
 }
 
 function Grade({ children }: { children: React.ReactNode }) {
-  return <div className="aj-layout-50">{children}</div>
+  return <div className="aj-form-grade">{children}</div>
 }
 
 function CeluaResumo({ rotulo, valor }: { rotulo: string; valor: string }) {
   return (
-    <Tile className="aj-layout-51">
-      <div className="aj-layout-52">{valor}</div>
-      <div>{rotulo}</div>
-    </Tile>
+    <Card variant="surface">
+      <Flex direction="column" gap="1">
+        <Text size="5" weight="bold">{valor}</Text>
+        <Text size="2" color="gray">{rotulo}</Text>
+      </Flex>
+    </Card>
   )
 }
 
 function ResumoAgregado({ agregado }: { agregado: Agregado }) {
   return (
-    <Stack gap={3}>
+    <Flex direction="column" gap="3">
       <Grade>
         <CeluaResumo rotulo="Procedentes/parciais" valor={String(agregado.procedentes_ou_parciais)} />
         <CeluaResumo rotulo="Com valor extraído" valor={String(agregado.com_valor_extraido)} />
@@ -305,14 +295,19 @@ function ResumoAgregado({ agregado }: { agregado: Agregado }) {
           </>
         )}
       </Grade>
-      {agregado.aviso && <InlineNotification kind="warning" title="Amostra pequena" subtitle={agregado.aviso} lowContrast hideCloseButton />}
-    </Stack>
+      {agregado.aviso && (
+        <Callout.Root color="yellow" size="1">
+          <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+          <Callout.Text>{agregado.aviso}</Callout.Text>
+        </Callout.Root>
+      )}
+    </Flex>
   )
 }
 
 function ResumoPerfil({ perfil }: { perfil: Perfil }) {
   return (
-    <Stack gap={3}>
+    <Flex direction="column" gap="3">
       <Grade>
         {Object.entries(ROTULO_TAXA).map(([chave, rotulo]) => (
           <CeluaResumo key={chave} rotulo={rotulo} valor={formatarPercentual(perfil[chave])} />
@@ -321,35 +316,39 @@ function ResumoPerfil({ perfil }: { perfil: Perfil }) {
         <CeluaResumo rotulo="Decisões classificadas" valor={String(perfil.total_classificados ?? '-')} />
         <CeluaResumo rotulo="Com valor extraído" valor={String(perfil.com_valor_extraido ?? '-')} />
       </Grade>
-      {perfil.aviso && <InlineNotification kind="warning" title="Amostra pequena" subtitle={perfil.aviso} lowContrast hideCloseButton />}
-    </Stack>
+      {perfil.aviso && (
+        <Callout.Root color="yellow" size="1">
+          <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+          <Callout.Text>{perfil.aviso}</Callout.Text>
+        </Callout.Root>
+      )}
+    </Flex>
   )
 }
 
 function CartaoJurimetria({ item }: { item: ItemResultado }) {
   const [rotuloDesfecho, corDesfecho] = (item.desfecho && ROTULO_DESFECHO[item.desfecho]) || ['Não classificado', 'gray']
   return (
-    <Tile>
-      <Stack gap={3}>
-        <div>
-          <Tag type={corDesfecho as 'gray'}>{rotuloDesfecho}</Tag>{' '}
-          {item.valor_condenacao != null && <Tag type="purple">{formatarReais(item.valor_condenacao)}</Tag>}
-        </div>
-        <h3>{formatarNumeroCNJ(item.numero_processo) || 'Número não identificado'}</h3>
-        <p>
+    <Card variant="surface">
+      <Flex direction="column" gap="3">
+        <Flex gap="2">
+          <Badge color={corDesfecho as 'gray'}>{rotuloDesfecho}</Badge>
+          {item.valor_condenacao != null && <Badge color="purple">{formatarReais(item.valor_condenacao)}</Badge>}
+        </Flex>
+        <Heading as="h3" size="3">{formatarNumeroCNJ(item.numero_processo) || 'Número não identificado'}</Heading>
+        <Text size="2">
           {item.classe ?? '?'} / {item.assunto ?? '?'}
-        </p>
-        <p>
+        </Text>
+        <Text size="2">
           {item.magistrado ?? '?'} · {item.vara ?? '?'} · {item.comarca ?? '?'} · {item.data_disponibilizacao ?? '?'}
-        </p>
+        </Text>
         {item.trecho && (
-          <Accordion>
-            <AccordionItem title="Trecho">
-              <p>{item.trecho}</p>
-            </AccordionItem>
-          </Accordion>
+          <details>
+            <summary>Trecho</summary>
+            <Text as="p" size="2" mt="2">{item.trecho}</Text>
+          </details>
         )}
-      </Stack>
-    </Tile>
+      </Flex>
+    </Card>
   )
 }

@@ -1,6 +1,7 @@
 import Carregamento from '../../Carregamento'
 import { useCallback, useState } from 'react'
-import { Button, InlineNotification, Stack } from '@carbon/react'
+import { Button, Callout, Card, Flex, Heading, Text } from '@radix-ui/themes'
+import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson } from '../../api/rest'
@@ -73,32 +74,38 @@ export default function MovimentacoesCaso({ casoId }: { casoId: string }) {
   }, [cliente, casoId])
 
   return (
-    <Stack gap={5}>
-      <div className="aj-layout-24">
-        <h3>Movimentações</h3>
-        <Button kind="secondary" size="sm" onClick={buscar} disabled={carregando}>
+    <Flex direction="column" gap="4">
+      <Flex align="center" justify="between" gap="3" wrap="wrap">
+        <Heading as="h3" size="3">Movimentações</Heading>
+        <Button variant="outline" size="1" onClick={buscar} disabled={carregando}>
           Buscar no DataJud
         </Button>
-      </div>
+      </Flex>
       <div aria-live="polite">
         {carregando && <Carregamento tipo="cartoes" descricao="Consultando…" />}
-        {status && <InlineNotification kind="info" title="Status" subtitle={status} lowContrast hideCloseButton />}
-        {avisos.length > 0 && <InlineNotification kind="warning" title="Aviso" subtitle={avisos.join(' | ')} lowContrast hideCloseButton />}
+        {status && (
+          <Callout.Root color="blue" size="1">
+            <Callout.Icon><Info size={14} /></Callout.Icon>
+            <Callout.Text>{status}</Callout.Text>
+          </Callout.Root>
+        )}
+        {avisos.length > 0 && (
+          <Callout.Root color="yellow" size="1">
+            <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+            <Callout.Text>{avisos.join(' | ')}</Callout.Text>
+          </Callout.Root>
+        )}
       </div>
       {!carregando && movimentos && movimentos.length > 0 && (
-        <Stack gap={3}>
+        <Flex direction="column" gap="2">
           {movimentos.map((m, i) => (
-            <div key={i} className="cds--tile">
-              <p>
-                {formatarDataSimples(m.dataHora)} — {m.nome ?? 'sem descrição'}
-              </p>
-              <p>
-                Processo {formatarNumeroCNJ(m.numero)} · {m.grau ?? 'grau não informado'}
-              </p>
-            </div>
+            <Card key={i} size="1">
+              <Text as="p" size="2">{formatarDataSimples(m.dataHora)} — {m.nome ?? 'sem descrição'}</Text>
+              <Text as="p" size="1" color="gray">Processo {formatarNumeroCNJ(m.numero)} · {m.grau ?? 'grau não informado'}</Text>
+            </Card>
           ))}
-        </Stack>
+        </Flex>
       )}
-    </Stack>
+    </Flex>
   )
 }

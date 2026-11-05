@@ -1,5 +1,6 @@
 import { Children, Fragment, cloneElement, isValidElement, useEffect, useId, useRef, useState, type MouseEvent, type ReactElement, type ReactNode } from 'react'
-import { Button, TableBody, TableCell, TableExpandedRow, TableExpandHeader, TableExpandRow, TableHead, TableRow, TableSelectAll } from '@carbon/react'
+import { TableBody, TableCell, TableExpandedRow, TableExpandHeader, TableExpandRow, TableHead, TableRow, TableSelectAll } from '@carbon/react'
+import { Button } from '@radix-ui/themes'
 import './tabelas.scss'
 
 type Estrutura = {
@@ -104,7 +105,7 @@ export default function TabelaResponsiva({ children, principais = [] }: { childr
   }
 
   return <div ref={raiz} className={`tabela-adaptavel${compacto ? ' tabela-adaptavel--compacta' : ''}${colunas.length <= 3 ? ' tabela-adaptavel--simples' : ''}`}>
-    {temDetalhes && ordenaveis.length > 0 && <details className="tabela-ordenacao"><summary>Ordenar registros</summary><div>{ordenaveis.map(c => <Button key={c.rotulo} type="button" kind="ghost" size="sm" onClick={c.cabecalho.props.onClick}>
+    {temDetalhes && ordenaveis.length > 0 && <details className="tabela-ordenacao"><summary>Ordenar registros</summary><div>{ordenaveis.map(c => <Button key={c.rotulo} type="button" variant="ghost" size="1" onClick={c.cabecalho.props.onClick}>
       {c.rotulo}{c.cabecalho.props.isSortHeader ? c.cabecalho.props.sortDirection === 'ASC' ? ' · crescente' : c.cabecalho.props.sortDirection === 'DESC' ? ' · decrescente' : '' : ''}
     </Button>)}</div></details>}
     {cloneElement(children, { className: classe(children, 'tabela-fluida') }, partes.map(parte => parte === cabeca ? novaCabeca : parte.type === TableBody || parte.type === 'tbody' ? adaptarCorpo(parte) : parte))}
@@ -119,7 +120,7 @@ function LinhaAdaptavel({ linha, expansao, colunas, ordem, complementares, indic
   const deslocamento = linha.type === TableExpandRow ? 1 : 0
   const celulas = elementos(linha.props.children)
   const rotulo = ordem.filter(i => !colunas[i].fixa && !colunas[i].numerica).map(i => texto(celulas[i - deslocamento]?.props.children)).find(Boolean) || 'registro'
-  const botao = <Button type="button" className="tabela-detalhes-botao" kind="ghost" size="sm" aria-expanded={aberta} aria-controls={id} onClick={() => setAberta(!aberta)}>
+  const botao = <Button type="button" className="tabela-detalhes-botao" variant="ghost" size="1" aria-expanded={aberta} aria-controls={id} onClick={() => setAberta(!aberta)}>
     {aberta ? 'Fechar' : 'Detalhes'}<span className="cds--visually-hidden"> de {rotulo}</span>
   </Button>
   const conteudo = ordem.flatMap(indice => {

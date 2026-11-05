@@ -1,0 +1,30 @@
+/* Escritório — Contatos (Radix Themes) */
+
+.contato-vinculos-tabela { overflow-x: auto; }
+.contato-vinculos-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; padding: 1rem; background: var(--color-panel-solid); border: 1px solid var(--gray-a4); border-radius: var(--radius-3); }
+.contato-vinculos-resumo dt { font-size: 11px; font-weight: 600; color: var(--gray-10); text-transform: uppercase; letter-spacing: 0.03em; }
+.contato-vinculos-resumo dd { font-size: 15px; font-weight: 600; color: var(--gray-12); margin: 0.25rem 0 0; }
+
+/* CampoRepetivel */
+.campo-repetivel-grade { display: grid; gap: 0.75rem; align-items: end; }
+.campo-repetivel-grade--1 { grid-template-columns: 1fr auto; }
+.campo-repetivel-grade--2 { grid-template-columns: 1fr 1fr auto; }
+.campo-repetivel-grade--3 { grid-template-columns: 7rem 1fr 1fr auto; }
+
+/* EnderecosRepetivel */
+.endereco-card { padding: 1rem; background: var(--color-panel-solid); border: 1px solid var(--gray-a4); border-radius: var(--radius-3); display: flex; flex-direction: column; gap: 0.75rem; }
+.endereco-card-topo { display: grid; grid-template-columns: 7rem 1fr auto; gap: 0.75rem; align-items: end; }
+.endereco-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; }
+
+/* Clientes lote preview table */
+.clientes-lote-preview { width: 100%; border-collapse: collapse; font-size: 13px; }
+.clientes-lote-preview th, .clientes-lote-preview td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid var(--gray-a4); }
+.clientes-lote-preview th { font-weight: 600; color: var(--gray-10); font-size: 11px; text-transform: uppercase; }
+
+/* Alphabet filter */
+.clientes-filtro-letra { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+
+@media (max-width: 672px) {
+  .campo-repetivel-grade--3 { grid-template-columns: 1fr auto; }
+  .campo-repetivel-grade--2 { grid-template-columns: 1fr auto; }
+}

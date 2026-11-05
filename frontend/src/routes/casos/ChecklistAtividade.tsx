@@ -1,6 +1,6 @@
-import { Close } from '@carbon/icons-react'
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Checkbox, Stack, TextInput } from '@carbon/react'
+import { Button, Callout, Checkbox, Flex, Text, TextField } from '@radix-ui/themes'
+import { AlertTriangle, Plus, X } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { buscarJson, enviarJson } from '../../api/rest'
 
@@ -54,42 +54,54 @@ export default function ChecklistAtividade({ casoId, atividadeId }: { casoId: st
   const concluidos = itens.filter((i) => i.concluido).length
 
   return (
-    <Stack gap={3}>
-      <span className="cds--label">Checklist</span>
-      <p role="status">{itens.length ? `${concluidos} de ${itens.length} concluído(s)` : 'Nenhum item ainda'}</p>
-      {erro && <p>{erro}</p>}
+    <Flex direction="column" gap="2">
+      <Text size="2" weight="medium">Checklist</Text>
+      <Text size="1" color="gray" role="status">
+        {itens.length ? `${concluidos} de ${itens.length} concluído(s)` : 'Nenhum item ainda'}
+      </Text>
+      {erro && (
+        <Callout.Root color="red" size="1">
+          <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+          <Callout.Text>{erro}</Callout.Text>
+        </Callout.Root>
+      )}
       {itens.map((item) => (
-        <div key={item.id} className="aj-layout-21">
-          <Checkbox
-            id={`checklist-${item.id}`}
-            labelText={item.texto}
-            checked={item.concluido}
-            onChange={(_e, { checked }) => alternarConcluido(item, checked)}
-          />
-          <Button kind="ghost" size="sm" hasIconOnly iconDescription="Excluir item" onClick={() => excluirItem(item)}>
-            <Close size={16} />
+        <Flex key={item.id} align="center" gap="2" justify="between">
+          <Text as="label" size="2">
+            <Flex gap="2" align="center">
+              <Checkbox
+                checked={item.concluido}
+                onCheckedChange={(checked) => alternarConcluido(item, Boolean(checked))}
+              />
+              <span style={{ textDecoration: item.concluido ? 'line-through' : undefined, color: item.concluido ? 'var(--gray-9)' : undefined }}>
+                {item.texto}
+              </span>
+            </Flex>
+          </Text>
+          <Button
+            type="button"
+            variant="ghost"
+            size="1"
+            color="gray"
+            aria-label="Excluir item"
+            onClick={() => excluirItem(item)}
+          >
+            <X size={12} />
           </Button>
-        </div>
+        </Flex>
       ))}
-      <div className="aj-layout-22">
-        <TextInput
-          id="atividade-checklist-novo"
-          labelText="Novo item do checklist"
-          hideLabel
+      <Flex gap="2" mt="1">
+        <TextField.Root
           placeholder="Novo item"
           value={novoTexto}
           onChange={(e) => setNovoTexto(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              adicionar()
-            }
-          }}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void adicionar() } }}
+          style={{ flex: 1 }}
         />
-        <Button size="sm" onClick={adicionar}>
-          Adicionar
+        <Button type="button" size="1" onClick={adicionar}>
+          <Plus size={12} /> Adicionar
         </Button>
-      </div>
-    </Stack>
+      </Flex>
+    </Flex>
   )
 }

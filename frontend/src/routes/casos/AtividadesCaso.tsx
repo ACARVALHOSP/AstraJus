@@ -1,7 +1,8 @@
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button, Checkbox, InlineNotification, Modal, Stack } from '@carbon/react'
+import { AlertDialog, Box, Button, Callout, Card, Checkbox, Flex, Heading, Text } from '@radix-ui/themes'
+import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -88,62 +89,71 @@ export default function AtividadesCaso({ casoId, atividadeInicialId }: { casoId:
   }
 
   return (
-    <Stack gap={5}>
+    <Flex direction="column" gap="5">
       <div className="casos-titulo-linha">
-        <h3>Atividades</h3>
-        <Button
-          size="sm"
-          onClick={() => {
-            setEditando(null)
-            setModalAberto(true)
-          }}
-        >
+        <Heading as="h3" size="3">Atividades</Heading>
+        <Button size="2" onClick={() => { setEditando(null); setModalAberto(true) }}>
           Nova atividade
         </Button>
       </div>
       <div aria-live="polite">
         {carregando && <Carregamento tipo="cartoes" descricao="Carregando…" />}
-        {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
-        {!carregando && atividades && atividades.length === 0 && <InlineNotification kind="info" title="Nenhuma atividade cadastrada" lowContrast hideCloseButton />}
+        {erro && (
+          <Callout.Root color="red" size="1">
+            <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+            <Callout.Text>{erro}</Callout.Text>
+          </Callout.Root>
+        )}
+        {!carregando && atividades && atividades.length === 0 && (
+          <Callout.Root color="blue" size="1">
+            <Callout.Icon><Info size={14} /></Callout.Icon>
+            <Callout.Text>Nenhuma atividade cadastrada.</Callout.Text>
+          </Callout.Root>
+        )}
         {!carregando && atividades && atividades.length > 0 && (
-          <Stack gap={4}>
+          <Flex direction="column" gap="4">
             {atividades.map((atv) => (
-              <div key={atv.id} className="casos-atividade" >
-                <div>
-                  <Checkbox
-                    id={`atividade-concluida-${atv.id}`}
-                    labelText={formatarNomeExibicao(atv.titulo)}
-                    checked={atv.status === 'concluida'}
-                    onChange={(_e, { checked }) => alternarConcluida(atv, checked)}
-                  />
-                  <p>
-                    {ROTULO_TIPO[atv.tipo] ?? atv.tipo}
-                    {atv.data ? ` · ${formatarDataSimples(atv.data)}` : ''}
-                    {atv.hora ? ` · ${atv.hora}` : ''}
-                  </p>
-                  {atv.responsavel && <p>Responsável: {formatarNomeExibicao(atv.responsavel)}</p>}
-                  {atv.observacoes && <p>{atv.observacoes}</p>}
-                  {(atv.agenda || agendaDisponivel) && (
-                    <AgendaAtividade
-                      casoId={casoId}
-                      atividadeId={atv.id}
-                      titulo={atv.titulo}
-                      data={atv.data}
-                      hora={atv.hora}
-                      agenda={atv.agenda}
-                      agendaInstitucionalAnterior={atv.agenda_institucional_anterior}
-                      agendaDisponivel={agendaDisponivel}
-                      onAtualizado={carregar}
-                    />
-                  )}
-                </div>
-                <AcoesTabela rotulo={atv.titulo} acoes={[
-                  { texto: 'Editar', executar: () => { setEditando(atv); setModalAberto(true) } },
-                  { texto: 'Excluir', executar: () => setParaExcluir(atv), perigo: true },
-                ]} />
-              </div>
+              <Card key={atv.id} variant="surface">
+                <Flex justify="between" gap="4" wrap="wrap">
+                  <Box>
+                    <Text as="label" size="2">
+                      <Flex gap="2" align="center">
+                        <Checkbox
+                          checked={atv.status === 'concluida'}
+                          onCheckedChange={(checked) => alternarConcluida(atv, Boolean(checked))}
+                        />
+                        {formatarNomeExibicao(atv.titulo)}
+                      </Flex>
+                    </Text>
+                    <p>
+                      {ROTULO_TIPO[atv.tipo] ?? atv.tipo}
+                      {atv.data ? ` · ${formatarDataSimples(atv.data)}` : ''}
+                      {atv.hora ? ` · ${atv.hora}` : ''}
+                    </p>
+                    {atv.responsavel && <p>Responsável: {formatarNomeExibicao(atv.responsavel)}</p>}
+                    {atv.observacoes && <p>{atv.observacoes}</p>}
+                    {(atv.agenda || agendaDisponivel) && (
+                      <AgendaAtividade
+                        casoId={casoId}
+                        atividadeId={atv.id}
+                        titulo={atv.titulo}
+                        data={atv.data}
+                        hora={atv.hora}
+                        agenda={atv.agenda}
+                        agendaInstitucionalAnterior={atv.agenda_institucional_anterior}
+                        agendaDisponivel={agendaDisponivel}
+                        onAtualizado={carregar}
+                      />
+                    )}
+                  </Box>
+                  <AcoesTabela rotulo={atv.titulo} acoes={[
+                    { texto: 'Editar', executar: () => { setEditando(atv); setModalAberto(true) } },
+                    { texto: 'Excluir', executar: () => setParaExcluir(atv), perigo: true },
+                  ]} />
+                </Flex>
+              </Card>
             ))}
-          </Stack>
+          </Flex>
         )}
       </div>
       <AtividadeModal
@@ -151,23 +161,22 @@ export default function AtividadesCaso({ casoId, atividadeInicialId }: { casoId:
         casoId={casoId}
         atividade={editando}
         onClose={() => setModalAberto(false)}
-        onSalva={() => {
-          setModalAberto(false)
-          carregar()
-        }}
+        onSalva={() => { setModalAberto(false); carregar() }}
       />
-      <Modal closeButtonLabel="Fechar"
-        open={paraExcluir !== null}
-        danger
-        modalHeading="Excluir atividade"
-        primaryButtonText="Excluir"
-        secondaryButtonText="Cancelar"
-        primaryButtonDisabled={excluindo}
-        onRequestClose={() => setParaExcluir(null)}
-        onRequestSubmit={confirmarExclusao}
-      >
-        <p>Excluir "{paraExcluir?.titulo}"?</p>
-      </Modal>
-    </Stack>
+      <AlertDialog.Root open={paraExcluir !== null} onOpenChange={(open) => !open && setParaExcluir(null)}>
+        <AlertDialog.Content maxWidth="400px">
+          <AlertDialog.Title>Excluir atividade</AlertDialog.Title>
+          <AlertDialog.Description>Excluir "{paraExcluir?.titulo}"?</AlertDialog.Description>
+          <Flex gap="3" mt="4" justify="end">
+            <AlertDialog.Cancel>
+              <Button variant="soft" color="gray">Cancelar</Button>
+            </AlertDialog.Cancel>
+            <AlertDialog.Action>
+              <Button color="red" disabled={excluindo} onClick={confirmarExclusao}>Excluir</Button>
+            </AlertDialog.Action>
+          </Flex>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
+    </Flex>
   )
 }

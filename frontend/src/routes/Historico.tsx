@@ -3,18 +3,7 @@ import TextoTabela from '../TextoTabela'
 import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
 import { useEffect, useState } from 'react'
-import {
-  Button,
-  DataTable,
-  Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@carbon/react'
+import { Button, Flex, Heading, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { buscarJson } from '../api/rest'
@@ -41,6 +30,8 @@ export default function Historico() {
   const [favoritos, setFavoritos] = useState<Favorito[]>(() => lerFavoritos())
   const [historico, setHistorico] = useState<ItemHistorico[]>(() => lerHistorico())
   const [casosFavoritos, setCasosFavoritos] = useState<CasoFavorito[]>([])
+  const [filtroFavoritos, setFiltroFavoritos] = useState('')
+  const [filtroHistorico, setFiltroHistorico] = useState('')
 
   const [carregandoFavoritos, setCarregandoFavoritos] = useState(() => !!cliente && lerCasosFavoritos().length > 0)
 
@@ -89,146 +80,120 @@ export default function Historico() {
   }
 
   return (
-    <Stack gap={7}>
-      <div>
-        <h1>Histórico e favoritos</h1>
-      </div>
+    <Flex direction="column" gap="7">
+      <Heading as="h1" size="6">Histórico e favoritos</Heading>
 
       <section>
-        <h3>Processos favoritos</h3>
-        <p>Processos marcados como favoritos na lista de Processos. Abrir leva diretamente ao processo.</p>
+        <Heading as="h3" size="3" mb="2">Processos favoritos</Heading>
+        <Text as="p" size="2" color="gray" mb="3">Processos marcados como favoritos na lista de Processos. Abrir leva diretamente ao processo.</Text>
         {carregandoFavoritos ? <Carregamento descricao="Carregando processos favoritos…" /> : casosFavoritos.length === 0 ? (
-          <p>Nenhum processo favorito ainda.</p>
+          <Text as="p" size="2">Nenhum processo favorito ainda.</Text>
         ) : (
-          <Stack gap={3}>
+          <Flex direction="column" gap="3">
             {casosFavoritos.map((caso) => (
-              <div key={caso.id} className="aj-layout-40">
-                <span>{caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)'}</span>
-                <div className="aj-layout-41">
-                  <Button kind="ghost" size="sm" onClick={() => irPara('casos', { id: caso.id })}>
+              <Flex key={caso.id} justify="between" align="center" gap="3" wrap="wrap">
+                <Text size="2">{caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)'}</Text>
+                <Flex gap="2">
+                  <Button variant="ghost" size="1" onClick={() => irPara('casos', { id: caso.id })}>
                     Abrir
                   </Button>
-                  <Button kind="ghost" size="sm" onClick={() => removerCasoFavorito(caso.id)}>
+                  <Button variant="ghost" size="1" onClick={() => removerCasoFavorito(caso.id)}>
                     Remover
                   </Button>
-                </div>
-              </div>
+                </Flex>
+              </Flex>
             ))}
-          </Stack>
+          </Flex>
         )}
       </section>
 
       <section>
-        <h3>Favoritos de consulta</h3>
-        <p>Favoritos deste navegador, sem sincronização. Use Consultar para repetir a consulta ao DataJud.</p>
+        <Heading as="h3" size="3" mb="2">Favoritos de consulta</Heading>
+        <Text as="p" size="2" color="gray" mb="3">Favoritos deste navegador, sem sincronização. Use Consultar para repetir a consulta ao DataJud.</Text>
         {favoritos.length === 0 ? (
-          <p>Nenhum favorito ainda.</p>
+          <Text as="p" size="2">Nenhum favorito ainda.</Text>
         ) : (
-          <DataTable
-            rows={favoritos.map((fav) => ({ id: `${fav.tribunal}:${fav.numero}`, tribunal: (fav.tribunal || '?').toUpperCase(), numero: formatarNumeroCNJ(fav.numero) }))}
-            headers={[
-              { key: 'tribunal', header: 'Tribunal' },
-              { key: 'numero', header: 'Número do processo' },
-            ]}
-            isSortable
-          >
-            {({ rows, headers, getHeaderProps, getRowProps, getTableProps }) => (
-              <TableContainer>
-                <TabelaResponsiva principais={['Número do processo', 'Consulta']}><Table {...getTableProps()} aria-label="Favoritos de consulta">
-                  <TableHead>
-                    <TableRow>
-                      {headers.map((header) => (
-                        <TableHeader {...getHeaderProps({ header })}>
-                          {header.header}
-                        </TableHeader>
-                      ))}
-                      <TableHeader>Ações</TableHeader>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {rows.map((row) => {
-                      const fav = favoritos.find((f) => `${f.tribunal}:${f.numero}` === row.id)
-                      return (
-                        <TableRow {...getRowProps({ row })}>
-                          {row.cells.map((cell) => (
-                            <TableCell key={cell.id}>{cell.info.header === 'resumo' ? <TextoTabela texto={String(cell.value ?? '')} /> : cell.value}</TableCell>
-                          ))}
-                          <TableCell>
-                            {fav && (
-                              <AcoesTabela rotulo={`favorito ${fav.numero}`} acoes={[
-                                { texto: 'Consultar', executar: () => consultarFavorito(fav) },
-                                { texto: 'Remover', executar: () => remover(fav) },
-                              ]} />
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table></TabelaResponsiva>
-              </TableContainer>
-            )}
-          </DataTable>
+          <Flex direction="column" gap="3">
+            <div className="form-campo" style={{ maxWidth: 320 }}>
+              <TextField.Root placeholder="Filtrar por tribunal ou número…" value={filtroFavoritos} onChange={(e) => setFiltroFavoritos(e.target.value)} />
+            </div>
+            <TabelaResponsiva principais={['Número do processo', 'Consulta']}>
+            <table aria-label="Favoritos de consulta">
+              <thead>
+                <tr>
+                  <th>Tribunal</th>
+                  <th>Número do processo</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {favoritos.filter((fav) => {
+                  const q = filtroFavoritos.trim().toLowerCase()
+                  if (!q) return true
+                  return (fav.tribunal || '').toLowerCase().includes(q) || formatarNumeroCNJ(fav.numero).toLowerCase().includes(q)
+                }).map((fav) => (
+                  <tr key={`${fav.tribunal}:${fav.numero}`}>
+                    <td>{(fav.tribunal || '?').toUpperCase()}</td>
+                    <td><TextoTabela texto={formatarNumeroCNJ(fav.numero)} /></td>
+                    <td>
+                      <AcoesTabela rotulo={`favorito ${fav.numero}`} acoes={[
+                        { texto: 'Consultar', executar: () => consultarFavorito(fav) },
+                        { texto: 'Remover', executar: () => remover(fav) },
+                      ]} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            </TabelaResponsiva>
+          </Flex>
         )}
       </section>
 
       <section>
-        <div className="aj-layout-40">
-          <h3>Histórico recente</h3>
+        <Flex justify="between" align="center" mb="2" wrap="wrap" gap="2">
+          <Heading as="h3" size="3">Histórico recente</Heading>
           {historico.length > 0 && (
-            <Button kind="danger--ghost" size="sm" onClick={apagarHistorico}>
+            <Button variant="ghost" color="red" size="1" onClick={apagarHistorico}>
               Apagar histórico
             </Button>
           )}
-        </div>
-        <p>Últimas consultas feitas neste navegador. Clique para repetir.</p>
+        </Flex>
+        <Text as="p" size="2" color="gray" mb="3">Últimas consultas feitas neste navegador. Clique para repetir.</Text>
         {historico.length === 0 ? (
-          <p>Nenhuma consulta recente.</p>
+          <Text as="p" size="2">Nenhuma consulta recente.</Text>
         ) : (
-          <DataTable
-            rows={historico.map((item, i) => ({ id: String(i), resumo: item.resumo, quando: formatarData(item.quando) }))}
-            headers={[
-              { key: 'resumo', header: 'Consulta' },
-              { key: 'quando', header: 'Quando' },
-            ]}
-            isSortable
-          >
-            {({ rows, headers, getHeaderProps, getRowProps, getTableProps }) => (
-              <TableContainer>
-                <TabelaResponsiva principais={['Número do processo', 'Consulta']}><Table {...getTableProps()} aria-label="Histórico recente">
-                  <TableHead>
-                    <TableRow>
-                      {headers.map((header) => (
-                        <TableHeader {...getHeaderProps({ header })}>
-                          {header.header}
-                        </TableHeader>
-                      ))}
-                      <TableHeader>Ações</TableHeader>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {rows.map((row) => {
-                      const item = historico[Number(row.id)]
-                      return (
-                        <TableRow {...getRowProps({ row })}>
-                          {row.cells.map((cell) => (
-                            <TableCell key={cell.id}>{cell.info.header === 'resumo' ? <TextoTabela texto={String(cell.value ?? '')} /> : cell.value}</TableCell>
-                          ))}
-                          <TableCell>
-                            {item && (
-                              <AcoesTabela rotulo={item.resumo} acoes={[{ texto: 'Repetir', executar: () => repetirItem(item) }]} />
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table></TabelaResponsiva>
-              </TableContainer>
-            )}
-          </DataTable>
+          <Flex direction="column" gap="3">
+            <div className="form-campo" style={{ maxWidth: 320 }}>
+              <TextField.Root placeholder="Filtrar histórico…" value={filtroHistorico} onChange={(e) => setFiltroHistorico(e.target.value)} />
+            </div>
+            <TabelaResponsiva principais={['Número do processo', 'Consulta']}>
+              <table aria-label="Histórico recente">
+                <thead>
+                  <tr>
+                    <th>Consulta</th>
+                    <th>Quando</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historico
+                    .filter((item) => item.resumo.toLowerCase().includes(filtroHistorico.trim().toLowerCase()))
+                    .map((item, i) => (
+                    <tr key={i}>
+                      <td><TextoTabela texto={item.resumo} /></td>
+                      <td>{formatarData(item.quando)}</td>
+                      <td>
+                        <AcoesTabela rotulo={item.resumo} acoes={[{ texto: 'Repetir', executar: () => repetirItem(item) }]} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TabelaResponsiva>
+          </Flex>
         )}
       </section>
-    </Stack>
+    </Flex>
   )
 }
