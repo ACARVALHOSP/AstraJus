@@ -1,8 +1,7 @@
 import Carregamento from './Carregamento'
-import { usePainelShell } from './usePainelShell'
 import { useState } from 'react'
-import { Button, HeaderGlobalAction, Search } from '@carbon/react'
-import { Search as IconeBusca } from '@carbon/icons-react'
+import { Button, Flex, IconButton, Popover, Text, TextField } from '@radix-ui/themes'
+import { Search } from 'lucide-react'
 import { useCliente } from './api/ClienteContext'
 import { useNavegacao } from './api/NavegacaoContext'
 import { buscarJson } from './api/rest'
@@ -24,8 +23,6 @@ export default function BuscaGlobal() {
   const [casos, setCasos] = useState<CasoOpcao[]>([])
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
-  const raiz = usePainelShell(aberta, () => setAberta(false))
-
 
   async function carregar() {
     setErro(null)
@@ -47,9 +44,9 @@ export default function BuscaGlobal() {
     }
   }
 
-  function abrir() {
-    setAberta(!aberta)
-    if (!aberta) void carregar()
+  function onOpenChange(aberto: boolean) {
+    setAberta(aberto)
+    if (aberto) void carregar()
   }
 
   const consulta = normalizar(termo)
@@ -66,55 +63,58 @@ export default function BuscaGlobal() {
     : []
 
   return (
-    <div ref={raiz} className="shell-action">
-      <HeaderGlobalAction aria-label="Busca global" aria-expanded={aberta} onClick={abrir}>
-        <IconeBusca size={20} />
-      </HeaderGlobalAction>
-      {aberta && (
-        <div className="shell-panel" role="region" aria-label="Busca global">
-          <Search
-            size="lg"
-            labelText="Buscar cliente ou processo"
+    <Popover.Root open={aberta} onOpenChange={onOpenChange}>
+      <Popover.Trigger>
+        <IconButton className="aj-ib" variant="ghost" aria-label="Busca global">
+          <Search size={17} />
+        </IconButton>
+      </Popover.Trigger>
+      <Popover.Content width="360px" align="end">
+        <Flex direction="column" gap="3" role="region" aria-label="Busca global">
+          <TextField.Root
+            size="2"
             placeholder="Nome, CPF/CNPJ ou número do processo"
+            aria-label="Buscar cliente ou processo"
             value={termo}
             onChange={(e) => setTermo(e.target.value)}
             autoFocus
-          />
-          <div className="aj-layout-1">
-            {carregando && <Carregamento tipo="texto" descricao="Consultando…" />}
-            {erro && <div role="alert"><p>{erro}</p><Button kind="ghost" size="sm" onClick={carregar}>Tentar novamente</Button></div>}
-            {!erro && !carregando && consulta && clientesFiltrados.length === 0 && casosFiltrados.length === 0 && <p>Nenhum resultado.</p>}
-            {clientesFiltrados.map((c) => (
+          >
+            <TextField.Slot><Search size={14} /></TextField.Slot>
+          </TextField.Root>
+          {carregando && <Carregamento tipo="texto" descricao="Consultando…" />}
+          {erro && (
+            <Flex direction="column" gap="2" role="alert">
+              <Text size="2" color="red">{erro}</Text>
+              <Button variant="ghost" size="1" onClick={carregar}>Tentar novamente</Button>
+            </Flex>
+          )}
+          {!erro && !carregando && consulta && clientesFiltrados.length === 0 && casosFiltrados.length === 0 && (
+            <Text size="2" color="gray">Nenhum resultado.</Text>
+          )}
+          {clientesFiltrados.map((c) => (
+            <Popover.Close key={`cliente-${c.id}`}>
               <button
-                key={`cliente-${c.id}`}
                 type="button"
-                className="header-busca-resultado-item"
-                onClick={() => {
-                  setAberta(false)
-                  setTermo('')
-                  irPara('contatos', { id: c.id })
-                }}
+                className="aj-busca-item"
+                onClick={() => { setTermo(''); irPara('contatos', { id: c.id }) }}
               >
                 {formatarNomeExibicao(c.nome || '(sem nome)')} · Cliente
               </button>
-            ))}
-            {casosFiltrados.map((c) => (
+            </Popover.Close>
+          ))}
+          {casosFiltrados.map((c) => (
+            <Popover.Close key={`caso-${c.id}`}>
               <button
-                key={`caso-${c.id}`}
                 type="button"
-                className="header-busca-resultado-item"
-                onClick={() => {
-                  setAberta(false)
-                  setTermo('')
-                  irPara('casos', { id: c.id })
-                }}
+                className="aj-busca-item"
+                onClick={() => { setTermo(''); irPara('casos', { id: c.id }) }}
               >
                 {formatarNomeExibicao(c.titulo || '(sem título)')} · Processo
               </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+            </Popover.Close>
+          ))}
+        </Flex>
+      </Popover.Content>
+    </Popover.Root>
   )
 }
