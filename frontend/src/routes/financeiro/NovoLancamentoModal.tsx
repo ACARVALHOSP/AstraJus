@@ -1,11 +1,12 @@
 import Carregamento from '../../Carregamento'
 import PreviaParcelas from '../../PreviaParcelas'
 import { useEffect, useState } from 'react'
-import { Checkbox, Column, DatePicker, DatePickerInput, Grid, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
+import { AlertTriangle } from 'lucide-react'
+import { Button, Callout, Checkbox, Dialog, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
-import { formatarDdMmAaaa, formatarNomeExibicao } from '../../utils/formatadores'
+import { formatarNomeExibicao } from '../../utils/formatadores'
 import { calcularValoresParcelas, somarMeses, valorLancamentoEmReais } from '../../utils/parcelas'
 
 type ClienteBusca = { id: string; nome: string; cpf_cnpj?: string }
@@ -148,133 +149,159 @@ export default function NovoLancamentoModal({ open, onClose, onSalvo }: { open: 
     }
   }
 
+  function fechar() {
+    limpar()
+    onClose()
+  }
+
   return (
-    <Modal closeButtonLabel="Fechar"
-      open={open}
-      modalHeading="Adicionar lançamento"
-      primaryButtonText="Salvar lançamento"
-      secondaryButtonText="Cancelar"
-      primaryButtonDisabled={salvando || carregandoBase}
-      onRequestClose={() => {
-        limpar()
-        onClose()
-      }}
-      onRequestSubmit={salvar}
-    >
-      <Stack gap={5}>
-        <p>Registre um valor a receber ou a pagar. Os campos com * são obrigatórios.</p>
-        {erroBase && <InlineNotification kind="error" title="Erro" subtitle={erroBase} lowContrast hideCloseButton />}
-
-        <TextInput
-          id="honorario-descricao"
-          labelText="Descrição *"
-          placeholder="Ex.: Honorários iniciais, Parcela contratual"
-          autoComplete="off"
-          value={descricao}
-          onChange={(e) => setDescricao(e.target.value)}
-        />
-        <Grid narrow fullWidth>
-          <Column sm={4} md={2} lg={4}>
-            <Select id="honorario-direcao" labelText="Tipo de lançamento *" value={direcao} onChange={(e) => setDirecao(e.target.value as 'RECEITA' | 'DESPESA')}>
-              <SelectItem value="RECEITA" text="A receber" />
-              <SelectItem value="DESPESA" text="A pagar" />
-            </Select>
-          </Column>
-          <Column sm={4} md={2} lg={4}>
-            <TextInput
-              id="honorario-valor"
-              labelText="Valor (R$) *"
-              helperText="Use vírgula para os centavos."
-              placeholder="Ex.: 1.500,00"
-              autoComplete="off"
-              value={valor}
-              onChange={(e) => setValor(e.target.value)}
-            />
-          </Column>
-          <Column sm={4} md={2} lg={4}>
-            <DatePicker
-              datePickerType="single"
-              dateFormat="d/m/Y"
-              onChange={(datas: Date[]) => setVencimento(datas[0] ? isoDeData(datas[0]) : '')}
-            >
-              <DatePickerInput id="honorario-vencimento" labelText="Vencimento *" placeholder="dd/mm/aaaa" />
-            </DatePicker>
-          </Column>
-          {parcelar && (
-            <Column sm={4} md={2} lg={4}>
-              <TextInput
-                id="honorario-parcelas"
-                type="number"
-                labelText="Quantidade de parcelas *"
-                min={2}
-                max={60}
-                value={String(parcelas)}
-                onChange={(e) => setParcelas(Number(e.target.value) || 2)}
-              />
-            </Column>
+    <Dialog.Root open={open} onOpenChange={(novoAberto) => !novoAberto && fechar()}>
+      <Dialog.Content maxWidth="600px">
+        <Dialog.Title>Adicionar lançamento</Dialog.Title>
+        <Dialog.Description>Registre um valor a receber ou a pagar. Os campos com * são obrigatórios.</Dialog.Description>
+        <Flex direction="column" gap="5" mt="4">
+          {erroBase && (
+            <Callout.Root color="red" size="1">
+              <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+              <Callout.Text>{erroBase}</Callout.Text>
+            </Callout.Root>
           )}
-        </Grid>
-        <Checkbox id="honorario-recorrente" labelText="Repetir mensalmente" checked={recorrente} onChange={(_e, { checked }) => setRecorrente(checked)} />
-        <Checkbox id="honorario-parcelar" labelText="Parcelar" checked={parcelar} onChange={(_e, { checked }) => setParcelar(checked)} />
-        {previewParcelas && <PreviaParcelas parcelas={previewParcelas} quantidade={parcelas} />}
 
-        <h4>Vínculos e responsabilidade</h4>
-        {carregandoBase ? <Carregamento tipo="detalhe" descricao="Carregando clientes e processos…" /> : <>
-        <TextInput
-          id="honorario-cliente-busca"
-          labelText="Cliente *"
-          placeholder="Busque por nome ou CPF/CNPJ"
-          autoComplete="off"
-          value={clienteSelecionado ? formatarNomeExibicao(clienteSelecionado.nome) : buscaCliente}
-          onChange={(e) => {
-            setClienteSelecionado(null)
-            setCasosSelecionados(new Set())
-            setBuscaCliente(e.target.value)
-          }}
-        />
-        {resultadosBusca.length > 0 && (
-          <div className="busca-resultados">
-            {resultadosBusca.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => {
-                  setClienteSelecionado(c)
-                  setBuscaCliente('')
-                }}
-              >
-                {formatarNomeExibicao(c.nome)}
-                {c.cpf_cnpj ? ` — ${c.cpf_cnpj}` : ''}
-              </button>
-            ))}
-          </div>
-        )}
-        {buscaCliente.trim() && !clienteSelecionado && resultadosBusca.length === 0 && <p>Nenhum cliente encontrado.</p>}
-
-        <fieldset className="cds--form-item">
-          <legend className="cds--label">Processos do cliente *</legend>
-          {!clienteSelecionado && <p>Selecione o cliente para ver os processos vinculados.</p>}
-          {clienteSelecionado && processosDoCliente.length === 0 && <p>Esse cliente não tem processos cadastrados.</p>}
-          {processosDoCliente.map((caso) => (
-            <Checkbox
-              key={caso.id}
-              id={`honorario-processo-${caso.id}`}
-              labelText={formatarNomeExibicao(caso.titulo || 'Sem título')}
-              checked={casosSelecionados.has(caso.id)}
-              onChange={(_e, { checked }) => alternarCaso(caso.id, checked)}
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="honorario-descricao">Descrição *</label>
+            <TextField.Root
+              id="honorario-descricao"
+              placeholder="Ex.: Honorários iniciais, Parcela contratual"
+              autoComplete="off"
+              value={descricao}
+              onChange={(e) => setDescricao(e.target.value)}
             />
-          ))}
-        </fieldset>
-        <TextInput id="honorario-responsavel" labelText="Responsável *" placeholder="Ex.: Dra. Fernanda Reis" autoComplete="off" value={responsavel} onChange={(e) => setResponsavel(e.target.value)} />
+          </div>
+          <div className="aj-form-grade">
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="honorario-direcao">Tipo de lançamento *</label>
+              <Select.Root value={direcao} onValueChange={(v) => setDirecao(v as 'RECEITA' | 'DESPESA')}>
+                <Select.Trigger id="honorario-direcao" style={{ width: '100%' }} />
+                <Select.Content>
+                  <Select.Item value="RECEITA">A receber</Select.Item>
+                  <Select.Item value="DESPESA">A pagar</Select.Item>
+                </Select.Content>
+              </Select.Root>
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="honorario-valor">Valor (R$) *</label>
+              <TextField.Root
+                id="honorario-valor"
+                placeholder="Ex.: 1.500,00"
+                autoComplete="off"
+                value={valor}
+                onChange={(e) => setValor(e.target.value)}
+              />
+              <Text size="1" color="gray">Use vírgula para os centavos.</Text>
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="honorario-vencimento">Vencimento *</label>
+              <TextField.Root id="honorario-vencimento" type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} />
+            </div>
+            {parcelar && (
+              <div className="form-campo">
+                <label className="form-campo-label" htmlFor="honorario-parcelas">Quantidade de parcelas *</label>
+                <TextField.Root
+                  id="honorario-parcelas"
+                  type="number"
+                  min={2}
+                  max={60}
+                  value={parcelas}
+                  onChange={(e) => setParcelas(Number(e.target.value) || 2)}
+                />
+              </div>
+            )}
+          </div>
+          <Text as="label" size="2">
+            <Flex gap="2" align="center">
+              <Checkbox checked={recorrente} onCheckedChange={(checked) => setRecorrente(Boolean(checked))} />
+              Repetir mensalmente
+            </Flex>
+          </Text>
+          <Text as="label" size="2">
+            <Flex gap="2" align="center">
+              <Checkbox checked={parcelar} onCheckedChange={(checked) => setParcelar(Boolean(checked))} />
+              Parcelar
+            </Flex>
+          </Text>
+          {previewParcelas && <PreviaParcelas parcelas={previewParcelas} quantidade={parcelas} />}
 
-        </>}
-        {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
-      </Stack>
-    </Modal>
+          <Heading as="h4" size="2">Vínculos e responsabilidade</Heading>
+          {carregandoBase ? <Carregamento tipo="detalhe" descricao="Carregando clientes e processos…" /> : <>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="honorario-cliente-busca">Cliente *</label>
+              <TextField.Root
+                id="honorario-cliente-busca"
+                placeholder="Busque por nome ou CPF/CNPJ"
+                autoComplete="off"
+                value={clienteSelecionado ? formatarNomeExibicao(clienteSelecionado.nome) : buscaCliente}
+                onChange={(e) => {
+                  setClienteSelecionado(null)
+                  setCasosSelecionados(new Set())
+                  setBuscaCliente(e.target.value)
+                }}
+              />
+            </div>
+            {resultadosBusca.length > 0 && (
+              <Flex direction="column" gap="1" className="busca-resultados">
+                {resultadosBusca.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className="aj-busca-item"
+                    onClick={() => {
+                      setClienteSelecionado(c)
+                      setBuscaCliente('')
+                    }}
+                  >
+                    {formatarNomeExibicao(c.nome)}
+                    {c.cpf_cnpj ? ` — ${c.cpf_cnpj}` : ''}
+                  </button>
+                ))}
+              </Flex>
+            )}
+            {buscaCliente.trim() && !clienteSelecionado && resultadosBusca.length === 0 && <Text size="2" color="gray">Nenhum cliente encontrado.</Text>}
+
+            <div className="form-campo">
+              <Text as="p" size="2" weight="medium">Processos do cliente *</Text>
+              {!clienteSelecionado && <Text size="2" color="gray">Selecione o cliente para ver os processos vinculados.</Text>}
+              {clienteSelecionado && processosDoCliente.length === 0 && <Text size="2" color="gray">Esse cliente não tem processos cadastrados.</Text>}
+              <Flex direction="column" gap="2" mt="1">
+                {processosDoCliente.map((caso) => (
+                  <Text as="label" size="2" key={caso.id}>
+                    <Flex gap="2" align="center">
+                      <Checkbox
+                        checked={casosSelecionados.has(caso.id)}
+                        onCheckedChange={(checked) => alternarCaso(caso.id, Boolean(checked))}
+                      />
+                      {formatarNomeExibicao(caso.titulo || 'Sem título')}
+                    </Flex>
+                  </Text>
+                ))}
+              </Flex>
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="honorario-responsavel">Responsável *</label>
+              <TextField.Root id="honorario-responsavel" placeholder="Ex.: Dra. Fernanda Reis" autoComplete="off" value={responsavel} onChange={(e) => setResponsavel(e.target.value)} />
+            </div>
+          </>}
+          {erro && (
+            <Callout.Root color="red" size="1">
+              <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+              <Callout.Text>{erro}</Callout.Text>
+            </Callout.Root>
+          )}
+          <Flex gap="3" justify="end">
+            <Button variant="soft" color="gray" onClick={fechar}>Cancelar</Button>
+            <Button onClick={salvar} disabled={salvando || carregandoBase}>Salvar lançamento</Button>
+          </Flex>
+        </Flex>
+      </Dialog.Content>
+    </Dialog.Root>
   )
-}
-
-function isoDeData(data: Date): string {
-  const [dia, mes, ano] = formatarDdMmAaaa(data).split('/')
-  return `${ano}-${mes}-${dia}`
 }

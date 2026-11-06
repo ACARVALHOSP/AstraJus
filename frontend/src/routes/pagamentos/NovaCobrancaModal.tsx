@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Checkbox, Column, Grid, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
+import { AlertTriangle } from 'lucide-react'
+import { Button, Callout, Checkbox, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { enviarJson } from '../../api/rest'
@@ -85,84 +86,99 @@ export default function NovaCobrancaModal({
   }
 
   return (
-    <Modal closeButtonLabel="Fechar"
-      open={open}
-      modalHeading="Nova cobrança"
-      primaryButtonText="Criar cobrança"
-      secondaryButtonText="Cancelar"
-      primaryButtonDisabled={enviando}
-      onRequestClose={() => {
-        limpar()
-        onClose()
-      }}
-      onRequestSubmit={criar}
-    >
-      <Stack gap={5}>
-        <TextInput
-          id="cobranca-cliente-cpf"
-          labelText="Cliente (CPF/CNPJ) *"
-          placeholder="Ex.: 123.456.789-00"
-          autoComplete="off"
-          helperText={statusCpfCnpj()}
-          value={cpfCnpj}
-          onChange={(e) => aoDigitarCpfCnpj(e.target.value)}
-        />
-        <Checkbox id="cobranca-parcelar" labelText="Parcelar" checked={parcelar} onChange={(_e, { checked }) => setParcelar(checked)} />
-        <Grid narrow fullWidth>
-          <Column sm={4} md={2} lg={3}>
-            <Select id="cobranca-tipo" labelText="Tipo de cobrança *" value={tipo} onChange={(e) => setTipo(e.target.value as 'BOLETO' | 'PIX')}>
-              <SelectItem value="BOLETO" text="Boleto" />
-              <SelectItem value="PIX" text="Pix" />
-            </Select>
-          </Column>
-          {parcelar && (
-            <Column sm={4} md={2} lg={4}>
-              <TextInput
-                id="cobranca-parcelas"
-                type="number"
-                labelText="Quantidade de parcelas *"
-                min={2}
-                max={60}
-                value={String(parcelas)}
-                onChange={(e) => setParcelas(Number(e.target.value) || 2)}
-              />
-            </Column>
-          )}
-          <Column sm={4} md={2} lg={4}>
-            <TextInput
-              id="cobranca-valor"
-              type="number"
-              labelText={parcelar ? 'Valor total *' : 'Valor *'}
-              placeholder="Ex.: 1500.00"
-              min="0.01"
-              step="0.01"
-              value={valor}
-              onChange={(e) => setValor(e.target.value)}
-            />
-          </Column>
-          <Column sm={4} md={2} lg={4}>
-            <TextInput
-              id="cobranca-vencimento"
-              labelText="Vencimento *"
-              placeholder="aaaa-mm-dd"
+    <Dialog.Root open={open} onOpenChange={(v) => { if (!v) { limpar(); onClose() } }}>
+      <Dialog.Content maxWidth="560px">
+        <Dialog.Title>Nova cobrança</Dialog.Title>
+        <Flex direction="column" gap="5">
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="cobranca-cliente-cpf">Cliente (CPF/CNPJ) *</label>
+            <TextField.Root
+              id="cobranca-cliente-cpf"
+              placeholder="Ex.: 123.456.789-00"
               autoComplete="off"
-              value={vencimento}
-              onChange={(e) => setVencimento(e.target.value)}
+              value={cpfCnpj}
+              onChange={(e) => aoDigitarCpfCnpj(e.target.value)}
             />
-          </Column>
-        </Grid>
-        <PreviaParcelas parcelar={parcelar} valor={valor} parcelas={parcelas} vencimento={vencimento} />
-        <TextInput
-          id="cobranca-descricao"
-          labelText="Descrição"
-          placeholder="Ex.: Honorários - parcela 1/3"
-          autoComplete="off"
-          value={descricao}
-          onChange={(e) => setDescricao(e.target.value)}
-        />
-        {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
-      </Stack>
-    </Modal>
+            {statusCpfCnpj() && <Text size="1" color="gray">{statusCpfCnpj()}</Text>}
+          </div>
+          <Text as="label" size="2">
+            <Flex gap="2" align="center">
+              <Checkbox checked={parcelar} onCheckedChange={(checked) => setParcelar(Boolean(checked))} />
+              Parcelar
+            </Flex>
+          </Text>
+          <div className="aj-form-grade">
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="cobranca-tipo">Tipo de cobrança *</label>
+              <Select.Root value={tipo} onValueChange={(v) => setTipo(v as 'BOLETO' | 'PIX')}>
+                <Select.Trigger id="cobranca-tipo" style={{ width: '100%' }} />
+                <Select.Content>
+                  <Select.Item value="BOLETO">Boleto</Select.Item>
+                  <Select.Item value="PIX">Pix</Select.Item>
+                </Select.Content>
+              </Select.Root>
+            </div>
+            {parcelar && (
+              <div className="form-campo">
+                <label className="form-campo-label" htmlFor="cobranca-parcelas">Quantidade de parcelas *</label>
+                <TextField.Root
+                  id="cobranca-parcelas"
+                  type="number"
+                  min={2}
+                  max={60}
+                  value={String(parcelas)}
+                  onChange={(e) => setParcelas(Number(e.target.value) || 2)}
+                />
+              </div>
+            )}
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="cobranca-valor">{parcelar ? 'Valor total *' : 'Valor *'}</label>
+              <TextField.Root
+                id="cobranca-valor"
+                type="number"
+                placeholder="Ex.: 1500.00"
+                min="0.01"
+                step="0.01"
+                value={valor}
+                onChange={(e) => setValor(e.target.value)}
+              />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="cobranca-vencimento">Vencimento *</label>
+              <TextField.Root
+                id="cobranca-vencimento"
+                type="date"
+                value={vencimento}
+                onChange={(e) => setVencimento(e.target.value)}
+              />
+            </div>
+          </div>
+          <PreviaParcelas parcelar={parcelar} valor={valor} parcelas={parcelas} vencimento={vencimento} />
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="cobranca-descricao">Descrição</label>
+            <TextField.Root
+              id="cobranca-descricao"
+              placeholder="Ex.: Honorários - parcela 1/3"
+              autoComplete="off"
+              value={descricao}
+              onChange={(e) => setDescricao(e.target.value)}
+            />
+          </div>
+          {erro && (
+            <Callout.Root color="red" size="1">
+              <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+              <Callout.Text>{erro}</Callout.Text>
+            </Callout.Root>
+          )}
+          <Flex gap="3" mt="2" justify="end">
+            <Dialog.Close>
+              <Button variant="soft" color="gray">Cancelar</Button>
+            </Dialog.Close>
+            <Button size="2" disabled={enviando} onClick={criar}>Criar cobrança</Button>
+          </Flex>
+        </Flex>
+      </Dialog.Content>
+    </Dialog.Root>
   )
 }
 

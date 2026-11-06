@@ -3,22 +3,8 @@ import TextoTabela from '../TextoTabela'
 import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
-import {
-  Button,
-  Checkbox,
-  DataTable,
-  InlineNotification,
-  Modal,
-  Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableHeader,
-  TableRow,
-  Tag,
-} from '@carbon/react'
+import { AlertTriangle, Info } from 'lucide-react'
+import { AlertDialog, Badge, Button, Callout, Checkbox, Flex, Heading, Text } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 import { buscarJson, enviarJson } from '../api/rest'
@@ -113,18 +99,26 @@ export default function Financeiro() {
   }
 
   return (
-    <Stack gap={6}>
-      <div className="aj-layout-38">
-        <h1>Lançamentos</h1>
-        <Button size="sm" onClick={() => setModalNovoAberto(true)}>
+    <Flex direction="column" gap="6">
+      <Flex justify="between" align="center" wrap="wrap" gap="2">
+        <Heading as="h1" size="6">Lançamentos</Heading>
+        <Button size="2" onClick={() => setModalNovoAberto(true)}>
           Novo lançamento
         </Button>
-      </div>
+      </Flex>
       <div aria-live="polite">
         {carregando && <Carregamento tipo="tabela" descricao="Carregando…" />}
-        {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
+        {erro && (
+          <Callout.Root color="red" size="1">
+            <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+            <Callout.Text>{erro}</Callout.Text>
+          </Callout.Root>
+        )}
         {!carregando && lancamentos && lancamentos.length === 0 && (
-          <InlineNotification kind="info" title="Nenhum lançamento cadastrado" lowContrast hideCloseButton />
+          <Callout.Root color="blue" size="1">
+            <Callout.Icon><Info size={14} /></Callout.Icon>
+            <Callout.Text>Nenhum lançamento cadastrado</Callout.Text>
+          </Callout.Root>
         )}
         {!carregando && lancamentos && lancamentos.length > 0 && (
           <TabelaLancamentos
@@ -137,20 +131,22 @@ export default function Financeiro() {
           />
         )}
       </div>
-      <Modal closeButtonLabel="Fechar"
-        open={paraExcluir !== null}
-        danger
-        modalHeading="Excluir lançamento"
-        primaryButtonText="Excluir"
-        secondaryButtonText="Cancelar"
-        primaryButtonDisabled={excluindo}
-        onRequestClose={() => setParaExcluir(null)}
-        onRequestSubmit={confirmarExclusao}
-      >
-        <p>
-          Excluir o lançamento "{paraExcluir?.descricao}"? Essa ação não pode ser desfeita.
-        </p>
-      </Modal>
+      <AlertDialog.Root open={paraExcluir !== null} onOpenChange={(open) => !open && setParaExcluir(null)}>
+        <AlertDialog.Content maxWidth="400px">
+          <AlertDialog.Title>Excluir lançamento</AlertDialog.Title>
+          <AlertDialog.Description>
+            Excluir o lançamento "{paraExcluir?.descricao}"? Essa ação não pode ser desfeita.
+          </AlertDialog.Description>
+          <Flex gap="3" mt="4" justify="end">
+            <AlertDialog.Cancel>
+              <Button variant="soft" color="gray">Cancelar</Button>
+            </AlertDialog.Cancel>
+            <AlertDialog.Action>
+              <Button color="red" disabled={excluindo} onClick={confirmarExclusao}>Excluir</Button>
+            </AlertDialog.Action>
+          </Flex>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
       <NovoLancamentoModal
         open={modalNovoAberto}
         onClose={() => setModalNovoAberto(false)}
@@ -159,19 +155,9 @@ export default function Financeiro() {
           carregar()
         }}
       />
-    </Stack>
+    </Flex>
   )
 }
-
-const CABECALHOS_LANCAMENTOS = [
-  { key: 'vencimento', header: 'Vencimento' },
-  { key: 'valor', header: 'Valor' },
-  { key: 'descricao', header: 'Descrição' },
-  { key: 'cliente', header: 'Cliente' },
-  { key: 'processo', header: 'Processo' },
-  { key: 'responsavel', header: 'Responsável' },
-  { key: 'direcao', header: 'Direção' },
-]
 
 function TabelaLancamentos({
   lancamentos,
@@ -188,73 +174,59 @@ function TabelaLancamentos({
   onGerarCobranca: (lanc: Lancamento) => void
   onExcluir: (lanc: Lancamento) => void
 }) {
-  const porId = new Map(lancamentos.map((l) => [l.id, l]))
-  const linhas = lancamentos.map((lanc) => ({
-    id: lanc.id,
-    vencimento: formatarDataSimples(lanc.vencimento),
-    valor: formatarMoeda(lanc.valor),
-    descricao: lanc.descricao + (lanc.recorrente ? ' (mensal)' : ''),
-    cliente: formatarNomeExibicao(nomeCliente(lanc.cliente_id)),
-    processo: formatarNomeExibicao(tituloCaso(lanc.caso_id)),
-    responsavel: formatarNomeExibicao(lanc.responsavel),
-    direcao: lanc.direcao === 'DESPESA' ? 'A pagar' : 'A receber',
-  }))
-
   return (
-    <DataTable rows={linhas} headers={CABECALHOS_LANCAMENTOS} isSortable>
-      {({ rows, headers, getHeaderProps, getRowProps, getTableProps }) => (
-        <TableContainer>
-          <TabelaResponsiva principais={['Descrição', 'Valor']}><Table {...getTableProps()} aria-label="Lançamentos">
-            <TableHead>
-              <TableRow>
-                {headers.map((header) => (
-                  <TableHeader {...getHeaderProps({ header })}>
-                    {header.header}
-                  </TableHeader>
-                ))}
-                <TableHeader>Ações</TableHeader>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {rows.map((row) => {
-                const lanc = porId.get(row.id)
-                if (!lanc) return null
-                const rotuloPago = lanc.direcao === 'DESPESA' ? 'Pago' : 'Recebido'
-                return (
-                  <TableRow {...getRowProps({ row })}>
-                    {row.cells.map((cell) =>
-                      cell.info.header === 'direcao' ? (
-                        <TableCell key={cell.id}>
-                          <Tag type={lanc.direcao === 'DESPESA' ? 'red' : 'green'} size="sm">
-                            {cell.value}
-                          </Tag>
-                          <div>
-                            <Checkbox
-                              id={`pago-${lanc.id}`}
-                              labelText={rotuloPago}
-                              checked={lanc.pago}
-                              onChange={(_e, { checked }) => onAlternarPago(lanc, checked)}
-                            />
-                          </div>
-                        </TableCell>
-                      ) : (
-                        <TableCell key={cell.id}>{['descricao', 'cliente', 'processo', 'responsavel'].includes(cell.info.header) ? <TextoTabela texto={String(cell.value ?? '')} /> : cell.value}</TableCell>
-                      ),
-                    )}
-                    <TableCell>
-                      {lanc.asaas_cobranca_id && <span title={`Cobrança ${lanc.asaas_cobranca_id}`}>Cobrança gerada</span>}
-                      <AcoesTabela rotulo={lanc.descricao} acoes={[
-                        ...(!lanc.asaas_cobranca_id && !lanc.pago ? [{ texto: 'Gerar cobrança', executar: () => onGerarCobranca(lanc) }] : []),
-                        { texto: 'Excluir', executar: () => onExcluir(lanc), perigo: true },
-                      ]} />
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table></TabelaResponsiva>
-        </TableContainer>
-      )}
-    </DataTable>
+    <TabelaResponsiva principais={['Descrição', 'Valor']}>
+      <table aria-label="Lançamentos">
+        <thead>
+          <tr>
+            <th>Vencimento</th>
+            <th>Valor</th>
+            <th>Descrição</th>
+            <th>Cliente</th>
+            <th>Processo</th>
+            <th>Responsável</th>
+            <th>Direção</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lancamentos.map((lanc) => {
+            const rotuloPago = lanc.direcao === 'DESPESA' ? 'Pago' : 'Recebido'
+            return (
+              <tr key={lanc.id}>
+                <td>{formatarDataSimples(lanc.vencimento)}</td>
+                <td>{formatarMoeda(lanc.valor)}</td>
+                <td><TextoTabela texto={lanc.descricao + (lanc.recorrente ? ' (mensal)' : '')} /></td>
+                <td><TextoTabela texto={formatarNomeExibicao(nomeCliente(lanc.cliente_id))} /></td>
+                <td><TextoTabela texto={formatarNomeExibicao(tituloCaso(lanc.caso_id))} /></td>
+                <td><TextoTabela texto={formatarNomeExibicao(lanc.responsavel)} /></td>
+                <td>
+                  <Flex direction="column" gap="2" align="start">
+                    <Badge color={lanc.direcao === 'DESPESA' ? 'red' : 'green'}>
+                      {lanc.direcao === 'DESPESA' ? 'A pagar' : 'A receber'}
+                    </Badge>
+                    <Text as="label" size="2">
+                      <Flex gap="2" align="center">
+                        <Checkbox checked={lanc.pago} onCheckedChange={(checked) => onAlternarPago(lanc, Boolean(checked))} />
+                        {rotuloPago}
+                      </Flex>
+                    </Text>
+                  </Flex>
+                </td>
+                <td>
+                  <Flex direction="column" gap="2" align="end">
+                    {lanc.asaas_cobranca_id && <Text size="1" color="gray" title={`Cobrança ${lanc.asaas_cobranca_id}`}>Cobrança gerada</Text>}
+                    <AcoesTabela rotulo={lanc.descricao} acoes={[
+                      ...(!lanc.asaas_cobranca_id && !lanc.pago ? [{ texto: 'Gerar cobrança', executar: () => onGerarCobranca(lanc) }] : []),
+                      { texto: 'Excluir', executar: () => onExcluir(lanc), perigo: true },
+                    ]} />
+                  </Flex>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </TabelaResponsiva>
   )
 }

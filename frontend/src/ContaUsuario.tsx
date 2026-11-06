@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Button } from '@carbon/react'
-import { User } from "@carbon/icons-react";
+import { Button } from '@radix-ui/themes'
+import { User } from 'lucide-react'
 import { useCliente } from './api/ClienteContext'
 import type { ClienteMCP } from './api/mcpClient'
 import { useNavegacao } from './api/NavegacaoContext'
@@ -47,9 +47,9 @@ function ContaConectada({ cliente }: { cliente: ClienteMCP }) {
       {aberto && <div id="shell-conta-painel" className="shell-panel shell-conta__painel" role="region" aria-label="Minha conta">
         <h2>{nome}</h2>
         {perfil ? <><p>{perfil.login}</p><p>Perfil de acesso: {NIVEIS[perfil.nivel_acesso] || 'Não informado'}</p></> :
-          erro ? <div role="alert"><p>Não foi possível carregar seus dados.</p><Button kind="ghost" size="sm" onClick={() => { setErro(false); setTentativa(t => t + 1) }}>Tentar novamente</Button></div> : <p role="status">Carregando seus dados…</p>}
-        <Button kind="ghost" size="sm" onClick={() => { setAberto(false); irPara('acesso') }}>Configurações de acesso</Button>
-        <Button kind="danger--ghost" size="sm" onClick={() => { setAberto(false); setPerfil(null); esquecer(); irPara('acesso') }}>Sair</Button>
+          erro ? <div role="alert"><p>Não foi possível carregar seus dados.</p><Button variant="ghost" size="1" style={{ alignSelf: 'flex-start' }} onClick={() => { setErro(false); setTentativa(t => t + 1) }}>Tentar novamente</Button></div> : <p role="status">Carregando seus dados…</p>}
+        <Button variant="ghost" size="1" style={{ alignSelf: 'flex-start' }} onClick={() => { setAberto(false); irPara('acesso') }}>Configurações de acesso</Button>
+        <Button variant="ghost" color="red" size="1" style={{ alignSelf: 'flex-start' }} onClick={() => { setAberto(false); setPerfil(null); esquecer(); irPara('acesso') }}>Sair</Button>
       </div>}
     </div>
   )

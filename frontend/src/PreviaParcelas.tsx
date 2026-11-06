@@ -1,5 +1,5 @@
 import TabelaResponsiva from './TabelaResponsiva'
-import { Table, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow } from '@carbon/react'
+import { Text } from '@radix-ui/themes'
 import { formatarDataSimples, formatarMoeda } from './utils/formatadores'
 
 type Parcela = { numero: number; vencimento: string; valor: number }
@@ -11,26 +11,28 @@ export default function PreviaParcelas({ parcelas, quantidade, descricao }: {
 }) {
   return (
     <div className="previa-parcelas">
-      <TableContainer title="Prévia das parcelas" description={descricao}>
-        <TabelaResponsiva principais={['Parcela', 'Vencimento', 'Valor']}><Table size="md" className="previa-parcelas-tabela" aria-label="Prévia das parcelas">
-          <TableHead>
-            <TableRow>
-              <TableHeader scope="col">Parcela</TableHeader>
-              <TableHeader scope="col">Vencimento</TableHeader>
-              <TableHeader scope="col"><span className="previa-parcelas-valor-cabecalho">Valor</span></TableHeader>
-            </TableRow>
-          </TableHead>
-          <TableBody>
+      <Text as="p" size="2" weight="bold">Prévia das parcelas</Text>
+      {descricao && <Text as="p" size="2" color="gray">{descricao}</Text>}
+      <TabelaResponsiva principais={['Parcela', 'Vencimento', 'Valor']}>
+        <table className="previa-parcelas-tabela" aria-label="Prévia das parcelas">
+          <thead>
+            <tr>
+              <th scope="col">Parcela</th>
+              <th scope="col">Vencimento</th>
+              <th scope="col"><span className="previa-parcelas-valor-cabecalho">Valor</span></th>
+            </tr>
+          </thead>
+          <tbody>
             {parcelas.map((parcela) => (
-              <TableRow key={parcela.numero}>
-                <TableCell>{parcela.numero}/{quantidade}</TableCell>
-                <TableCell className="previa-parcelas-data">{formatarDataSimples(parcela.vencimento)}</TableCell>
-                <TableCell className="previa-parcelas-valor">{formatarMoeda(parcela.valor)}</TableCell>
-              </TableRow>
+              <tr key={parcela.numero}>
+                <td>{parcela.numero}/{quantidade}</td>
+                <td className="previa-parcelas-data">{formatarDataSimples(parcela.vencimento)}</td>
+                <td className="previa-parcelas-valor">{formatarMoeda(parcela.valor)}</td>
+              </tr>
             ))}
-          </TableBody>
-        </Table></TabelaResponsiva>
-      </TableContainer>
+          </tbody>
+        </table>
+      </TabelaResponsiva>
     </div>
   )
 }

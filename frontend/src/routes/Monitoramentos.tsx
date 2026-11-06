@@ -1,16 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  Button,
-  Column,
-  Grid,
-  InlineNotification,
-  Modal,
-  Select,
-  SelectItem,
-  Stack,
-  TextInput,
-  Tile
-} from '@carbon/react'
+import { AlertTriangle, Info, CheckCircle2 } from 'lucide-react'
+import { Button, Callout, Card, Dialog, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
 import Carregamento from '../Carregamento'
 import { useCliente } from '../api/ClienteContext'
 import { formatarNumeroCNJ } from '../utils/formatadores'
@@ -66,41 +56,37 @@ function criterio(c: Criterio = {}) {
 
 function EstadoExecucao({ titulo, dados }: { titulo: string; dados?: Execucao }) {
   return (
-    <Stack gap={3}>
-      <h3>{titulo}</h3>
-      <p>
+    <Flex direction="column" gap="3">
+      <Heading as="h3" size="3">{titulo}</Heading>
+      <Text as="p" size="2">
         Última tentativa:{' '}
         {dados?.ultima_tentativa ? formatarData(dados.ultima_tentativa) : 'Aguardando primeira execução'}.
-      </p>
+      </Text>
       {dados?.ultimo_sucesso && (
-        <p>
+        <Text as="p" size="2">
           Última coleta concluída: {formatarData(dados.ultimo_sucesso)} · {dados.paginas ?? 0} página(s) ·{' '}
           {dados.encontradas ?? 0} publicação(ões).
-        </p>
+        </Text>
       )}
       {dados?.proxima_execucao && (
-        <p>Próxima prevista: {formatarData(dados.proxima_execucao)}. Falhas podem adiar a execução.</p>
+        <Text as="p" size="2">Próxima prevista: {formatarData(dados.proxima_execucao)}. Falhas podem adiar a execução.</Text>
       )}
-      {dados?.estado === 'executando' && <p role="status">Verificação em andamento.</p>}
+      {dados?.estado === 'executando' && <Text as="p" size="2" role="status">Verificação em andamento.</Text>}
       {dados?.erro && (
-        <InlineNotification
-          kind="warning"
-          title="Coleta incompleta"
-          subtitle={dados.erro}
-          lowContrast
-          hideCloseButton
-        />
+        <Callout.Root color="yellow" size="1">
+          <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+          <Callout.Text>{dados.erro}</Callout.Text>
+        </Callout.Root>
       )}
       {Boolean(dados?.emails_pendentes || dados?.locais_pendentes) && (
-        <InlineNotification
-          kind="warning"
-          title="Entregas pendentes"
-          subtitle={`${dados?.emails_pendentes ?? 0} publicação(ões) aguardam e-mail; ${dados?.locais_pendentes ?? 0} aguardam registro no painel. As entregas serão tentadas novamente.`}
-          lowContrast
-          hideCloseButton
-        />
+        <Callout.Root color="yellow" size="1">
+          <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+          <Callout.Text>
+            {dados?.emails_pendentes ?? 0} publicação(ões) aguardam e-mail; {dados?.locais_pendentes ?? 0} aguardam registro no painel. As entregas serão tentadas novamente.
+          </Callout.Text>
+        </Callout.Root>
       )}
-    </Stack>
+    </Flex>
   )
 }
 
@@ -204,285 +190,258 @@ function Painel() {
   const bloqueado = operacao || carregando
   return (
     <>
-      <Stack gap={6}>
-        <Grid fullWidth>
-          <Column sm={4} md={8} lg={16}>
-            <Stack gap={5}>
-              <h1>Monitoramentos</h1>
-              <p>
-                Acompanhe publicações de processos ou OAB. Você tem {lista.length} de {dados?.limite ?? 5}{' '}
-                monitoramentos.
-              </p>
-              <div>
-                <Button
-                  kind="primary"
-                  size="md"
-                  disabled={!cliente || bloqueado || lista.length >= (dados?.limite ?? 5)}
-                  onClick={() => {
-                    setNumero('')
-                    setUf('')
-                    setNome('')
-                    setErroModal('')
-                    setTipo('oab')
-                    setModal('criar')
-                  }}
-                >
-                  Criar monitoramento
-                </Button>
-                <Button kind="ghost" size="md" disabled={bloqueado} onClick={carregar}>
-                  Atualizar lista
-                </Button>
-              </div>
-              <p>Atualizar esta lista não dispara uma consulta ao DJEN.</p>
-            </Stack>
-          </Column>
-        </Grid>
-        <Grid fullWidth>
-          <Column sm={4} md={8} lg={16}>
-            <Stack gap={4}>
-              <InlineNotification
-                kind="info"
-                title="Como funciona"
-                subtitle="As publicações são verificadas a cada 6 horas; a captura por OAB também ocorre a cada 24 horas. A atualização diária da capa é independente dos avisos por e-mail. Novas publicações permanecem não tratadas até a revisão."
-                lowContrast
-                hideCloseButton
-              />
-              {(dados?.email_configurado === false || dados?.email_destinatario_configurado === false) && (
-                <InlineNotification
-                  kind="warning"
-                  title={dados?.email_destinatario_configurado === false ? 'E-mail do perfil não informado' : 'Envio de e-mail indisponível'}
-                  subtitle={dados?.email_destinatario_configurado === false
-                    ? 'Você pode criar monitoramentos e as publicações serão coletadas. Peça a um administrador para completar o e-mail do seu perfil; os envios pendentes serão retomados após a atualização.'
-                    : 'A coleta continua. Os e-mails ficarão pendentes até a configuração do servidor ser restabelecida.'}
-                  lowContrast
-                  hideCloseButton
-                />
-              )}
-              {erro && (
-                <InlineNotification
-                  kind="error"
-                  title="Não foi possível concluir"
-                  subtitle={erro}
-                  lowContrast
-                  hideCloseButton
-                />
-              )}
-              {mensagem && (
-                <InlineNotification
-                  kind="success"
-                  title="Operação concluída"
-                  subtitle={mensagem}
-                  lowContrast
-                  hideCloseButton
-                />
-              )}
-              {carregando && <Carregamento tipo="cartoes" descricao="Carregando monitoramentos…" />}
-              {!carregando && dados && !lista.length && (
-                <InlineNotification
-                  kind="info"
-                  title="Nenhum monitoramento ativo"
-                  subtitle="Use Criar monitoramento para acompanhar uma OAB ou um processo."
-                  lowContrast
-                  hideCloseButton
-                />
-              )}
-            </Stack>
-          </Column>
-        </Grid>
-        {lista.map((mon) => (
-          <Grid fullWidth key={mon.id}>
-            <Column sm={4} md={8} lg={16}>
-              <Tile>
-                <Stack gap={5}>
-                  <h2>{criterio(mon.criterio)}</h2>
-                  {mon.criterio?.nome && <p>{mon.criterio.nome}</p>}
-                  <p>
-                    Criado em {formatarData(mon.criado_em)}. Expira em {formatarData(mon.expira_em)} se não houver
-                    publicação nova.
-                  </p>
-                  <EstadoExecucao titulo="Verificação de publicações" dados={mon.verificacao} />
-                  {mon.criterio?.numero_oab && <EstadoExecucao titulo="Captura por OAB" dados={mon.captura_oab} />}
-                  <div>
-                    <Button kind="tertiary" size="sm" disabled={bloqueado} onClick={() => executar('renovar', mon)}>
-                      Renovar por 180 dias
-                    </Button>
-                    <Button
-                      kind="danger--ghost"
-                      size="sm"
-                      disabled={bloqueado}
-                      onClick={() => {
-                        setErroModal('')
-                        setModal(mon)
-                      }}
-                    >
-                      Remover
-                    </Button>
-                  </div>
-                </Stack>
-              </Tile>
-            </Column>
-          </Grid>
-        ))}
-        {dados?.historico && (
-          <Grid fullWidth>
-            <Column sm={4} md={8} lg={16}>
-              <details>
-                <summary>Histórico das rotinas automáticas</summary>
-                <Stack gap={5}>
-                  {Object.entries(dados.historico).map(([rotina, execucoes]) => (
-                    <section key={rotina} aria-label={rotina}>
-                      <Stack gap={3}>
-                        <h2>
-                          {(
-                            {
-                              monitoramentos: 'Verificação de publicações',
-                              captura_oab: 'Captura por OAB',
-                              movimentos: 'Atualização das capas'
-                            } as Record<string, string>
-                          )[rotina] || rotina}
-                        </h2>
-                        {!execucoes.length && <p>Aguardando primeira execução.</p>}
-                        {execucoes.map((e) => (
-                          <p key={e.inicio}>
-                            {formatarData(e.inicio)} ·{' '}
-                            {(
-                              {
-                                concluida: 'Concluída',
-                                falha: 'Falha ou conclusão parcial',
-                                interrompida: 'Interrompida',
-                                executando: 'Em andamento'
-                              } as Record<string, string>
-                            )[e.estado] || e.estado}
-                            {e.erro ? ` · ${e.erro}` : ''}
-                          </p>
-                        ))}
-                      </Stack>
-                    </section>
-                  ))}
-                </Stack>
-              </details>
-            </Column>
-          </Grid>
-        )}
-      </Stack>
-      <Modal
-        open={modal === 'criar'}
-        modalHeading="Criar monitoramento"
-        closeButtonLabel="Fechar"
-        primaryButtonText={operacao ? 'Criando…' : 'Criar monitoramento'}
-        secondaryButtonText="Cancelar"
-        primaryButtonDisabled={operacao}
-        onRequestClose={() => {
-          if (!operacao) setModal(null)
-        }}
-        onRequestSubmit={() => executar('criar')}
-      >
-        <form
-          ref={formulario}
-          onSubmit={(e) => {
-            e.preventDefault()
-            void executar('criar')
-          }}
-        >
-          <Stack gap={5}>
-            <Select
-              id="monitoramento-tipo"
-              labelText="Acompanhar"
-              value={tipo}
-              disabled={operacao}
-              onChange={(e) => {
-                setTipo(e.target.value)
+      <Flex direction="column" gap="6">
+        <Flex direction="column" gap="5">
+          <Heading as="h1" size="6">Monitoramentos</Heading>
+          <Text as="p" size="2">
+            Acompanhe publicações de processos ou OAB. Você tem {lista.length} de {dados?.limite ?? 5}{' '}
+            monitoramentos.
+          </Text>
+          <div className="aj-acoes-linha">
+            <Button
+              size="2"
+              disabled={!cliente || bloqueado || lista.length >= (dados?.limite ?? 5)}
+              onClick={() => {
                 setNumero('')
+                setUf('')
+                setNome('')
+                setErroModal('')
+                setTipo('oab')
+                setModal('criar')
               }}
             >
-              <SelectItem value="oab" text="Publicações por OAB" />
-              <SelectItem value="processo" text="Publicações de um processo" />
-            </Select>
-            <TextInput
-              id="monitoramento-numero"
-              data-modal-primary-focus
-              labelText={tipo === 'oab' ? 'Número da OAB' : 'Número CNJ do processo'}
-              value={numero}
-              required
-              disabled={operacao}
-              maxLength={tipo === 'oab' ? 6 : 25}
-              pattern={tipo === 'oab' ? '[0-9]{1,6}' : '[0-9.\\-]{20,25}'}
-              helperText={tipo === 'oab' ? 'Informe apenas os dígitos.' : 'Informe os 20 dígitos, com ou sem máscara.'}
-              onChange={(e) => setNumero(e.target.value)}
-            />
-            {tipo === 'oab' && (
-              <Select
-                id="monitoramento-uf"
-                labelText="UF da OAB"
-                value={uf}
-                required
-                disabled={operacao}
-                onChange={(e) => setUf(e.target.value)}
-              >
-                <SelectItem value="" text="Selecione a UF" />
-                {'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'
-                  .split(' ')
-                  .map((u) => (
-                    <SelectItem key={u} value={u} text={u} />
-                  ))}
-              </Select>
-            )}
-            <TextInput
-              id="monitoramento-nome"
-              labelText="Nome para identificação (opcional)"
-              value={nome}
-              disabled={operacao}
-              maxLength={120}
-              helperText="Identifica o monitoramento; não filtra a consulta."
-              onChange={(e) => setNome(e.target.value)}
-            />
-            <p>
-              Validade de 180 dias, renovada ao encontrar publicações novas. O envio de e-mail depende da configuração
-              do servidor.
-            </p>
-            {erroModal && (
-              <InlineNotification
-                kind="error"
-                title="Não foi possível criar"
-                subtitle={erroModal}
-                lowContrast
-                hideCloseButton
-              />
-            )}
-          </Stack>
-        </form>
-      </Modal>
-      <Modal
-        open={modal !== null && modal !== 'criar'}
-        danger
-        modalHeading="Remover monitoramento"
-        closeButtonLabel="Fechar"
-        primaryButtonText={operacao ? 'Removendo…' : 'Remover'}
-        secondaryButtonText="Cancelar"
-        primaryButtonDisabled={operacao}
-        onRequestClose={() => {
-          if (!operacao) setModal(null)
-        }}
-        onRequestSubmit={() => {
-          if (modal && modal !== 'criar') void executar('remover', modal)
-        }}
-      >
-        <Stack gap={5}>
-          <p>
-            Seu acompanhamento de {modal && modal !== 'criar' ? criterio(modal.criterio) : ''} será encerrado. As
-            publicações já capturadas e a atualização diária das capas serão preservadas.
-          </p>
-          {erroModal && (
-            <InlineNotification
-              kind="error"
-              title="Não foi possível remover"
-              subtitle={erroModal}
-              lowContrast
-              hideCloseButton
-            />
+              Criar monitoramento
+            </Button>
+            <Button variant="ghost" size="2" disabled={bloqueado} onClick={carregar}>
+              Atualizar lista
+            </Button>
+          </div>
+          <Text as="p" size="2" color="gray">Atualizar esta lista não dispara uma consulta ao DJEN.</Text>
+        </Flex>
+        <Flex direction="column" gap="4">
+          <Callout.Root color="blue" size="1">
+            <Callout.Icon><Info size={14} /></Callout.Icon>
+            <Callout.Text>
+              As publicações são verificadas a cada 6 horas; a captura por OAB também ocorre a cada 24 horas. A atualização diária da capa é independente dos avisos por e-mail. Novas publicações permanecem não tratadas até a revisão.
+            </Callout.Text>
+          </Callout.Root>
+          {(dados?.email_configurado === false || dados?.email_destinatario_configurado === false) && (
+            <Callout.Root color="yellow" size="1">
+              <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+              <Callout.Text>
+                {dados?.email_destinatario_configurado === false
+                  ? 'E-mail do perfil não informado. Você pode criar monitoramentos e as publicações serão coletadas. Peça a um administrador para completar o e-mail do seu perfil; os envios pendentes serão retomados após a atualização.'
+                  : 'Envio de e-mail indisponível. A coleta continua. Os e-mails ficarão pendentes até a configuração do servidor ser restabelecida.'}
+              </Callout.Text>
+            </Callout.Root>
           )}
-        </Stack>
-      </Modal>
+          {erro && (
+            <Callout.Root color="red" size="1">
+              <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+              <Callout.Text>Não foi possível concluir: {erro}</Callout.Text>
+            </Callout.Root>
+          )}
+          {mensagem && (
+            <Callout.Root color="green" size="1">
+              <Callout.Icon><CheckCircle2 size={14} /></Callout.Icon>
+              <Callout.Text>{mensagem}</Callout.Text>
+            </Callout.Root>
+          )}
+          {carregando && <Carregamento tipo="cartoes" descricao="Carregando monitoramentos…" />}
+          {!carregando && dados && !lista.length && (
+            <Callout.Root color="blue" size="1">
+              <Callout.Icon><Info size={14} /></Callout.Icon>
+              <Callout.Text>Nenhum monitoramento ativo. Use Criar monitoramento para acompanhar uma OAB ou um processo.</Callout.Text>
+            </Callout.Root>
+          )}
+        </Flex>
+        {lista.map((mon) => (
+          <Card key={mon.id} variant="surface">
+            <Flex direction="column" gap="5">
+              <Heading as="h2" size="4">{criterio(mon.criterio)}</Heading>
+              {mon.criterio?.nome && <Text as="p" size="2">{mon.criterio.nome}</Text>}
+              <Text as="p" size="2">
+                Criado em {formatarData(mon.criado_em)}. Expira em {formatarData(mon.expira_em)} se não houver
+                publicação nova.
+              </Text>
+              <EstadoExecucao titulo="Verificação de publicações" dados={mon.verificacao} />
+              {mon.criterio?.numero_oab && <EstadoExecucao titulo="Captura por OAB" dados={mon.captura_oab} />}
+              <div className="aj-acoes-linha">
+                <Button variant="outline" size="1" disabled={bloqueado} onClick={() => executar('renovar', mon)}>
+                  Renovar por 180 dias
+                </Button>
+                <Button
+                  variant="ghost"
+                  color="red"
+                  size="1"
+                  disabled={bloqueado}
+                  onClick={() => {
+                    setErroModal('')
+                    setModal(mon)
+                  }}
+                >
+                  Remover
+                </Button>
+              </div>
+            </Flex>
+          </Card>
+        ))}
+        {dados?.historico && (
+          <details>
+            <summary>Histórico das rotinas automáticas</summary>
+            <Flex direction="column" gap="5" mt="3">
+              {Object.entries(dados.historico).map(([rotina, execucoes]) => (
+                <section key={rotina} aria-label={rotina}>
+                  <Flex direction="column" gap="3">
+                    <Heading as="h2" size="3">
+                      {(
+                        {
+                          monitoramentos: 'Verificação de publicações',
+                          captura_oab: 'Captura por OAB',
+                          movimentos: 'Atualização das capas'
+                        } as Record<string, string>
+                      )[rotina] || rotina}
+                    </Heading>
+                    {!execucoes.length && <Text as="p" size="2">Aguardando primeira execução.</Text>}
+                    {execucoes.map((e) => (
+                      <Text as="p" size="2" key={e.inicio}>
+                        {formatarData(e.inicio)} ·{' '}
+                        {(
+                          {
+                            concluida: 'Concluída',
+                            falha: 'Falha ou conclusão parcial',
+                            interrompida: 'Interrompida',
+                            executando: 'Em andamento'
+                          } as Record<string, string>
+                        )[e.estado] || e.estado}
+                        {e.erro ? ` · ${e.erro}` : ''}
+                      </Text>
+                    ))}
+                  </Flex>
+                </section>
+              ))}
+            </Flex>
+          </details>
+        )}
+      </Flex>
+
+      <Dialog.Root open={modal === 'criar'} onOpenChange={(open) => { if (!open && !operacao) setModal(null) }}>
+        <Dialog.Content maxWidth="480px">
+          <Dialog.Title>Criar monitoramento</Dialog.Title>
+          <form
+            ref={formulario}
+            onSubmit={(e) => {
+              e.preventDefault()
+              void executar('criar')
+            }}
+          >
+            <Flex direction="column" gap="5">
+              <div className="form-campo">
+                <label className="form-campo-label" htmlFor="monitoramento-tipo">Acompanhar</label>
+                <Select.Root
+                  value={tipo}
+                  disabled={operacao}
+                  onValueChange={(v) => {
+                    setTipo(v)
+                    setNumero('')
+                  }}
+                >
+                  <Select.Trigger id="monitoramento-tipo" style={{ width: '100%' }} />
+                  <Select.Content>
+                    <Select.Item value="oab">Publicações por OAB</Select.Item>
+                    <Select.Item value="processo">Publicações de um processo</Select.Item>
+                  </Select.Content>
+                </Select.Root>
+              </div>
+              <div className="form-campo">
+                <label className="form-campo-label" htmlFor="monitoramento-numero">{tipo === 'oab' ? 'Número da OAB' : 'Número CNJ do processo'}</label>
+                <TextField.Root
+                  id="monitoramento-numero"
+                  data-modal-primary-focus
+                  value={numero}
+                  required
+                  disabled={operacao}
+                  maxLength={tipo === 'oab' ? 6 : 25}
+                  pattern={tipo === 'oab' ? '[0-9]{1,6}' : '[0-9.\\-]{20,25}'}
+                  onChange={(e) => setNumero(e.target.value)}
+                />
+                <Text size="1" color="gray">{tipo === 'oab' ? 'Informe apenas os dígitos.' : 'Informe os 20 dígitos, com ou sem máscara.'}</Text>
+              </div>
+              {tipo === 'oab' && (
+                <div className="form-campo">
+                  <label className="form-campo-label" htmlFor="monitoramento-uf">UF da OAB</label>
+                  <Select.Root value={uf || '__none__'} disabled={operacao} onValueChange={(v) => setUf(v === '__none__' ? '' : v)}>
+                    <Select.Trigger id="monitoramento-uf" style={{ width: '100%' }} />
+                    <Select.Content>
+                      <Select.Item value="__none__">Selecione a UF</Select.Item>
+                      {'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'
+                        .split(' ')
+                        .map((u) => (
+                          <Select.Item key={u} value={u}>{u}</Select.Item>
+                        ))}
+                    </Select.Content>
+                  </Select.Root>
+                </div>
+              )}
+              <div className="form-campo">
+                <label className="form-campo-label" htmlFor="monitoramento-nome">Nome para identificação (opcional)</label>
+                <TextField.Root
+                  id="monitoramento-nome"
+                  value={nome}
+                  disabled={operacao}
+                  maxLength={120}
+                  onChange={(e) => setNome(e.target.value)}
+                />
+                <Text size="1" color="gray">Identifica o monitoramento; não filtra a consulta.</Text>
+              </div>
+              <Text as="p" size="2" color="gray">
+                Validade de 180 dias, renovada ao encontrar publicações novas. O envio de e-mail depende da configuração
+                do servidor.
+              </Text>
+              {erroModal && (
+                <Callout.Root color="red" size="1">
+                  <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+                  <Callout.Text>Não foi possível criar: {erroModal}</Callout.Text>
+                </Callout.Root>
+              )}
+              <Flex gap="3" justify="end">
+                <Button type="button" variant="soft" color="gray" disabled={operacao} onClick={() => setModal(null)}>Cancelar</Button>
+                <Button type="submit" disabled={operacao}>{operacao ? 'Criando…' : 'Criar monitoramento'}</Button>
+              </Flex>
+            </Flex>
+          </form>
+        </Dialog.Content>
+      </Dialog.Root>
+
+      <Dialog.Root open={modal !== null && modal !== 'criar'} onOpenChange={(open) => { if (!open && !operacao) setModal(null) }}>
+        <Dialog.Content maxWidth="420px">
+          <Dialog.Title>Remover monitoramento</Dialog.Title>
+          <Flex direction="column" gap="5">
+            <Text as="p" size="2">
+              Seu acompanhamento de {modal && modal !== 'criar' ? criterio(modal.criterio) : ''} será encerrado. As
+              publicações já capturadas e a atualização diária das capas serão preservadas.
+            </Text>
+            {erroModal && (
+              <Callout.Root color="red" size="1">
+                <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+                <Callout.Text>Não foi possível remover: {erroModal}</Callout.Text>
+              </Callout.Root>
+            )}
+            <Flex gap="3" justify="end">
+              <Button variant="soft" color="gray" disabled={operacao} onClick={() => setModal(null)}>Cancelar</Button>
+              <Button
+                color="red"
+                disabled={operacao}
+                onClick={() => {
+                  if (modal && modal !== 'criar') void executar('remover', modal)
+                }}
+              >
+                {operacao ? 'Removendo…' : 'Remover'}
+              </Button>
+            </Flex>
+          </Flex>
+        </Dialog.Content>
+      </Dialog.Root>
     </>
   )
 }

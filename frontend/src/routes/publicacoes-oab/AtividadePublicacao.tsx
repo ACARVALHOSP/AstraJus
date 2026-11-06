@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Button, Checkbox, Column, Grid, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
+import { AlertTriangle, Info } from 'lucide-react'
+import { Button, Callout, Checkbox, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarDataSimples, formatarNomeExibicao } from '../../utils/formatadores'
@@ -128,29 +129,105 @@ export default function AtividadePublicacao({ publicacao, onClose, onConcluido, 
       imprimirDemonstrativoPrazo({ titulo, numero, tribunal, municipio, base, dias: Number(dias), regra, suspensaoCpc, calendario, resultado, dataFinal: final, revisado })
     } catch (e) { setErro((e as Error).message) }
   }
-  return <Modal open={true} size="md" modalHeading="Criar atividade a partir da publicação" closeButtonLabel="Fechar" primaryButtonText={jaCriada ? 'Concluir atualização de status' : revisado ? 'Confirmar atividade e prazo' : 'Criar com prazo pendente de revisão'} secondaryButtonText="Cancelar" primaryButtonDisabled={salvando || calculando || carregandoContexto} onRequestSubmit={salvar} onRequestClose={() => { if (!salvando) onClose() }}>
-    <Stack gap={5}>
-      <TextInput id="oab-atividade-titulo" labelText="Título" maxLength={160} value={titulo} disabled={bloqueado} onChange={e => setTitulo(e.target.value)} />
-      <Grid withRowGap narrow fullWidth>
-        <Column sm={4} md={4} lg={8}><TextInput id="oab-prazo-base" type="date" labelText={regra === 'dje' ? 'Data de disponibilização DJEN' : 'Termo inicial informado'} value={base} disabled={bloqueado} onChange={e => setBase(e.target.value)} /></Column>
-        <Column sm={4} md={4} lg={8}><TextInput id="oab-prazo-dias" type="number" min={1} max={999} labelText="Quantidade de dias" helperText="Sugerida somente quando há um prazo numérico explícito e único no texto." value={dias} disabled={bloqueado} onChange={e => setDias(e.target.value)} /></Column>
-        <Column sm={4} md={4} lg={8}><TextInput id="oab-prazo-municipio" labelText="Município / comarca" value={municipio} disabled={bloqueado || carregandoContexto} onChange={e => setMunicipio(e.target.value)} /></Column>
-        <Column sm={4} md={4} lg={8}><TextInput id="oab-prazo-tribunal" labelText="Tribunal" value={tribunal} disabled={bloqueado} onChange={e => setTribunal(e.target.value)} /></Column>
-      </Grid>
-      <Select id="oab-prazo-regra" labelText="Regra aplicada" value={regra} disabled={bloqueado} onChange={e => setRegra(e.target.value as RegraPrazo)}>{Object.entries(REGRAS_PRAZO).map(([v, r]) => <SelectItem key={v} value={v} text={r} />)}</Select>
-      <Checkbox id="oab-prazo-suspensao" labelText="Aplicar suspensão de 20/12 a 20/01 (CPC, art. 220)" checked={suspensaoCpc} disabled={bloqueado} onChange={(_, { checked }) => setSuspensaoCpc(checked)} />
-      {calculando && <p role="status">Consultando calendário e calculando prazo…</p>}
-      <div aria-live="polite">
-        <InlineNotification kind={revisado ? 'info' : 'warning'} title={revisado ? 'Prazo revisado para confirmação' : 'Prazo pendente de revisão'} subtitle={revisado ? 'A data final será salva conforme sua revisão. A cobertura automática de suspensões e provimentos permanece incompleta.' : erroCalculo || 'A cobertura de feriados municipais, suspensões e provimentos precisa ser revisada. Sem confirmação, a atividade será salva sem vencimento.'} lowContrast hideCloseButton />
-        {resultado && <p>Termo inicial: {formatarDataSimples(resultado.termoInicial)} · {dias} dias úteis · Data final sugerida: {formatarDataSimples(resultado.dataFinal)}</p>}
-        {calendario && <p>Município consultado: {calendario.municipio}. Fonte: {calendario.fonte}.</p>}
-      </div>
-      <TextInput id="oab-prazo-final" type="date" labelText="Data final (editável)" helperText="Ajuste após conferir o calendário e a regra aplicável." value={final} disabled={bloqueado || calculando} onChange={e => { setFinal(e.target.value); setRevisado(false) }} />
-      <Checkbox id="oab-prazo-revisado" labelText="Revisei o termo inicial, a quantidade de dias, a regra, os feriados e as suspensões aplicáveis e confirmo a data final." checked={revisado} disabled={bloqueado || calculando || !dataValida(final)} onChange={(_, { checked }) => setRevisado(checked)} />
-      <Select id="oab-atividade-responsavel" labelText="Responsável" value={responsavel} disabled={bloqueado} onChange={e => setResponsavel(e.target.value)}><SelectItem value="" text="Eu mesmo" />{responsaveis.map(r => <SelectItem key={r} value={r} text={formatarNomeExibicao(r)} />)}</Select>
-      {resultado && <details><summary>Demonstrativo da contagem</summary><ol className="oab-demonstrativo">{resultado.linhas.map((l, i) => <li key={`${l.data}-${i}`}>{formatarDataSimples(l.data)} · {l.evento}{l.dia ? ` · dia ${l.dia}` : ''}</li>)}</ol></details>}
-      <div><Button kind="tertiary" size="sm" disabled={!resultado || calculando || carregandoContexto} onClick={imprimir}>Imprimir / salvar PDF</Button></div>
-      {erro && <InlineNotification kind="error" title="Não foi possível concluir" subtitle={erro} lowContrast hideCloseButton />}
-    </Stack>
-  </Modal>
+
+  return (
+    <Dialog.Root open onOpenChange={(open) => { if (!open && !salvando) onClose() }}>
+      <Dialog.Content maxWidth="640px">
+        <Dialog.Title>Criar atividade a partir da publicação</Dialog.Title>
+        <Flex direction="column" gap="5">
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="oab-atividade-titulo">Título</label>
+            <TextField.Root id="oab-atividade-titulo" maxLength={160} value={titulo} disabled={bloqueado} onChange={e => setTitulo(e.target.value)} />
+          </div>
+          <div className="aj-form-grade">
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="oab-prazo-base">{regra === 'dje' ? 'Data de disponibilização DJEN' : 'Termo inicial informado'}</label>
+              <TextField.Root id="oab-prazo-base" type="date" value={base} disabled={bloqueado} onChange={e => setBase(e.target.value)} />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="oab-prazo-dias">Quantidade de dias</label>
+              <TextField.Root id="oab-prazo-dias" type="number" min={1} max={999} value={dias} disabled={bloqueado} onChange={e => setDias(e.target.value)} />
+              <Text size="1" color="gray">Sugerida somente quando há um prazo numérico explícito e único no texto.</Text>
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="oab-prazo-municipio">Município / comarca</label>
+              <TextField.Root id="oab-prazo-municipio" value={municipio} disabled={bloqueado || carregandoContexto} onChange={e => setMunicipio(e.target.value)} />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="oab-prazo-tribunal">Tribunal</label>
+              <TextField.Root id="oab-prazo-tribunal" value={tribunal} disabled={bloqueado} onChange={e => setTribunal(e.target.value)} />
+            </div>
+          </div>
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="oab-prazo-regra">Regra aplicada</label>
+            <Select.Root value={regra} disabled={bloqueado} onValueChange={(v) => setRegra(v as RegraPrazo)}>
+              <Select.Trigger id="oab-prazo-regra" style={{ width: '100%' }} />
+              <Select.Content>
+                {Object.entries(REGRAS_PRAZO).map(([v, r]) => <Select.Item key={v} value={v}>{r}</Select.Item>)}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          <Text as="label" size="2">
+            <Flex gap="2" align="center">
+              <Checkbox checked={suspensaoCpc} disabled={bloqueado} onCheckedChange={(checked) => setSuspensaoCpc(Boolean(checked))} />
+              Aplicar suspensão de 20/12 a 20/01 (CPC, art. 220)
+            </Flex>
+          </Text>
+          {calculando && <Text as="p" size="2" role="status">Consultando calendário e calculando prazo…</Text>}
+          <div aria-live="polite">
+            <Callout.Root color={revisado ? 'blue' : 'yellow'} size="1">
+              <Callout.Icon>{revisado ? <Info size={14} /> : <AlertTriangle size={14} />}</Callout.Icon>
+              <Callout.Text>{revisado ? 'A data final será salva conforme sua revisão. A cobertura automática de suspensões e provimentos permanece incompleta.' : erroCalculo || 'A cobertura de feriados municipais, suspensões e provimentos precisa ser revisada. Sem confirmação, a atividade será salva sem vencimento.'}</Callout.Text>
+            </Callout.Root>
+            {resultado && <Text as="p" size="2" mt="2">Termo inicial: {formatarDataSimples(resultado.termoInicial)} · {dias} dias úteis · Data final sugerida: {formatarDataSimples(resultado.dataFinal)}</Text>}
+            {calendario && <Text as="p" size="2">Município consultado: {calendario.municipio}. Fonte: {calendario.fonte}.</Text>}
+          </div>
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="oab-prazo-final">Data final (editável)</label>
+            <TextField.Root id="oab-prazo-final" type="date" value={final} disabled={bloqueado || calculando} onChange={e => { setFinal(e.target.value); setRevisado(false) }} />
+            <Text size="1" color="gray">Ajuste após conferir o calendário e a regra aplicável.</Text>
+          </div>
+          <Text as="label" size="2">
+            <Flex gap="2" align="center">
+              <Checkbox checked={revisado} disabled={bloqueado || calculando || !dataValida(final)} onCheckedChange={(checked) => setRevisado(Boolean(checked))} />
+              Revisei o termo inicial, a quantidade de dias, a regra, os feriados e as suspensões aplicáveis e confirmo a data final.
+            </Flex>
+          </Text>
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="oab-atividade-responsavel">Responsável</label>
+            <Select.Root value={responsavel || '__eu__'} disabled={bloqueado} onValueChange={(v) => setResponsavel(v === '__eu__' ? '' : v)}>
+              <Select.Trigger id="oab-atividade-responsavel" style={{ width: '100%' }} />
+              <Select.Content>
+                <Select.Item value="__eu__">Eu mesmo</Select.Item>
+                {responsaveis.map(r => <Select.Item key={r} value={r}>{formatarNomeExibicao(r)}</Select.Item>)}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          {resultado && (
+            <details>
+              <summary>Demonstrativo da contagem</summary>
+              <ol className="oab-demonstrativo">
+                {resultado.linhas.map((l, i) => <li key={`${l.data}-${i}`}>{formatarDataSimples(l.data)} · {l.evento}{l.dia ? ` · dia ${l.dia}` : ''}</li>)}
+              </ol>
+            </details>
+          )}
+          <div>
+            <Button variant="soft" size="1" disabled={!resultado || calculando || carregandoContexto} onClick={imprimir}>Imprimir / salvar PDF</Button>
+          </div>
+          {erro && (
+            <Callout.Root color="red" size="1">
+              <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+              <Callout.Text>{erro}</Callout.Text>
+            </Callout.Root>
+          )}
+          <Flex gap="3" mt="2" justify="end">
+            <Button variant="soft" color="gray" disabled={salvando} onClick={onClose}>Cancelar</Button>
+            <Button disabled={salvando || calculando || carregandoContexto} onClick={salvar}>
+              {jaCriada ? 'Concluir atualização de status' : revisado ? 'Confirmar atividade e prazo' : 'Criar com prazo pendente de revisão'}
+            </Button>
+          </Flex>
+        </Flex>
+      </Dialog.Content>
+    </Dialog.Root>
+  )
 }

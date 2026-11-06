@@ -1,6 +1,19 @@
 import TabelaResponsiva from '../TabelaResponsiva'
 import { useState } from 'react'
-import { Button, TextInput, Select, SelectItem, InlineNotification, Tabs, TabList, Tab, TabPanels, TabPanel, Modal, Checkbox } from '@carbon/react'
+import { AlertTriangle, Check } from 'lucide-react'
+import {
+  AlertDialog,
+  Button,
+  Callout,
+  Checkbox,
+  Dialog,
+  Flex,
+  Heading,
+  Select,
+  Tabs,
+  Text,
+  TextField,
+} from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import './administracao.scss'
 
@@ -77,88 +90,211 @@ export default function Administracao() {
   const lista = usuarios.filter(u => `${u.login} ${u.nome_completo} ${u.email || ''}`.toLocaleLowerCase('pt-BR').includes(filtro.toLocaleLowerCase('pt-BR')))
 
   return <section className="administracao" aria-busy={ocupado}>
-    <h1>Administração</h1>
-    <p>Gerencie os usuários e acompanhe o banco de dados do sistema.</p>
-    {erro && <InlineNotification kind="error" title="Não foi possível concluir" subtitle={erro} onCloseButtonClick={() => setErro('')} />}
-    {mensagem && <InlineNotification kind="success" title={mensagem} onCloseButtonClick={() => setMensagem('')} />}
+    <Heading as="h1" size="6">Administração</Heading>
+    <Text as="p" size="2" color="gray">Gerencie os usuários e acompanhe o banco de dados do sistema.</Text>
+    {erro && (
+      <Callout.Root color="red" size="1">
+        <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+        <Callout.Text>{erro}</Callout.Text>
+      </Callout.Root>
+    )}
+    {mensagem && (
+      <Callout.Root color="green" size="1">
+        <Callout.Icon><Check size={14} /></Callout.Icon>
+        <Callout.Text>{mensagem}</Callout.Text>
+      </Callout.Root>
+    )}
     {!sessao ? <form className="administracao__acesso" onSubmit={e => { e.preventDefault(); void executar(() => carregar(credencial || cliente?.token || '')) }}>
-      <h2>Acesso administrativo</h2>
-      <p>Use sua conexão de administrador ou informe o token administrativo do servidor.</p>
-      <TextInput id="admin-token" labelText="Token administrativo" type="password" autoComplete="off" value={credencial} onChange={e => setCredencial(e.target.value)} helperText="Mantido somente na memória enquanto este painel estiver aberto." />
-      <Button type="submit" disabled={ocupado || !(credencial || cliente?.token)}>{ocupado ? 'Verificando…' : 'Acessar administração'}</Button>
+      <Heading as="h2" size="4">Acesso administrativo</Heading>
+      <Text as="p" size="2" color="gray">Use sua conexão de administrador ou informe o token administrativo do servidor.</Text>
+      <div className="form-campo">
+        <label className="form-campo-label" htmlFor="admin-token">Token administrativo</label>
+        <TextField.Root id="admin-token" type="password" autoComplete="off" value={credencial} onChange={e => setCredencial(e.target.value)} />
+        <Text size="1" color="gray">Mantido somente na memória enquanto este painel estiver aberto.</Text>
+      </div>
+      <Button size="2" type="submit" disabled={ocupado || !(credencial || cliente?.token)}>{ocupado ? 'Verificando…' : 'Acessar administração'}</Button>
     </form> : <>
-      <div className="administracao__acoes"><Button kind="tertiary" disabled={ocupado} onClick={() => void executar(() => carregar(sessao))}>Atualizar usuários</Button><Button kind="ghost" disabled={ocupado} onClick={sair}>Encerrar administração</Button></div>
-      <Tabs>
-        <TabList aria-label="Administração">
-          <Tab>Usuários</Tab>
-          <Tab>Banco de dados</Tab>
-          <Tab>Histórico administrativo</Tab>
-        </TabList>
-        <TabPanels>
-        <TabPanel>
+      <div className="administracao__acoes">
+        <Button variant="outline" size="2" disabled={ocupado} onClick={() => void executar(() => carregar(sessao))}>Atualizar usuários</Button>
+        <Button variant="ghost" size="2" disabled={ocupado} onClick={sair}>Encerrar administração</Button>
+      </div>
+      <Tabs.Root defaultValue="usuarios">
+        <Tabs.List aria-label="Administração">
+          <Tabs.Trigger value="usuarios">Usuários</Tabs.Trigger>
+          <Tabs.Trigger value="banco">Banco de dados</Tabs.Trigger>
+          <Tabs.Trigger value="historico">Histórico administrativo</Tabs.Trigger>
+        </Tabs.List>
+        <Tabs.Content value="usuarios">
           <dl className="administracao__resumo"><div><dt>Usuários cadastrados</dt><dd>{usuarios.length}</dd></div><div><dt>Ativos</dt><dd>{usuarios.filter(u => u.status === 'ativo').length}</dd></div><div><dt>Bloqueados ou revogados</dt><dd>{usuarios.filter(u => ['bloqueado', 'revogado'].includes(u.status)).length}</dd></div></dl>
-          <div className="administracao__acoes"><TextInput id="admin-filtro" labelText="Filtrar usuários" value={filtro} onChange={e => setFiltro(e.target.value)} /><Button disabled={ocupado} onClick={() => { setErro(''); setEditor({ login: null, campos: { ...VAZIO } }) }}>Criar usuário</Button></div>
-          <div className="administracao__tabela" role="region" aria-label="Usuários cadastrados" tabIndex={0}><TabelaResponsiva principais={['Nome e login', 'Status', 'Data', 'Usuário']}><table className="cds--data-table"><caption>Usuários do sistema — {lista.length} resultado(s)</caption><thead><tr>{['Nome e login', 'E-mail', 'Nível de acesso', 'Status', 'Cadastro', 'Último acesso', 'Ações'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>
-            {lista.map(u => <tr key={u.usuario_id}><td>{u.nome_completo}<small>{u.login}</small></td><td>{u.email || 'Não informado'}</td><td>{u.nivel_acesso}</td><td>{u.status}</td><td>{data(u.criado_em)}</td><td>{data(u.ultimo_acesso_em)}</td><td><Button size="sm" kind="ghost" disabled={ocupado} onClick={() => { setErro(''); setEditor({ login: u.login, campos: { login: u.login, nome_completo: u.nome_completo, email: u.email || '', nivel_acesso: u.nivel_acesso, status: u.status } }) }}>Editar<span className="cds--visually-hidden"> {u.nome_completo}</span></Button></td></tr>)}
+          <div className="administracao__acoes">
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="admin-filtro">Filtrar usuários</label>
+              <TextField.Root id="admin-filtro" value={filtro} onChange={e => setFiltro(e.target.value)} />
+            </div>
+            <Button size="2" disabled={ocupado} onClick={() => { setErro(''); setEditor({ login: null, campos: { ...VAZIO } }) }}>Criar usuário</Button>
+          </div>
+          <div className="administracao__tabela" role="region" aria-label="Usuários cadastrados" tabIndex={0}><TabelaResponsiva principais={['Nome e login', 'Status', 'Data', 'Usuário']}><table><caption>Usuários do sistema — {lista.length} resultado(s)</caption><thead><tr>{['Nome e login', 'E-mail', 'Nível de acesso', 'Status', 'Cadastro', 'Último acesso', 'Ações'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>
+            {lista.map(u => <tr key={u.usuario_id}><td>{u.nome_completo}<small>{u.login}</small></td><td>{u.email || 'Não informado'}</td><td>{u.nivel_acesso}</td><td>{u.status}</td><td>{data(u.criado_em)}</td><td>{data(u.ultimo_acesso_em)}</td><td><Button size="1" variant="ghost" disabled={ocupado} onClick={() => { setErro(''); setEditor({ login: u.login, campos: { login: u.login, nome_completo: u.nome_completo, email: u.email || '', nivel_acesso: u.nivel_acesso, status: u.status } }) }}>Editar<Text className="aj-sr-only"> {u.nome_completo}</Text></Button></td></tr>)}
             {!lista.length && <tr><td colSpan={7}>Nenhum usuário encontrado.</td></tr>}
           </tbody></table></TabelaResponsiva></div>
-        </TabPanel>
-        <TabPanel><h2>Banco de dados</h2><p>Consulte o estado do SQLite e gere uma cópia consistente dos dados.</p>
-          <div className="administracao__acoes"><Button disabled={ocupado} onClick={() => void executar(async () => { setBanco(await (await requisicao('/admin/banco/api', sessao)).json()) })}>Carregar informações</Button><Button kind="tertiary" disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/banco/integridade', sessao, 'POST')).json(); if (!r.integro) throw new Error('A verificação identificou inconsistências no banco.'); setMensagem(`Integridade verificada em ${data(r.verificado_em)}.`) })}>Verificar integridade</Button><Button kind="tertiary" disabled={ocupado} onClick={() => setConfirmarBackup(true)}>Baixar backup</Button><Button kind="danger--tertiary" disabled={ocupado} onClick={() => setLimpeza({ categorias: [], texto: '', resultado: null })}>Limpar dados</Button></div>
+        </Tabs.Content>
+        <Tabs.Content value="banco">
+          <Heading as="h2" size="4" mt="4">Banco de dados</Heading>
+          <Text as="p" size="2" color="gray">Consulte o estado do SQLite e gere uma cópia consistente dos dados.</Text>
+          <div className="administracao__acoes">
+            <Button size="2" disabled={ocupado} onClick={() => void executar(async () => { setBanco(await (await requisicao('/admin/banco/api', sessao)).json()) })}>Carregar informações</Button>
+            <Button variant="outline" size="2" disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/banco/integridade', sessao, 'POST')).json(); if (!r.integro) throw new Error('A verificação identificou inconsistências no banco.'); setMensagem(`Integridade verificada em ${data(r.verificado_em)}.`) })}>Verificar integridade</Button>
+            <Button variant="outline" size="2" disabled={ocupado} onClick={() => setConfirmarBackup(true)}>Baixar backup</Button>
+            <Button variant="ghost" color="red" size="2" disabled={ocupado} onClick={() => setLimpeza({ categorias: [], texto: '', resultado: null })}>Limpar dados</Button>
+          </div>
           {banco && <dl className="administracao__resumo"><div><dt>Banco</dt><dd>{banco.tipo}</dd></div><div><dt>Tamanho</dt><dd>{(banco.tamanho_bytes / 1024 / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} MB</dd></div><div><dt>Tabelas</dt><dd>{banco.tabelas}</dd></div></dl>}
-        </TabPanel>
-        <TabPanel><h2>Histórico administrativo</h2><p>Até 100 alterações de cadastro, com data e responsável.</p><Button disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/usuarios/historico', sessao)).json(); setHistorico(r.historico) })}>Carregar histórico</Button><div className="administracao__tabela" role="region" aria-label="Histórico administrativo" tabIndex={0}><TabelaResponsiva principais={['Nome e login', 'Status', 'Data', 'Usuário']}><table className="cds--data-table"><thead><tr>{['Data', 'Responsável', 'Usuário', 'Ação', 'Campos alterados'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>{historico.map((h, i) => <tr key={i}><td>{data(h.ocorrido_em)}</td><td>{h.ator}</td><td>{h.usuario}</td><td>{h.acao}</td><td>{JSON.parse(h.campos).join(', ')}</td></tr>)}{!historico.length && <tr><td colSpan={5}>Carregue o histórico para consultar os registros disponíveis.</td></tr>}</tbody></table></TabelaResponsiva></div></TabPanel>
-        </TabPanels>
-      </Tabs>
+        </Tabs.Content>
+        <Tabs.Content value="historico">
+          <Heading as="h2" size="4" mt="4">Histórico administrativo</Heading>
+          <Text as="p" size="2" color="gray">Até 100 alterações de cadastro, com data e responsável.</Text>
+          <Button size="2" disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/usuarios/historico', sessao)).json(); setHistorico(r.historico) })}>Carregar histórico</Button>
+          <div className="administracao__tabela" role="region" aria-label="Histórico administrativo" tabIndex={0}><TabelaResponsiva principais={['Nome e login', 'Status', 'Data', 'Usuário']}><table><thead><tr>{['Data', 'Responsável', 'Usuário', 'Ação', 'Campos alterados'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>{historico.map((h, i) => <tr key={i}><td>{data(h.ocorrido_em)}</td><td>{h.ator}</td><td>{h.usuario}</td><td>{h.acao}</td><td>{JSON.parse(h.campos).join(', ')}</td></tr>)}{!historico.length && <tr><td colSpan={5}>Carregue o histórico para consultar os registros disponíveis.</td></tr>}</tbody></table></TabelaResponsiva></div>
+        </Tabs.Content>
+      </Tabs.Root>
       <section aria-label="Histórico de acessos">
-        <h2>Histórico de acessos</h2>
-        <p>Últimos 100 registros de atividade autenticada. Até um registro por usuário por minuto, com retenção de 180 dias.</p>
-        <Button disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/usuarios/acessos', sessao)).json(); setAcessos(r.acessos) })}>Carregar acessos</Button>
+        <Heading as="h2" size="4" mt="5">Histórico de acessos</Heading>
+        <Text as="p" size="2" color="gray">Últimos 100 registros de atividade autenticada. Até um registro por usuário por minuto, com retenção de 180 dias.</Text>
+        <Button size="2" disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/usuarios/acessos', sessao)).json(); setAcessos(r.acessos) })}>Carregar acessos</Button>
         <div className="administracao__tabela" role="region" aria-label="Acessos registrados" tabIndex={0}>
-          <TabelaResponsiva principais={['Nome e login', 'Status', 'Data', 'Usuário']}><table className="cds--data-table"><thead><tr><th scope="col">Data e hora</th><th scope="col">Usuário</th></tr></thead>
+          <TabelaResponsiva principais={['Nome e login', 'Status', 'Data', 'Usuário']}><table><thead><tr><th scope="col">Data e hora</th><th scope="col">Usuário</th></tr></thead>
             <tbody>{acessos.map((a, i) => <tr key={i}><td>{data(a.ocorrido_em)}</td><td>{a.usuario}</td></tr>)}{!acessos.length && <tr><td colSpan={2}>Carregue os acessos para consultar os registros disponíveis.</td></tr>}</tbody>
           </table></TabelaResponsiva>
         </div>
       </section>
     </>}
-    <Modal open={editor !== null} modalHeading={editor?.login === null ? 'Criar usuário' : 'Editar usuário'} primaryButtonText={ocupado ? 'Salvando…' : 'Salvar cadastro'} secondaryButtonText="Cancelar" primaryButtonDisabled={ocupado || !editor?.campos.nome_completo.trim() || (editor.login === null && (!editor.campos.email || !editor.campos.login))} onRequestClose={() => { if (!ocupado) { setEditor(null); setErro('') } }} onRequestSubmit={() => void executar(salvar)}>
-      {editor && <div className="administracao__formulario">
-        {erro && <InlineNotification kind="error" title="Revise o cadastro" subtitle={erro} hideCloseButton />}
-        <TextInput id="usuario-login" labelText="Login" value={editor.campos.login} disabled={editor.login !== null || ocupado} onChange={e => setEditor({ ...editor, campos: { ...editor.campos, login: e.target.value } })} />
-        <TextInput id="usuario-nome" labelText="Nome completo" maxLength={200} value={editor.campos.nome_completo} disabled={ocupado} onChange={e => setEditor({ ...editor, campos: { ...editor.campos, nome_completo: e.target.value } })} />
-        <TextInput id="usuario-email" type="email" labelText="E-mail" maxLength={254} value={editor.campos.email} disabled={ocupado} onChange={e => setEditor({ ...editor, campos: { ...editor.campos, email: e.target.value } })} />
-        <Select id="usuario-nivel" labelText="Nível de acesso" value={editor.campos.nivel_acesso} disabled={ocupado} onChange={e => setEditor({ ...editor, campos: { ...editor.campos, nivel_acesso: e.target.value } })}>{[['administrador', 'Administrador'], ['operador', 'Operador'], ['consulta', 'Consulta']].map(([v, t]) => <SelectItem key={v} value={v} text={t} />)}</Select>
-        <Select id="usuario-status" labelText="Status" value={editor.campos.status} disabled={ocupado} onChange={e => setEditor({ ...editor, campos: { ...editor.campos, status: e.target.value } })}>{[['ativo', 'Ativo'], ['pendente', 'Pendente'], ['bloqueado', 'Bloqueado'], ['revogado', 'Revogado']].map(([v, t]) => <SelectItem key={v} value={v} text={t} />)}</Select>
-        <p>Administrador gerencia o sistema; operador altera dados; consulta permite leitura. Revogar encerra o acesso permanentemente.</p>
-        {editor.login && (() => { const u = usuarios.find(u => u.login === editor.login); return u && <dl><dt>ID</dt><dd>{u.usuario_id}</dd><dt>Atualizado em</dt><dd>{data(u.atualizado_em)}</dd><dt>E-mail verificado em</dt><dd>{data(u.email_verificado_em)}</dd><dt>Criado por</dt><dd>{u.criado_por || 'Não registrado'}</dd><dt>Revogado em</dt><dd>{data(u.revogado_em)}</dd><dt>Revogado por</dt><dd>{u.revogado_por || 'Não registrado'}</dd></dl> })()}
-      </div>}
-    </Modal>
-    <Modal open={!!tokenNovo} passiveModal modalHeading="Copie o token de acesso" onRequestClose={() => setTokenNovo('')}><p>O token será exibido somente agora. Entregue-o ao usuário por um canal seguro.</p><TextInput id="usuario-token-novo" labelText="Token gerado" value={tokenNovo} readOnly /></Modal>
-    <Modal open={confirmarBackup} modalHeading="Baixar backup do banco" primaryButtonText="Baixar backup" secondaryButtonText="Cancelar" primaryButtonDisabled={ocupado} onRequestClose={() => { if (!ocupado) setConfirmarBackup(false) }} onRequestSubmit={() => void executar(async () => {
-      if (!sessao) return
-      const r = await requisicao('/admin/banco/backup', sessao, 'POST')
-      const url = URL.createObjectURL(await r.blob()); const a = document.createElement('a'); a.href = url; a.download = 'cnj-backup.db'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); setConfirmarBackup(false); setMensagem('Backup gerado para download.')
-    })}><p>O arquivo contém os dados do sistema, incluindo informações pessoais e credenciais cifradas ou hashes. Guarde-o em um local de acesso restrito.</p>{erro && <InlineNotification kind="error" title="Falha no backup" subtitle={erro} hideCloseButton />}</Modal>
-    <Modal open={limpeza !== null} modalHeading="Limpar dados do banco" danger primaryButtonText={ocupado ? 'Limpando…' : 'Limpar dados selecionados'} secondaryButtonText="Cancelar"
-      primaryButtonDisabled={ocupado || !limpeza?.categorias.length || limpeza?.texto !== 'LIMPAR'}
-      onRequestClose={() => { if (!ocupado) setLimpeza(null) }}
-      onRequestSubmit={() => void executar(async () => {
-        if (!sessao || !limpeza) return
-        const r = await requisicao('/admin/banco/limpar', sessao, 'POST', { categorias: limpeza.categorias })
-        const resultado = await r.json() as { apagados: Record<string, number> }
-        setLimpeza({ ...limpeza, resultado: resultado.apagados })
-        setMensagem('Dados selecionados foram apagados.')
-      })}>
-      {limpeza && <div className="administracao__formulario">
-        <p>Esta ação apaga permanentemente os dados das categorias marcadas. Não afeta usuários, clientes, casos, financeiro ou os cadastros de monitoramento.</p>
-        {erro && <InlineNotification kind="error" title="Falha ao limpar" subtitle={erro} hideCloseButton />}
-        {CATEGORIAS_LIMPEZA.map(([chave, rotulo]) => <Checkbox key={chave} id={`limpeza-${chave}`} labelText={rotulo} disabled={ocupado}
-          checked={limpeza.categorias.includes(chave)}
-          onChange={(_e, { checked }) => setLimpeza({ ...limpeza, categorias: checked ? [...limpeza.categorias, chave] : limpeza.categorias.filter(c => c !== chave) })} />)}
-        <TextInput id="limpeza-confirmacao" labelText='Digite "LIMPAR" para confirmar' value={limpeza.texto} disabled={ocupado}
-          onChange={e => setLimpeza({ ...limpeza, texto: e.target.value })} />
-        {limpeza.resultado && <dl className="administracao__resumo">{Object.entries(limpeza.resultado).map(([chave, total]) => <div key={chave}><dt>{CATEGORIAS_LIMPEZA.find(c => c[0] === chave)?.[1] || chave}</dt><dd>{total} registro(s) apagado(s)</dd></div>)}</dl>}
-      </div>}
-    </Modal>
+
+    <Dialog.Root open={editor !== null} onOpenChange={(open) => { if (!open && !ocupado) { setEditor(null); setErro('') } }}>
+      <Dialog.Content maxWidth="520px">
+        <Dialog.Title>{editor?.login === null ? 'Criar usuário' : 'Editar usuário'}</Dialog.Title>
+        {editor && <div className="administracao__formulario">
+          {erro && (
+            <Callout.Root color="red" size="1">
+              <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+              <Callout.Text>{erro}</Callout.Text>
+            </Callout.Root>
+          )}
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="usuario-login">Login</label>
+            <TextField.Root id="usuario-login" value={editor.campos.login} disabled={editor.login !== null || ocupado} onChange={e => setEditor({ ...editor, campos: { ...editor.campos, login: e.target.value } })} />
+          </div>
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="usuario-nome">Nome completo</label>
+            <TextField.Root id="usuario-nome" maxLength={200} value={editor.campos.nome_completo} disabled={ocupado} onChange={e => setEditor({ ...editor, campos: { ...editor.campos, nome_completo: e.target.value } })} />
+          </div>
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="usuario-email">E-mail</label>
+            <TextField.Root id="usuario-email" type="email" maxLength={254} value={editor.campos.email} disabled={ocupado} onChange={e => setEditor({ ...editor, campos: { ...editor.campos, email: e.target.value } })} />
+          </div>
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="usuario-nivel">Nível de acesso</label>
+            <Select.Root value={editor.campos.nivel_acesso} disabled={ocupado} onValueChange={v => setEditor({ ...editor, campos: { ...editor.campos, nivel_acesso: v } })}>
+              <Select.Trigger id="usuario-nivel" style={{ width: '100%' }} />
+              <Select.Content>
+                {[['administrador', 'Administrador'], ['operador', 'Operador'], ['consulta', 'Consulta']].map(([v, t]) => <Select.Item key={v} value={v}>{t}</Select.Item>)}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="usuario-status">Status</label>
+            <Select.Root value={editor.campos.status} disabled={ocupado} onValueChange={v => setEditor({ ...editor, campos: { ...editor.campos, status: v } })}>
+              <Select.Trigger id="usuario-status" style={{ width: '100%' }} />
+              <Select.Content>
+                {[['ativo', 'Ativo'], ['pendente', 'Pendente'], ['bloqueado', 'Bloqueado'], ['revogado', 'Revogado']].map(([v, t]) => <Select.Item key={v} value={v}>{t}</Select.Item>)}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          <Text as="p" size="2" color="gray">Administrador gerencia o sistema; operador altera dados; consulta permite leitura. Revogar encerra o acesso permanentemente.</Text>
+          {editor.login && (() => { const u = usuarios.find(u => u.login === editor.login); return u && <dl><dt>ID</dt><dd>{u.usuario_id}</dd><dt>Atualizado em</dt><dd>{data(u.atualizado_em)}</dd><dt>E-mail verificado em</dt><dd>{data(u.email_verificado_em)}</dd><dt>Criado por</dt><dd>{u.criado_por || 'Não registrado'}</dd><dt>Revogado em</dt><dd>{data(u.revogado_em)}</dd><dt>Revogado por</dt><dd>{u.revogado_por || 'Não registrado'}</dd></dl> })()}
+          <Flex gap="3" mt="4" justify="end">
+            <Button variant="soft" color="gray" disabled={ocupado} onClick={() => { setEditor(null); setErro('') }}>Cancelar</Button>
+            <Button disabled={ocupado || !editor.campos.nome_completo.trim() || (editor.login === null && (!editor.campos.email || !editor.campos.login))} onClick={() => void executar(salvar)}>
+              {ocupado ? 'Salvando…' : 'Salvar cadastro'}
+            </Button>
+          </Flex>
+        </div>}
+      </Dialog.Content>
+    </Dialog.Root>
+
+    <Dialog.Root open={!!tokenNovo} onOpenChange={(open) => { if (!open) setTokenNovo('') }}>
+      <Dialog.Content maxWidth="480px">
+        <Dialog.Title>Copie o token de acesso</Dialog.Title>
+        <Text as="p" size="2">O token será exibido somente agora. Entregue-o ao usuário por um canal seguro.</Text>
+        <div className="form-campo">
+          <label className="form-campo-label" htmlFor="usuario-token-novo">Token gerado</label>
+          <TextField.Root id="usuario-token-novo" value={tokenNovo} readOnly />
+        </div>
+        <Flex gap="3" mt="4" justify="end">
+          <Dialog.Close><Button variant="soft">Fechar</Button></Dialog.Close>
+        </Flex>
+      </Dialog.Content>
+    </Dialog.Root>
+
+    <AlertDialog.Root open={confirmarBackup} onOpenChange={(open) => { if (!open && !ocupado) setConfirmarBackup(false) }}>
+      <AlertDialog.Content maxWidth="480px">
+        <AlertDialog.Title>Baixar backup do banco</AlertDialog.Title>
+        <AlertDialog.Description>O arquivo contém os dados do sistema, incluindo informações pessoais e credenciais cifradas ou hashes. Guarde-o em um local de acesso restrito.</AlertDialog.Description>
+        {erro && (
+          <Callout.Root color="red" size="1" mt="3">
+            <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+            <Callout.Text>{erro}</Callout.Text>
+          </Callout.Root>
+        )}
+        <Flex gap="3" mt="4" justify="end">
+          <AlertDialog.Cancel><Button variant="soft" color="gray" disabled={ocupado}>Cancelar</Button></AlertDialog.Cancel>
+          <Button disabled={ocupado} onClick={() => void executar(async () => {
+            if (!sessao) return
+            const r = await requisicao('/admin/banco/backup', sessao, 'POST')
+            const url = URL.createObjectURL(await r.blob()); const a = document.createElement('a'); a.href = url; a.download = 'cnj-backup.db'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); setConfirmarBackup(false); setMensagem('Backup gerado para download.')
+          })}>Baixar backup</Button>
+        </Flex>
+      </AlertDialog.Content>
+    </AlertDialog.Root>
+
+    <AlertDialog.Root open={limpeza !== null} onOpenChange={(open) => { if (!open && !ocupado) setLimpeza(null) }}>
+      <AlertDialog.Content maxWidth="480px">
+        <AlertDialog.Title>Limpar dados do banco</AlertDialog.Title>
+        {limpeza && <div className="administracao__formulario">
+          <AlertDialog.Description>Esta ação apaga permanentemente os dados das categorias marcadas. Não afeta usuários, clientes, casos, financeiro ou os cadastros de monitoramento.</AlertDialog.Description>
+          {erro && (
+            <Callout.Root color="red" size="1">
+              <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+              <Callout.Text>{erro}</Callout.Text>
+            </Callout.Root>
+          )}
+          {CATEGORIAS_LIMPEZA.map(([chave, rotulo]) => (
+            <Text as="label" size="2" key={chave}>
+              <Flex gap="2" align="center">
+                <Checkbox
+                  disabled={ocupado}
+                  checked={limpeza.categorias.includes(chave)}
+                  onCheckedChange={(checked) => setLimpeza({ ...limpeza, categorias: checked ? [...limpeza.categorias, chave] : limpeza.categorias.filter(c => c !== chave) })}
+                />
+                {rotulo}
+              </Flex>
+            </Text>
+          ))}
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="limpeza-confirmacao">Digite "LIMPAR" para confirmar</label>
+            <TextField.Root id="limpeza-confirmacao" value={limpeza.texto} disabled={ocupado} onChange={e => setLimpeza({ ...limpeza, texto: e.target.value })} />
+          </div>
+          {limpeza.resultado && <dl className="administracao__resumo">{Object.entries(limpeza.resultado).map(([chave, total]) => <div key={chave}><dt>{CATEGORIAS_LIMPEZA.find(c => c[0] === chave)?.[1] || chave}</dt><dd>{total} registro(s) apagado(s)</dd></div>)}</dl>}
+        </div>}
+        <Flex gap="3" mt="4" justify="end">
+          <AlertDialog.Cancel><Button variant="soft" color="gray" disabled={ocupado}>Cancelar</Button></AlertDialog.Cancel>
+          <Button color="red" disabled={ocupado || !limpeza?.categorias.length || limpeza?.texto !== 'LIMPAR'} onClick={() => void executar(async () => {
+            if (!sessao || !limpeza) return
+            const r = await requisicao('/admin/banco/limpar', sessao, 'POST', { categorias: limpeza.categorias })
+            const resultado = await r.json() as { apagados: Record<string, number> }
+            setLimpeza({ ...limpeza, resultado: resultado.apagados })
+            setMensagem('Dados selecionados foram apagados.')
+          })}>{ocupado ? 'Limpando…' : 'Limpar dados selecionados'}</Button>
+        </Flex>
+      </AlertDialog.Content>
+    </AlertDialog.Root>
   </section>
 }
