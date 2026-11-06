@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from 'react'
-import { Accordion, AccordionItem, Button, Column, DatePicker, DatePickerInput, Grid, InlineNotification, Stack, TextInput } from '@carbon/react'
+import { Button, Callout, Flex, Text, TextField } from '@radix-ui/themes'
+import { AlertTriangle, CheckCircle2, Info } from 'lucide-react'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 import { enviarJson } from '../api/rest'
-import { formatarDdMmAaaa } from '../utils/formatadores'
 import PainelPublicacoes from './publicacoes-oab/PainelPublicacoes'
 
 export default function PublicacoesOab() {
@@ -53,75 +53,68 @@ function CapturaManual({ onCapturado }: { onCapturado: () => void }) {
   }
 
   return (
-    <Accordion>
-      <AccordionItem title="Capturar publicações por OAB">
-        <form onSubmit={aoEnviar}>
-          <Stack gap={5}>
-            <p>Captura avulsa: informe a OAB e as duas datas obrigatórias. Para ativar a captura recorrente, crie um monitoramento na tela Monitoramentos.</p>
-            <Grid withRowGap narrow fullWidth>
-              <Column sm={4} md={4} lg={4}>
-                <TextInput
-                  id="pub-oab-manual-numero"
-                  labelText="Número da OAB"
-                  placeholder="Ex.: 330659"
-                  maxLength={6}
-                  autoComplete="off"
-                  required
-                  value={numeroOab}
-                  onChange={(e) => setNumeroOab(e.target.value)}
-                />
-              </Column>
-              <Column sm={4} md={4} lg={4}>
-                <TextInput
-                  id="pub-oab-manual-uf"
-                  labelText="UF da OAB (opcional)"
-                  placeholder="Ex.: SP"
-                  maxLength={2}
-                  autoComplete="off"
-                  value={ufOab}
-                  onChange={(e) => setUfOab(e.target.value)}
-                />
-              </Column>
-              <Column sm={4} md={8} lg={8}>
-                <TextInput
-                  id="pub-oab-manual-nome"
-                  labelText="Nome para identificar os registros (opcional)"
-                  placeholder="Ex.: Maria Silva"
-                  helperText="Identifica os registros na lista; não filtra a consulta no DJEN."
-                  autoComplete="off"
-                  value={nome}
-                  onChange={(e) => setNome(e.target.value)}
-                />
-              </Column>
-              <Column sm={4} md={8} lg={16}>
-                <DatePicker
-                  datePickerType="range"
-                  dateFormat="Y-m-d"
-                  onChange={(datas: Date[]) => {
-                    const [inicio, fim] = datas
-                    setDataInicio(inicio ? isoDeData(inicio) : '')
-                    setDataFim(fim ? isoDeData(fim) : '')
-                  }}
-                >
-                  <DatePickerInput id="pub-oab-manual-data-inicio" labelText="Data inicial (obrigatória)" placeholder="aaaa-mm-dd" aria-required="true" />
-                  <DatePickerInput id="pub-oab-manual-data-fim" labelText="Data final (obrigatória)" placeholder="aaaa-mm-dd" aria-required="true" />
-                </DatePicker>
-              </Column>
-            </Grid>
-            <div>
-              <Button kind="primary" type="submit" size="sm" disabled={enviando}>
-                Capturar agora
-              </Button>
+    <details>
+      <summary>Capturar publicações por OAB</summary>
+      <form onSubmit={aoEnviar}>
+        <Flex direction="column" gap="5" mt="3">
+          <Text as="p" size="2" color="gray">Captura avulsa: informe a OAB e as duas datas obrigatórias. Para ativar a captura recorrente, crie um monitoramento na tela Monitoramentos.</Text>
+          <div className="aj-form-grade">
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="pub-oab-manual-numero">Número da OAB</label>
+              <TextField.Root
+                id="pub-oab-manual-numero"
+                placeholder="Ex.: 330659"
+                maxLength={6}
+                autoComplete="off"
+                required
+                value={numeroOab}
+                onChange={(e) => setNumeroOab(e.target.value)}
+              />
             </div>
-            {status && <InlineNotification kind={falhou ? 'error' : enviando ? 'info' : 'success'} title={falhou ? 'Captura não concluída' : enviando ? 'Capturando' : 'Captura concluída'} subtitle={status} hideCloseButton lowContrast />}
-          </Stack>
-        </form>
-      </AccordionItem>
-    </Accordion>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="pub-oab-manual-uf">UF da OAB (opcional)</label>
+              <TextField.Root
+                id="pub-oab-manual-uf"
+                placeholder="Ex.: SP"
+                maxLength={2}
+                autoComplete="off"
+                value={ufOab}
+                onChange={(e) => setUfOab(e.target.value)}
+              />
+            </div>
+            <div className="form-campo" style={{ gridColumn: 'span 2' }}>
+              <label className="form-campo-label" htmlFor="pub-oab-manual-nome">Nome para identificar os registros (opcional)</label>
+              <TextField.Root
+                id="pub-oab-manual-nome"
+                placeholder="Ex.: Maria Silva"
+                autoComplete="off"
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+              />
+              <Text size="1" color="gray">Identifica os registros na lista; não filtra a consulta no DJEN.</Text>
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="pub-oab-manual-data-inicio">Data inicial (obrigatória)</label>
+              <TextField.Root id="pub-oab-manual-data-inicio" type="date" required aria-required="true" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="pub-oab-manual-data-fim">Data final (obrigatória)</label>
+              <TextField.Root id="pub-oab-manual-data-fim" type="date" required aria-required="true" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <Button size="2" type="submit" disabled={enviando}>
+              Capturar agora
+            </Button>
+          </div>
+          {status && (
+            <Callout.Root color={falhou ? 'red' : enviando ? 'blue' : 'green'} size="1">
+              <Callout.Icon>{falhou ? <AlertTriangle size={14} /> : enviando ? <Info size={14} /> : <CheckCircle2 size={14} />}</Callout.Icon>
+              <Callout.Text>{status}</Callout.Text>
+            </Callout.Root>
+          )}
+        </Flex>
+      </form>
+    </details>
   )
-}
-
-function isoDeData(data: Date): string {
-  const [dia, mes, ano] = formatarDdMmAaaa(data).split('/')
-  return `${ano}-${mes}-${dia}`
 }

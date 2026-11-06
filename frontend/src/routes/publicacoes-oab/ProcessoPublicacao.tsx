@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Button, InlineNotification, Modal, Select, SelectItem, Stack, TextInput } from '@carbon/react'
+import { AlertTriangle } from 'lucide-react'
+import { Button, Callout, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarNomeExibicao, formatarNumeroCNJ } from '../../utils/formatadores'
@@ -87,30 +88,82 @@ export default function ProcessoPublicacao({ publicacao, onClose, onConcluido }:
       onConcluido(escolhido ? 'Publicação vinculada. O estado de revisão foi preservado.' : 'Processo criado e capa preenchida. A publicação permanece disponível para revisão.')
     } catch (e) { setErro((e as Error).message) } finally { trava.current = false; setSalvando(false); setEtapa('') }
   }
-  return <Modal open={true} size="lg" modalHeading="Criar ou vincular processo" closeButtonLabel="Fechar" primaryButtonText={processoCriado ? 'Tentar novamente' : escolhido ? 'Confirmar vínculo' : 'Criar processo e preencher capa'} secondaryButtonText="Cancelar" primaryButtonDisabled={salvando || carregando || numero.length !== 20} onRequestClose={() => { if (!salvando) onClose() }} onRequestSubmit={concluir}>
-    <Stack gap={5}>
-      <p>{formatarNumeroCNJ(numero)} · {nomePublicacao(publicacao)}</p>
-      <p>Os dados disponíveis serão preenchidos automaticamente. Campos ausentes permanecem sem informação.</p>
-      {carregando && <p role="status">Consultando processos, clientes e responsáveis…</p>}
-      {!carregando && !processoCriado && <>
-        <TextInput id="oab-consulta-processo" labelText="Consultar processo por CNJ, parte ou cliente" value={termo} disabled={salvando} onChange={e => setTermo(e.target.value)} />
-        <Button kind="tertiary" size="sm" disabled={salvando || !termo.trim()} onClick={consultar}>Consultar processos</Button>
-        <Select id="oab-processo-destino" labelText="Processo de destino" value={escolhido} disabled={salvando} onChange={e => setEscolhido(e.target.value)}>
-          <SelectItem value="" text="Criar novo processo" />
-          {casos.map(c => <SelectItem key={c.id} value={c.id} text={`${formatarNomeExibicao(c.titulo) || c.id} · ${(c.processos ?? []).map(formatarNumeroCNJ).join(', ')}`} />)}
-        </Select>
-        {escolhido ? <p>Confirme o vínculo com o processo acima. O cadastro e a capa existentes serão preservados.</p> : <>
-          <Select id="oab-processo-cliente" labelText="Cliente" value={clienteId} disabled={salvando} onChange={e => setClienteId(e.target.value)}>
-            <SelectItem value="" text="Novo cliente" />{clientes.map(c => <SelectItem key={c.id} value={c.id} text={formatarNomeExibicao(c.nome)} />)}
-          </Select>
-          {!clienteId && <TextInput id="oab-processo-novo-cliente" labelText="Nome do novo cliente" value={nomeCliente} disabled={salvando} onChange={e => setNomeCliente(e.target.value)} />}
-          <Select id="oab-processo-responsavel" labelText="Responsável" value={responsavel} disabled={salvando} onChange={e => setResponsavel(e.target.value)}>
-            <SelectItem value="" text="Selecione" />{responsaveis.map(r => <SelectItem key={r} value={r} text={formatarNomeExibicao(r)} />)}
-          </Select>
-        </>}
-      </>}
-      {salvando && <p role="status">{etapa || 'Consultando…'}</p>}
-      {erro && <><InlineNotification kind="error" title={processoCriado ? 'Processo preservado; conclusão pendente' : 'Não foi possível concluir'} subtitle={erro} lowContrast hideCloseButton />{!processoCriado && <Button kind="ghost" size="sm" disabled={salvando} onClick={() => { setCarregando(true); setTentativa(n => n + 1) }}>Recarregar dados</Button>}</>}
-    </Stack>
-  </Modal>
+
+  return (
+    <Dialog.Root open onOpenChange={(open) => { if (!open && !salvando) onClose() }}>
+      <Dialog.Content maxWidth="560px">
+        <Dialog.Title>Criar ou vincular processo</Dialog.Title>
+        <Flex direction="column" gap="5">
+          <Text as="p" size="2">{formatarNumeroCNJ(numero)} · {nomePublicacao(publicacao)}</Text>
+          <Text as="p" size="2" color="gray">Os dados disponíveis serão preenchidos automaticamente. Campos ausentes permanecem sem informação.</Text>
+          {carregando && <Text as="p" size="2" role="status">Consultando processos, clientes e responsáveis…</Text>}
+          {!carregando && !processoCriado && <>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="oab-consulta-processo">Consultar processo por CNJ, parte ou cliente</label>
+              <TextField.Root id="oab-consulta-processo" value={termo} disabled={salvando} onChange={e => setTermo(e.target.value)} />
+            </div>
+            <div>
+              <Button variant="soft" size="1" disabled={salvando || !termo.trim()} onClick={consultar}>Consultar processos</Button>
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="oab-processo-destino">Processo de destino</label>
+              <Select.Root value={escolhido || '__novo__'} disabled={salvando} onValueChange={(v) => setEscolhido(v === '__novo__' ? '' : v)}>
+                <Select.Trigger id="oab-processo-destino" style={{ width: '100%' }} />
+                <Select.Content>
+                  <Select.Item value="__novo__">Criar novo processo</Select.Item>
+                  {casos.map(c => <Select.Item key={c.id} value={c.id}>{`${formatarNomeExibicao(c.titulo) || c.id} · ${(c.processos ?? []).map(formatarNumeroCNJ).join(', ')}`}</Select.Item>)}
+                </Select.Content>
+              </Select.Root>
+            </div>
+            {escolhido ? <Text as="p" size="2">Confirme o vínculo com o processo acima. O cadastro e a capa existentes serão preservados.</Text> : <>
+              <div className="form-campo">
+                <label className="form-campo-label" htmlFor="oab-processo-cliente">Cliente</label>
+                <Select.Root value={clienteId || '__novo__'} disabled={salvando} onValueChange={(v) => setClienteId(v === '__novo__' ? '' : v)}>
+                  <Select.Trigger id="oab-processo-cliente" style={{ width: '100%' }} />
+                  <Select.Content>
+                    <Select.Item value="__novo__">Novo cliente</Select.Item>
+                    {clientes.map(c => <Select.Item key={c.id} value={c.id}>{formatarNomeExibicao(c.nome)}</Select.Item>)}
+                  </Select.Content>
+                </Select.Root>
+              </div>
+              {!clienteId && (
+                <div className="form-campo">
+                  <label className="form-campo-label" htmlFor="oab-processo-novo-cliente">Nome do novo cliente</label>
+                  <TextField.Root id="oab-processo-novo-cliente" value={nomeCliente} disabled={salvando} onChange={e => setNomeCliente(e.target.value)} />
+                </div>
+              )}
+              <div className="form-campo">
+                <label className="form-campo-label" htmlFor="oab-processo-responsavel">Responsável</label>
+                <Select.Root value={responsavel || '__none__'} disabled={salvando} onValueChange={(v) => setResponsavel(v === '__none__' ? '' : v)}>
+                  <Select.Trigger id="oab-processo-responsavel" style={{ width: '100%' }} />
+                  <Select.Content>
+                    <Select.Item value="__none__">Selecione</Select.Item>
+                    {responsaveis.map(r => <Select.Item key={r} value={r}>{formatarNomeExibicao(r)}</Select.Item>)}
+                  </Select.Content>
+                </Select.Root>
+              </div>
+            </>}
+          </>}
+          {salvando && <Text as="p" size="2" role="status">{etapa || 'Consultando…'}</Text>}
+          {erro && <>
+            <Callout.Root color="red" size="1">
+              <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+              <Callout.Text>{erro}</Callout.Text>
+            </Callout.Root>
+            {!processoCriado && (
+              <div>
+                <Button variant="ghost" size="1" disabled={salvando} onClick={() => { setCarregando(true); setTentativa(n => n + 1) }}>Recarregar dados</Button>
+              </div>
+            )}
+          </>}
+          <Flex gap="3" mt="2" justify="end">
+            <Button variant="soft" color="gray" disabled={salvando} onClick={onClose}>Cancelar</Button>
+            <Button disabled={salvando || carregando || numero.length !== 20} onClick={concluir}>
+              {processoCriado ? 'Tentar novamente' : escolhido ? 'Confirmar vínculo' : 'Criar processo e preencher capa'}
+            </Button>
+          </Flex>
+        </Flex>
+      </Dialog.Content>
+    </Dialog.Root>
+  )
 }

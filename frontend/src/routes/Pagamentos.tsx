@@ -3,26 +3,8 @@ import TextoTabela from '../TextoTabela'
 import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
-import {
-  Button,
-  Column,
-  DataTable,
-  Grid,
-  InlineNotification,
-  Modal,
-  Select,
-  SelectItem,
-  Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableHeader,
-  TableRow,
-  Tag,
-  TextInput,
-} from '@carbon/react'
+import { AlertTriangle, Info } from 'lucide-react'
+import { AlertDialog, Badge, Button, Callout, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 import { buscarJson, enviarJson } from '../api/rest'
@@ -140,60 +122,77 @@ export default function Pagamentos() {
   }
 
   return (
-    <Stack gap={6}>
-      <div className="aj-layout-53">
-        <h1>Pagamentos</h1>
-        <Button size="sm" onClick={() => setModalNovaAberto(true)}>
+    <Flex direction="column" gap="6">
+      <Flex justify="between" align="center" wrap="wrap" gap="2">
+        <Heading as="h1" size="6">Pagamentos</Heading>
+        <Button size="2" onClick={() => setModalNovaAberto(true)}>
           Nova cobrança
         </Button>
-      </div>
-      <p>Cobranças (boleto ou Pix) emitidas via Asaas para os clientes cadastrados.</p>
+      </Flex>
+      <Text as="p" size="2" color="gray">Cobranças (boleto ou Pix) emitidas via Asaas para os clientes cadastrados.</Text>
       {avisoIntegracao && (
-        <InlineNotification kind="info" title="Integração Asaas não configurada" subtitle={avisoIntegracao} lowContrast hideCloseButton />
+        <Callout.Root color="blue" size="1">
+          <Callout.Icon><Info size={14} /></Callout.Icon>
+          <Callout.Text>Integração Asaas não configurada — {avisoIntegracao}</Callout.Text>
+        </Callout.Root>
       )}
-      <Grid narrow fullWidth>
-        <Column sm={4} md={3} lg={3}>
-          <Select id="pagamentos-filtro-status" labelText="Status" value={status} onChange={(e) => setStatus(e.target.value)}>
-            <SelectItem value="" text="— todos —" />
-            <SelectItem value="PENDING" text="Pendente" />
-            <SelectItem value="OVERDUE" text="Vencido" />
-            <SelectItem value="RECEIVED" text="Recebido" />
-            <SelectItem value="CONFIRMED" text="Confirmado" />
-            <SelectItem value="REFUNDED" text="Estornado" />
-          </Select>
-        </Column>
-        <Column sm={4} md={4} lg={4}>
-          <TextInput
+      <div className="aj-form-grade">
+        <div className="form-campo">
+          <label className="form-campo-label" htmlFor="pagamentos-filtro-status">Status</label>
+          <Select.Root value={status || '__todos__'} onValueChange={(v) => setStatus(v === '__todos__' ? '' : v)}>
+            <Select.Trigger id="pagamentos-filtro-status" style={{ width: '100%' }} />
+            <Select.Content>
+              <Select.Item value="__todos__">— todos —</Select.Item>
+              <Select.Item value="PENDING">Pendente</Select.Item>
+              <Select.Item value="OVERDUE">Vencido</Select.Item>
+              <Select.Item value="RECEIVED">Recebido</Select.Item>
+              <Select.Item value="CONFIRMED">Confirmado</Select.Item>
+              <Select.Item value="REFUNDED">Estornado</Select.Item>
+            </Select.Content>
+          </Select.Root>
+        </div>
+        <div className="form-campo">
+          <label className="form-campo-label" htmlFor="pagamentos-filtro-cliente-cpf">Cliente (CPF/CNPJ)</label>
+          <TextField.Root
             id="pagamentos-filtro-cliente-cpf"
-            labelText="Cliente (CPF/CNPJ)"
             placeholder="Ex.: 123.456.789-00"
             autoComplete="off"
-            helperText={statusCpfCnpj()}
             value={cpfCnpj}
             onChange={(e) => aoDigitarCpfCnpj(e.target.value)}
           />
-        </Column>
-      </Grid>
+          {statusCpfCnpj() && <Text size="1" color="gray">{statusCpfCnpj()}</Text>}
+        </div>
+      </div>
       <div aria-live="polite">
         {carregando && <Carregamento />}
-        {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
+        {erro && (
+          <Callout.Root color="red" size="1">
+            <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+            <Callout.Text>{erro}</Callout.Text>
+          </Callout.Root>
+        )}
         {!carregando && cobrancas && cobrancas.length === 0 && (
-          <InlineNotification kind="info" title="Nenhuma cobrança encontrada" lowContrast hideCloseButton />
+          <Callout.Root color="blue" size="1">
+            <Callout.Icon><Info size={14} /></Callout.Icon>
+            <Callout.Text>Nenhuma cobrança encontrada.</Callout.Text>
+          </Callout.Root>
         )}
         {!carregando && cobrancas && cobrancas.length > 0 && <TabelaCobrancas cobrancas={cobrancas} onCancelar={setParaCancelar} />}
       </div>
-      <Modal closeButtonLabel="Fechar"
-        open={paraCancelar !== null}
-        danger
-        modalHeading="Cancelar cobrança"
-        primaryButtonText="Cancelar cobrança"
-        secondaryButtonText="Voltar"
-        primaryButtonDisabled={cancelando}
-        onRequestClose={() => setParaCancelar(null)}
-        onRequestSubmit={confirmarCancelamento}
-      >
-        <p>Cancelar esta cobrança no Asaas? Essa ação não pode ser desfeita.</p>
-      </Modal>
+      <AlertDialog.Root open={paraCancelar !== null} onOpenChange={(open) => !open && setParaCancelar(null)}>
+        <AlertDialog.Content maxWidth="400px">
+          <AlertDialog.Title>Cancelar cobrança</AlertDialog.Title>
+          <AlertDialog.Description>Cancelar esta cobrança no Asaas? Essa ação não pode ser desfeita.</AlertDialog.Description>
+          <Flex gap="3" mt="4" justify="end">
+            <AlertDialog.Cancel>
+              <Button variant="soft" color="gray">Voltar</Button>
+            </AlertDialog.Cancel>
+            <AlertDialog.Action>
+              <Button color="red" disabled={cancelando} onClick={confirmarCancelamento}>Cancelar cobrança</Button>
+            </AlertDialog.Action>
+          </Flex>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
       <NovaCobrancaModal
         open={modalNovaAberto}
         clientes={clientes}
@@ -203,76 +202,46 @@ export default function Pagamentos() {
           carregar(clienteEncontrado?.id ?? '')
         }}
       />
-    </Stack>
+    </Flex>
   )
 }
 
-const CABECALHOS_COBRANCAS = [
-  { key: 'cliente', header: 'Cliente' },
-  { key: 'valor', header: 'Valor' },
-  { key: 'vencimento', header: 'Vencimento' },
-  { key: 'tipo', header: 'Tipo' },
-  { key: 'status', header: 'Status' },
-]
-
 function TabelaCobrancas({ cobrancas, onCancelar }: { cobrancas: Cobranca[]; onCancelar: (c: Cobranca) => void }) {
-  const porId = new Map(cobrancas.map((c) => [c.id, c]))
-  const linhas = cobrancas.map((cobranca) => ({
-    id: cobranca.id,
-    cliente: cobranca.cliente_nome || '(cliente sem cadastro local)',
-    valor: formatarMoeda(cobranca.value),
-    vencimento: formatarDataSimples(cobranca.dueDate),
-    tipo: ROTULOS_TIPO[cobranca.billingType ?? ''] ?? cobranca.billingType ?? '—',
-    status: (ROTULOS_STATUS[cobranca.status ?? ''] || [cobranca.status ?? '?', 'gray'])[0],
-  }))
-
   return (
-    <DataTable rows={linhas} headers={CABECALHOS_COBRANCAS} isSortable>
-      {({ rows, headers, getHeaderProps, getRowProps, getTableProps }) => (
-        <TableContainer>
-          <TabelaResponsiva principais={['Cliente', 'Valor']}><Table {...getTableProps()} aria-label="Cobranças">
-            <TableHead>
-              <TableRow>
-                {headers.map((header) => (
-                  <TableHeader {...getHeaderProps({ header })}>
-                    {header.header}
-                  </TableHeader>
-                ))}
-                <TableHeader>Ações</TableHeader>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {rows.map((row) => {
-                const cobranca = porId.get(row.id)
-                if (!cobranca) return null
-                const [, corStatus] = ROTULOS_STATUS[cobranca.status ?? ''] || [cobranca.status ?? '?', 'gray']
-                const link = cobranca.bankSlipUrl || cobranca.invoiceUrl
-                return (
-                  <TableRow {...getRowProps({ row })}>
-                    {row.cells.map((cell) =>
-                      cell.info.header === 'status' ? (
-                        <TableCell key={cell.id}>
-                          <Tag type={corStatus} size="sm">
-                            {cell.value}
-                          </Tag>
-                        </TableCell>
-                      ) : (
-                        <TableCell key={cell.id}>{cell.info.header === 'cliente' ? <TextoTabela texto={String(cell.value ?? '')} /> : cell.value}</TableCell>
-                      ),
-                    )}
-                    <TableCell>
-                      <AcoesTabela rotulo={`cobrança ${cobranca.id}`} acoes={[
-                        ...(link ? [{ texto: 'Ver cobrança', href: link }] : []),
-                        ...(!STATUS_FINALIZADOS.has(cobranca.status ?? '') ? [{ texto: 'Cancelar', executar: () => onCancelar(cobranca), perigo: true }] : []),
-                      ]} />
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table></TabelaResponsiva>
-        </TableContainer>
-      )}
-    </DataTable>
+    <TabelaResponsiva principais={['Cliente', 'Valor']}>
+      <table aria-label="Cobranças">
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th>Valor</th>
+            <th>Vencimento</th>
+            <th>Tipo</th>
+            <th>Status</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cobrancas.map((cobranca) => {
+            const [rotuloStatus, corStatus] = ROTULOS_STATUS[cobranca.status ?? ''] || [cobranca.status ?? '?', 'gray']
+            const link = cobranca.bankSlipUrl || cobranca.invoiceUrl
+            return (
+              <tr key={cobranca.id}>
+                <td><TextoTabela texto={cobranca.cliente_nome || '(cliente sem cadastro local)'} /></td>
+                <td className="tabela-numero">{formatarMoeda(cobranca.value)}</td>
+                <td className="tabela-numero">{formatarDataSimples(cobranca.dueDate)}</td>
+                <td>{ROTULOS_TIPO[cobranca.billingType ?? ''] ?? cobranca.billingType ?? '—'}</td>
+                <td><Badge color={corStatus}>{rotuloStatus}</Badge></td>
+                <td>
+                  <AcoesTabela rotulo={`cobrança ${cobranca.id}`} acoes={[
+                    ...(link ? [{ texto: 'Ver cobrança', href: link }] : []),
+                    ...(!STATUS_FINALIZADOS.has(cobranca.status ?? '') ? [{ texto: 'Cancelar', executar: () => onCancelar(cobranca), perigo: true }] : []),
+                  ]} />
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </TabelaResponsiva>
   )
 }

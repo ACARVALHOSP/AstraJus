@@ -1,5 +1,4 @@
 import { Children, Fragment, cloneElement, isValidElement, useEffect, useId, useRef, useState, type MouseEvent, type ReactElement, type ReactNode } from 'react'
-import { TableBody, TableCell, TableExpandedRow, TableExpandHeader, TableExpandRow, TableHead, TableRow, TableSelectAll } from '@carbon/react'
 import { Button } from '@radix-ui/themes'
 import './tabelas.scss'
 
@@ -33,14 +32,13 @@ function classe(elemento: Elemento, extra: string) {
 }
 function celulaExpandida(linha: Elemento) {
   const celulas = elementos(linha.props.children)
-  return linha.type === TableExpandedRow || (celulas.length === 1 && (celulas[0].props.colSpan ?? 1) > 1)
+  return celulas.length === 1 && (celulas[0].props.colSpan ?? 1) > 1
 }
 function ajustarExpansao(linha: Elemento, quantidade: number): Elemento {
-  if (linha.type === TableExpandedRow) return cloneElement(linha, { colSpan: quantidade })
   return cloneElement(linha, {}, elementos(linha.props.children).map(celula => cloneElement(celula, { colSpan: quantidade })))
 }
 
-/** Adapta tabelas Carbon e nativas à largura do contêiner, inclusive dentro de modais. */
+/** Adapta tabelas nativas à largura do contêiner, inclusive dentro de modais. */
 export default function TabelaResponsiva({ children, principais = [] }: { children: Elemento; principais?: string[] }) {
   const raiz = useRef<HTMLDivElement>(null)
   const [largura, setLargura] = useState(0)
@@ -53,11 +51,11 @@ export default function TabelaResponsiva({ children, principais = [] }: { childr
   }, [])
 
   const partes = elementos(children.props.children)
-  const cabeca = partes.find(parte => parte.type === TableHead || parte.type === 'thead')
+  const cabeca = partes.find(parte => parte.type === 'thead')
   const linhaCabecalho = elementos(cabeca?.props.children)[0]
   const colunas: Coluna[] = elementos(linhaCabecalho?.props.children).map(cabecalho => {
     const rotulo = texto(cabecalho.props.children)
-    const controle = cabecalho.type === TableSelectAll || cabecalho.type === TableExpandHeader || rotulo === 'Favorito' || rotulo === 'Detalhes'
+    const controle = rotulo === 'Favorito' || rotulo === 'Detalhes'
     return { cabecalho, rotulo, controle, fixa: controle || rotulo === 'Ações', numerica: /^(Valor|Vencimento|Parcela|Data e hora|Data|Cadastro|Último acesso|Disponibilizado em|Quando)$/.test(rotulo) }
   })
   const compacto = largura > 0 && largura < Math.max(600, colunas.length * 128)
@@ -80,10 +78,9 @@ export default function TabelaResponsiva({ children, principais = [] }: { childr
   const quantidade = visiveis.size + Number(adicionarColuna)
   const prioridade = (i: number) => colunas[i].controle ? -100 + i : colunas[i].rotulo === 'Ações' ? 1000 : principais.includes(colunas[i].rotulo) ? principais.indexOf(colunas[i].rotulo) : 100 + i
   const ordem = [...visiveis].sort((a, b) => compacto && temDetalhes ? prioridade(a) - prioridade(b) : a - b)
-  const nativa = children.type === 'table'
   const ordenaveis = colunas.filter(c => c.cabecalho.props.isSortable && c.cabecalho.props.onClick)
   const novaCabeca = cabeca && linhaCabecalho ? cloneElement(cabeca, {}, cloneElement(linhaCabecalho, {}, [
-    ...ordem.map(i => { const c = colunas[i]; return cloneElement(c.cabecalho, { className: classe(c.cabecalho, c.controle ? 'tabela-controle' : c.rotulo === 'Ações' ? 'tabela-acoes' : c.numerica ? 'tabela-numero' : '') }, c.controle && c.rotulo ? <span className="cds--visually-hidden">{c.rotulo}</span> : c.cabecalho.props.children) }),
+    ...ordem.map(i => { const c = colunas[i]; return cloneElement(c.cabecalho, { className: classe(c.cabecalho, c.controle ? 'tabela-controle' : c.rotulo === 'Ações' ? 'tabela-acoes' : c.numerica ? 'tabela-numero' : '') }, c.controle && c.rotulo ? <span className="aj-sr-only">{c.rotulo}</span> : c.cabecalho.props.children) }),
     adicionarColuna ? <th key="detalhes" scope="col" className="tabela-acoes">Detalhes</th> : null,
   ])) : cabeca
 
@@ -99,7 +96,7 @@ export default function TabelaResponsiva({ children, principais = [] }: { childr
       const seguinte = linhas[i + 1]
       const expansao = seguinte && celulaExpandida(seguinte) ? seguinte : undefined
       if (expansao) i++
-      adaptadas.push(<LinhaAdaptavel key={linha.key} linha={linha} expansao={expansao} colunas={colunas} ordem={ordem} complementares={complementares} indiceAcoes={indiceAcoes} quantidade={quantidade} nativa={nativa} />)
+      adaptadas.push(<LinhaAdaptavel key={linha.key} linha={linha} expansao={expansao} colunas={colunas} ordem={ordem} complementares={complementares} indiceAcoes={indiceAcoes} quantidade={quantidade} />)
     }
     return cloneElement(corpo, {}, adaptadas)
   }
@@ -108,23 +105,22 @@ export default function TabelaResponsiva({ children, principais = [] }: { childr
     {temDetalhes && ordenaveis.length > 0 && <details className="tabela-ordenacao"><summary>Ordenar registros</summary><div>{ordenaveis.map(c => <Button key={c.rotulo} type="button" variant="ghost" size="1" onClick={c.cabecalho.props.onClick}>
       {c.rotulo}{c.cabecalho.props.isSortHeader ? c.cabecalho.props.sortDirection === 'ASC' ? ' · crescente' : c.cabecalho.props.sortDirection === 'DESC' ? ' · decrescente' : '' : ''}
     </Button>)}</div></details>}
-    {cloneElement(children, { className: classe(children, 'tabela-fluida') }, partes.map(parte => parte === cabeca ? novaCabeca : parte.type === TableBody || parte.type === 'tbody' ? adaptarCorpo(parte) : parte))}
+    {cloneElement(children, { className: classe(children, 'tabela-fluida') }, partes.map(parte => parte === cabeca ? novaCabeca : parte.type === 'tbody' ? adaptarCorpo(parte) : parte))}
   </div>
 }
 
-function LinhaAdaptavel({ linha, expansao, colunas, ordem, complementares, indiceAcoes, quantidade, nativa }: {
-  linha: Elemento; expansao?: Elemento; colunas: Coluna[]; ordem: number[]; complementares: number[]; indiceAcoes: number; quantidade: number; nativa: boolean
+function LinhaAdaptavel({ linha, expansao, colunas, ordem, complementares, indiceAcoes, quantidade }: {
+  linha: Elemento; expansao?: Elemento; colunas: Coluna[]; ordem: number[]; complementares: number[]; indiceAcoes: number; quantidade: number
 }) {
   const [aberta, setAberta] = useState(false)
   const id = useId()
-  const deslocamento = linha.type === TableExpandRow ? 1 : 0
   const celulas = elementos(linha.props.children)
-  const rotulo = ordem.filter(i => !colunas[i].fixa && !colunas[i].numerica).map(i => texto(celulas[i - deslocamento]?.props.children)).find(Boolean) || 'registro'
+  const rotulo = ordem.filter(i => !colunas[i].fixa && !colunas[i].numerica).map(i => texto(celulas[i]?.props.children)).find(Boolean) || 'registro'
   const botao = <Button type="button" className="tabela-detalhes-botao" variant="ghost" size="1" aria-expanded={aberta} aria-controls={id} onClick={() => setAberta(!aberta)}>
-    {aberta ? 'Fechar' : 'Detalhes'}<span className="cds--visually-hidden"> de {rotulo}</span>
+    {aberta ? 'Fechar' : 'Detalhes'}<span className="aj-sr-only"> de {rotulo}</span>
   </Button>
   const conteudo = ordem.flatMap(indice => {
-    const celula = celulas[indice - deslocamento]
+    const celula = celulas[indice]
     if (!celula) return []
     const coluna = colunas[indice]
     return [cloneElement(celula, { className: classe(celula, coluna?.controle ? 'tabela-controle' : indice === indiceAcoes ? 'tabela-acoes' : coluna?.numerica ? 'tabela-numero' : '') }, <>
@@ -132,14 +128,14 @@ function LinhaAdaptavel({ linha, expansao, colunas, ordem, complementares, indic
       {indice === indiceAcoes && complementares.length > 0 && botao}
     </>)]
   })
-  if (indiceAcoes < 0 && complementares.length > 0) conteudo.push(nativa ? <td key="detalhes" className="tabela-acoes">{botao}</td> : <TableCell key="detalhes" className="tabela-acoes">{botao}</TableCell>)
+  if (indiceAcoes < 0 && complementares.length > 0) conteudo.push(<td key="detalhes" className="tabela-acoes">{botao}</td>)
   const detalhes = <dl className="tabela-detalhes-lista">{complementares.map(i => <div key={colunas[i].cabecalho.key}>
-    <dt>{colunas[i].rotulo}</dt><dd>{celulas[i - deslocamento]?.props.children}</dd>
+    <dt>{colunas[i].rotulo}</dt><dd>{celulas[i]?.props.children}</dd>
   </div>)}</dl>
   const propsDetalhes = { id, hidden: !aberta, className: 'tabela-detalhes-linha' }
   return <>
     {cloneElement(linha, {}, conteudo)}
     {expansao && ajustarExpansao(expansao, quantidade)}
-    {complementares.length > 0 && (nativa ? <tr {...propsDetalhes}><td colSpan={quantidade}>{aberta && detalhes}</td></tr> : <TableRow {...propsDetalhes}><TableCell colSpan={quantidade}>{aberta && detalhes}</TableCell></TableRow>)}
+    {complementares.length > 0 && <tr {...propsDetalhes}><td colSpan={quantidade}>{aberta && detalhes}</td></tr>}
   </>
 }

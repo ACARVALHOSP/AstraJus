@@ -224,6 +224,18 @@
   align-self: flex-start;
 }
 
+.aj-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ── Consultas: formulários, filtros e paginação ── */
 .form-campo { display: flex; flex-direction: column; gap: 4px; }
 .form-campo-label { font-size: 13px; font-weight: 500; color: var(--gray-11); }

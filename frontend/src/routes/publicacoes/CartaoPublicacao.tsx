@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Accordion, AccordionItem, Button, Link, Stack, Tag, Tile } from '@carbon/react'
+import { Badge, Button, Card, Flex, Heading, Text } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { formatarDataSimples } from '../../utils/formatadores'
@@ -72,56 +72,55 @@ export default function CartaoPublicacao({ item }: { item: ItemPublicacao }) {
   }
 
   return (
-    <Tile>
-      <Stack gap={3}>
-        <div>
-          <Tag type="blue">{item.siglaTribunal ?? '?'}</Tag>{' '}
-          {item.tipoComunicacao && <Tag type="teal">{item.tipoComunicacao}</Tag>}{' '}
-          {item.tipoDocumento && <Tag type="gray">{item.tipoDocumento}</Tag>}
-        </div>
-        <h3>{item.nomeClasse ?? 'Classe não informada'}</h3>
-        <p>Processo: {item.numeroprocessocommascara ?? 'não informado'}</p>
-        <p>
+    <Card variant="surface">
+      <Flex direction="column" gap="3">
+        <Flex gap="2">
+          <Badge color="blue">{item.siglaTribunal ?? '?'}</Badge>
+          {item.tipoComunicacao && <Badge color="teal">{item.tipoComunicacao}</Badge>}
+          {item.tipoDocumento && <Badge color="gray">{item.tipoDocumento}</Badge>}
+        </Flex>
+        <Heading as="h3" size="3">{item.nomeClasse ?? 'Classe não informada'}</Heading>
+        <Text as="p" size="2">Processo: {item.numeroprocessocommascara ?? 'não informado'}</Text>
+        <Text as="p" size="2">
           {item.nomeOrgao ?? 'Órgão não informado'} · disponibilizado em {formatarDataSimples(item.data_disponibilizacao)}
-        </p>
+        </Text>
         {destinatarios.length > 0 && (
-          <div>
-            <strong>Partes: </strong>
+          <Text as="p" size="2">
+            <Text weight="bold">Partes: </Text>
             {destinatarios.join(' · ')}
-          </div>
+          </Text>
         )}
         {advogados.length > 0 && (
-          <div>
-            <strong>Advogados: </strong>
+          <Text as="p" size="2">
+            <Text weight="bold">Advogados: </Text>
             {advogados.join(' · ')}
-          </div>
+          </Text>
         )}
         {item.texto && (
-          <Accordion>
-            <AccordionItem title="Texto da publicação">
-              <p>{item.texto}</p>
-            </AccordionItem>
-          </Accordion>
+          <details>
+            <summary>Texto da publicação</summary>
+            <Text as="p" size="2" mt="2">{item.texto}</Text>
+          </details>
         )}
-        <div className="aj-layout-55">
+        <Flex gap="3" align="center" wrap="wrap">
           {item.texto && (
-            <Button kind="ghost" size="sm" onClick={copiarTexto}>
+            <Button variant="ghost" size="1" onClick={copiarTexto}>
               {copiado ? 'Copiado!' : 'Copiar texto'}
             </Button>
           )}
           {item.link && (
-            <Link href={item.link} target="_blank" rel="noopener noreferrer">
+            <a href={item.link} target="_blank" rel="noopener noreferrer">
               Ver no sistema do tribunal
-            </Link>
+            </a>
           )}
           {item.hash && (
-            <Button kind="secondary" size="sm" onClick={baixarCertidao} disabled={gerandoCertidao}>
+            <Button variant="soft" size="1" onClick={baixarCertidao} disabled={gerandoCertidao}>
               {gerandoCertidao ? 'Gerando…' : 'Baixar certidão'}
             </Button>
           )}
-          {statusCertidao && <span>{statusCertidao.texto}</span>}
-        </div>
-      </Stack>
-    </Tile>
+          {statusCertidao && <Text size="2">{statusCertidao.texto}</Text>}
+        </Flex>
+      </Flex>
+    </Card>
   )
 }

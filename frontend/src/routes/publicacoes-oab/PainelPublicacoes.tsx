@@ -1,18 +1,14 @@
 import TabelaResponsiva from '../../TabelaResponsiva'
+import AcoesTabela from '../../AcoesTabela'
+import TextoTabela from '../../TextoTabela'
+import Carregamento from '../../Carregamento'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
-import { Button, Checkbox, Column, DataTable, Grid, InlineNotification, OverflowMenu, OverflowMenuItem, Pagination, Select, SelectItem, Stack, Table, TableBatchAction, TableBatchActions, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow, TableSelectAll, TableSelectRow, TableToolbar, TableToolbarContent, Toggletip, ToggletipButton, ToggletipContent, useTheme } from '@carbon/react'
-import { Archive } from '@carbon/icons-react'
-import { Checkmark } from '@carbon/icons-react'
-import { ChevronDown } from '@carbon/icons-react'
-import { ChevronRight } from '@carbon/icons-react'
-import { Launch } from '@carbon/icons-react'
+import { Archive, Check, ChevronDown, ChevronRight, ExternalLink, Info } from 'lucide-react'
+import { Button, Callout, Card, Checkbox, Flex, Heading, IconButton, Popover, Select, Text } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { useNavegacao } from '../../api/NavegacaoContext'
 import { formatarDataSimples, formatarNomeExibicao } from '../../utils/formatadores'
-import { traduzirTabela } from '../../utils/tabela'
-import TextoTabela from '../../TextoTabela'
-import Carregamento from '../../Carregamento'
 import { catalogoColunas, CHAVE_COLUNAS, lerPreferencias, nomePublicacao, numeroPublicacao, ROTULO_STATUS, urlPublicacao, type PublicacaoOab } from './dados'
 import ProcessoPublicacao from './ProcessoPublicacao'
 import AtividadePublicacao from './AtividadePublicacao'
@@ -20,9 +16,9 @@ import './publicacoes.scss'
 
 type RespostaLista = { publicacoes: PublicacaoOab[]; total: number; pagina: number; campos_djen?: string[]; hashes_disponiveis?: string[] }
 type ResultadoStatus = { hashes_atualizados: string[]; hashes_falharam: string[] }
+
 export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<{ onCapturado: () => void }> }) {
   const { cliente } = useCliente(), { irPara, consumirPayload, versaoNavegacao } = useNavegacao()
-  const { theme } = useTheme()
   const [status, setStatus] = useState(''), [pagina, setPagina] = useState(1), [tamanho, setTamanho] = useState(5)
   useEffect(() => {
     const destino = consumirPayload<{ status?: string }>('publicacoes-oab')
@@ -74,8 +70,7 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
     return [...publicacoes].sort((a, b) => valor(a).localeCompare(valor(b), 'pt-BR', { numeric: true }) * (ordem.asc ? 1 : -1))
   }, [publicacoes, catalogo, ordem])
   const todasPagina = publicacoes.length > 0 && publicacoes.every(p => selecionadas.has(p.hash))
-  const cabecalhos = colunas.map(c => ({ key: c.key, header: c.header }))
-  const dadosTabela = linhas.map(p => ({ id: p.hash, ...Object.fromEntries(colunas.map(c => [c.key, c.valor(p)])) }))
+  const algumasPagina = publicacoes.some(p => selecionadas.has(p.hash)) && !todasPagina
   function alternar(id: string) {
     if (ocupada || trava.current) return
     setSelecionadas(s => { const novo = new Set(s); if (novo.has(id)) novo.delete(id); else novo.add(id); return novo })
@@ -115,84 +110,208 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
     if (tipo === 'processo' && p.caso_id) { irPara('casos', { id: p.caso_id }); return }
     setModal({ tipo, p })
   }
-  return <Grid narrow fullWidth className="oab-painel">
-    <Column sm={4} md={8} lg={16}>
-    <Stack gap={6}>
-    <div><h1>Publicações monitoradas</h1><p>Revise as publicações capturadas pelos monitoramentos por OAB.</p></div>
-    <InlineNotification
-      kind="info"
-      title="Sobre a captura e os status"
-      subtitle="A captura dos monitoramentos por OAB ocorre a cada 24 horas. Os avisos por e-mail são verificados a cada 6 horas. Não tratada: aguarda revisão, mesmo quando vinculada a um processo. Tratada: revisão confirmada ou atividade criada. Arquivada: dispensada, preservando dados e vínculos. É possível reabrir."
-      lowContrast
-      hideCloseButton
-    />
-    <fieldset className="oab-captura" disabled={ocupada || lote}><Captura onCapturado={carregar} /></fieldset>
-    <section aria-label="Lista de publicações" aria-busy={carregando || operacao}>
-      <DataTable rows={dadosTabela} headers={cabecalhos} size="md" isSortable>
-      {({ getTableProps }) => <TableContainer className="oab-table oab-lista" title="Publicações" description={`${total} registro(s). Ordenação aplicada à página atual.`}>
-        <div className="oab-toolbar-area"><TableToolbar size="lg" aria-label="Ferramentas das publicações">
-          <TableBatchActions shouldShowBatchActions={lote} totalSelected={selecionadas.size} onCancel={() => { if (!operacao) setSelecionadas(new Set()) }} translateWithId={traduzirTabela}>
-            <TableBatchAction renderIcon={Checkmark} tabIndex={lote ? 0 : -1} disabled={ocupada} onClick={() => mudarStatus([...selecionadas], 'tratada', true)}>Marcar como tratada</TableBatchAction>
-            <TableBatchAction renderIcon={Archive} tabIndex={lote ? 0 : -1} disabled={ocupada} onClick={() => mudarStatus([...selecionadas], 'arquivada', true)}>Arquivar</TableBatchAction>
-          </TableBatchActions>
-          {!lote && <TableToolbarContent className="oab-toolbar">
-            <Select id="pub-oab-filtro-status" size="sm" labelText="Status" value={status} disabled={ocupada} onChange={e => { setStatus(e.target.value); setPagina(1); setSelecionadas(new Set()); setMensagem('') }}>
-              <SelectItem value="" text="Todos" />{Object.entries(ROTULO_STATUS).map(([v, r]) => <SelectItem key={v} value={v} text={r} />)}
-            </Select>
-            <Button kind="ghost" size="sm" disabled={ocupada} onClick={carregar}>Atualizar lista</Button>
-            <Toggletip align="bottom-right" highContrast={false} className="oab-colunas">
-              <ToggletipButton label="Colunas" disabled={ocupada}>Colunas</ToggletipButton>
-              <ToggletipContent className="oab-colunas-conteudo"><fieldset><legend>Colunas visíveis</legend><div className="oab-colunas-opcoes" onPointerDown={e => { if ((e.target as HTMLElement).closest('label')) e.preventDefault() }}>{catalogo.map(c => <Checkbox key={c.key} id={`oab-coluna-${encodeURIComponent(c.key)}`} labelText={`${c.header}${c.obrigatoria ? ' — sempre visível' : ''}`} checked={Boolean(c.obrigatoria || preferencias.includes(c.key))} disabled={c.obrigatoria} onChange={(_, { checked }) => escolherColuna(c.key, checked)} />)}</div></fieldset></ToggletipContent>
-            </Toggletip>
-          </TableToolbarContent>}
-        </TableToolbar></div>
-        <TabelaResponsiva principais={['Processo']}><Table {...getTableProps()} aria-label="Publicações monitoradas">
-          <TableHead><TableRow>
-            <TableHeader scope="col">Detalhes</TableHeader>
-            <TableSelectAll id="oab-todas" name="oab-todas" aria-label="Selecionar publicações desta página" checked={todasPagina} indeterminate={!todasPagina && publicacoes.some(p => selecionadas.has(p.hash))} disabled={ocupada || !publicacoes.length} onSelect={() => { if (ocupada) return; setSelecionadas(s => { const novo = new Set(s); for (const p of publicacoes) { if (todasPagina) novo.delete(p.hash); else novo.add(p.hash) } return novo }) }} />
-            {colunas.map(c => <TableHeader key={c.key} scope="col" isSortable isSortHeader={ordem?.chave === c.key} sortDirection={ordem?.chave === c.key ? ordem.asc ? 'ASC' : 'DESC' : 'NONE'} translateWithId={() => `Ordenar ${c.header} em ordem ${ordem?.chave === c.key && ordem.asc ? 'decrescente' : 'crescente'} nesta página`} onClick={() => { if (!ocupada) setOrdem(o => ({ chave: c.key, asc: o?.chave === c.key ? !o.asc : true })) }}>{c.header}</TableHeader>)}
-            <TableHeader scope="col">Ações</TableHeader>
-          </TableRow></TableHead>
-          <TableBody>{linhas.map(p => {
-            const expandida = expandidas.has(p.hash), link = urlPublicacao(p), bloqueada = ocupada || lote
-            return <Fragment key={p.hash}>
-              <TableRow isSelected={selecionadas.has(p.hash)}>
-                <TableCell><Button kind="ghost" size="sm" hasIconOnly renderIcon={expandida ? ChevronDown : ChevronRight} iconDescription={`${expandida ? 'Recolher' : 'Expandir'} publicação ${p.hash}`} aria-expanded={expandida} aria-controls={`oab-detalhes-${p.hash}`} onClick={() => setExpandidas(s => { const novo = new Set(s); if (novo.has(p.hash)) novo.delete(p.hash); else novo.add(p.hash); return novo })} /></TableCell>
-                <TableSelectRow id={`oab-selecao-${p.hash}`} name={`oab-selecao-${p.hash}`} aria-label={`Selecionar publicação ${p.hash}`} checked={selecionadas.has(p.hash)} disabled={ocupada} onSelect={() => alternar(p.hash)} />
-                {colunas.map(c => <TableCell key={c.key} className={`oab-celula oab-celula-${c.key.split(':')[0]}`}>{c.key === 'processo' || c.key === 'tribunal' ? c.valor(p) : <TextoTabela texto={c.valor(p)} />}</TableCell>)}
-                <TableCell><div className="oab-acoes">
-                  <Button kind="ghost" size="sm" hasIconOnly renderIcon={Launch} iconDescription={link ? `Abrir publicação DJEN ${p.hash} em nova aba` : 'Publicação sem link DJEN disponível'} disabled={bloqueada || !link} onClick={() => { if (!bloqueada && link) window.open(link, '_blank', 'noopener,noreferrer') }} />
-                  <OverflowMenu menuOptionsClass={`acoes-tabela-menu--${theme} oab-menu`} key={bloqueada ? 'bloqueado' : 'disponivel'} disabled={bloqueada} flipped size="sm" aria-label="Ações da publicação" iconDescription="Ações da publicação">
-                    <OverflowMenuItem itemText={p.caso_id ? 'Abrir processo' : 'Criar / vincular processo'} disabled={bloqueada || (!p.caso_id && numeroPublicacao(p).length !== 20)} onClick={() => abrirAcao('processo', p)} />
-                    <OverflowMenuItem itemText={p.caso_id ? 'Criar atividade' : 'Criar atividade (vincule um processo)'} disabled={bloqueada || !p.caso_id} onClick={() => abrirAcao('atividade', p)} />
-                    <OverflowMenuItem itemText="Marcar como tratada" disabled={bloqueada || p.status === 'tratada'} onClick={() => mudarStatus([p.hash], 'tratada')} />
-                    <OverflowMenuItem itemText="Arquivar" disabled={bloqueada || p.status === 'arquivada'} onClick={() => mudarStatus([p.hash], 'arquivada')} />
-                    {p.status !== 'nao_tratada' && <OverflowMenuItem itemText="Reabrir como não tratada" disabled={bloqueada} onClick={() => mudarStatus([p.hash], 'nao_tratada')} />}
-                  </OverflowMenu>
-                </div></TableCell>
-              </TableRow>
-              <TableRow hidden={!expandida} id={`oab-detalhes-${p.hash}`}><TableCell colSpan={colunas.length + 3}><Stack gap={3}>
-                <strong>{nomePublicacao(p)}</strong>
-                <p>{[p.dados?.siglaTribunal, p.dados?.nomeOrgao, p.dados?.tipoComunicacao].filter(Boolean).join(' · ')}</p>
-                <p>Divulgado: {formatarDataSimples(p.dados?.data_disponibilizacao) || '—'} · Capturado: {formatarDataSimples(p.criado_em) || '—'} · Status: {ROTULO_STATUS[p.status]}</p>
-                {p.nome_pesquisado && <p>Referência: {formatarNomeExibicao(p.nome_pesquisado)}</p>}
-                {p.dados?.destinatarioadvogados?.length ? <p>Advogados: {p.dados.destinatarioadvogados.map(a => `${formatarNomeExibicao(a.nome)} OAB ${a.numero_oab || '?'}/${a.uf_oab || '?'}`).join('; ')}</p> : null}
-                <p className="oab-inteiro-teor">{p.dados?.texto || 'Inteiro teor não disponibilizado.'}</p>
-              </Stack></TableCell></TableRow>
-            </Fragment>
-          })}</TableBody>
-        </Table></TabelaResponsiva>
-      </TableContainer>}
-      </DataTable>
-      {carregando && <Carregamento tipo="tabela" descricao="Carregando publicações…" />}
-      {!carregando && !erro && !publicacoes.length && <InlineNotification kind="info" title="Nenhuma publicação encontrada" subtitle={status ? 'Altere o filtro para ver outras publicações.' : 'Use a captura por OAB para adicionar publicações.'} hideCloseButton lowContrast />}
-      <Pagination id="oab-paginacao" size="sm" page={pagina} pageSize={tamanho} pageSizes={[5, 10, 20]} totalItems={total} disabled={ocupada} itemsPerPageText="Itens por página:" backwardText="Página anterior" forwardText="Próxima página" pageNumberText="Página" pageSelectLabelText={() => 'Selecionar página'} pageRangeText={(_, totalPaginas) => `de ${totalPaginas} página(s)`} itemRangeText={(min, max, totalItens) => totalItens ? `${min}–${max} de ${totalItens} publicações` : '0 publicações'} onChange={({ page, pageSize }) => { if (ocupada) return; if (pageSize !== tamanho) { setTamanho(pageSize); setPagina(1); setSelecionadas(new Set()) } else setPagina(page) }} />
-    </section>
-    <div aria-live="polite">{mensagem && <InlineNotification kind="info" title="Resultado da operação" subtitle={mensagem} lowContrast hideCloseButton />}{erro && <InlineNotification kind="error" title="Não foi possível concluir" subtitle={erro} lowContrast hideCloseButton />}</div>
-    {erro && <Button kind="tertiary" size="sm" disabled={ocupada} onClick={carregar}>Tentar atualizar novamente</Button>}
-    {modal?.tipo === 'processo' && <ProcessoPublicacao publicacao={modal.p} onClose={() => { setModal(null); void carregar() }} onConcluido={m => { setMensagem(m); setModal(null); void carregar() }} />}
-    {modal?.tipo === 'atividade' && <AtividadePublicacao publicacao={modal.p} onClose={() => setModal(null)} onConcluido={m => { setMensagem(m); setModal(null); void carregar() }} />}
-    </Stack>
-    </Column>
-  </Grid>
+  function ordenarPor(chave: string) {
+    if (ocupada) return
+    setOrdem(o => ({ chave, asc: o?.chave === chave ? !o.asc : true }))
+  }
+  const totalPaginas = Math.max(1, Math.ceil(total / tamanho))
+
+  return (
+    <Flex direction="column" gap="6" className="oab-painel">
+      <div>
+        <Heading as="h1" size="6">Publicações monitoradas</Heading>
+        <Text as="p" size="2" color="gray" mt="1">Revise as publicações capturadas pelos monitoramentos por OAB.</Text>
+      </div>
+      <Callout.Root color="blue" size="1">
+        <Callout.Icon><Info size={14} /></Callout.Icon>
+        <Callout.Text>
+          A captura dos monitoramentos por OAB ocorre a cada 24 horas. Os avisos por e-mail são verificados a cada 6 horas.
+          Não tratada: aguarda revisão, mesmo quando vinculada a um processo. Tratada: revisão confirmada ou atividade criada.
+          Arquivada: dispensada, preservando dados e vínculos. É possível reabrir.
+        </Callout.Text>
+      </Callout.Root>
+      <fieldset className="oab-captura" disabled={ocupada || lote}><Captura onCapturado={carregar} /></fieldset>
+      <section aria-label="Lista de publicações" aria-busy={carregando || operacao}>
+        <Flex direction="column" gap="3">
+          {lote ? (
+            <Card variant="surface">
+              <Flex justify="between" align="center" wrap="wrap" gap="2">
+                <Text size="2">{selecionadas.size} selecionada(s)</Text>
+                <Flex gap="2">
+                  <Button size="1" disabled={ocupada} onClick={() => mudarStatus([...selecionadas], 'tratada', true)}>
+                    <Check size={14} /> Marcar como tratada
+                  </Button>
+                  <Button size="1" variant="soft" disabled={ocupada} onClick={() => mudarStatus([...selecionadas], 'arquivada', true)}>
+                    <Archive size={14} /> Arquivar
+                  </Button>
+                  <Button size="1" variant="ghost" disabled={operacao} onClick={() => setSelecionadas(new Set())}>Cancelar</Button>
+                </Flex>
+              </Flex>
+            </Card>
+          ) : (
+            <div className="aj-acoes-linha">
+              <div className="form-campo" style={{ minWidth: 180 }}>
+                <Select.Root value={status || '__todos__'} disabled={ocupada} onValueChange={(v) => { const novo = v === '__todos__' ? '' : v; setStatus(novo); setPagina(1); setSelecionadas(new Set()); setMensagem('') }}>
+                  <Select.Trigger placeholder="Status" style={{ width: '100%' }} />
+                  <Select.Content>
+                    <Select.Item value="__todos__">Todos</Select.Item>
+                    {Object.entries(ROTULO_STATUS).map(([v, r]) => <Select.Item key={v} value={v}>{r}</Select.Item>)}
+                  </Select.Content>
+                </Select.Root>
+              </div>
+              <Button size="1" variant="ghost" disabled={ocupada} onClick={carregar}>Atualizar lista</Button>
+              <Popover.Root>
+                <Popover.Trigger>
+                  <Button size="1" variant="outline" color="gray" disabled={ocupada}>Colunas</Button>
+                </Popover.Trigger>
+                <Popover.Content style={{ width: 280 }}>
+                  <Text size="1" weight="bold" mb="2">Colunas visíveis</Text>
+                  <div className="aj-multiselect-lista" onPointerDown={e => { if ((e.target as HTMLElement).closest('label')) e.preventDefault() }}>
+                    {catalogo.map(c => (
+                      <Text as="label" size="2" key={c.key}>
+                        <Flex gap="2" align="center">
+                          <Checkbox
+                            checked={Boolean(c.obrigatoria || preferencias.includes(c.key))}
+                            disabled={c.obrigatoria}
+                            onCheckedChange={(checked) => escolherColuna(c.key, Boolean(checked))}
+                          />
+                          {c.header}{c.obrigatoria ? ' — sempre visível' : ''}
+                        </Flex>
+                      </Text>
+                    ))}
+                  </div>
+                </Popover.Content>
+              </Popover.Root>
+            </div>
+          )}
+
+          <TabelaResponsiva principais={['Processo']}>
+            <table aria-label="Publicações monitoradas">
+              <thead>
+                <tr>
+                  <th aria-label="Detalhes" />
+                  <th className="tabela-controle">
+                    <Checkbox
+                      aria-label="Selecionar publicações desta página"
+                      checked={todasPagina ? true : algumasPagina ? 'indeterminate' : false}
+                      disabled={ocupada || !publicacoes.length}
+                      onCheckedChange={() => { if (ocupada) return; setSelecionadas(s => { const novo = new Set(s); for (const p of publicacoes) { if (todasPagina) novo.delete(p.hash); else novo.add(p.hash) } return novo }) }}
+                    />
+                  </th>
+                  {colunas.map(c => (
+                    <th key={c.key}>
+                      <Button variant="ghost" size="1" color="gray" disabled={ocupada} onClick={() => ordenarPor(c.key)} style={{ padding: '0 4px' }}>
+                        {c.header}{ordem?.chave === c.key ? (ordem.asc ? ' ↑' : ' ↓') : ''}
+                      </Button>
+                    </th>
+                  ))}
+                  <th className="tabela-acoes">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {linhas.map(p => {
+                  const expandida = expandidas.has(p.hash), link = urlPublicacao(p), bloqueada = ocupada || lote
+                  return (
+                    <Fragment key={p.hash}>
+                      <tr>
+                        <td>
+                          <Button
+                            variant="ghost" size="1"
+                            aria-expanded={expandida} aria-controls={`oab-detalhes-${p.hash}`}
+                            aria-label={`${expandida ? 'Recolher' : 'Expandir'} publicação ${p.hash}`}
+                            onClick={() => setExpandidas(s => { const novo = new Set(s); if (novo.has(p.hash)) novo.delete(p.hash); else novo.add(p.hash); return novo })}
+                          >
+                            {expandida ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          </Button>
+                        </td>
+                        <td className="tabela-controle">
+                          <Checkbox aria-label={`Selecionar publicação ${p.hash}`} checked={selecionadas.has(p.hash)} disabled={ocupada} onCheckedChange={() => alternar(p.hash)} />
+                        </td>
+                        {colunas.map(c => (
+                          <td key={c.key} className={`oab-celula oab-celula-${c.key.split(':')[0]}`}>
+                            {c.key === 'processo' || c.key === 'tribunal' ? c.valor(p) : <TextoTabela texto={c.valor(p)} />}
+                          </td>
+                        ))}
+                        <td className="tabela-acoes">
+                          <Flex gap="1" justify="end">
+                            <IconButton
+                              variant="ghost" size="1" color="gray"
+                              aria-label={link ? `Abrir publicação DJEN ${p.hash} em nova aba` : 'Publicação sem link DJEN disponível'}
+                              disabled={bloqueada || !link}
+                              onClick={() => { if (!bloqueada && link) window.open(link, '_blank', 'noopener,noreferrer') }}
+                            >
+                              <ExternalLink size={14} />
+                            </IconButton>
+                            <AcoesTabela rotulo={`publicação ${p.hash}`} acoes={[
+                              { texto: p.caso_id ? 'Abrir processo' : 'Criar / vincular processo', desabilitada: bloqueada || (!p.caso_id && numeroPublicacao(p).length !== 20), executar: () => abrirAcao('processo', p) },
+                              { texto: p.caso_id ? 'Criar atividade' : 'Criar atividade (vincule um processo)', desabilitada: bloqueada || !p.caso_id, executar: () => abrirAcao('atividade', p) },
+                              { texto: 'Marcar como tratada', desabilitada: bloqueada || p.status === 'tratada', executar: () => mudarStatus([p.hash], 'tratada') },
+                              { texto: 'Arquivar', desabilitada: bloqueada || p.status === 'arquivada', executar: () => mudarStatus([p.hash], 'arquivada') },
+                              ...(p.status !== 'nao_tratada' ? [{ texto: 'Reabrir como não tratada', desabilitada: bloqueada, executar: () => mudarStatus([p.hash], 'nao_tratada') }] : []),
+                            ]} />
+                          </Flex>
+                        </td>
+                      </tr>
+                      {expandida && (
+                        <tr id={`oab-detalhes-${p.hash}`}>
+                          <td colSpan={colunas.length + 3}>
+                            <Flex direction="column" gap="3">
+                              <Text weight="bold">{nomePublicacao(p)}</Text>
+                              <Text as="p" size="2">{[p.dados?.siglaTribunal, p.dados?.nomeOrgao, p.dados?.tipoComunicacao].filter(Boolean).join(' · ')}</Text>
+                              <Text as="p" size="2">Divulgado: {formatarDataSimples(p.dados?.data_disponibilizacao) || '—'} · Capturado: {formatarDataSimples(p.criado_em) || '—'} · Status: {ROTULO_STATUS[p.status]}</Text>
+                              {p.nome_pesquisado && <Text as="p" size="2">Referência: {formatarNomeExibicao(p.nome_pesquisado)}</Text>}
+                              {p.dados?.destinatarioadvogados?.length ? <Text as="p" size="2">Advogados: {p.dados.destinatarioadvogados.map(a => `${formatarNomeExibicao(a.nome)} OAB ${a.numero_oab || '?'}/${a.uf_oab || '?'}`).join('; ')}</Text> : null}
+                              <Text as="p" size="2" className="oab-inteiro-teor">{p.dados?.texto || 'Inteiro teor não disponibilizado.'}</Text>
+                            </Flex>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+          </TabelaResponsiva>
+
+          {carregando && <Carregamento tipo="tabela" descricao="Carregando publicações…" />}
+          {!carregando && !erro && !publicacoes.length && (
+            <Callout.Root color="blue" size="1">
+              <Callout.Icon><Info size={14} /></Callout.Icon>
+              <Callout.Text>{status ? 'Nenhuma publicação encontrada. Altere o filtro para ver outras publicações.' : 'Nenhuma publicação encontrada. Use a captura por OAB para adicionar publicações.'}</Callout.Text>
+            </Callout.Root>
+          )}
+
+          <nav aria-label="Páginas de publicações monitoradas" className="aj-paginacao">
+            <Select.Root value={String(tamanho)} disabled={ocupada} onValueChange={(v) => { const novo = Number(v); if (novo !== tamanho) { setTamanho(novo); setPagina(1); setSelecionadas(new Set()) } }}>
+              <Select.Trigger />
+              <Select.Content>
+                {[5, 10, 20].map(n => <Select.Item key={n} value={String(n)}>{n} por página</Select.Item>)}
+              </Select.Content>
+            </Select.Root>
+            <Button variant="ghost" size="1" disabled={ocupada || pagina <= 1} onClick={() => setPagina(p => p - 1)}>Página anterior</Button>
+            <Text size="2">Página {pagina} de {totalPaginas}</Text>
+            <Button variant="ghost" size="1" disabled={ocupada || pagina >= totalPaginas} onClick={() => setPagina(p => p + 1)}>Próxima página</Button>
+            <Text size="2" color="gray">{total ? `${total} publicações` : '0 publicações'}</Text>
+          </nav>
+        </Flex>
+      </section>
+      <div aria-live="polite">
+        {mensagem && (
+          <Callout.Root color="blue" size="1">
+            <Callout.Icon><Info size={14} /></Callout.Icon>
+            <Callout.Text>{mensagem}</Callout.Text>
+          </Callout.Root>
+        )}
+        {erro && (
+          <Callout.Root color="red" size="1">
+            <Callout.Icon><Info size={14} /></Callout.Icon>
+            <Callout.Text>{erro}</Callout.Text>
+          </Callout.Root>
+        )}
+      </div>
+      {erro && <Button variant="soft" size="1" disabled={ocupada} onClick={carregar} style={{ alignSelf: 'flex-start' }}>Tentar atualizar novamente</Button>}
+      {modal?.tipo === 'processo' && <ProcessoPublicacao publicacao={modal.p} onClose={() => { setModal(null); void carregar() }} onConcluido={m => { setMensagem(m); setModal(null); void carregar() }} />}
+      {modal?.tipo === 'atividade' && <AtividadePublicacao publicacao={modal.p} onClose={() => setModal(null)} onConcluido={m => { setMensagem(m); setModal(null); void carregar() }} />}
+    </Flex>
+  )
 }

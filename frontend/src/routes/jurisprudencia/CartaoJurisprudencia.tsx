@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
-import { Button, Stack, Tag, Tile } from '@carbon/react'
-import { Checkmark, Copy } from '@carbon/icons-react'
+import { Badge, Button, Card, Flex, Text } from '@radix-ui/themes'
+import { Check, Copy } from 'lucide-react'
 import { formatarDataSimples } from '../../utils/formatadores'
 import type { ResultadoJurisprudencia } from './tipos'
 
@@ -58,41 +58,41 @@ export function CartaoJurisprudencia({ item }: { item: ResultadoJurisprudencia }
   const temTextoEmenta = Boolean((item.ementa && item.ementa.trim()) || item.ementa_html)
 
   return (
-    <Tile>
-      <Stack gap={3}>
+    <Card variant="surface">
+      <Flex direction="column" gap="3">
         {/* Barra superior de badges e metadados */}
-        <div className="aj-layout-48" style={{ flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-          <Tag type="blue">TJSP</Tag>
-          {item.classe && <Tag type="gray">{item.classe}</Tag>}
+        <Flex align="center" gap="2" wrap="wrap">
+          <Badge color="blue">TJSP</Badge>
+          {item.classe && <Badge color="gray">{item.classe}</Badge>}
           {item.votacao && (
-            <Tag type="teal">
+            <Badge color="teal">
               {item.votacao.toLowerCase().includes('votação') || item.votacao.toLowerCase().includes('votacao')
                 ? item.votacao
                 : `Votação: ${item.votacao}`}
-            </Tag>
+            </Badge>
           )}
-          {item.segredo_justica && <Tag type="red">Segredo de justiça</Tag>}
-          {item.ativo === false && <Tag type="outline">Inativo</Tag>}
+          {item.segredo_justica && <Badge color="red">Segredo de justiça</Badge>}
+          {item.ativo === false && <Badge color="gray" variant="outline">Inativo</Badge>}
 
           <div style={{ flex: '1 1 auto' }} />
-          <span>Julgado em {formatarDataSimples(item.data_julgamento)}</span>
-        </div>
+          <Text size="2">Julgado em {formatarDataSimples(item.data_julgamento)}</Text>
+        </Flex>
 
         {/* Processo de Origem (se presente) */}
         {item.nu_processo_origem && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}>
-            <span>
-              <strong>Processo de origem:</strong> {item.nu_processo_origem}
-            </span>
+          <Flex align="center" gap="2">
+            <Text size="2">
+              <Text weight="bold">Processo de origem:</Text> {item.nu_processo_origem}
+            </Text>
             <Button
-              kind="ghost"
-              size="sm"
-              hasIconOnly
-              renderIcon={copiadoProcesso ? Checkmark : Copy}
-              iconDescription={copiadoProcesso ? 'Número copiado!' : 'Copiar número do processo de origem'}
+              variant="ghost"
+              size="1"
+              aria-label={copiadoProcesso ? 'Número copiado!' : 'Copiar número do processo de origem'}
               onClick={() => copiarTexto(item.nu_processo_origem!, setCopiadoProcesso, timerProcesso)}
-            />
-          </div>
+            >
+              {copiadoProcesso ? <Check size={14} /> : <Copy size={14} />}
+            </Button>
+          </Flex>
         )}
 
         {/* Ementa completa, com os termos buscados marcados pelo backend */}
@@ -100,40 +100,40 @@ export function CartaoJurisprudencia({ item }: { item: ResultadoJurisprudencia }
 
         {/* Metadados (Relator, Comarca, Órgão, Voto, Prolatores) */}
         {atribuicoes.length > 0 && (
-          <p>
+          <Text as="p" size="2">
             {atribuicoes.map(({ rotulo, valor }, i) => (
               <span key={rotulo}>
                 {i > 0 && ' · '}
-                <strong>{rotulo}:</strong> {valor}
+                <Text weight="bold">{rotulo}:</Text> {valor}
               </span>
             ))}
-          </p>
+          </Text>
         )}
 
         {/* Boletins associados (se houver) */}
         {item.boletins && item.boletins.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.8125rem' }}>
-              <strong>Boletins:</strong>
-            </span>
+          <Flex align="center" gap="2" wrap="wrap">
+            <Text size="1">
+              <Text weight="bold">Boletins:</Text>
+            </Text>
             {item.boletins.map((b, i) => (
-              <Tag key={i} type="warm-gray" size="sm">
+              <Badge key={i} color="gray" size="1">
                 {b}
-              </Tag>
+              </Badge>
             ))}
-          </div>
+          </Flex>
         )}
 
         {/* Ações inferiores */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginTop: '0.25rem' }}>
+        <Flex align="center" justify="between" wrap="wrap" gap="3" mt="1">
           <div>
             {temTextoEmenta && (
               <Button
-                kind={copiadoEmenta ? 'primary' : 'ghost'}
-                size="sm"
-                renderIcon={copiadoEmenta ? Checkmark : Copy}
+                variant={copiadoEmenta ? 'solid' : 'ghost'}
+                size="1"
                 onClick={() => copiarTexto(extrairTextoEmenta(), setCopiadoEmenta, timerEmenta)}
               >
+                {copiadoEmenta ? <Check size={14} /> : <Copy size={14} />}
                 {copiadoEmenta ? 'Ementa copiada!' : 'Copiar ementa'}
               </Button>
             )}
@@ -141,13 +141,13 @@ export function CartaoJurisprudencia({ item }: { item: ResultadoJurisprudencia }
 
           <div>
             {item.pdf_url && (
-              <a href={item.pdf_url} target="_blank" rel="noreferrer" className="cds--link">
+              <a href={item.pdf_url} target="_blank" rel="noreferrer">
                 Baixar PDF da ementa
               </a>
             )}
           </div>
-        </div>
-      </Stack>
-    </Tile>
+        </Flex>
+      </Flex>
+    </Card>
   )
 }

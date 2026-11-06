@@ -1,18 +1,14 @@
-@use '@carbon/react/scss/spacing' as spacing;
-@use '@carbon/react/scss/type' as type;
-
 .notificacoes-painel {
   overflow-wrap: anywhere;
-  .notificacoes-contagem { @include type.type-style('body-compact-01'); color: var(--cds-text-secondary); margin-block-end: spacing.$spacing-05; }
+  .notificacoes-contagem { font-size: 13px; color: var(--gray-11); margin-block-end: 1rem; }
   .notificacoes-item {
-    border-block-end: 1px solid var(--cds-border-subtle);
-    padding-block: spacing.$spacing-05;
-    h3 { @include type.type-style('heading-compact-01'); }
+    border-block-end: 1px solid var(--gray-a5);
+    padding-block: 1rem;
+    h3 { font-size: 14px; font-weight: 600; }
   }
-  .notificacoes-mensagem { @include type.type-style('body-01'); margin-block: spacing.$spacing-03; }
-  .notificacoes-data, .notificacoes-retencao { @include type.type-style('label-01'); color: var(--cds-text-secondary); }
-  .notificacoes-retencao { margin-block-start: spacing.$spacing-05; }
-  .notificacoes-acoes { display: flex; flex-wrap: wrap; gap: spacing.$spacing-02; margin-block-start: spacing.$spacing-03; }
-  .notificacoes-erro, .notificacoes-vazio { margin-block: spacing.$spacing-05; }
-  .cds--inline-notification { min-inline-size: 0; inline-size: 100%; max-inline-size: 100%; }
+  .notificacoes-mensagem { font-size: 14px; margin-block: 0.5rem; }
+  .notificacoes-data, .notificacoes-retencao { font-size: 11px; color: var(--gray-11); }
+  .notificacoes-retencao { margin-block-start: 1rem; }
+  .notificacoes-acoes { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-block-start: 0.5rem; }
+  .notificacoes-erro, .notificacoes-vazio { margin-block: 1rem; }
 }

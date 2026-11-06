@@ -1,6 +1,7 @@
 import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
-import { Button, InlineNotification, Link, Stack, Tag, Tile } from '@carbon/react'
+import { AlertTriangle } from 'lucide-react'
+import { Badge, Button, Callout, Card, Flex, Heading, Text } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 
 type StatusSelo = 'verificando' | 'configurado' | 'nao-configurado' | 'acesso-necessario' | 'falha'
@@ -16,7 +17,7 @@ const TOM_SELO: Record<StatusSelo, { texto: string; tom: 'blue' | 'green' | 'gra
 function Selo({ status }: { status: StatusSelo }) {
   if (status === 'verificando') return <Carregamento tipo="texto" descricao="Verificando integração…" />
   const { texto, tom } = TOM_SELO[status]
-  return <Tag type={tom}>{texto}</Tag>
+  return <Badge color={tom}>{texto}</Badge>
 }
 
 export default function Integracoes() {
@@ -93,73 +94,83 @@ export default function Integracoes() {
   }
 
   return (
-    <Stack gap={6}>
+    <Flex direction="column" gap="6">
       <div>
-        <h1>Integrações</h1>
-        <p>Conexões com serviços externos usados pelo escritório.</p>
+        <Heading as="h1" size="6">Integrações</Heading>
+        <Text as="p" size="2" color="gray" mt="1">Conexões com serviços externos usados pelo escritório.</Text>
       </div>
       <div>
-        <Button kind="tertiary" size="sm" onClick={carregar}>
+        <Button variant="outline" size="2" onClick={carregar}>
           Verificar novamente
         </Button>
       </div>
-      <p>
+      <Text as="p" size="2" color="gray">
         A configuração é mantida pelo administrador. "Configurado" indica credenciais cadastradas; não confirma a
         disponibilidade do serviço externo.
-      </p>
+      </Text>
       <div>
-        <Link href="/admin/integracoes" target="_blank" rel="noopener">
+        <a href="/admin/integracoes" target="_blank" rel="noopener">
           Administrar integrações
-        </Link>
+        </a>
       </div>
       <div aria-live="polite">
-        {aviso && <InlineNotification kind="warning" title="Aviso" subtitle={aviso} lowContrast hideCloseButton />}
-        {erro && <InlineNotification kind="error" title="Erro" subtitle={erro} lowContrast hideCloseButton />}
+        {aviso && (
+          <Callout.Root color="yellow" size="1">
+            <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+            <Callout.Text>{aviso}</Callout.Text>
+          </Callout.Root>
+        )}
+        {erro && (
+          <Callout.Root color="red" size="1">
+            <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+            <Callout.Text>{erro}</Callout.Text>
+          </Callout.Root>
+        )}
       </div>
-      <div className="aj-layout-43">
-        <Tile className="aj-layout-44">
-          <Stack gap={3}>
+      <div className="aj-form-grade">
+        <Card variant="surface">
+          <Flex direction="column" gap="3">
             <img src="/static/icons/google.svg" alt="" width={40} height={40} />
-            <h3>Google</h3>
-            <p>Drive do escritório (conta institucional).</p>
+            <Heading as="h3" size="3">Google</Heading>
+            <Text as="p" size="2">Drive do escritório (conta institucional).</Text>
             <Selo status={googleStatus} />
-          </Stack>
-        </Tile>
-        <Tile className="aj-layout-45">
-          <Stack gap={3}>
+          </Flex>
+        </Card>
+        <Card variant="surface">
+          <Flex direction="column" gap="3">
             <img src="/static/icons/asaas.png" alt="" width={40} height={40} />
-            <h3>Asaas</h3>
-            <p>Cobranças e boletos. Veja em Financeiro &gt; Pagamentos.</p>
+            <Heading as="h3" size="3">Asaas</Heading>
+            <Text as="p" size="2">Cobranças e boletos. Veja em Financeiro &gt; Pagamentos.</Text>
             <Selo status={asaasStatus} />
-          </Stack>
-        </Tile>
-        <Tile className="aj-layout-46">
-          <Stack gap={3}>
+          </Flex>
+        </Card>
+        <Card variant="surface">
+          <Flex direction="column" gap="3">
             <img src="/static/icons/zapsign.svg" alt="" width={40} height={40} />
-            <h3>ZapSign</h3>
-            <p>Assinatura digital de documentos.</p>
+            <Heading as="h3" size="3">ZapSign</Heading>
+            <Text as="p" size="2">Assinatura digital de documentos.</Text>
             <Selo status={zapsignStatus} />
-          </Stack>
-        </Tile>
-        <Tile className="aj-layout-47">
-          <Stack gap={3}>
-            <h3>Minha agenda Google</h3>
-            <p>Conecte sua conta individual para criar eventos no seu calendário.</p>
-            <p role="status">{agendaStatus}</p>
-            <div className="aj-layout-48">
-              <Button kind="tertiary" size="sm" onClick={() => minhaAgendaGoogle('conectar')}>
+          </Flex>
+        </Card>
+        <Card variant="surface">
+          <Flex direction="column" gap="3">
+            <Heading as="h3" size="3">Minha agenda Google</Heading>
+            <Text as="p" size="2">Conecte sua conta individual para criar eventos no seu calendário.</Text>
+            <Text as="p" size="2" role="status">{agendaStatus}</Text>
+            <Flex gap="2" wrap="wrap">
+              <Button variant="outline" size="1" onClick={() => minhaAgendaGoogle('conectar')}>
                 Conectar minha agenda
               </Button>
-              <Button kind="ghost" size="sm" onClick={() => minhaAgendaGoogle('desconectar')}>
+              <Button variant="ghost" size="1" onClick={() => minhaAgendaGoogle('desconectar')}>
                 Desconectar minha agenda
               </Button>
-              <Button kind="ghost" size="sm" onClick={() => minhaAgendaGoogle('status')}>
+              <Button variant="ghost" size="1" onClick={() => minhaAgendaGoogle('status')}>
                 Verificar conexão
               </Button>
-            </div>
-          </Stack>
-        </Tile>
+            </Flex>
+          </Flex>
+        </Card>
       </div>
-    </Stack>
+    </Flex>
   )
 }
