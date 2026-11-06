@@ -128,10 +128,10 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
   }).filter(Boolean))].join('; ')
   const ultimo = [...(capa?.movimentos ?? [])].sort((a, b) => (b.dataHora ?? '').localeCompare(a.dataHora ?? ''))[0]
   const principais = [
-    ['Tipo de justiça', capa?.tipo_justica], ['Nome do processo', formatarNomeExibicao(capa?.nome_processo || caso.titulo)],
-    ['Tribunal', capa?.tribunal], ['Órgão julgador', capa?.orgao_julgador || caso.foro],
-    ['Classe / ação', capa?.classe || caso.acao], ['Distribuição', dataCapa(capa?.data_distribuicao)],
-  ]
+    ['Tipo de justiça', capa?.tipo_justica, 1], ['Tribunal', capa?.tribunal, 1], ['Distribuição', dataCapa(capa?.data_distribuicao), 1],
+    ['Nome do processo', formatarNomeExibicao(capa?.nome_processo || caso.titulo), 2], ['Classe / ação', capa?.classe || caso.acao, 1],
+    ['Órgão julgador', capa?.orgao_julgador || caso.foro, 3],
+  ] as const
   const mais = [
     ['Assuntos', capa?.assuntos?.join('; ')], ['Município / UF', [capa?.cidade, capa?.uf].filter(Boolean).join(' / ')],
     ['Grau', capa?.grau], ['Nível de sigilo', capa?.nivel_sigilo],
@@ -161,60 +161,85 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
       </Button>
     )}
     {capa && !carregando && <>
-      <div className="casos-formulario-grade">
-        {principais.map(([rotulo, valor]) => (
-          <dl key={rotulo}><dt>{rotulo}</dt><dd>{valor || 'Não informado'}</dd></dl>
-        ))}
-        <dl style={{ gridColumn: '1 / -1' }}>
-          <dt>Polo ativo</dt><dd>{participantes('ativo')}</dd>
-          <dt>Polo passivo</dt><dd>{participantes('passivo')}</dd>
-          {partes.some(p => poloDaParte(p) === 'outro') && <><dt>Partes sem polo informado</dt><dd>{participantes('outro')}</dd></>}
-          <dt>Advogados</dt><dd>{advogados || 'Não informado pelo DJEN'}</dd>
-        </dl>
-        <dl style={{ gridColumn: '1 / -1' }}>
-          <dt>Última movimentação</dt>
-          <dd>{ultimo ? `${dataCapa(ultimo.dataHora)} · ${ultimo.nome || 'Sem descrição'}` : 'Nenhuma movimentação disponível.'}</dd>
-        </dl>
-        <div style={{ gridColumn: '1 / -1' }}>
-          <Button variant="ghost" size="1" onClick={onMovimentacoes}>Ver movimentações</Button>
-        </div>
-      </div>
-      {erroClientes && <p className="casos-ajuda">Não foi possível identificar os clientes vinculados. As tags de cliente estão indisponíveis.</p>}
-      <details className="capa-mais"><summary>Mais informações</summary><dl>{mais.map(([rotulo, valor]) => <Fragment key={rotulo}><dt>{rotulo}</dt><dd>{valor ?? 'Não informado'}</dd></Fragment>)}</dl></details>
-      <form onSubmit={e => { e.preventDefault(); void executar('salvar') }}>
-        <div className="casos-formulario-grade">
-          {campos.map(([chave, rotulo]) => (
-            <div key={chave} className="form-campo">
-              <label className="form-campo-label" htmlFor={`capa-${numero}-${chave}`}>{rotulo}</label>
-              <TextField.Root
-                id={`capa-${numero}-${chave}`}
-                type={chave === 'valor_causa' ? 'number' : 'text'}
-                min={chave === 'valor_causa' ? 0 : undefined}
-                step={chave === 'valor_causa' ? '0.01' : undefined}
-                value={edicao[chave]}
-                disabled={bloqueado}
-                onChange={e => setEdicao(anterior => ({ ...anterior, [chave]: e.target.value }))}
-              />
-              {chave === 'valor_causa' && invalido && (
-                <Text size="1" color="red">Informe um valor maior ou igual a zero.</Text>
-              )}
-            </div>
+      <div className="capa-secao">
+        <p className="capa-secao-titulo">Identificação</p>
+        <div className="capa-grade">
+          {principais.map(([rotulo, valor, span]) => (
+            <dl key={rotulo} className={span > 1 ? `capa-campo capa-campo--span${span}` : 'capa-campo'}>
+              <dt>{rotulo}</dt><dd>{valor || 'Não informado'}</dd>
+            </dl>
           ))}
         </div>
-        <div className="capa-acoes">
-          <Button size="1" type="submit" disabled={bloqueado || !pendente || invalido}>
-            {operacao === 'salvar' ? 'Salvando capa…' : 'Salvar capa'}
-          </Button>
-          <Button variant="ghost" size="1" type="button" disabled={bloqueado} onClick={() => executar('monitorar')}>
-            {operacao === 'monitorar' ? 'Atualizando monitoramento…' : capa.monitorando ? 'Parar avisos de publicações' : 'Receber avisos de publicações'}
-          </Button>
+      </div>
+
+      <div className="capa-secao">
+        <p className="capa-secao-titulo">Partes e advogados</p>
+        <div className="capa-grade capa-grade--2">
+          <dl className="capa-campo"><dt>Polo ativo</dt><dd>{participantes('ativo')}</dd></dl>
+          <dl className="capa-campo"><dt>Polo passivo</dt><dd>{participantes('passivo')}</dd></dl>
+          {partes.some(p => poloDaParte(p) === 'outro') && (
+            <dl className="capa-campo"><dt>Partes sem polo informado</dt><dd>{participantes('outro')}</dd></dl>
+          )}
+          <dl className="capa-campo capa-campo--span2"><dt>Advogados</dt><dd>{advogados || 'Não informado pelo DJEN'}</dd></dl>
         </div>
-      </form>
-      {pendente && <p className="casos-ajuda">Há alterações não salvas. Salve a capa antes de atualizar os dados externos.</p>}
-      {!tribunal && <p className="casos-ajuda">Não foi possível determinar o tribunal pelo número CNJ.</p>}
-      <p className="casos-ajuda">Monitoramento de publicações: {capa.monitorando ? 'ativo para seu usuário' : 'não ativo para seu usuário'}. A atualização diária da capa é independente desses avisos.</p>
-      <p className="casos-ajuda">Fontes da consulta: DataJud (dados judiciais) e DJEN (partes e advogados). Os campos editáveis são mantidos pelo escritório.</p>
-      <p className="casos-ajuda">Última gravação da capa: {dataCapa(capa.atualizado_em)}. A data também é alterada ao salvar campos manuais.</p>
+        {erroClientes && <p className="casos-ajuda">Não foi possível identificar os clientes vinculados. As tags de cliente estão indisponíveis.</p>}
+      </div>
+
+      <div className="capa-secao">
+        <p className="capa-secao-titulo">Movimentação</p>
+        <div className="capa-grade capa-grade--2 capa-grade--alinhada">
+          <dl className="capa-campo">
+            <dt>Última movimentação</dt>
+            <dd>{ultimo ? `${dataCapa(ultimo.dataHora)} · ${ultimo.nome || 'Sem descrição'}` : 'Nenhuma movimentação disponível.'}</dd>
+          </dl>
+          <div className="capa-movimentacoes-acao">
+            <Button variant="ghost" size="1" onClick={onMovimentacoes}>Ver movimentações</Button>
+          </div>
+        </div>
+      </div>
+
+      <details className="capa-mais"><summary>Mais informações</summary><dl>{mais.map(([rotulo, valor]) => <Fragment key={rotulo}><dt>{rotulo}</dt><dd>{valor ?? 'Não informado'}</dd></Fragment>)}</dl></details>
+
+      <div className="capa-secao">
+        <p className="capa-secao-titulo">Dados do escritório</p>
+        <form onSubmit={e => { e.preventDefault(); void executar('salvar') }}>
+          <div className="capa-grade">
+            {campos.map(([chave, rotulo]) => (
+              <div key={chave} className="form-campo">
+                <label className="form-campo-label" htmlFor={`capa-${numero}-${chave}`}>{rotulo}</label>
+                <TextField.Root
+                  id={`capa-${numero}-${chave}`}
+                  type={chave === 'valor_causa' ? 'number' : 'text'}
+                  min={chave === 'valor_causa' ? 0 : undefined}
+                  step={chave === 'valor_causa' ? '0.01' : undefined}
+                  value={edicao[chave]}
+                  disabled={bloqueado}
+                  onChange={e => setEdicao(anterior => ({ ...anterior, [chave]: e.target.value }))}
+                />
+                {chave === 'valor_causa' && invalido && (
+                  <Text size="1" color="red">Informe um valor maior ou igual a zero.</Text>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="capa-acoes">
+            <Button size="1" type="submit" disabled={bloqueado || !pendente || invalido}>
+              {operacao === 'salvar' ? 'Salvando capa…' : 'Salvar capa'}
+            </Button>
+            <Button variant="ghost" size="1" type="button" disabled={bloqueado} onClick={() => executar('monitorar')}>
+              {operacao === 'monitorar' ? 'Atualizando monitoramento…' : capa.monitorando ? 'Parar avisos de publicações' : 'Receber avisos de publicações'}
+            </Button>
+          </div>
+        </form>
+        {pendente && <p className="casos-ajuda">Há alterações não salvas. Salve a capa antes de atualizar os dados externos.</p>}
+        {!tribunal && <p className="casos-ajuda">Não foi possível determinar o tribunal pelo número CNJ.</p>}
+      </div>
+
+      <div className="capa-secao">
+        <p className="casos-ajuda" style={{ marginTop: 0 }}>Monitoramento de publicações: {capa.monitorando ? 'ativo para seu usuário' : 'não ativo para seu usuário'}. A atualização diária da capa é independente desses avisos.</p>
+        <p className="casos-ajuda">Fontes da consulta: DataJud (dados judiciais) e DJEN (partes e advogados). Os campos editáveis são mantidos pelo escritório.</p>
+        <p className="casos-ajuda">Última gravação da capa: {dataCapa(capa.atualizado_em)}. A data também é alterada ao salvar campos manuais.</p>
+      </div>
     </>}
   </section>
 }
