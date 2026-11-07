@@ -1,10 +1,10 @@
+import Carregamento from './Carregamento'
 import { useEffect, useState } from 'react'
-import { Button } from '@radix-ui/themes'
-import { User } from 'lucide-react'
+import { Button, Callout, Flex, Heading, Popover, Text } from '@radix-ui/themes'
+import { AlertTriangle, User } from 'lucide-react'
 import { useCliente } from './api/ClienteContext'
 import type { ClienteMCP } from './api/mcpClient'
 import { useNavegacao } from './api/NavegacaoContext'
-import { usePainelShell } from './usePainelShell'
 
 type Perfil = { login: string; nome_completo: string; nivel_acesso: string }
 const NIVEIS: Record<string, string> = { administrador: 'Administrador', operador: 'Operador', consulta: 'Consulta' }
@@ -21,7 +21,6 @@ function ContaConectada({ cliente }: { cliente: ClienteMCP }) {
   const [perfil, setPerfil] = useState<Perfil | null>(null)
   const [erro, setErro] = useState(false)
   const [tentativa, setTentativa] = useState(0)
-  const raiz = usePainelShell(aberto, () => setAberto(false))
 
   useEffect(() => {
     const controlador = new AbortController()
@@ -39,18 +38,34 @@ function ContaConectada({ cliente }: { cliente: ClienteMCP }) {
 
   const nome = perfil?.nome_completo || 'Minha conta'
   return (
-    <div ref={raiz} className="shell-action shell-conta">
-      <button type="button" className="shell-conta__acionador" aria-label={`Conta de ${nome}`} aria-expanded={aberto} aria-controls="shell-conta-painel" title={nome} onClick={() => setAberto(!aberto)}>
-        <User size={20} aria-hidden="true" />
-        <span className="shell-conta__nome">{nome}</span>
-      </button>
-      {aberto && <div id="shell-conta-painel" className="shell-panel shell-conta__painel" role="region" aria-label="Minha conta">
-        <h2>{nome}</h2>
-        {perfil ? <><p>{perfil.login}</p><p>Perfil de acesso: {NIVEIS[perfil.nivel_acesso] || 'Não informado'}</p></> :
-          erro ? <div role="alert"><p>Não foi possível carregar seus dados.</p><Button variant="ghost" size="1" style={{ alignSelf: 'flex-start' }} onClick={() => { setErro(false); setTentativa(t => t + 1) }}>Tentar novamente</Button></div> : <p role="status">Carregando seus dados…</p>}
-        <Button variant="ghost" size="1" style={{ alignSelf: 'flex-start' }} onClick={() => { setAberto(false); irPara('acesso') }}>Configurações de acesso</Button>
-        <Button variant="ghost" color="red" size="1" style={{ alignSelf: 'flex-start' }} onClick={() => { setAberto(false); setPerfil(null); esquecer(); irPara('acesso') }}>Sair</Button>
-      </div>}
-    </div>
+    <Popover.Root open={aberto} onOpenChange={setAberto}>
+      <Popover.Trigger>
+        <button type="button" className="aj-ib aj-conta-acionador" aria-label={`Conta de ${nome}`} title={nome}>
+          <User size={18} aria-hidden="true" />
+          <span className="aj-conta-nome">{nome}</span>
+        </button>
+      </Popover.Trigger>
+      <Popover.Content width="260px" align="end">
+        <Flex direction="column" gap="3" role="region" aria-label="Minha conta">
+          <Heading size="3">{nome}</Heading>
+          {perfil ? (
+            <Flex direction="column" gap="1">
+              <Text size="2" color="gray">{perfil.login}</Text>
+              <Text size="2" color="gray">Perfil de acesso: {NIVEIS[perfil.nivel_acesso] || 'Não informado'}</Text>
+            </Flex>
+          ) : erro ? (
+            <Flex direction="column" gap="2">
+              <Callout.Root color="red" size="1">
+                <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+                <Callout.Text>Não foi possível carregar seus dados.</Callout.Text>
+              </Callout.Root>
+              <Button variant="ghost" size="1" style={{ alignSelf: 'flex-start' }} onClick={() => { setErro(false); setTentativa(t => t + 1) }}>Tentar novamente</Button>
+            </Flex>
+          ) : <Carregamento tipo="texto" descricao="Carregando seus dados…" />}
+          <Button variant="ghost" size="1" style={{ alignSelf: 'flex-start' }} onClick={() => { setAberto(false); irPara('acesso') }}>Configurações de acesso</Button>
+          <Button variant="ghost" color="red" size="1" style={{ alignSelf: 'flex-start' }} onClick={() => { setAberto(false); setPerfil(null); esquecer(); irPara('acesso') }}>Sair</Button>
+        </Flex>
+      </Popover.Content>
+    </Popover.Root>
   )
 }

@@ -49,9 +49,28 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   transition: background 0.12s;
 }
 .aj-ib:hover { background: rgba(255, 255, 255, 0.18); color: #fff; }
+
+.aj-conta-acionador {
+  width: auto;
+  gap: 6px;
+  padding: 0 10px 0 8px;
+}
+.aj-conta-nome {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 14ch;
+}
+@media (max-width: 720px) {
+  .aj-conta-nome { display: none; }
+  .aj-conta-acionador { padding: 0; width: 32px; }
+}
 
 .aj-status-pill {
   display: flex;
