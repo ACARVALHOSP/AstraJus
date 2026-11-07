@@ -1,5 +1,5 @@
 import CabecalhoPagina from '../CabecalhoPagina'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent as EventoPonteiro } from 'react'
 import {
   Box, Button, Callout, Dialog, Flex, Heading,
   Select, Skeleton, Text,
@@ -49,7 +49,6 @@ function PainelHome() {
   const requisicao = useRef<AbortController | null>(null)
   const montado = useRef(true)
   const trava = useRef(new Set<string>())
-  const itemArrastado = useRef<string | null>(null)
 
   const carregar = useCallback(async () => {
     if (!cliente || trava.current.size) return
@@ -134,7 +133,57 @@ function PainelHome() {
   }
 
   function encerrarArraste() {
-    itemArrastado.current = null; setArrastando(null); setDestinoArraste(null)
+    setArrastando(null); setDestinoArraste(null)
+  }
+
+  // Arraste próprio (mouse e caneta): o card segue o cursor opaco — a imagem do arraste nativo do
+  // navegador é sempre translúcida. No lugar do card fica um espaço reservado (.home-arrastando).
+  function colunaSob(x: number, y: number) {
+    const alvo = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-coluna]')
+    return (alvo?.dataset.coluna as StatusAtividade | undefined) ?? null
+  }
+  function iniciarArraste(e: EventoPonteiro<HTMLElement>, item: ItemHome) {
+    const chave = chaveItem(item)
+    if (e.button !== 0 || e.pointerType === 'touch' || salvando.has(chave)) return
+    if (e.target instanceof HTMLElement && e.target.closest('button, a, input, select, textarea, [role="combobox"]')) return
+    e.preventDefault()
+    const cartao = e.currentTarget
+    const caixa = cartao.getBoundingClientRect()
+    const inicio = { x: e.clientX, y: e.clientY, dx: e.clientX - caixa.left, dy: e.clientY - caixa.top }
+    let flutuante: HTMLElement | null = null
+
+    const mover_ = (ev: PointerEvent) => {
+      if (!flutuante) {
+        if (Math.hypot(ev.clientX - inicio.x, ev.clientY - inicio.y) < 5) return
+        flutuante = cartao.cloneNode(true) as HTMLElement
+        flutuante.classList.add('home-cartao-flutuante')
+        flutuante.setAttribute('aria-hidden', 'true')
+        flutuante.style.width = `${cartao.offsetWidth}px`
+        ;(cartao.closest('.radix-themes') ?? document.body).appendChild(flutuante)
+        document.body.classList.add('home-arrastando-cursor')
+        setArrastando(chave)
+      }
+      flutuante.style.transform = `translate(${ev.clientX - inicio.dx}px, ${ev.clientY - inicio.dy}px)`
+      setDestinoArraste(colunaSob(ev.clientX, ev.clientY))
+    }
+    const terminar = (destino: StatusAtividade | null) => {
+      window.removeEventListener('pointermove', mover_)
+      window.removeEventListener('pointerup', soltar)
+      window.removeEventListener('pointercancel', cancelar)
+      window.removeEventListener('keydown', tecla)
+      document.body.classList.remove('home-arrastando-cursor')
+      const arrastou = flutuante !== null
+      flutuante?.remove()
+      encerrarArraste()
+      if (arrastou && destino) void mover(item, destino)
+    }
+    const soltar = (ev: PointerEvent) => terminar(flutuante ? colunaSob(ev.clientX, ev.clientY) : null)
+    const cancelar = () => terminar(null)
+    const tecla = (ev: KeyboardEvent) => { if (ev.key === 'Escape') terminar(null) }
+    window.addEventListener('pointermove', mover_)
+    window.addEventListener('pointerup', soltar)
+    window.addEventListener('pointercancel', cancelar)
+    window.addEventListener('keydown', tecla)
   }
   function limparFiltros() { setExecutor(''); setResponsavel(''); setTipo(''); setPeriodo('') }
 
@@ -344,17 +393,7 @@ function PainelHome() {
                       destinoArraste === coluna.id ? 'home-destino' : '',
                       colunaMobile === coluna.id ? 'home-coluna-ativa' : '',
                     ].filter(Boolean).join(' ')}
-                    onDragOver={e => {
-                      if (itemArrastado.current) {
-                        e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDestinoArraste(coluna.id)
-                      }
-                    }}
-                    onDrop={e => {
-                      e.preventDefault()
-                      const item = itens.find(i => chaveItem(i) === itemArrastado.current)
-                      encerrarArraste()
-                      if (item) void mover(item, coluna.id)
-                    }}
+                    data-coluna={coluna.id}
                   >
                     <div className="home-coluna-titulo">
                       <Heading as="h3" size="2" id={`home-coluna-${coluna.id}`}>{coluna.titulo}</Heading>
@@ -370,17 +409,7 @@ function PainelHome() {
                           key={chave}
                           className={`home-cartao${arrastando === chave ? ' home-arrastando' : ''}`}
                           aria-busy={salvando.has(chave)}
-                          draggable={!salvando.has(chave)}
-                          onDragStart={e => {
-                            if (salvando.has(chave) || (e.target instanceof HTMLElement && e.target.closest('button, [role="combobox"], a'))) {
-                              e.preventDefault(); return
-                            }
-                            itemArrastado.current = chave
-                            // Só vira espaço reservado depois que o navegador captura a imagem do card.
-                            requestAnimationFrame(() => { if (itemArrastado.current === chave) setArrastando(chave) })
-                            e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', chave)
-                          }}
-                          onDragEnd={encerrarArraste}
+                          onPointerDown={e => iniciarArraste(e, item)}
                         >
                           <p className="home-tipo">{TIPOS[atividade.tipo] || atividade.tipo}</p>
                           <h4>
