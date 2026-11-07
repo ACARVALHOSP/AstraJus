@@ -2,7 +2,7 @@
 
 .contato-vinculos-tabela { overflow-x: auto; }
 .contato-vinculos-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; padding: 1rem; background: var(--color-panel-solid); border: 1px solid var(--gray-a4); border-radius: var(--radius-3); }
-.contato-vinculos-resumo dt { font-size: 11px; font-weight: 600; color: var(--gray-11); text-transform: uppercase; letter-spacing: 0.03em; }
+.contato-vinculos-resumo dt { font-size: 12px; font-weight: 600; color: var(--gray-11); text-transform: uppercase; letter-spacing: 0.03em; }
 .contato-vinculos-resumo dd { font-size: 15px; font-weight: 600; color: var(--gray-12); margin: 0.25rem 0 0; }
 
 /* CampoRepetivel */
@@ -19,7 +19,7 @@
 /* Clientes lote preview table */
 .clientes-lote-preview { width: 100%; border-collapse: collapse; font-size: 13px; }
 .clientes-lote-preview th, .clientes-lote-preview td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid var(--gray-a4); }
-.clientes-lote-preview th { font-weight: 600; color: var(--gray-11); font-size: 11px; text-transform: uppercase; }
+.clientes-lote-preview th { font-weight: 600; color: var(--gray-11); font-size: 12px; text-transform: uppercase; }
 
 /* Alphabet filter */
 .clientes-filtro-letra { display: flex; flex-wrap: wrap; gap: 0.25rem; }

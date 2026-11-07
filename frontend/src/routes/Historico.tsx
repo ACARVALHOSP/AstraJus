@@ -15,6 +15,7 @@ import type { Caso } from './casos/ListaCasos'
 import { ROTULO_TIPO } from './atividades/dados'
 import {
   alternarCasoFavorito,
+  EVENTO_PREFERENCIAS,
   alternarFavorito,
   ehFavorito,
   lerCasosFavoritos,
@@ -91,9 +92,17 @@ export default function Historico() {
   const [carregando, setCarregando] = useState(() => !!cliente && lerCasosFavoritos().length > 0)
   const [confirmarApagar, setConfirmarApagar] = useState(false)
 
+  // Favoritos e histórico chegam do servidor logo depois de conectar: relê a cópia local.
+  useEffect(() => {
+    const reler = () => { setFavoritos(lerFavoritos()); setHistorico(lerHistorico()); setIdsFavoritos(lerCasosFavoritos()) }
+    window.addEventListener(EVENTO_PREFERENCIAS, reler)
+    return () => window.removeEventListener(EVENTO_PREFERENCIAS, reler)
+  }, [])
+
+  const temFavoritos = idsFavoritos.length > 0
   useEffect(() => {
     let atual = true
-    if (!lerCasosFavoritos().length || !cliente) {
+    if (!temFavoritos || !cliente) {
       // eslint-disable-next-line react/set-state-in-effect
       setCarregando(false)
       return
@@ -107,7 +116,7 @@ export default function Historico() {
       .catch(() => { if (atual) setCasos([]) })
       .finally(() => { if (atual) setCarregando(false) })
     return () => { atual = false }
-  }, [cliente])
+  }, [cliente, temFavoritos])
 
   const nomeCliente = (id?: string) => formatarNomeExibicao(clientes.find(c => c.id === id)?.nome ?? '')
   const termo = normalizar(busca.trim())
@@ -425,12 +434,12 @@ export default function Historico() {
         </Tabs.Content>
       </Tabs.Root>
 
-      <Text size="1" color="gray">Favoritos e histórico ficam salvos só neste navegador. O histórico guarda as 10 consultas mais recentes.</Text>
+      <Text size="1" color="gray">Favoritos e histórico ficam salvos na sua conta e valem em qualquer navegador. O histórico guarda as 10 consultas mais recentes.</Text>
 
       <AlertDialog.Root open={confirmarApagar} onOpenChange={setConfirmarApagar}>
         <AlertDialog.Content maxWidth="400px">
           <AlertDialog.Title>Apagar histórico</AlertDialog.Title>
-          <AlertDialog.Description>Apagar as {historico.length} consultas recentes deste navegador? Os favoritos continuam salvos.</AlertDialog.Description>
+          <AlertDialog.Description>Apagar as {historico.length} consultas recentes? Os favoritos continuam salvos.</AlertDialog.Description>
           <Flex gap="3" mt="4" justify="end">
             <AlertDialog.Cancel><Button variant="soft" color="gray">Cancelar</Button></AlertDialog.Cancel>
             <AlertDialog.Action><Button color="red" onClick={() => { limparHistorico(); setHistorico([]); avisar({ texto: 'Histórico apagado.' }) }}>Apagar histórico</Button></AlertDialog.Action>

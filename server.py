@@ -150,6 +150,29 @@ def _asaas_config() -> tuple[str, str] | None:
     return (asaas_integracao.URL_BASE_SANDBOX, chave) if chave else None
 
 
+def _ambiente_asaas(url_base: str) -> str:
+    return "producao" if url_base == asaas_integracao.URL_BASE_PRODUCAO else "sandbox"
+
+
+def _agora_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+# A cópia local das cobranças é refeita por inteiro quando passa deste tempo; entre uma e outra,
+# o webhook do Asaas mantém cada cobrança atualizada.
+_ASAAS_SINCRONIZACAO_MAX_S = 30 * 60
+
+
+def _sincronizacao_vencida(sincronizado_em: str | None) -> bool:
+    if not sincronizado_em:
+        return True
+    try:
+        momento = datetime.fromisoformat(sincronizado_em)
+    except ValueError:
+        return True
+    return (_agora_utc() - momento).total_seconds() > _ASAAS_SINCRONIZACAO_MAX_S
+
+
 def _so_digitos(valor: str | None) -> str:
     """Remove máscara e qualquer caractere não numérico (ex: '1006314-27.2023.8.26.0005' -> '10063142720238260005')."""
     return re.sub(r"\D", "", valor or "")
@@ -4040,6 +4063,10 @@ class _AutenticacaoBearer:
         if self.oauth and (caminho.startswith("/oauth/") or caminho.startswith("/.well-known/")):
             await self.oauth.tratar(scope, receive, send)
             return
+        if caminho == "/asaas/webhook":
+            # Chamado pelo Asaas, sem token de usuário: autenticado pelo cabeçalho próprio.
+            await self._asaas_webhook(scope, receive, send)
+            return
 
         ip = _ip_cliente(scope)
         chave_falhas = f"mcp:{ip}"
@@ -4076,7 +4103,8 @@ class _AutenticacaoBearer:
         usuarios_admin.registrar_acesso(self.registro, usuario)
         perfil = self.registro.carregar().get(usuario, {})
         if perfil.get('nivel_acesso') == 'consulta' and scope.get('method') not in ('GET', 'HEAD', 'OPTIONS'):
-            if caminho != '/mcp' or scope.get('method') != 'POST':
+            # Favoritos e histórico são pessoais: quem só consulta também pode guardá-los.
+            if (caminho != '/mcp' or scope.get('method') != 'POST') and not caminho.startswith('/preferencias/'):
                 await _json(send, 403, _erro('Seu nível de acesso permite somente consulta.'))
                 return
             corpo_consulta = await _ler_corpo(receive)
@@ -4219,6 +4247,9 @@ class _AutenticacaoBearer:
             return
         if caminho == "/atividades" and self.gestao is not None:
             await self._atividades_globais(scope, send)
+            return
+        if (caminho == "/preferencias" or caminho.startswith("/preferencias/")) and self.gestao is not None:
+            await self._preferencias(scope, receive, send, caminho[len("/preferencias/"):] or None)
             return
         if caminho == "/lancamentos" and self.gestao is not None:
             await self._lancamentos(scope, receive, send)
@@ -4658,6 +4689,7 @@ class _AutenticacaoBearer:
             log.warning("Falha ao criar cobrança Asaas para cliente %s: %s", cliente_id, erro)
             await _json(send, 400, _erro(f"Falha ao criar cobrança: {erro}"))
             return
+        self.gestao.salvar_cobrancas_asaas(_ambiente_asaas(url_base), [cobranca], _agora_utc)
         cobranca["cliente_id"] = cliente_id
         cobranca["cliente_nome"] = cliente_registro["nome"]
         await _json(send, 201, cobranca)
@@ -4682,13 +4714,25 @@ class _AutenticacaoBearer:
             offset = 0
         situacao = (query.get("situacao") or "").strip()
         truncado = False
+        aviso_cache = None
+        sincronizado = None
         try:
             async with _cliente(40 if situacao else 20) as http_cliente:
                 if situacao:
-                    # Painel: busca todas as cobranças para calcular totais e contadores.
-                    todas, truncado = await asaas_integracao.listar_todas_cobrancas(
-                        http_cliente, url_base, api_key, customer_id=customer_id,
-                    )
+                    # Painel: lê a cópia local (mantida pelo webhook do Asaas) e só busca tudo
+                    # no Asaas quando a cópia está velha ou a pessoa pede "Atualizar".
+                    ambiente = _ambiente_asaas(url_base)
+                    _, sincronizado = self.gestao.listar_cobrancas_asaas(ambiente)
+                    if query.get("atualizar") == "1" or _sincronizacao_vencida(sincronizado):
+                        try:
+                            todas, truncado = await asaas_integracao.listar_todas_cobrancas(
+                                http_cliente, url_base, api_key, max_paginas=20)
+                            self.gestao.salvar_cobrancas_asaas(ambiente, todas, _agora_utc, completa=not truncado)
+                        except asaas_integracao.ErroAsaas:
+                            if sincronizado is None:
+                                raise
+                            aviso_cache = "Não foi possível falar com o Asaas agora; mostrando a última cópia."
+                    todas, sincronizado = self.gestao.listar_cobrancas_asaas(ambiente, customer_id)
                     resultado = {"data": todas}
                 else:
                     resultado = await asaas_integracao.listar_cobrancas(
@@ -4720,6 +4764,8 @@ class _AutenticacaoBearer:
                 cpf_por_cliente={c["id"]: c.get("cpf_cnpj") or "" for c in clientes}, offset=offset,
             )
             painel["truncado"] = truncado
+            painel["atualizado_em"] = sincronizado
+            painel["aviso"] = aviso_cache
             await _json(send, 200, painel)
             return
         await _json(send, 200, {
@@ -4744,7 +4790,68 @@ class _AutenticacaoBearer:
             log.warning("Falha ao cancelar cobrança Asaas %s: %s", payment_id, erro)
             await _json(send, 400, _erro(f"Falha ao cancelar cobrança: {erro}"))
             return
+        self.gestao.remover_cobranca_asaas(_ambiente_asaas(url_base), payment_id)
         await _json(send, 200, resultado)
+
+    async def _asaas_webhook(self, scope, receive, send) -> None:
+        """POST /asaas/webhook: avisos do Asaas sobre cobranças (criada, paga, vencida, excluída…).
+        Autenticado pelo cabeçalho `asaas-access-token`, que deve ser igual a ASAAS_WEBHOOK_TOKEN.
+        Atualiza a cópia local usada pela tela Pagamentos."""
+        esperado = (_config_integracao("ASAAS_WEBHOOK_TOKEN", "") or "").strip()
+        config = _asaas_config()
+        if not esperado or config is None or self.gestao is None:
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        if scope.get("method") != "POST":
+            await _responder(send, 405, b"Metodo nao permitido")
+            return
+        recebido = dict(scope.get("headers") or []).get(b"asaas-access-token", b"").decode("latin-1")
+        if not hmac.compare_digest(recebido, esperado):
+            await _responder(send, 401, b"Token invalido")
+            return
+        corpo = await _ler_corpo(receive, limite=256 * 1024)
+        try:
+            dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            await _json(send, 400, _erro("JSON inválido."))
+            return
+        cobranca = dados.get("payment") if isinstance(dados, dict) else None
+        if isinstance(cobranca, dict) and cobranca.get("id"):
+            ambiente = _ambiente_asaas(config[0])
+            if dados.get("event") == "PAYMENT_DELETED" or cobranca.get("deleted"):
+                self.gestao.remover_cobranca_asaas(ambiente, cobranca["id"])
+            else:
+                self.gestao.salvar_cobrancas_asaas(ambiente, [cobranca], _agora_utc)
+        await _json(send, 200, {"recebido": True})
+
+    async def _preferencias(self, scope, receive, send, chave: str | None) -> None:
+        """GET /preferencias: favoritos e histórico do usuário. PUT /preferencias/<chave> com
+        {"valor": [...]}: substitui a lista (favoritos_casos, favoritos_consultas, historico_consultas)."""
+        usuario = scope.get("usuario") or ""
+        metodo = scope.get("method")
+        if metodo == "GET" and not chave:
+            await _json(send, 200, {"preferencias": self.gestao.obter_preferencias(usuario)})
+            return
+        if metodo != "PUT" or not chave:
+            await _responder(send, 405, b"Metodo nao permitido")
+            return
+        if chave not in self.gestao.CHAVES_PREFERENCIA:
+            await _json(send, 404, _erro("Preferência desconhecida."))
+            return
+        corpo = await _ler_corpo(receive, limite=64 * 1024)
+        if corpo is None:
+            await _json(send, 413, _erro("Lista grande demais."))
+            return
+        try:
+            valor = json.loads(corpo.decode("utf-8") or "{}").get("valor")
+        except (ValueError, UnicodeDecodeError, AttributeError):
+            await _json(send, 400, _erro("JSON inválido."))
+            return
+        if not isinstance(valor, list) or len(valor) > 500:
+            await _json(send, 400, _erro("Envie a lista em 'valor' (até 500 itens)."))
+            return
+        self.gestao.salvar_preferencia(usuario, chave, valor, _agora_utc)
+        await _json(send, 200, {"ok": True})
 
     async def _casos(self, scope, receive, send):
         metodo = scope.get("method")
@@ -5727,15 +5834,15 @@ async def _com_tempo_minimo(atendimento, scope, receive, send) -> None:
         await send(mensagem)
 
 
-async def _ler_corpo(receive) -> bytes | None:
-    """Lê o corpo da requisição. Devolve None se passar do tamanho máximo de formulário."""
+async def _ler_corpo(receive, limite: int = _TAMANHO_MAX_FORM) -> bytes | None:
+    """Lê o corpo da requisição. Devolve None se passar do tamanho máximo (formulário, por padrão)."""
     partes: list[bytes] = []
     total = 0
     while True:
         mensagem = await receive()
         bloco = mensagem.get("body", b"")
         total += len(bloco)
-        if total > _TAMANHO_MAX_FORM:
+        if total > limite:
             return None
         partes.append(bloco)
         if not mensagem.get("more_body"):

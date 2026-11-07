@@ -1,3 +1,4 @@
+import LinhaFiltros from '../LinhaFiltros'
 import CabecalhoPagina from '../CabecalhoPagina'
 import TabelaResponsiva from '../TabelaResponsiva'
 import AcoesTabela from '../AcoesTabela'
@@ -47,6 +48,8 @@ type Painel = {
   totalCount: number
   hasMore: boolean
   truncado?: boolean
+  atualizado_em?: string | null
+  aviso?: string | null
 }
 
 const ROTULOS_STATUS: Record<string, [string, 'gray' | 'red' | 'green' | 'amber']> = {
@@ -92,6 +95,14 @@ function parcela(c: Cobranca) {
   if (c.installmentNumber && c.parcelas_total) return `parcela ${c.installmentNumber} de ${c.parcelas_total}`
   return c.installmentNumber ? `parcela ${c.installmentNumber}` : 'parcelada'
 }
+function haQuantoTempo(iso: string) {
+  const minutos = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000))
+  if (Number.isNaN(minutos)) return ''
+  if (minutos < 1) return 'agora há pouco'
+  if (minutos < 60) return `há ${minutos} min`
+  const horas = Math.round(minutos / 60)
+  return horas < 24 ? `há ${horas} h` : `em ${new Date(iso).toLocaleDateString('pt-BR')}`
+}
 function quantas(n: number, singular: string, plural: string) {
   return `${n} ${n === 1 ? singular : plural}`
 }
@@ -131,13 +142,14 @@ export default function Pagamentos() {
       .catch(() => setClientes([]))
   }, [cliente])
 
-  const carregar = useCallback(async (offset = 0) => {
+  const carregar = useCallback(async (offset = 0, atualizar = false) => {
     const meu = ++pedido.current
     if (offset) setCarregandoMais(true)
     else setCarregando(true)
     setErro(null)
     try {
       const params = new URLSearchParams({ situacao, offset: String(offset) })
+      if (atualizar) params.set('atualizar', '1')
       if (forma) params.set('forma', forma)
       if (vencDe) params.set('vencimento_de', vencDe)
       if (vencAte) params.set('vencimento_ate', vencAte)
@@ -245,7 +257,10 @@ export default function Pagamentos() {
       <CabecalhoPagina
         titulo="Pagamentos"
         descricao="Cobranças por boleto ou Pix emitidas pelo Asaas para os seus clientes."
-        acoes={<Button size="2" onClick={() => setModalNovaAberto(true)}>Nova cobrança</Button>}
+        acoes={<>
+          <Button size="2" variant="soft" color="gray" disabled={carregando} onClick={() => void carregar(0, true)}>Atualizar</Button>
+          <Button size="2" onClick={() => setModalNovaAberto(true)}>Nova cobrança</Button>
+        </>}
       />
       {avisoIntegracao && (
         <Callout.Root color="blue" size="1">
@@ -298,7 +313,7 @@ export default function Pagamentos() {
             })}
           </div>
 
-          <div className="aj-filtros-linha">
+          <LinhaFiltros ativos={[forma, vencDe || vencAte].filter(Boolean).length}>
             <div className="form-campo aj-filtros-busca">
               <label className="form-campo-label" htmlFor="pag-busca">Buscar</label>
               <TextField.Root id="pag-busca" type="search" placeholder="Cliente, CPF/CNPJ ou descrição" autoComplete="off" value={busca} onChange={e => setBusca(e.target.value)} />
@@ -323,7 +338,7 @@ export default function Pagamentos() {
               <CampoData id="pag-venc-ate" value={vencAte} onChange={setVencAte} />
             </div>
             {filtrosAtivos && <Button size="2" variant="soft" color="gray" onClick={() => { setForma(''); setVencDe(''); setVencAte(''); setBusca('') }}>Limpar filtros</Button>}
-          </div>
+          </LinhaFiltros>
         </>
       )}
 
@@ -403,6 +418,12 @@ export default function Pagamentos() {
           <Text size="2" color="gray">Mostrando {cobrancas.length} de {quantas(painel.totalCount, 'cobrança', 'cobranças')}</Text>
           {painel.hasMore && <Button size="2" variant="soft" color="gray" disabled={carregandoMais} onClick={() => carregar(cobrancas.length)}>{carregandoMais ? 'Carregando…' : 'Carregar mais'}</Button>}
         </Flex>
+      )}
+      {painel?.atualizado_em && (
+        <Text size="1" color="gray">Dados do Asaas atualizados {haQuantoTempo(painel.atualizado_em)}.</Text>
+      )}
+      {painel?.aviso && (
+        <Callout.Root color="amber" size="1"><Callout.Icon><Info size={14} /></Callout.Icon><Callout.Text>{painel.aviso}</Callout.Text></Callout.Root>
       )}
       {painel?.truncado && (
         <Text size="1" color="gray">Os totais consideram as 1.000 cobranças mais recentes do Asaas.</Text>

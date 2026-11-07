@@ -21,12 +21,75 @@ function lerLista<T>(chave: string): T[] {
   }
 }
 
-function salvarLista<T>(chave: string, lista: T[]): boolean {
+// Favoritos e histórico ficam no servidor, por usuário, para valerem em qualquer navegador.
+// O localStorage é a cópia local usada na hora (leitura síncrona); cada gravação também vai ao
+// servidor, e ao conectar a cópia do servidor substitui a local.
+const NOMES_SERVIDOR: Record<string, string> = {
+  [CHAVE_HISTORICO]: 'historico_consultas',
+  [CHAVE_FAVORITOS]: 'favoritos_consultas',
+  [CHAVE_FAVORITOS_CASOS]: 'favoritos_casos',
+}
+export const EVENTO_PREFERENCIAS = 'astrajus:preferencias'
+let tokenServidor: string | null = null
+const envios = new Map<string, number>()
+
+function enviarAoServidor<T>(chave: string, lista: T[]) {
+  const nome = NOMES_SERVIDOR[chave]
+  const token = tokenServidor
+  if (!token || !nome) return
+  window.clearTimeout(envios.get(chave))
+  envios.set(chave, window.setTimeout(() => {
+    fetch(`/preferencias/${nome}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ valor: lista }),
+    }).catch(() => { /* fica a cópia local; a próxima gravação tenta de novo */ })
+  }, 400))
+}
+
+function gravarLocal<T>(chave: string, lista: T[]): boolean {
   try {
     localStorage.setItem(chave, JSON.stringify(lista))
     return true
   } catch {
     return false
+  }
+}
+
+function salvarLista<T>(chave: string, lista: T[]): boolean {
+  const ok = gravarLocal(chave, lista)
+  enviarAoServidor(chave, lista)
+  return ok
+}
+
+/** Ao conectar: traz favoritos e histórico do servidor. Favoritos deste navegador que ainda não
+ * estão lá são somados e enviados (migração do que era só local). */
+export async function sincronizarPreferencias(token: string | null): Promise<void> {
+  tokenServidor = token
+  if (!token) return
+  try {
+    const resposta = await fetch('/preferencias', { headers: { Authorization: `Bearer ${token}` } })
+    if (!resposta.ok) return
+    const { preferencias } = await resposta.json() as { preferencias?: Record<string, unknown> }
+    for (const [chave, nome] of Object.entries(NOMES_SERVIDOR)) {
+      const doServidor = preferencias?.[nome]
+      const local = lerLista<unknown>(chave)
+      if (!Array.isArray(doServidor)) {
+        if (local.length) enviarAoServidor(chave, local)
+        continue
+      }
+      if (chave === CHAVE_HISTORICO) {
+        gravarLocal(chave, doServidor)
+        continue
+      }
+      const vistos = new Set(doServidor.map(v => JSON.stringify(v)))
+      const somados = [...doServidor, ...local.filter(v => !vistos.has(JSON.stringify(v)))]
+      gravarLocal(chave, somados)
+      if (somados.length !== doServidor.length) enviarAoServidor(chave, somados)
+    }
+    window.dispatchEvent(new Event(EVENTO_PREFERENCIAS))
+  } catch {
+    // Sem servidor, segue com a cópia local.
   }
 }
 

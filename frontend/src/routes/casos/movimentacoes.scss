@@ -16,14 +16,14 @@
 }
 .mov-quando { font-variant-numeric: tabular-nums; }
 .mov-data { font-size: 13px; font-weight: 600; }
-.mov-hora { font-size: 12px; color: var(--gray-11); }
+.mov-hora { font-size: 13px; color: var(--gray-11); }
 .mov-marcador {
   inline-size: 9px; block-size: 9px; margin-top: 5px; border-radius: 50%; background: var(--gray-8);
   box-shadow: 0 0 0 3px var(--color-panel-solid), 0 0 0 4px var(--gray-a5);
 }
 .mov-marcador-destaque { background: var(--accent-9); }
 .mov-nome { font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
-.mov-numero { margin-top: 2px; font-size: 12px; color: var(--gray-11); font-variant-numeric: tabular-nums; }
+.mov-numero { margin-top: 2px; font-size: 13px; color: var(--gray-11); font-variant-numeric: tabular-nums; }
 .mov-grau { justify-self: end; white-space: nowrap; }
 @media (max-width: 672px) {
   .mov-item { grid-template-columns: 5.5rem 1rem minmax(0, 1fr); }

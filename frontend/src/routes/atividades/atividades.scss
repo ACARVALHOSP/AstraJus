@@ -21,7 +21,7 @@
 .atividades-grupo-qtd { margin-left: 0.375rem; font-weight: 400; color: var(--gray-11); }
 .atividades-selecionada > td { background: var(--accent-a2); }
 .atividades-data { font-weight: 600; font-variant-numeric: tabular-nums; }
-.atividades-relativo, .atividades-secundario { margin-top: 2px; font-size: 12px; color: var(--gray-11); }
+.atividades-relativo, .atividades-secundario { margin-top: 2px; font-size: 13px; color: var(--gray-11); }
 .atividades-relativo.atividades-alerta { color: var(--red-11); }
 .atividades-secundario { font-variant-numeric: tabular-nums; }
 .atividades-titulo { font-weight: 500; line-height: 1.4; }
@@ -46,8 +46,8 @@
 .atividades-cartao-data {
   flex-shrink: 0; inline-size: 3.5rem; text-align: center; display: flex; flex-direction: column; gap: 2px;
   .atividades-cartao-dia { font-size: 20px; font-weight: 700; line-height: 1; }
-  .atividades-cartao-mes { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--gray-11); }
-  .atividades-cartao-hora { margin-top: 2px; font-size: 12px; font-weight: 400; color: var(--gray-11); }
+  .atividades-cartao-mes { font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--gray-11); }
+  .atividades-cartao-hora { margin-top: 2px; font-size: 13px; font-weight: 400; color: var(--gray-11); }
 }
 .atividades-cartao-corpo { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: 0.25rem; }
 
@@ -62,4 +62,4 @@
 }
 .tabela-adaptavel .tabela-fluida td.atividades-detalhes-celula { background: var(--gray-2); padding: 0.75rem 1.5rem 1rem 5.5rem; }
 .atividades-detalhes { display: flex; flex-direction: column; gap: 0.75rem; p { margin: 0; } }
-.atividades-rotulo { text-transform: uppercase; letter-spacing: 0.03em; font-size: 11px; }
+.atividades-rotulo { text-transform: uppercase; letter-spacing: 0.03em; font-size: 12px; }

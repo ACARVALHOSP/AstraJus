@@ -1,3 +1,4 @@
+import LinhaFiltros from '../LinhaFiltros'
 import CabecalhoPagina from '../CabecalhoPagina'
 import TabelaResponsiva from '../TabelaResponsiva'
 import AcoesTabela from '../AcoesTabela'
@@ -225,7 +226,7 @@ export default function Financeiro() {
     const tamanho = grande ? '3' : '1'
     const estilo = grande ? { flex: 1 } : undefined
     if (l.pago) return <Button size={tamanho} variant="soft" color="gray" style={estilo} disabled={operando || lote} onClick={() => definirPago([l], false)}>Desfazer</Button>
-    return <Button size={tamanho} style={estilo} disabled={operando || lote} onClick={() => definirPago([l], true)}>{l.direcao === 'RECEITA' ? 'Marcar recebido' : 'Marcar pago'}</Button>
+    return <Button size={tamanho} variant="soft" style={estilo} disabled={operando || lote} onClick={() => definirPago([l], true)}>{l.direcao === 'RECEITA' ? 'Marcar recebido' : 'Marcar pago'}</Button>
   }
   function menu(l: Lancamento) {
     return <AcoesTabela rotulo={l.descricao} acoes={[
@@ -313,7 +314,7 @@ export default function Financeiro() {
         })}
       </div>
 
-      <div className="aj-filtros-linha">
+      <LinhaFiltros ativos={[direcao, clienteFiltro, responsavelFiltro].filter(Boolean).length}>
         <div className="form-campo aj-filtros-busca">
           <label className="form-campo-label" htmlFor="fin-busca">Buscar</label>
           <TextField.Root id="fin-busca" type="search" placeholder="Descrição, cliente ou processo" autoComplete="off" value={busca} onChange={e => setBusca(e.target.value)} />
@@ -350,7 +351,7 @@ export default function Financeiro() {
           </Select.Root>
         </div>
         {filtrosAtivos && <Button size="2" variant="soft" color="gray" onClick={() => { setDirecao(''); setClienteFiltro(''); setResponsavelFiltro(''); setBusca('') }}>Limpar filtros</Button>}
-      </div>
+      </LinhaFiltros>
 
       {lote && (
         <div className="fin-lote" role="region" aria-label="Ações em lote">

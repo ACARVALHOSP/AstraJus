@@ -95,7 +95,7 @@ html, body { margin: 0; padding: 0; }
   background: rgba(255, 255, 255, 0.15);
   border-radius: 999px;
   padding: 3px 10px;
-  font-size: 11px;
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.9);
   white-space: nowrap;
   flex-shrink: 0;
@@ -171,6 +171,22 @@ html, body { margin: 0; padding: 0; }
 
 .aj-nav-group { margin-bottom: 2px; }
 
+.aj-nav-inicio {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  border-radius: var(--radius-2);
+  color: var(--gray-12);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.1s, color 0.1s;
+}
+.aj-nav-inicio:hover { background: var(--gray-a3); }
+.aj-nav-inicio--ativo { background: var(--accent-a3); color: var(--accent-11); }
+
 .aj-nav-group-btn {
   width: 100%;
   display: flex;
@@ -181,7 +197,7 @@ html, body { margin: 0; padding: 0; }
   border: none;
   background: transparent;
   color: var(--gray-11);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
@@ -199,7 +215,7 @@ html, body { margin: 0; padding: 0; }
   gap: 8px;
   padding: 5px 10px;
   border-radius: var(--radius-2);
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--gray-11);
   text-decoration: none;
   transition: background 0.1s, color 0.1s;
@@ -318,7 +334,7 @@ html, body { margin: 0; padding: 0; }
 .tabela-adaptavel .tabela-fluida thead { background: var(--gray-a2); }
 .tabela-adaptavel .tabela-fluida :is(th, td) { border-bottom: 1px solid var(--gray-a4); text-align: left; }
 .tabela-adaptavel .tabela-fluida tbody tr:last-child :is(th, td) { border-bottom: none; }
-.tabela-adaptavel .tabela-fluida th { vertical-align: middle; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; color: var(--gray-11); }
+.tabela-adaptavel .tabela-fluida th { vertical-align: middle; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; color: var(--gray-11); }
 .tabela-adaptavel .tabela-fluida :is(th, td) { padding-inline: 0.75rem; }
 .tabela-adaptavel .tabela-fluida :is(th, td).tabela-numero { text-align: left; }
 .tabela-adaptavel .tabela-fluida :is(th, td).tabela-valor { text-align: right; }
@@ -349,6 +365,36 @@ html, body { margin: 0; padding: 0; }
 .aj-filtros-linha { display: flex; align-items: flex-end; gap: 1rem; flex-wrap: wrap; }
 .aj-filtros-linha > .form-campo { min-width: 12rem; }
 .aj-filtros-busca { flex: 1 1 18rem; }
+.aj-filtros-linha--compacta { flex-wrap: nowrap; align-items: flex-end; gap: 0.5rem; }
+.aj-filtros-linha--compacta > .aj-filtros-busca { flex: 1 1 auto; min-width: 0; }
+.aj-filtros-botao { flex: none; }
+
+/* Folha inferior (celular): os filtros sobem da base da tela. */
+.rt-BaseDialogScrollPadding:has(> .aj-folha) { margin: auto 0 0; padding: 0; }
+.rt-BaseDialogContent.aj-folha {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  border-radius: var(--radius-5) var(--radius-5) 0 0;
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+  max-height: 85dvh;
+}
+.aj-folha-campos > .form-campo { min-width: 0; }
+.aj-folha-campos .rt-SelectTrigger { width: 100%; }
+
+/* Atalhos em uma linha rolável no celular. */
+@media (max-width: 672px) {
+  :is(.fin-atalhos, .casos-atalhos, .oab-atalhos, .atividades-atalhos, .contatos-atalhos) {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin-inline: -1rem;
+    padding-inline: 1rem;
+    padding-block: 2px;
+  }
+  :is(.fin-atalhos, .casos-atalhos, .oab-atalhos, .atividades-atalhos, .contatos-atalhos)::-webkit-scrollbar { display: none; }
+  :is(.fin-atalhos, .casos-atalhos, .oab-atalhos, .atividades-atalhos, .contatos-atalhos) > * { flex: none; }
+}
 
 /* CampoData: input nativo oculto só serve de âncora para o calendário do navegador. */
 .rt-TextFieldSlot:has(> .aj-campo-data-nativo) { position: relative; }

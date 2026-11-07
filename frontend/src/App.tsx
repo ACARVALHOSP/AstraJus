@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react'
 import { Flex, Popover, SegmentedControl, Text, Theme } from '@radix-ui/themes'
 import {
   Scale, Users, CalendarCheck, Search, Gavel, Briefcase,
-  Newspaper, BarChart2, BookOpen, Eye, BellRing, History, FileSearch, Receipt, KeyRound,
+  Newspaper, BarChart2, BookOpen, BellRing, History, FileSearch, Receipt, KeyRound,
   Settings, Link, Wallet, CreditCard, ShieldCheck, Menu, X,
-  Palette, ChevronDown, ChevronRight, Check,
+  Palette, ChevronDown, ChevronRight, Check, House,
 } from 'lucide-react'
 import { ClienteProvider, useCliente } from './api/ClienteContext'
 import { AvisosProvider } from './Avisos'
+import { sincronizarPreferencias } from './utils/listasRapidas'
 import { CHAVE_TEMA } from './api/mcpClient'
 import BuscaGlobal from './BuscaGlobal'
 import ContaUsuario from './ContaUsuario'
@@ -35,30 +36,27 @@ export type AccentColor = 'indigo' | 'violet' | 'teal' | 'crimson'
 
 const CHAVE_ACCENT = 'astrajus-accent'
 
+// Menu organizado pelo que a pessoa faz: o trabalho do dia, a pesquisa avulsa, o financeiro e
+// as configurações. "Início" (Meu dia) fica fixo no topo, fora dos grupos.
 const GRUPOS_NAVEGACAO = [
   {
-    id: 'escritorio', label: 'Escritório', icone: Briefcase,
+    id: 'trabalho', label: 'Trabalho', icone: Briefcase,
     abas: [
       { id: 'casos', label: 'Processos', icone: Scale },
-      { id: 'contatos', label: 'Contatos', icone: Users },
       { id: 'atividades', label: 'Atividades', icone: CalendarCheck },
+      { id: 'publicacoes-oab', label: 'Publicações recebidas', icone: Gavel },
+      { id: 'monitoramentos', label: 'Monitoramentos', icone: BellRing },
+      { id: 'contatos', label: 'Contatos', icone: Users },
     ],
   },
   {
-    id: 'consultas', label: 'Consultas', icone: Search,
+    id: 'pesquisa', label: 'Pesquisa', icone: Search,
     abas: [
       { id: 'processo', label: 'Consultar processo', icone: FileSearch },
       { id: 'publicacoes', label: 'Buscar no DJEN', icone: Newspaper },
-      { id: 'jurimetria', label: 'Jurimetria', icone: BarChart2 },
       { id: 'jurisprudencia', label: 'Jurisprudência', icone: BookOpen },
+      { id: 'jurimetria', label: 'Jurimetria', icone: BarChart2 },
       { id: 'historico', label: 'Histórico e favoritos', icone: History },
-    ],
-  },
-  {
-    id: 'acompanhamento', label: 'Acompanhamento', icone: Eye,
-    abas: [
-      { id: 'monitoramentos', label: 'Monitoramentos', icone: BellRing },
-      { id: 'publicacoes-oab', label: 'Publicações recebidas', icone: Gavel },
     ],
   },
   {
@@ -77,6 +75,12 @@ const GRUPOS_NAVEGACAO = [
     ],
   },
 ]
+
+function SincronizarPreferencias() {
+  const { cliente } = useCliente()
+  useEffect(() => { void sincronizarPreferencias(cliente?.token ?? null) }, [cliente])
+  return null
+}
 
 function StatusConexao() {
   const { status } = useCliente()
@@ -126,12 +130,13 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
 
 function SidebarAstraJus({ aberta, fechar }: { aberta: boolean; fechar: () => void }) {
   const { abaAtiva, irPara } = useNavegacao()
-  const [gruposAbertos, setGruposAbertos] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(GRUPOS_NAVEGACAO.map((g) => [g.id, g.abas.some((a) => a.id === abaAtiva)]))
-  )
+  // Só guarda o que a pessoa abriu ou fechou; sem escolha, o grupo da página atual fica aberto.
+  const [gruposAbertos, setGruposAbertos] = useState<Record<string, boolean>>({})
+  const grupoAberto = (g: typeof GRUPOS_NAVEGACAO[number]) => gruposAbertos[g.id] ?? g.abas.some((a) => a.id === abaAtiva)
 
   function toggleGrupo(id: string) {
-    setGruposAbertos((prev) => ({ ...prev, [id]: !prev[id] }))
+    const grupo = GRUPOS_NAVEGACAO.find((g) => g.id === id)!
+    setGruposAbertos((prev) => ({ ...prev, [id]: !grupoAberto(grupo) }))
   }
 
   function navegar(abaId: string) {
@@ -145,9 +150,22 @@ function SidebarAstraJus({ aberta, fechar }: { aberta: boolean; fechar: () => vo
         <div className="aj-overlay" onClick={fechar} />
       )}
       <nav className={`aj-sidebar${aberta ? ' aj-sidebar--open' : ''}`} aria-label="Navegação principal">
+        <a
+          href="#/inicio"
+          className={`aj-nav-inicio${abaAtiva === 'inicio' ? ' aj-nav-inicio--ativo' : ''}`}
+          aria-current={abaAtiva === 'inicio' ? 'page' : undefined}
+          onClick={(e) => {
+            if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return
+            e.preventDefault()
+            navegar('inicio')
+          }}
+        >
+          <House size={15} />
+          Início
+        </a>
         {GRUPOS_NAVEGACAO.map((grupo) => {
           const GrupoIcon = grupo.icone
-          const aberto = gruposAbertos[grupo.id]
+          const aberto = grupoAberto(grupo)
           return (
             <div key={grupo.id} className="aj-nav-group">
               <button
@@ -290,6 +308,7 @@ export default function App() {
     <Theme accentColor={accent} grayColor="slate" radius="medium" appearance={aparencia}>
       <AvisosProvider>
       <ClienteProvider>
+        <SincronizarPreferencias />
         <NavegacaoProvider abaInicial="inicio">
           <div className="aj-shell">
             {/* Topbar */}
