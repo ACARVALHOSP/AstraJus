@@ -102,11 +102,18 @@
   border: 1px solid var(--gray-a4);
   overflow-wrap: anywhere;
   cursor: grab;
-  transition: box-shadow 0.1s, opacity 0.1s;
+  transition: box-shadow 0.1s;
 }
 .home-cartao:hover { box-shadow: var(--shadow-2); }
 .home-cartao[aria-busy='true'] { cursor: progress; }
-.home-arrastando { opacity: 0.4; box-shadow: var(--shadow-4); }
+/* Espaço reservado: o card sai da coluna e deixa o lugar marcado, com a mesma altura. */
+.home-cartao.home-arrastando {
+  background: var(--accent-a2);
+  border: 2px dashed var(--accent-8);
+  box-shadow: none;
+  cursor: grabbing;
+}
+.home-cartao.home-arrastando > * { visibility: hidden; }
 .home-tipo {
   font-size: 11px;
   font-weight: 600;

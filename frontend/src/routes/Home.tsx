@@ -375,7 +375,9 @@ function PainelHome() {
                             if (salvando.has(chave) || (e.target instanceof HTMLElement && e.target.closest('button, [role="combobox"], a'))) {
                               e.preventDefault(); return
                             }
-                            itemArrastado.current = chave; setArrastando(chave)
+                            itemArrastado.current = chave
+                            // Só vira espaço reservado depois que o navegador captura a imagem do card.
+                            requestAnimationFrame(() => { if (itemArrastado.current === chave) setArrastando(chave) })
                             e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', chave)
                           }}
                           onDragEnd={encerrarArraste}
