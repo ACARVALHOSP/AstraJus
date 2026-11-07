@@ -28,3 +28,38 @@
   .campo-repetivel-grade--3 { grid-template-columns: 1fr auto; }
   .campo-repetivel-grade--2 { grid-template-columns: 1fr auto; }
 }
+
+/* Lista de Contatos: atalhos, colunas Nome/Tipo/Contato/Etiquetas/Processos e cartões no celular. */
+.contatos-atalhos { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.contatos-lote {
+  display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+  padding: 0.5rem 0.75rem; border-radius: var(--radius-3);
+  background: var(--accent-a3); border: 1px solid var(--accent-a6);
+}
+.contatos-link {
+  font: inherit; color: var(--accent-11); background: none; border: 0; padding: 0; cursor: pointer; text-align: start;
+}
+.contatos-link:hover { text-decoration: underline; }
+.contatos-link:focus-visible { outline: 2px solid var(--accent-8); outline-offset: 2px; border-radius: 2px; }
+.contatos-nome { font-weight: 600; font-size: 14px; line-height: 1.4; }
+.contatos-contato { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.contatos-contato a {
+  display: inline-flex; align-items: center; gap: 6px; color: var(--accent-11); text-decoration: none;
+  font-variant-numeric: tabular-nums; min-width: 0;
+}
+.contatos-contato a:hover { text-decoration: underline; }
+.contatos-contato svg { flex-shrink: 0; color: var(--gray-11); }
+.contatos-email span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tabela-adaptavel .tabela-fluida .contatos-email span { overflow-wrap: normal; }
+.contatos-tabela .contatos-col-tipo { inline-size: 10.5rem; }
+.contatos-tabela .contatos-col-contato { inline-size: 17rem; }
+.contatos-tabela .contatos-col-etiquetas { inline-size: 11rem; }
+.contatos-tabela .contatos-col-processos { inline-size: 8rem; }
+.contatos-tabela .contatos-col-acoes { inline-size: 4rem; }
+.contatos-tabela :is(th, td).tabela-controle { inline-size: 2.5rem; padding-inline: 0.25rem; }
+.contatos-selecionado > td { background: var(--accent-a2); }
+.contatos-cartoes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+.contatos-cartao {
+  display: flex; flex-direction: column; gap: 0.5rem; padding: 0.875rem;
+  background: var(--color-panel-solid); border: 1px solid var(--gray-a5); border-radius: var(--radius-3);
+}

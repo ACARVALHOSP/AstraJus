@@ -58,7 +58,7 @@ O frontend Radix (`/radix/`) é servido diretamente pelo Caddy a partir de `/srv
 
 | Método | Rota | Descrição |
 |---|---|---|
-| GET, POST | `/casos` | Lista / cria caso |
+| GET, POST | `/casos` | Lista / cria caso. Cada caso da lista traz também `proximo_compromisso` (atividade aberta com data mais próxima), `publicacoes_a_revisar` (publicações não tratadas vinculadas) e `ultima_movimentacao_data`/`ultima_movimentacao_descricao` (último movimento do DataJud ou última publicação) |
 | GET, PATCH, DELETE | `/casos/<id>` | Caso com linha do tempo, atualização e exclusão |
 | GET, POST | `/casos/<id>/atividades` | Lista / cria atividade |
 | PATCH, DELETE | `/casos/<id>/atividades/<aid>` | Atualiza / exclui atividade |

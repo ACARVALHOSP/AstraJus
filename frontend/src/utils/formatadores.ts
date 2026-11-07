@@ -61,3 +61,22 @@ export function formatarDdMmAaaa(data: Date): string {
   const mes = String(data.getMonth() + 1).padStart(2, '0')
   return `${dia}/${mes}/${data.getFullYear()}`
 }
+
+/** Iniciais (até duas letras) de um nome ou login, para o selo de responsável. */
+export function iniciaisNome(nome?: string | null): string {
+  if (!nome) return '—'
+  const partes = formatarNomeExibicao(nome).split(/\s+/).filter(p => /^\p{Lu}/u.test(p))
+  return ((partes[0]?.[0] ?? '') + (partes.length > 1 ? partes[partes.length - 1][0] : '')).toUpperCase() || nome[0].toUpperCase()
+}
+
+/** Distância em dias entre duas datas ISO (AAAA-MM-DD…), considerando só o dia. */
+export function diasEntreDatas(deIso: string, ateIso: string): number {
+  const [a, b] = [deIso, ateIso].map(v => { const [y, m, d] = v.slice(0, 10).split('-').map(Number); return Date.UTC(y, m - 1, d) })
+  return Math.round((b - a) / 86_400_000)
+}
+
+/** Data de hoje no fuso local, AAAA-MM-DD. */
+export function hojeIso(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
