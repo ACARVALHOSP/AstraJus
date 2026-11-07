@@ -3,8 +3,8 @@ import TextoTabela from '../../TextoTabela'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
-import { AlertDialog, Badge, Button, Callout, Checkbox, Flex, Heading, Text, TextField } from '@radix-ui/themes'
-import { AlertTriangle, Info, Pencil, Tag } from 'lucide-react'
+import { AlertDialog, Avatar, Badge, Button, Callout, Checkbox, Flex, Heading, Text, TextField } from '@radix-ui/themes'
+import { AlertTriangle, Building2, Info, Pencil, Tag, User } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -23,6 +23,22 @@ export type ClienteItem = {
 
 function normalizar(valor: string): string {
   return valor.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase()
+}
+
+function AvatarTipoPessoa({ tipo }: { tipo?: string }) {
+  const rotulo = { fisica: 'Pessoa física', juridica: 'Pessoa jurídica' }[tipo ?? ''] ?? 'Não informado'
+  return (
+    <Flex gap="2" align="center">
+      <Avatar
+        size="1"
+        radius="full"
+        color={tipo === 'juridica' ? 'orange' : 'blue'}
+        variant="soft"
+        fallback={tipo === 'juridica' ? <Building2 size={14} /> : <User size={14} />}
+      />
+      <Text size="2">{rotulo}</Text>
+    </Flex>
+  )
 }
 
 export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: string) => void; onNovo: () => void }) {
@@ -190,7 +206,7 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
                         />
                       </td>
                       <td><TextoTabela texto={formatarNomeExibicao(c.nome)} onClick={() => onAbrir(c.id)} /></td>
-                      <td>{{ fisica: 'Pessoa física', juridica: 'Pessoa jurídica' }[c.tipo_pessoa ?? ''] ?? 'Não informado'}</td>
+                      <td><AvatarTipoPessoa tipo={c.tipo_pessoa} /></td>
                       <td>{c.perfil === 'contato' ? 'Contato' : c.perfil === 'cliente' ? 'Cliente' : 'Não informado'}</td>
                       <td>{c.telefone || 'Não informado'}</td>
                       <td><TextoTabela texto={c.email || 'Não informado'} /></td>
