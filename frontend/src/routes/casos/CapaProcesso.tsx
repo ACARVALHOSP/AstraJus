@@ -1,3 +1,4 @@
+import Carregamento from '../../Carregamento'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { Badge, Button, Callout, Heading, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Check } from 'lucide-react'
@@ -145,7 +146,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
     </div>
     <p className="capa-numero">{formatarNumeroCNJ(numero)}</p>
     <div aria-live="polite">
-      {carregando && <p>Carregando capa…</p>}
+      {carregando && <Carregamento tipo="detalhe" descricao="Carregando capa…" />}
       {mensagem && (
         <Callout.Root color={mensagem.erro ? 'red' : mensagem.aviso ? 'yellow' : 'green'} size="1">
           <Callout.Icon>{mensagem.erro ? <AlertTriangle size={14} /> : <Check size={14} />}</Callout.Icon>
