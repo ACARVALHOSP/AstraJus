@@ -1,5 +1,7 @@
 /* AstraJus shell — Radix Themes */
 
+html, body { margin: 0; padding: 0; }
+
 .aj-shell {
   display: flex;
   flex-direction: column;
@@ -20,6 +22,20 @@
   color: #fff;
   z-index: 100;
 }
+/* No tema escuro a barra usa superfície neutra; o destaque fica só no logotipo e no foco. */
+.dark .aj-topbar, .dark-theme .aj-topbar {
+  background: var(--gray-2);
+  color: var(--gray-12);
+  border-bottom: 1px solid var(--gray-a5);
+}
+.dark .aj-logo, .dark-theme .aj-logo { color: var(--gray-12); }
+.dark .aj-logo span, .dark-theme .aj-logo span { color: var(--accent-11); opacity: 1; }
+.dark .aj-ib, .dark-theme .aj-ib { color: var(--gray-11); }
+.dark .aj-ib:hover, .dark-theme .aj-ib:hover { background: var(--gray-a3); color: var(--gray-12); }
+.dark .aj-status-pill, .dark-theme .aj-status-pill { background: var(--gray-a3); color: var(--gray-11); }
+.aj-ib:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.dark .aj-ib:focus-visible, .dark-theme .aj-ib:focus-visible { outline-color: var(--accent-8); }
+.aj-accent-dot:focus-visible { outline: 2px solid var(--accent-8); outline-offset: 4px; }
 
 .aj-logo {
   font-size: 15px;
@@ -98,19 +114,22 @@
 .aj-accent-picker {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 0 4px;
+  gap: 8px;
 }
 .aj-accent-dot {
-  width: 18px;
-  height: 18px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  border: 2px solid transparent;
+  border: 0;
+  color: #fff;
   cursor: pointer;
-  transition: transform 0.12s, border-color 0.12s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.12s;
 }
-.aj-accent-dot:hover { transform: scale(1.15); }
-.aj-accent-dot--sel { border-color: #fff; transform: scale(1.1); }
+.aj-accent-dot:hover { transform: scale(1.08); }
+.aj-accent-dot[aria-checked="true"] { box-shadow: 0 0 0 2px var(--color-panel-solid), 0 0 0 4px var(--gray-12); }
 
 /* ── Body ── */
 .aj-body {
@@ -234,7 +253,15 @@
   overflow-y: auto;
   outline: none;
   background: var(--gray-1);
+  padding: 24px 32px 48px;
+  box-sizing: border-box;
 }
+/* Largura máxima de leitura: telas muito largas não espalham formulários e tabelas. */
+.aj-content > * { max-width: 1440px; margin-inline: auto; }
+@media (max-width: 1055px) { .aj-content { padding: 16px 16px 32px; } }
+
+/* Títulos recebem foco programático só para leitores de tela: não são interativos, então sem contorno. */
+.aj-content :is(h1, h2, h3)[tabindex="-1"]:focus { outline: none; box-shadow: none; }
 
 /* ── Callouts: largura de conteúdo, não da página ── */
 .rt-CalloutRoot {
@@ -269,7 +296,7 @@
 
 .aj-tags-filtro { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 
-.aj-paginacao { display: flex; align-items: center; gap: 0.75rem; }
+.aj-paginacao { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
 
 .aj-multiselect-lista {
   max-height: 220px;
@@ -291,7 +318,76 @@
 .tabela-adaptavel .tabela-fluida thead { background: var(--gray-a2); }
 .tabela-adaptavel .tabela-fluida :is(th, td) { border-bottom: 1px solid var(--gray-a4); text-align: left; }
 .tabela-adaptavel .tabela-fluida tbody tr:last-child :is(th, td) { border-bottom: none; }
-.tabela-adaptavel .tabela-fluida th { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; color: var(--gray-11); }
-.tabela-adaptavel .tabela-fluida :is(th, td).tabela-numero { text-align: right; }
+.tabela-adaptavel .tabela-fluida th { vertical-align: middle; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; color: var(--gray-11); }
+.tabela-adaptavel .tabela-fluida :is(th, td) { padding-inline: 0.75rem; }
+.tabela-adaptavel .tabela-fluida :is(th, td).tabela-numero { text-align: left; }
+.tabela-adaptavel .tabela-fluida :is(th, td).tabela-valor { text-align: right; }
 .tabela-adaptavel .tabela-fluida :is(th, td).tabela-acoes { text-align: right; }
 .tabela-adaptavel .tabela-fluida :is(th, td).tabela-controle { text-align: center; }
+
+/* ── Cabeçalho de página (CabecalhoPagina.tsx) ── */
+.aj-cabecalho-pagina {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.aj-cabecalho-pagina-texto { flex: 1 1 24rem; min-width: 0; }
+.aj-cabecalho-pagina-sobretitulo {
+  margin: 0 0 0.25rem;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--gray-11);
+}
+.aj-cabecalho-pagina-descricao { margin-top: 0.25rem; max-width: 72ch; }
+.aj-cabecalho-pagina-acoes { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+
+/* Linha de filtros: busca ocupa o espaço livre, selects mantêm largura própria. */
+.aj-filtros-linha { display: flex; align-items: flex-end; gap: 1rem; flex-wrap: wrap; }
+.aj-filtros-linha > .form-campo { min-width: 12rem; }
+.aj-filtros-busca { flex: 1 1 18rem; }
+
+/* CampoData: input nativo oculto só serve de âncora para o calendário do navegador. */
+.rt-TextFieldSlot:has(> .aj-campo-data-nativo) { position: relative; }
+.aj-campo-data-nativo {
+  position: absolute; right: 0; bottom: 0;
+  width: 1px; height: 1px; padding: 0; border: 0;
+  opacity: 0; pointer-events: none;
+}
+
+/* ── Seções recolhíveis (<details>) com o mesmo visual em todas as telas ── */
+.aj-content details > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  list-style: none;
+  cursor: pointer;
+  padding: 0.5rem 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--accent-11);
+  border-radius: var(--radius-2);
+}
+.aj-content details > summary::-webkit-details-marker { display: none; }
+.aj-content details > summary::before {
+  content: "";
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+.aj-content details[open] > summary::before { transform: rotate(45deg); }
+.aj-content details > summary:hover { color: var(--accent-12); }
+.aj-content details > summary:focus-visible { outline: 2px solid var(--accent-8); outline-offset: 2px; }
+
+/* Ações da linha (menu ⋮ + Detalhes) alinhadas numa única linha no modo compacto. */
+.tabela-acoes-grupo { display: inline-flex; align-items: center; justify-content: flex-end; gap: 0.25rem; flex-wrap: wrap; }
+.tabela-adaptavel .tabela-fluida .tabela-acoes-grupo .tabela-detalhes-botao { margin-block-start: 0; }
+.aj-form-estreito { max-width: 40rem; }
+.aj-campo-data-botao { min-width: 24px; min-height: 24px; }

@@ -4,26 +4,8 @@
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  padding: 1.5rem;
   min-height: 100%;
   box-sizing: border-box;
-}
-
-/* ── Cabeçalho ── */
-.home-cabecalho {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-.home-data {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--gray-10);
-  margin-bottom: 0.25rem;
 }
 
 /* ── Métricas ── */
@@ -59,7 +41,7 @@
   color: var(--gray-12);
   margin: 0.25rem 0;
 }
-.home-metrica-desc { font-size: 11px; color: var(--gray-10); }
+.home-metrica-desc { font-size: 12px; color: var(--gray-11); }
 .home-metrica-atrasadas .home-metrica-num { color: var(--red-11); }
 .home-metrica-publicacoes .home-metrica-num { color: var(--accent-11); }
 
@@ -104,11 +86,11 @@
   justify-content: space-between;
   padding: 0.25rem 0.25rem 0.5rem;
 }
-.home-coluna-titulo-count { font-size: 12px; color: var(--gray-9); }
+.home-coluna-titulo-count { font-size: 12px; color: var(--gray-11); }
 .home-coluna-vazia {
   padding: 1rem 0.5rem;
   font-size: 12px;
-  color: var(--gray-9);
+  color: var(--gray-11);
   text-align: center;
 }
 
@@ -126,11 +108,11 @@
 .home-cartao[aria-busy='true'] { cursor: progress; }
 .home-arrastando { opacity: 0.4; box-shadow: var(--shadow-4); }
 .home-tipo {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: var(--gray-9);
+  color: var(--gray-11);
   margin-bottom: 0.25rem;
 }
 .home-abrir-atividade {
@@ -153,7 +135,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--gray-10);
+  color: var(--gray-11);
   font: inherit;
   font-size: 12px;
   text-align: start;
@@ -161,14 +143,14 @@
   margin-block: 0.3rem;
 }
 .home-processo-btn:hover { color: var(--accent-11); text-decoration: underline; }
-.home-executor-text { font-size: 12px; color: var(--gray-10); margin-bottom: 0.375rem; }
+.home-executor-text { font-size: 12px; color: var(--gray-11); margin-bottom: 0.375rem; }
 .home-cartao-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 0.375rem;
   justify-content: space-between;
-  font-size: 11px;
-  color: var(--gray-9);
+  font-size: 12px;
+  color: var(--gray-11);
   margin-block: 0.375rem;
 }
 .home-atrasada { color: var(--red-10); font-weight: 500; }
@@ -236,8 +218,7 @@
   .home-coluna { display: none; }
   .home-coluna-ativa { display: flex; }
   .home-seletor-mobile { display: block; }
-  .home-resumo { grid-template-columns: 1fr; }
-  .home { padding: 1rem; }
+  .home-resumo { grid-template-columns: repeat(2, 1fr); }
   .home-skeleton-grid { grid-template-columns: 1fr; }
 }
 

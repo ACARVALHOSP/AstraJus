@@ -1,3 +1,4 @@
+import CampoData from '../../CampoData'
 import Carregamento from '../../Carregamento'
 import PreviaParcelas from '../../PreviaParcelas'
 import { useEffect, useState } from 'react'
@@ -201,7 +202,7 @@ export default function NovoLancamentoModal({ open, onClose, onSalvo }: { open: 
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="honorario-vencimento">Vencimento *</label>
-              <TextField.Root id="honorario-vencimento" type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} />
+              <CampoData id="honorario-vencimento" value={vencimento} onChange={v => setVencimento(v)} />
             </div>
             {parcelar && (
               <div className="form-campo">

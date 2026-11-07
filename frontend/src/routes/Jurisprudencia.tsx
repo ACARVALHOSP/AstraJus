@@ -1,3 +1,5 @@
+import CampoData from '../CampoData'
+import CabecalhoPagina from '../CabecalhoPagina'
 import { useRef, useState, type FormEvent } from 'react'
 import { AlertTriangle, Info } from 'lucide-react'
 import {
@@ -6,7 +8,7 @@ import {
   Callout,
   Card,
   Flex,
-  Heading,
+  
   Popover,
   Select,
   Text,
@@ -284,14 +286,10 @@ export default function Jurisprudencia() {
 
   return (
     <Flex direction="column" gap="6">
-      <div>
-        <Heading as="h1" size="6">Jurisprudência</Heading>
-        <Text as="p" size="2" color="gray" mt="1">
-          Consulta a acórdãos da base "Jurisprudência Selecionada" do TJSP. Os resultados vêm direto do tribunal —
-          nada é digitado manualmente. Integração não oficial (sem API pública documentada), sujeita a mudanças sem
-          aviso do tribunal.
-        </Text>
-      </div>
+      <CabecalhoPagina
+        titulo="Jurisprudência"
+        descricao='Consulta a acórdãos da base "Jurisprudência Selecionada" do TJSP. Os resultados vêm direto do tribunal. Integração não oficial (sem API pública documentada), sujeita a mudanças sem aviso do tribunal.'
+      />
 
       <form onSubmit={aoEnviarBuscaPrincipal}>
         <Flex direction="column" gap="5">
@@ -330,11 +328,11 @@ export default function Jurisprudencia() {
           <div className="aj-form-grade">
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="juris-data-inicio">Julgamento - início</label>
-              <TextField.Root id="juris-data-inicio" type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+              <CampoData id="juris-data-inicio" value={dataInicio} onChange={v => setDataInicio(v)} />
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="juris-data-fim">Julgamento - fim</label>
-              <TextField.Root id="juris-data-fim" type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+              <CampoData id="juris-data-fim" value={dataFim} onChange={v => setDataFim(v)} />
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="juris-ordenacao">Ordenar por</label>
@@ -446,12 +444,12 @@ export default function Jurisprudencia() {
 
             {temPaginacao && (
               <nav aria-label="Páginas de jurisprudência" className="aj-paginacao">
-                <Button variant="ghost" size="1" disabled={consultando || pagina <= 1} onClick={() => executar(pagina - 1)}>
-                  Página anterior
+                <Button variant="soft" color="gray" size="2" aria-label="Página anterior" disabled={consultando || pagina <= 1} onClick={() => executar(pagina - 1)}>
+                  Anterior
                 </Button>
                 <Text size="2">Página {pagina} — {total} acórdãos</Text>
-                <Button variant="ghost" size="1" disabled={consultando || pagina * tamanhoPagina >= total} onClick={() => executar(pagina + 1)}>
-                  Próxima página
+                <Button variant="soft" color="gray" size="2" aria-label="Próxima página" disabled={consultando || pagina * tamanhoPagina >= total} onClick={() => executar(pagina + 1)}>
+                  Próxima
                 </Button>
               </nav>
             )}

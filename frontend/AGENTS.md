@@ -12,11 +12,11 @@ O usuário SSH do VPS `191.252.110.22` é `admin`. Usar esse usuário nos próxi
 
 O usuário autoriza de forma permanente o envio de código deste projeto ao serviço de auditoria Carbon (`carbon_ds_code_audit`), sem nova confirmação a cada auditoria. A autorização é específica para essa finalidade e não inclui credenciais ou segredos.
 
-### Ícones e movimento Carbon
+### Ícones e movimento
 
-Sempre usar ícones oficiais do Carbon Design System; não substituir ícones por emojis, caracteres Unicode ou desenhos improvisados. Verificar os nomes e imports dos ícones antes de utilizá-los.
+O frontend React usa Radix Themes e ícones `lucide-react` (ver `DESIGN.md`). Não substituir ícones por emojis, caracteres Unicode ou desenhos improvisados. Verificar os nomes e imports dos ícones antes de utilizá-los.
 
-Animações e transições devem seguir as diretrizes e os tokens oficiais Carbon Motion, respeitando `prefers-reduced-motion`. Aplicar movimento quando ele comunicar estado, continuidade ou feedback útil.
+Animações e transições devem ser curtas, comunicar estado, continuidade ou feedback útil e respeitar `prefers-reduced-motion`.
 
 ### Carbon Builder: aprovação visual
 

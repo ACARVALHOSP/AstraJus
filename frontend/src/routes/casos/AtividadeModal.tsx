@@ -1,3 +1,4 @@
+import CampoData from '../../CampoData'
 import { useEffect, useState } from 'react'
 import { Button, Callout, Dialog, Flex, Select, TextField } from '@radix-ui/themes'
 import { AlertTriangle } from 'lucide-react'
@@ -83,7 +84,7 @@ export default function AtividadeModal({
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="atividade-data">Data</label>
-              <TextField.Root id="atividade-data" type="date" value={data} onChange={(e) => setData(e.target.value)} />
+              <CampoData id="atividade-data" value={data} onChange={v => setData(v)} />
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="atividade-hora">Hora</label>

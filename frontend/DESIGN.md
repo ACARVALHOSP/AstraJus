@@ -1,68 +1,65 @@
 ---
-name: AstraJus
-description: Interface Carbon white/g100 para gestão processual jurídica.
+name: AstraJus (frontend React)
+description: Interface Radix Themes (claro/escuro) para gestão processual jurídica.
 colors:
-  interactive: "#0f62fe"
-  background: "#ffffff"
-  layer: "#f4f4f4"
-  text-primary: "#161616"
-  text-secondary: "#525252"
-  border-subtle: "#e0e0e0"
+  accent: "Radix accent (indigo padrão; violet, teal ou crimson pelo seletor de aparência)"
+  gray: "Radix slate"
+  background: "var(--color-background) / var(--gray-1) na área de conteúdo"
+  panel: "var(--color-panel-solid)"
+  text-primary: "var(--gray-12)"
+  text-secondary: "var(--gray-11)"
+  border-subtle: "var(--gray-a4) / var(--gray-a5)"
 typography:
-  body:
-    fontFamily: "IBM Plex Sans, sans-serif"
-    fontSize: "0.875rem"
-  label:
-    fontSize: "0.75rem"
-  title:
-    fontSize: "1.75rem"
+  family: "Fonte padrão do Radix Themes (system-ui)"
+  page-title: "Heading size 6 (24 px, 700)"
+  section-title: "Heading size 4/3 (18/16 px)"
+  body: "14 px"
+  secondary: "12–13 px, var(--gray-11)"
 spacing:
-  compact: "0.5rem"
-  base: "1rem"
-  section: "1.5rem"
+  content-padding: "24 px 32 px no desktop; 16 px abaixo de 1056 px"
+  page-gap: "32 px entre blocos (Flex gap 6)"
+  form-gap: "16 px"
 ---
 
-# Design System: AstraJus
+# Design System: AstraJus (frontend React)
 
 ## Overview
 
-Carbon white/g100, com interface sóbria e densa para trabalho jurídico. Preservar a identidade existente, conforme escolha do usuário. Hierarquia, leitura de dados e ações previsíveis orientam a composição.
+Interface sóbria e densa para trabalho jurídico, construída com **Radix Themes** (`@radix-ui/themes`) e ícones **lucide-react**. Hierarquia, leitura de dados e ações previsíveis orientam a composição. Português brasileiro em toda a interface.
+
+A interface legada em `static/` segue o Carbon (ver `DESIGN.md` na raiz); este documento vale apenas para `frontend/`.
 
 ## Colors
 
-Azul interativo para ações e seleção; superfícies brancas e cinza claro, texto escuro e divisores discretos. Os tokens semânticos Carbon são a referência para os estados. O toggle no shell alterna Claro (white) e Escuro (g100), com preferência local compartilhada pelas páginas do frontend. O frontmatter descreve a base white; g100 usa os tokens oficiais do CSS Carbon, sem inversão de cores.
+Tema Radix com `grayColor="slate"` e cor de destaque escolhida pelo usuário no botão **Aparência** da barra superior (índigo, violeta, verde-azulado ou carmesim), junto do tema claro/escuro. Usar sempre tokens Radix (`--gray-*`, `--accent-*`, `--red-*`…); não usar hex fixos no app. Texto secundário usa `--gray-11` (não `--gray-9`/`--gray-10`, que não atingem 4,5:1 em textos pequenos).
+
+No tema escuro a barra superior usa superfície neutra (`--gray-2`); no claro, `--accent-9`.
 
 ## Typography
 
-IBM Plex Sans do CSS Carbon. Títulos de página usam heading-04 (28/36 px, peso 400); títulos de seção usam heading-02 (16/24 px, peso 600). Corpo usa body-01 (14/20 px) e rótulos/ajuda usam label-01/helper-text-01 (12/16 px). A tabela de Publicações OAB mantém 12 px e altura M de 40 px; inteiro teor e status mantêm a exceção aprovada de 10 px. Números processuais devem permanecer legíveis e copiáveis.
-
-Somente dados de nomes, títulos de cadastros/atividades e responsáveis recebem iniciais maiúsculas por palavra na exibição. Controles, cabeçalhos, mensagens e rótulos usam capitalização de frase. Inteiro teor, identificadores e valores enviados ao servidor são preservados.
+- Título de página: sempre via `CabecalhoPagina` (Heading size 6, 24 px).
+- Títulos de seção: Heading size 4 ou 3.
+- Corpo: 14 px. Texto auxiliar: 12–13 px em `--gray-11`. Nada abaixo de 11 px.
+- Nomes, títulos de cadastros e responsáveis passam por `formatarNomeExibicao` (iniciais maiúsculas, partículas como "de", "da", "e", "com", "x" em minúsculas, siglas como ME/EPP/OAB em maiúsculas). Controles, cabeçalhos e mensagens usam capitalização de frase.
 
 ## Layout
 
-Cabeçalho fixo e navegação lateral recolhível. Conteúdo de trabalho em coluna flexível, formulários em grade e tabelas em contêineres com rolagem horizontal. O painel prioriza desktop e adapta navegação e controles para telas estreitas.
-
-Formulários de consulta, cadastro, endereço e capa dividem a área útil em 4/8/16 colunas nos breakpoints 320/672/1056 px. Calhas e quebras de linha usam spacing-05 (16 px), com spans explícitos e campos largos ocupando toda a grade. Abaixo de xlg (1312 px), campos de endereço/capa ocupam oito das dezesseis colunas para preservar legibilidade junto à navegação lateral. Espaçamentos customizados usam tokens Carbon em CSS runtime, com fallbacks equivalentes; modais e popovers permanecem fora do grid da página.
-
-## Elevation & Depth
-
-Superfícies predominantemente planas. Camadas e divisores organizam o conteúdo; sombras suaves distinguem menus e painéis flutuantes.
-
-## Shapes
-
-Controles e tabelas seguem a geometria Carbon. Evitar introduzir novas formas decorativas na tabela.
+- Shell: barra superior de 48 px, navegação lateral de 200 px (sobreposta abaixo de 1056 px) e área de conteúdo `.aj-content` com padding e largura máxima de 1440 px. As telas **não** definem padding externo próprio.
+- Cada tela começa com `<CabecalhoPagina titulo descricao acoes />`; a ação principal fica à direita do título.
+- Formulários usam `.aj-form-grade` ou `.aj-filtros-linha`. Formulários de um campo (token, login) usam largura máxima de 40rem (`.aj-form-estreito`).
+- Tabelas sempre dentro de `TabelaResponsiva`: colunas sem texto no cabeçalho viram colunas de controle estreitas; valores monetários alinham à direita e datas à esquerda.
 
 ## Components
 
-Ícones devem ser oficiais do Carbon Design System, com nomes e imports verificados. Não usar emojis ou caracteres Unicode como substitutos de ícones, inclusive em prévias e mockups.
-
-Animações e transições seguem Carbon Motion e seus tokens oficiais, com respeito a `prefers-reduced-motion`. O movimento deve comunicar estado, continuidade ou feedback útil.
-
-Botões primários, secundários e ghost, campos com rótulos, tabelas com seleção e ações em lote, menus e modais com gestão de foco. Usar os estilos Carbon compilados já presentes no projeto, com React e os componentes oficiais de `@carbon/react`.
+- **Botões:** principal `solid` size 2; secundário `soft` (cinza para "Atualizar", "Limpar filtros", paginação); `ghost` só para ações de link dentro de textos e menus. Ações em linha de tabela usam size 1.
+- **Datas:** `CampoData` (dd/mm/aaaa com calendário), nunca `type="date"` direto.
+- **Seleção vazia:** "Todos os …"/"Todas as …"/"Selecione o …", nunca "— todos —".
+- **Seções recolhíveis:** `<details>/<summary>` recebem estilo global (chevron e cor de destaque).
+- **Ícones:** `lucide-react`, um ícone distinto por item de navegação. Não usar emojis ou caracteres Unicode como ícones.
+- **Movimento:** transições curtas (≤ 200 ms) que comuniquem estado; respeitar `prefers-reduced-motion`.
 
 ## Do's and Don'ts
 
-- Do preservar Carbon white/g100 e português brasileiro.
+- Do usar tokens Radix e os componentes compartilhados (`CabecalhoPagina`, `CampoData`, `TabelaResponsiva`, `AcoesTabela`).
 - Do manter foco visível, navegação por teclado e rótulos associados aos controles.
-- Do preservar consulta, seleção, status e vinculação das publicações ao alterar sua apresentação.
-- Don't introduzir frameworks CSS externos ou identidade visual concorrente.
+- Don't introduzir frameworks CSS externos, hex fixos ou estilos de página duplicados (um arquivo de estilo por área).

@@ -1,3 +1,4 @@
+import CampoData from '../../CampoData'
 import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
 import { AlertDialog, Button, Callout, Flex, Select, Tabs, TextField } from '@radix-ui/themes'
@@ -294,7 +295,7 @@ export default function CadastroContato({
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="contato-rg-emissao">RG — Emissão</label>
-              <TextField.Root id="contato-rg-emissao" type="date" value={registro.rg_emissao} onChange={(e) => atualizar('rg_emissao', e.target.value)} />
+              <CampoData id="contato-rg-emissao" value={registro.rg_emissao} onChange={v => atualizar('rg_emissao', v)} />
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="contato-rg-emissor">RG — Órgão emissor</label>
@@ -310,7 +311,7 @@ export default function CadastroContato({
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="contato-ctps-emissao">CTPS — Emissão</label>
-              <TextField.Root id="contato-ctps-emissao" type="date" value={registro.ctps_emissao} onChange={(e) => atualizar('ctps_emissao', e.target.value)} />
+              <CampoData id="contato-ctps-emissao" value={registro.ctps_emissao} onChange={v => atualizar('ctps_emissao', v)} />
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="contato-ctps-uf">CTPS — UF</label>

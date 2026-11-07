@@ -1,6 +1,7 @@
+import CabecalhoPagina from '../CabecalhoPagina'
 import { useState, type FormEvent } from 'react'
 import { AlertTriangle, Check } from 'lucide-react'
-import { Button, Callout, Checkbox, Flex, Heading, Text, TextField } from '@radix-ui/themes'
+import { Button, Callout, Checkbox, Flex, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 
@@ -34,25 +35,22 @@ export default function Acesso() {
 
   return (
     <Flex direction="column" gap="6">
-      <div>
-        <Heading as="h1" size="6">Acesso</Heading>
-        <Text as="p" size="2" color="gray" mt="1">Cole o token recebido por e-mail para liberar as consultas. Ele fica só neste navegador.</Text>
-      </div>
-      <form onSubmit={aoEnviar}>
+      <CabecalhoPagina titulo="Acesso" descricao="Cole o token recebido por e-mail para liberar as consultas. Ele fica só neste navegador." />
+      <form onSubmit={aoEnviar} className="aj-form-estreito">
         <Flex direction="column" gap="5">
           <div className="form-campo">
             <label className="form-campo-label" htmlFor="token">Seu token de acesso</label>
             <TextField.Root
               id="token"
               type={mostrarToken ? 'text' : 'password'}
-              placeholder="cole aqui o token recebido por e-mail"
+              placeholder="Cole aqui o token recebido por e-mail"
               autoComplete="off"
               required
               value={token}
               onChange={(e) => setToken(e.target.value)}
             >
               <TextField.Slot side="right">
-                <Button type="button" variant="ghost" size="1" onClick={() => setMostrarToken((v) => !v)}>
+                <Button type="button" variant="ghost" size="1" aria-pressed={mostrarToken} onClick={() => setMostrarToken((v) => !v)}>
                   {mostrarToken ? 'Ocultar' : 'Mostrar'}
                 </Button>
               </TextField.Slot>
@@ -68,7 +66,7 @@ export default function Acesso() {
             <Button size="2" type="submit" disabled={verificando}>
               Conectar
             </Button>
-            <Button size="2" variant="ghost" type="button" onClick={aoEsquecer}>
+            <Button size="2" variant="soft" color="gray" type="button" onClick={aoEsquecer}>
               Esquecer
             </Button>
           </Flex>

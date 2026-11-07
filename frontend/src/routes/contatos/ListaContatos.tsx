@@ -1,9 +1,10 @@
+import CabecalhoPagina from '../../CabecalhoPagina'
 import TabelaResponsiva from '../../TabelaResponsiva'
 import TextoTabela from '../../TextoTabela'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
-import { AlertDialog, Avatar, Badge, Button, Callout, Checkbox, Flex, Heading, Text, TextField } from '@radix-ui/themes'
+import { AlertDialog, Avatar, Badge, Button, Callout, Checkbox, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Building2, Info, Pencil, Tag, User } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
@@ -105,34 +106,44 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
 
   return (
     <Flex direction="column" gap="6">
-      <div className="aj-layout-36">
-        <Heading as="h2" size="5">Clientes</Heading>
-        <Button size="2" onClick={onNovo}>Novo cliente</Button>
-      </div>
-      <div role="group" aria-label="Filtrar clientes pela inicial do nome" className="aj-layout-37 clientes-filtro-letra">
-        {['TODOS', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((l) => (
-          <Button key={l} variant={l === letra ? 'solid' : 'ghost'} size="1" onClick={() => setLetra(l)}>
-            {l}
-          </Button>
-        ))}
-      </div>
-      <div className="form-campo">
-        <label className="form-campo-label" htmlFor="contatos-busca">Consultar clientes</label>
-        <TextField.Root
-          id="contatos-busca"
-          placeholder="Nome, telefone ou e-mail"
-          autoComplete="off"
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-        />
+      <CabecalhoPagina
+        titulo="Contatos"
+        descricao="Clientes e demais pessoas vinculadas aos processos do escritório."
+        acoes={<Button size="2" onClick={onNovo}>Novo cliente</Button>}
+      />
+      <div className="aj-filtros-linha">
+        <div className="form-campo aj-filtros-busca">
+          <label className="form-campo-label" htmlFor="contatos-busca">Consultar clientes</label>
+          <TextField.Root
+            id="contatos-busca"
+            placeholder="Nome, telefone ou e-mail"
+            autoComplete="off"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+          />
+        </div>
+        <div className="form-campo">
+          <label className="form-campo-label" id="contatos-letra-rotulo">Inicial do nome</label>
+          <Select.Root value={letra} onValueChange={setLetra}>
+            <Select.Trigger aria-labelledby="contatos-letra-rotulo" />
+            <Select.Content>
+              <Select.Item value="TODOS">Todas as iniciais</Select.Item>
+              {[...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((l) => <Select.Item key={l} value={l}>{l}</Select.Item>)}
+            </Select.Content>
+          </Select.Root>
+        </div>
       </div>
       {clientes && (
-        <p>Mostrando {filtrados.length} de {clientes.length} cliente(s). {filtrosAtivos.join('; ') || 'Sem filtros ativos'}.</p>
-      )}
-      {filtrosAtivos.length > 0 && (
-        <Button variant="ghost" size="1" onClick={() => { setLetra('TODOS'); setBusca('') }}>
-          Limpar filtros
-        </Button>
+        <Flex align="center" gap="3" wrap="wrap">
+          <Text size="1" color="gray">
+            Mostrando {filtrados.length} de {clientes.length} cliente(s){filtrosAtivos.length ? `. ${filtrosAtivos.join('; ')}` : ''}.
+          </Text>
+          {filtrosAtivos.length > 0 && (
+            <Button variant="ghost" size="1" onClick={() => { setLetra('TODOS'); setBusca('') }}>
+              Limpar filtros
+            </Button>
+          )}
+        </Flex>
       )}
       <div aria-live="polite">
         {carregando && <Carregamento colunas={8} />}
@@ -159,10 +170,10 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
             {idsLote.length > 0 && (
               <Flex gap="2" mb="3" align="center" wrap="wrap">
                 <Text size="2">{idsLote.length} selecionado(s)</Text>
-                <Button variant="outline" size="1" onClick={() => setLoteAberto('etiquetas')}>
+                <Button variant="soft" size="1" onClick={() => setLoteAberto('etiquetas')}>
                   <Tag size={14} /> Etiquetas
                 </Button>
-                <Button variant="outline" size="1" onClick={() => setLoteAberto('perfil')}>
+                <Button variant="soft" size="1" onClick={() => setLoteAberto('perfil')}>
                   <Pencil size={14} /> Atualizar perfil
                 </Button>
                 <Button variant="ghost" size="1" onClick={() => setSelecionados(new Set())}>Limpar seleção</Button>

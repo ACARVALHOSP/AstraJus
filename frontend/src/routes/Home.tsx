@@ -1,3 +1,4 @@
+import CabecalhoPagina from '../CabecalhoPagina'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Box, Button, Callout, Dialog, Flex, Heading,
@@ -155,25 +156,19 @@ function PainelHome() {
   return (
     <div className="home">
       {/* Cabeçalho */}
-      <div className="home-cabecalho">
-        <div>
-          <p className="home-data">
-            {agora.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </p>
-          <Heading size="6" as="h1">Meu dia</Heading>
-          <Text as="p" size="2" color="gray" mt="1">
-            Organize as atividades e acompanhe os próximos vencimentos.
-          </Text>
-        </div>
-        <Button
+      <CabecalhoPagina
+        sobretitulo={agora.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+        titulo="Meu dia"
+        descricao="Organize as atividades e acompanhe os próximos vencimentos."
+        acoes={<Button
           size="2"
           disabled={!cliente || carregando || salvando.size > 0}
           onClick={() => { setProcessoNovo(''); setEscolhendoProcesso(true) }}
         >
           <Plus size={16} />
           Nova atividade
-        </Button>
-      </div>
+        </Button>}
+      />
 
       {!cliente ? (
         <Box>
@@ -184,7 +179,7 @@ function PainelHome() {
               As atividades e publicações do escritório aparecem aqui após a conexão.
             </Callout.Text>
           </Callout.Root>
-          <Button variant="outline" size="2" onClick={() => irPara('acesso')}>Ir para Acesso</Button>
+          <Button variant="soft" size="2" onClick={() => irPara('acesso')}>Ir para Acesso</Button>
         </Box>
       ) : (
         <>
@@ -223,7 +218,8 @@ function PainelHome() {
             <Flex align="center" gap="3">
               <Text size="1" color="gray">{filtrados.length} atividade(s) no quadro</Text>
               <Button
-                variant="ghost"
+                variant="soft"
+                color="gray"
                 size="2"
                 disabled={carregando || salvando.size > 0}
                 onClick={() => void carregar()}
@@ -278,7 +274,7 @@ function PainelHome() {
               opcoes={resumo.map(r => ({ value: r.id, label: r.titulo }))}
             />
             <Flex align="end">
-              <Button variant="ghost" size="2" onClick={limparFiltros}>Limpar filtros</Button>
+              <Button variant="soft" color="gray" size="2" onClick={limparFiltros}>Limpar filtros</Button>
             </Flex>
           </div>
 
@@ -487,7 +483,7 @@ function PainelHome() {
               <Text as="p" size="2" color="gray" mb="3">
                 Cadastre um processo para associar a nova atividade.
               </Text>
-              <Button variant="outline" size="2" onClick={() => { setEscolhendoProcesso(false); irPara('casos') }}>
+              <Button variant="soft" size="2" onClick={() => { setEscolhendoProcesso(false); irPara('casos') }}>
                 Ir para processos
               </Button>
             </Box>

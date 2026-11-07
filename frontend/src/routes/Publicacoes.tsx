@@ -1,9 +1,11 @@
+import CampoData from '../CampoData'
+import CabecalhoPagina from '../CabecalhoPagina'
 import TabelaResponsiva from '../TabelaResponsiva'
 import TextoTabela from '../TextoTabela'
 import Carregamento from '../Carregamento'
 import { useEffect, useState, type FormEvent } from 'react'
 import { AlertTriangle, Info } from 'lucide-react'
-import { Button, Callout, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
+import { Button, Callout, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { ErroMCP } from '../api/mcpClient'
@@ -117,7 +119,10 @@ export default function Publicacoes() {
 
   return (
     <Flex direction="column" gap="6">
-      <Heading as="h1" size="6">Consultar publicações</Heading>
+      <CabecalhoPagina
+        titulo="Consultar publicações"
+        descricao="Busca publicações no DJEN por número do processo ou OAB."
+      />
       <form onSubmit={aoEnviar}>
         <Flex direction="column" gap="5">
           <div className="aj-form-grade">
@@ -136,7 +141,7 @@ export default function Publicacoes() {
               <Select.Root value={tribunal || '__todos__'} onValueChange={(v) => setTribunal(v === '__todos__' ? '' : v)}>
                 <Select.Trigger id="pub-sigla-tribunal" style={{ width: '100%' }} />
                 <Select.Content>
-                  <Select.Item value="__todos__">— todos —</Select.Item>
+                  <Select.Item value="__todos__">Todos os tribunais</Select.Item>
                   {TRIBUNAIS.map((t) => (
                     <Select.Item key={t} value={t}>{t.toUpperCase()}</Select.Item>
                   ))}
@@ -159,7 +164,7 @@ export default function Publicacoes() {
               <Select.Root value={ufOab || '__todas__'} onValueChange={(v) => setUfOab(v === '__todas__' ? '' : v)}>
                 <Select.Trigger id="pub-uf-oab" style={{ width: '100%' }} />
                 <Select.Content>
-                  <Select.Item value="__todas__">— todas —</Select.Item>
+                  <Select.Item value="__todas__">Todas as UFs</Select.Item>
                   {UFS.map((uf) => (
                     <Select.Item key={uf} value={uf}>{uf}</Select.Item>
                   ))}
@@ -168,11 +173,11 @@ export default function Publicacoes() {
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="pub-data-inicio">Publicado a partir de</label>
-              <TextField.Root id="pub-data-inicio" type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+              <CampoData id="pub-data-inicio" value={dataInicio} onChange={v => setDataInicio(v)} />
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="pub-data-fim">Publicado até</label>
-              <TextField.Root id="pub-data-fim" type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+              <CampoData id="pub-data-fim" value={dataFim} onChange={v => setDataFim(v)} />
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="pub-itens">Itens por página</label>

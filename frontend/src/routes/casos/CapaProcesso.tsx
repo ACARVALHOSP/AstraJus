@@ -139,7 +139,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
   return <section className="casos-resumo capa-processo" aria-label={`Capa do processo ${formatarNumeroCNJ(numero)}`} aria-busy={bloqueado}>
     <div className="casos-titulo-linha">
       <Heading as="h2" size="4">Capa do processo</Heading>
-      <Button variant="outline" size="1" disabled={bloqueado || !capa || !tribunal || pendente} onClick={() => executar('atualizar')}>
+      <Button variant="soft" size="1" disabled={bloqueado || !capa || !tribunal || pendente} onClick={() => executar('atualizar')}>
         {operacao === 'atualizar' ? 'Atualizando capa…' : 'Atualizar capa (DataJud + DJEN)'}
       </Button>
     </div>
@@ -156,7 +156,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
       )}
     </div>
     {erroCarga && (
-      <Button variant="outline" size="1" disabled={carregando} onClick={() => { setCarregando(true); setErroCarga(false); setTentativa(n => n + 1) }}>
+      <Button variant="soft" size="1" disabled={carregando} onClick={() => { setCarregando(true); setErroCarga(false); setTentativa(n => n + 1) }}>
         Tentar novamente
       </Button>
     )}

@@ -1,3 +1,4 @@
+import CampoData from '../../CampoData'
 import { useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { Button, Callout, Checkbox, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes'
@@ -145,11 +146,10 @@ export default function NovaCobrancaModal({
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="cobranca-vencimento">Vencimento *</label>
-              <TextField.Root
+              <CampoData
                 id="cobranca-vencimento"
-                type="date"
                 value={vencimento}
-                onChange={(e) => setVencimento(e.target.value)}
+                onChange={v => setVencimento(v)}
               />
             </div>
           </div>

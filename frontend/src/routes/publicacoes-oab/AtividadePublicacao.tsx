@@ -1,3 +1,4 @@
+import CampoData from '../../CampoData'
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Info } from 'lucide-react'
 import { Button, Callout, Checkbox, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes'
@@ -142,7 +143,7 @@ export default function AtividadePublicacao({ publicacao, onClose, onConcluido, 
           <div className="aj-form-grade">
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="oab-prazo-base">{regra === 'dje' ? 'Data de disponibilização DJEN' : 'Termo inicial informado'}</label>
-              <TextField.Root id="oab-prazo-base" type="date" value={base} disabled={bloqueado} onChange={e => setBase(e.target.value)} />
+              <CampoData id="oab-prazo-base" value={base} disabled={bloqueado} onChange={v => setBase(v)} />
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="oab-prazo-dias">Quantidade de dias</label>
@@ -184,7 +185,7 @@ export default function AtividadePublicacao({ publicacao, onClose, onConcluido, 
           </div>
           <div className="form-campo">
             <label className="form-campo-label" htmlFor="oab-prazo-final">Data final (editável)</label>
-            <TextField.Root id="oab-prazo-final" type="date" value={final} disabled={bloqueado || calculando} onChange={e => { setFinal(e.target.value); setRevisado(false) }} />
+            <CampoData id="oab-prazo-final" value={final} disabled={bloqueado || calculando} onChange={v => { setFinal(v); setRevisado(false) }} />
             <Text size="1" color="gray">Ajuste após conferir o calendário e a regra aplicável.</Text>
           </div>
           <Text as="label" size="2">

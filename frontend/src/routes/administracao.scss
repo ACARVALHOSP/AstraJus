@@ -1,8 +1,9 @@
 .administracao {
   display: grid;
-  gap: 1rem;
+  gap: 2rem;
   &__acesso, &__formulario { display: grid; gap: 1rem; }
-  &__acesso { max-inline-size: 40rem; padding: 1.5rem; background: var(--color-panel-solid); border-radius: var(--radius-3); border: 1px solid var(--gray-a4); }
+  &__acesso .form-campo { justify-self: stretch; }
+  &__acesso { max-inline-size: 40rem; justify-items: start; padding: 1.5rem; background: var(--color-panel-solid); border-radius: var(--radius-3); border: 1px solid var(--gray-a4); }
   &__acoes { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; margin-block: 1rem; }
   &__acoes .form-campo { flex: 1; min-inline-size: 12rem; }
   &__resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.5rem; margin-block: 1.5rem; }

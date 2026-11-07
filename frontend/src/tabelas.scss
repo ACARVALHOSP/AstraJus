@@ -4,6 +4,7 @@
   inline-size: 100%;
   .tabela-fluida { inline-size: 100%; min-inline-size: 0; table-layout: fixed; }
   .tabela-fluida :is(th, td) { block-size: auto; padding-block: 0.75rem; white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+  .tabela-fluida th { vertical-align: middle; }
   .texto-tabela { max-inline-size: 100%; white-space: normal; overflow: visible; text-overflow: clip; }
   .texto-tabela-dica { display: block; }
   .tabela-fluida .tabela-controle { inline-size: 3rem; padding-inline: 0.5rem; }

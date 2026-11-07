@@ -77,7 +77,7 @@ export default function MovimentacoesCaso({ casoId }: { casoId: string }) {
     <Flex direction="column" gap="4">
       <Flex align="center" justify="between" gap="3" wrap="wrap">
         <Heading as="h3" size="3">Movimentações</Heading>
-        <Button variant="outline" size="1" onClick={buscar} disabled={carregando}>
+        <Button variant="soft" size="1" onClick={buscar} disabled={carregando}>
           Buscar no DataJud
         </Button>
       </Flex>

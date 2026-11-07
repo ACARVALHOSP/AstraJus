@@ -37,10 +37,23 @@ export function formatarPercentual(valor: number | null | undefined): string {
   return valor.toLocaleString('pt-BR', { style: 'percent', minimumFractionDigits: 1 })
 }
 
+// Palavras curtas que permanecem minúsculas no meio de nomes e títulos (ex.: "Ação de Obrigação de Fazer").
+const PARTICULAS = new Set(['a', 'à', 'ao', 'aos', 'as', 'às', 'com', 'contra', 'da', 'das', 'de', 'do', 'dos', 'e', 'em', 'na', 'nas', 'no', 'nos', 'o', 'os', 'ou', 'para', 'pela', 'pelas', 'pelo', 'pelos', 'por', 'sem', 'x'])
+// Siglas societárias e institucionais preservadas em maiúsculas.
+const SIGLAS = new Set(['me', 'epp', 'eireli', 'sa', 'cpf', 'cnpj', 'oab', 'inss', 'tjsp', 'stj', 'stf', 'trf', 'trt', 'mei', 'ltda'])
+
 export function formatarNomeExibicao(valor: unknown): string {
+  let primeira = true
   return String(valor ?? '')
     .toLocaleLowerCase('pt-BR')
-    .replace(/(^|[^\p{L}\p{N}])(\p{L})/gu, (_, separador: string, letra: string) => separador + letra.toLocaleUpperCase('pt-BR'))
+    .replace(/[\p{L}\p{N}]+/gu, (palavra: string) => {
+      const inicio = primeira
+      primeira = false
+      if (SIGLAS.has(palavra)) return palavra === 'ltda' ? 'Ltda' : palavra.toLocaleUpperCase('pt-BR')
+      if (!inicio && PARTICULAS.has(palavra)) return palavra
+      return palavra.charAt(0).toLocaleUpperCase('pt-BR') + palavra.slice(1)
+    })
+    .replace(/\bS\/a\b/g, 'S/A')
 }
 
 export function formatarDdMmAaaa(data: Date): string {

@@ -1,3 +1,4 @@
+import CabecalhoPagina from '../CabecalhoPagina'
 import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
@@ -95,15 +96,11 @@ export default function Integracoes() {
 
   return (
     <Flex direction="column" gap="6">
-      <div>
-        <Heading as="h1" size="6">Integrações</Heading>
-        <Text as="p" size="2" color="gray" mt="1">Conexões com serviços externos usados pelo escritório.</Text>
-      </div>
-      <div>
-        <Button variant="outline" size="2" onClick={carregar}>
-          Verificar novamente
-        </Button>
-      </div>
+      <CabecalhoPagina
+        titulo="Integrações"
+        descricao="Conexões com serviços externos usados pelo escritório."
+        acoes={<Button variant="soft" color="gray" size="2" onClick={carregar}>Verificar novamente</Button>}
+      />
       <Text as="p" size="2" color="gray">
         A configuração é mantida pelo administrador. "Configurado" indica credenciais cadastradas; não confirma a
         disponibilidade do serviço externo.
@@ -130,7 +127,7 @@ export default function Integracoes() {
       <div className="aj-form-grade">
         <Card variant="surface">
           <Flex direction="column" gap="3">
-            <img src="/static/icons/google.svg" alt="" width={40} height={40} />
+            <img src="/static/icons/google.svg" alt="" width={40} height={40} className="integracao-logo" onError={(e) => { e.currentTarget.hidden = true }} />
             <Heading as="h3" size="3">Google</Heading>
             <Text as="p" size="2">Drive do escritório (conta institucional).</Text>
             <Selo status={googleStatus} />
@@ -138,7 +135,7 @@ export default function Integracoes() {
         </Card>
         <Card variant="surface">
           <Flex direction="column" gap="3">
-            <img src="/static/icons/asaas.png" alt="" width={40} height={40} />
+            <img src="/static/icons/asaas.png" alt="" width={40} height={40} className="integracao-logo" onError={(e) => { e.currentTarget.hidden = true }} />
             <Heading as="h3" size="3">Asaas</Heading>
             <Text as="p" size="2">Cobranças e boletos. Veja em Financeiro &gt; Pagamentos.</Text>
             <Selo status={asaasStatus} />
@@ -146,7 +143,7 @@ export default function Integracoes() {
         </Card>
         <Card variant="surface">
           <Flex direction="column" gap="3">
-            <img src="/static/icons/zapsign.svg" alt="" width={40} height={40} />
+            <img src="/static/icons/zapsign.svg" alt="" width={40} height={40} className="integracao-logo" onError={(e) => { e.currentTarget.hidden = true }} />
             <Heading as="h3" size="3">ZapSign</Heading>
             <Text as="p" size="2">Assinatura digital de documentos.</Text>
             <Selo status={zapsignStatus} />
@@ -158,7 +155,7 @@ export default function Integracoes() {
             <Text as="p" size="2">Conecte sua conta individual para criar eventos no seu calendário.</Text>
             <Text as="p" size="2" role="status">{agendaStatus}</Text>
             <Flex gap="2" wrap="wrap">
-              <Button variant="outline" size="1" onClick={() => minhaAgendaGoogle('conectar')}>
+              <Button variant="soft" size="1" onClick={() => minhaAgendaGoogle('conectar')}>
                 Conectar minha agenda
               </Button>
               <Button variant="ghost" size="1" onClick={() => minhaAgendaGoogle('desconectar')}>

@@ -1,6 +1,5 @@
 @use './interface';
 @use './notificacoes';
-@use './routes/casos/processos';
 
 .contato-vinculos-resumo {
   display: grid;
@@ -60,7 +59,6 @@
 .shell-notification-count { color: #fff; }
 @media (max-width: 1055px) {
   // O menu móvel sobrepõe o conteúdo; não reserva os 256 px da navegação desktop.
-  #main-content { margin-inline-start: 0; padding: 1rem; }
   .shell-status { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {

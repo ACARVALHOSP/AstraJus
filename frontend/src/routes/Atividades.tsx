@@ -1,3 +1,4 @@
+import CabecalhoPagina from '../CabecalhoPagina'
 import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import './casos/processos-radix.css'
@@ -122,23 +123,18 @@ export default function Atividades() {
 
   return (
     <Flex direction="column" gap="6">
-      <div className="aj-layout-14">
-        <h1>Atividades abertas</h1>
-        <Button variant="outline" size="1" onClick={carregar} disabled={carregando}>
-          Atualizar atividades
-        </Button>
-      </div>
-      <p>
-        Atividades pendentes de todos os processos. Filtre pelo responsável pela atividade ou pelo processo. As datas
-        são as cadastradas, sem cálculo de prazo.
-      </p>
+      <CabecalhoPagina
+        titulo="Atividades abertas"
+        descricao="Atividades pendentes de todos os processos. Filtre pelo responsável pela atividade ou pelo processo. As datas são as cadastradas, sem cálculo de prazo."
+        acoes={<Button variant="soft" color="gray" size="2" onClick={carregar} disabled={carregando}>Atualizar</Button>}
+      />
       <div className="casos-formulario-grade">
         <div className="form-campo">
           <label className="form-campo-label" htmlFor="atividades-executor">Responsável pela atividade</label>
           <Select.Root value={filtroExecutor || '__all__'} onValueChange={(v) => setFiltroExecutor(v === '__all__' ? '' : v)}>
             <Select.Trigger id="atividades-executor" style={{ width: '100%' }} />
             <Select.Content>
-              <Select.Item value="__all__">Todos</Select.Item>
+              <Select.Item value="__all__">Todos os responsáveis</Select.Item>
               {opcoesExecutor.map((o) => (
                 <Select.Item key={o.valor} value={o.valor}>{o.nome}</Select.Item>
               ))}
@@ -150,7 +146,7 @@ export default function Atividades() {
           <Select.Root value={filtroResponsavel || '__all__'} onValueChange={(v) => setFiltroResponsavel(v === '__all__' ? '' : v)}>
             <Select.Trigger id="atividades-responsavel" style={{ width: '100%' }} />
             <Select.Content>
-              <Select.Item value="__all__">Todos</Select.Item>
+              <Select.Item value="__all__">Todos os responsáveis</Select.Item>
               {opcoesResponsavel.map((nome) => (
                 <Select.Item key={nome} value={nome}>{nome === 'Sem responsável' ? nome : formatarNomeExibicao(nome)}</Select.Item>
               ))}
@@ -162,7 +158,7 @@ export default function Atividades() {
           <Select.Root value={filtroTipo || '__all__'} onValueChange={(v) => setFiltroTipo(v === '__all__' ? '' : v)}>
             <Select.Trigger id="atividades-tipo" style={{ width: '100%' }} />
             <Select.Content>
-              <Select.Item value="__all__">Todos</Select.Item>
+              <Select.Item value="__all__">Todos os tipos</Select.Item>
               {Object.entries(ROTULO_TIPO).map(([valor, rotulo]) => (
                 <Select.Item key={valor} value={valor}>{rotulo}</Select.Item>
               ))}
@@ -203,7 +199,7 @@ export default function Atividades() {
                 <Button variant="ghost" size="1" onClick={() => irPara('casos', { abrirCasoId: caso.id })}>
                   Abrir processo
                 </Button>
-                <Button variant="outline" size="1" onClick={() => concluir({ caso, atividade })}>
+                <Button variant="soft" size="1" onClick={() => concluir({ caso, atividade })}>
                   Concluir atividade
                 </Button>
               </div>

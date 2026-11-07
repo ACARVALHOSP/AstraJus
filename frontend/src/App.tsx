@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Theme } from '@radix-ui/themes'
+import { Flex, Popover, SegmentedControl, Text, Theme } from '@radix-ui/themes'
 import {
-  Scale, Users, CalendarCheck, Folder, Search,
-  Newspaper, BarChart2, BookOpen, Bell, ClipboardList,
-  Settings, Link, Wallet, CreditCard, Shield, Menu, X,
-  Sun, Moon, ChevronDown, ChevronRight,
+  Scale, Users, CalendarCheck, Search, Gavel, Briefcase,
+  Newspaper, BarChart2, BookOpen, Eye, BellRing, History, FileSearch, Receipt, KeyRound,
+  Settings, Link, Wallet, CreditCard, ShieldCheck, Menu, X,
+  Palette, ChevronDown, ChevronRight, Check,
 } from 'lucide-react'
 import { ClienteProvider, useCliente } from './api/ClienteContext'
 import { CHAVE_TEMA } from './api/mcpClient'
@@ -36,49 +36,46 @@ const CHAVE_ACCENT = 'astrajus-accent'
 
 const GRUPOS_NAVEGACAO = [
   {
-    id: 'escritorio', label: 'Escritório', icone: Scale,
+    id: 'escritorio', label: 'Escritório', icone: Briefcase,
     abas: [
       { id: 'casos', label: 'Processos', icone: Scale },
       { id: 'contatos', label: 'Contatos', icone: Users },
       { id: 'atividades', label: 'Atividades', icone: CalendarCheck },
-      { id: 'pastas', label: 'Pastas', icone: Folder },
     ],
   },
   {
     id: 'consultas', label: 'Consultas', icone: Search,
     abas: [
-      { id: 'processo', label: 'Consultar processo', icone: Search },
+      { id: 'processo', label: 'Consultar processo', icone: FileSearch },
       { id: 'publicacoes', label: 'Publicações', icone: Newspaper },
       { id: 'jurimetria', label: 'Jurimetria', icone: BarChart2 },
       { id: 'jurisprudencia', label: 'Jurisprudência', icone: BookOpen },
-      { id: 'historico', label: 'Histórico', icone: ClipboardList },
+      { id: 'historico', label: 'Histórico', icone: History },
     ],
   },
   {
-    id: 'acompanhamento', label: 'Acompanhamento', icone: Bell,
+    id: 'acompanhamento', label: 'Acompanhamento', icone: Eye,
     abas: [
-      { id: 'monitoramentos', label: 'Monitoramentos', icone: Bell },
-      { id: 'publicacoes-oab', label: 'Publicações OAB', icone: ClipboardList },
+      { id: 'monitoramentos', label: 'Monitoramentos', icone: BellRing },
+      { id: 'publicacoes-oab', label: 'Publicações OAB', icone: Gavel },
     ],
   },
   {
     id: 'financeiro', label: 'Financeiro', icone: Wallet,
     abas: [
-      { id: 'financeiro', label: 'Lançamentos', icone: Wallet },
+      { id: 'financeiro', label: 'Lançamentos', icone: Receipt },
       { id: 'pagamentos', label: 'Pagamentos', icone: CreditCard },
     ],
   },
   {
     id: 'configuracoes', label: 'Configurações', icone: Settings,
     abas: [
-      { id: 'acesso', label: 'Acesso', icone: Shield },
+      { id: 'acesso', label: 'Acesso', icone: KeyRound },
       { id: 'integracoes', label: 'Integrações', icone: Link },
-      { id: 'administracao', label: 'Administração', icone: Settings },
+      { id: 'administracao', label: 'Administração', icone: ShieldCheck },
     ],
   },
 ]
-
-const ABAS = GRUPOS_NAVEGACAO.flatMap((g) => g.abas)
 
 function StatusConexao() {
   const { status } = useCliente()
@@ -121,12 +118,8 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
     case 'contatos': return <Contatos />
     case 'casos': return <Casos />
     default:
-      return (
-        <div style={{ padding: '2rem' }}>
-          <h1>{ABAS.find((a) => a.id === abaAtiva)?.label ?? abaAtiva}</h1>
-          <p>Ainda não migrada.</p>
-        </div>
-      )
+      // Rotas desconhecidas (inclusive links antigos) voltam para o início.
+      return <Home />
   }
 }
 
@@ -196,6 +189,66 @@ function SidebarAstraJus({ aberta, fechar }: { aberta: boolean; fechar: () => vo
   )
 }
 
+const ACCENTS: { key: AccentColor; label: string; cor: string }[] = [
+  { key: 'indigo',  label: 'Índigo',   cor: 'var(--indigo-9)' },
+  { key: 'violet',  label: 'Violeta',  cor: 'var(--violet-9)' },
+  { key: 'teal',    label: 'Verde-azulado', cor: 'var(--teal-9)' },
+  { key: 'crimson', label: 'Carmesim', cor: 'var(--crimson-9)' },
+]
+
+function SeletorAparencia({ accent, setAccent, aparencia, setAparencia }: {
+  accent: AccentColor
+  setAccent: (a: AccentColor) => void
+  aparencia: 'light' | 'dark'
+  setAparencia: (a: 'light' | 'dark') => void
+}) {
+  return (
+    <Popover.Root>
+      <Popover.Trigger>
+        <button type="button" className="aj-ib" aria-label="Aparência" title="Aparência">
+          <Palette size={17} aria-hidden="true" />
+        </button>
+      </Popover.Trigger>
+      <Popover.Content width="240px" align="end">
+        <Flex direction="column" gap="3">
+          <Flex direction="column" gap="2">
+            <Text as="p" size="1" weight="medium" color="gray">Tema</Text>
+            <SegmentedControl.Root
+              size="1"
+              value={aparencia}
+              onValueChange={(v) => setAparencia(v as 'light' | 'dark')}
+              aria-label="Tema"
+            >
+              <SegmentedControl.Item value="light">Claro</SegmentedControl.Item>
+              <SegmentedControl.Item value="dark">Escuro</SegmentedControl.Item>
+            </SegmentedControl.Root>
+          </Flex>
+          <Flex direction="column" gap="2">
+            <Text as="p" size="1" weight="medium" color="gray">Cor de destaque</Text>
+            <div className="aj-accent-picker" role="radiogroup" aria-label="Cor de destaque">
+              {ACCENTS.map((a) => (
+                <button
+                  key={a.key}
+                  type="button"
+                  role="radio"
+                  className="aj-accent-dot"
+                  style={{ background: a.cor }}
+                  title={a.label}
+                  aria-label={a.label}
+                  aria-checked={accent === a.key}
+                  onClick={() => setAccent(a.key)}
+                >
+                  {accent === a.key && <Check size={14} aria-hidden="true" />}
+                </button>
+              ))}
+            </div>
+          </Flex>
+        </Flex>
+      </Popover.Content>
+    </Popover.Root>
+  )
+}
+
 function accentSalvo(): AccentColor {
   try {
     const v = localStorage.getItem(CHAVE_ACCENT)
@@ -232,13 +285,6 @@ export default function App() {
     try { localStorage.setItem(CHAVE_ACCENT, accent) } catch { /* noop */ }
   }, [accent])
 
-  const ACCENTS: { key: AccentColor; label: string; cor: string }[] = [
-    { key: 'indigo',  label: 'Índigo',   cor: 'var(--indigo-9)' },
-    { key: 'violet',  label: 'Violeta',  cor: 'var(--violet-9)' },
-    { key: 'teal',    label: 'Teal',     cor: 'var(--teal-9)' },
-    { key: 'crimson', label: 'Carmesim', cor: 'var(--crimson-9)' },
-  ]
-
   return (
     <Theme accentColor={accent} grayColor="slate" radius="medium" appearance={aparencia}>
       <ClienteProvider>
@@ -260,29 +306,12 @@ export default function App() {
                 <BuscaGlobal />
                 <CentralNotificacoes />
 
-                {/* Seletor de accent */}
-                <div className="aj-accent-picker" role="group" aria-label="Escolher tema de cor">
-                  {ACCENTS.map((a) => (
-                    <button
-                      key={a.key}
-                      className={`aj-accent-dot${accent === a.key ? ' aj-accent-dot--sel' : ''}`}
-                      style={{ background: a.cor }}
-                      title={a.label}
-                      aria-label={a.label}
-                      aria-pressed={accent === a.key}
-                      onClick={() => setAccent(a.key)}
-                    />
-                  ))}
-                </div>
-
-                {/* Toggle claro/escuro */}
-                <button
-                  className="aj-ib"
-                  aria-label="Alternar tema"
-                  onClick={() => setAparencia((v) => v === 'light' ? 'dark' : 'light')}
-                >
-                  {aparencia === 'light' ? <Moon size={17} /> : <Sun size={17} />}
-                </button>
+                <SeletorAparencia
+                  accent={accent}
+                  setAccent={setAccent}
+                  aparencia={aparencia}
+                  setAparencia={setAparencia}
+                />
 
                 <ContaUsuario />
               </div>

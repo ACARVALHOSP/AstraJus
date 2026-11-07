@@ -1,3 +1,4 @@
+import CampoData from '../CampoData'
 import { useState, type FormEvent } from 'react'
 import { Button, Callout, Flex, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, CheckCircle2, Info } from 'lucide-react'
@@ -95,11 +96,11 @@ function CapturaManual({ onCapturado }: { onCapturado: () => void }) {
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="pub-oab-manual-data-inicio">Data inicial (obrigatória)</label>
-              <TextField.Root id="pub-oab-manual-data-inicio" type="date" required aria-required="true" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+              <CampoData id="pub-oab-manual-data-inicio" required value={dataInicio} onChange={v => setDataInicio(v)} />
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="pub-oab-manual-data-fim">Data final (obrigatória)</label>
-              <TextField.Root id="pub-oab-manual-data-fim" type="date" required aria-required="true" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+              <CampoData id="pub-oab-manual-data-fim" required value={dataFim} onChange={v => setDataFim(v)} />
             </div>
           </div>
           <div>

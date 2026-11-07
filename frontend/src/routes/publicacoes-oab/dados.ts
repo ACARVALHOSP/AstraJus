@@ -18,7 +18,7 @@ export function nomePublicacao(p: PublicacaoOab): string {
   const partes = p.dados?.destinatarios ?? []
   const polo = (valor: string) => [...new Set(partes.filter(x => x.polo?.toUpperCase() === valor).map(x => formatarNomeExibicao(x.nome)).filter(Boolean))].join(' / ')
   const ativo = polo('A'), passivo = polo('P')
-  if (ativo && passivo) return `${ativo} X ${passivo}`
+  if (ativo && passivo) return `${ativo} x ${passivo}`
   return [ativo && `Polo ativo: ${ativo}`, passivo && `Polo passivo: ${passivo}`].filter(Boolean).join(' · ') || 'Partes não informadas'
 }
 export function urlPublicacao(p: PublicacaoOab) {
