@@ -9,7 +9,7 @@ import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { useNavegacao } from '../../api/NavegacaoContext'
 import { buscarJson, enviarJson } from '../../api/rest'
-import { diasEntreDatas, formatarNomeExibicao, formatarNumeroCNJ, hojeIso, iniciaisNome } from '../../utils/formatadores'
+import { diasEntreDatas, formatarNomeExibicao, formatarNumeroCNJ, hojeIso } from '../../utils/formatadores'
 import { alternarCasoFavorito, ehCasoFavorito } from '../../utils/listasRapidas'
 import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
 import { useEstreita } from '../../utils/useEstreita'
@@ -438,7 +438,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                         <td>{clienteCelula(c)}</td>
                         <td>
                           {c.responsavel ? (
-                            <span className="casos-pessoa"><span className="casos-iniciais" aria-hidden="true">{iniciaisNome(c.responsavel)}</span>{formatarNomeExibicao(c.responsavel)}</span>
+                            <span>{formatarNomeExibicao(c.responsavel)}</span>
                           ) : <Text size="1" color="gray">Sem responsável</Text>}
                         </td>
                         <td>{compromisso(c)}</td>

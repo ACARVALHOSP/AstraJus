@@ -12,12 +12,6 @@
 .casos-data { font-weight: 600; font-variant-numeric: tabular-nums; }
 .casos-alerta { color: var(--red-11); }
 .casos-secundario.casos-parado { color: var(--amber-11); font-weight: 500; }
-.casos-pessoa { display: inline-flex; align-items: center; gap: 0.5rem; }
-.casos-iniciais {
-  inline-size: 24px; block-size: 24px; flex-shrink: 0; border-radius: 50%;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: var(--accent-a3); color: var(--accent-11); font-size: 11px; font-weight: 600;
-}
 .tabela-adaptavel .tabela-fluida.casos-tabela-nova {
   // Percentuais (sem contar o padding): o Título fica com o restante em qualquer largura.
   .casos-col-numero { inline-size: 15%; }

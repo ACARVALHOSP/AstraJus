@@ -1,0 +1,32 @@
+// Aba Movimentações: linha do tempo compacta agrupada por mês.
+.mov-fonte { margin-left: auto; align-self: center; }
+.mov-linha-tempo {
+  border: 1px solid var(--gray-a5); border-radius: var(--radius-3); background: var(--color-panel-solid); overflow: hidden;
+  ol { list-style: none; margin: 0; padding: 0; }
+}
+.mov-mes {
+  margin: 0; padding: 0.5rem 1rem; background: var(--gray-2); border-bottom: 1px solid var(--gray-a4);
+  font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--gray-12);
+  span { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--gray-11); }
+}
+.mov-item {
+  display: grid; grid-template-columns: 6.5rem 1.25rem minmax(0, 1fr) auto; align-items: start; gap: 0.75rem;
+  padding: 0.625rem 1rem; border-bottom: 1px solid var(--gray-a3);
+  &:last-child { border-bottom: 0; }
+}
+.mov-quando { font-variant-numeric: tabular-nums; }
+.mov-data { font-size: 13px; font-weight: 600; }
+.mov-hora { font-size: 12px; color: var(--gray-11); }
+.mov-marcador {
+  inline-size: 9px; block-size: 9px; margin-top: 5px; border-radius: 50%; background: var(--gray-8);
+  box-shadow: 0 0 0 3px var(--color-panel-solid), 0 0 0 4px var(--gray-a5);
+}
+.mov-marcador-destaque { background: var(--accent-9); }
+.mov-nome { font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.mov-numero { margin-top: 2px; font-size: 12px; color: var(--gray-11); font-variant-numeric: tabular-nums; }
+.mov-grau { justify-self: end; white-space: nowrap; }
+@media (max-width: 672px) {
+  .mov-item { grid-template-columns: 5.5rem 1rem minmax(0, 1fr); }
+  .mov-grau { grid-column: 3; justify-self: start; }
+  .mov-fonte { margin-left: 0; }
+}

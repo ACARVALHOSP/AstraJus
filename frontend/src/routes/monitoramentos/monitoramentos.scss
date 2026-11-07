@@ -1,0 +1,26 @@
+// Monitoramentos em tabela: critério, nome, última verificação, expiração e ações.
+.mon-criterio { margin-top: 4px; font-weight: 600; font-size: 14px; font-variant-numeric: tabular-nums; }
+.mon-secundario { margin-top: 2px; font-size: 12px; color: var(--gray-11); line-height: 1.4; }
+.mon-erro { color: var(--red-11); }
+.mon-alerta { color: var(--amber-11); font-weight: 600; }
+.mon-data { font-weight: 600; font-variant-numeric: tabular-nums; }
+.tabela-adaptavel .tabela-fluida.mon-tabela {
+  .mon-col-criterio { inline-size: 26%; }
+  .mon-col-coleta { inline-size: 22%; }
+  .mon-col-expira { inline-size: 13%; }
+  .mon-col-acoes { inline-size: 9rem; }
+}
+.mon-historico {
+  list-style: none; margin: 0; padding: 0; border: 1px solid var(--gray-a5); border-radius: var(--radius-3);
+  background: var(--color-panel-solid);
+  li { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; padding: 0.5rem 0.875rem; border-bottom: 1px solid var(--gray-a3); }
+  li:last-child { border-bottom: 0; }
+}
+.mon-cartoes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+.mon-cartao {
+  display: flex; flex-direction: column; gap: 0.625rem; padding: 0.875rem;
+  background: var(--color-panel-solid); border: 1px solid var(--gray-a5); border-radius: var(--radius-3);
+  p { margin: 0; }
+}
+.mon-cartao-resumo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--gray-a3); }
+.mon-rotulo { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--gray-11); margin-bottom: 2px; }

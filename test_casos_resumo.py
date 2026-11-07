@@ -56,6 +56,21 @@ class CasosResumoTest(unittest.TestCase):
         vazio = self.resumo(self.vazio["id"])
         self.assertEqual((vazio["publicacoes_a_revisar"], vazio["ultima_movimentacao_data"], vazio["ultima_movimentacao_descricao"]), (0, None, None))
 
+    def test_checklist_por_atividade_e_contagens_das_abas(self):
+        criar = self.gestao.criar_atividade
+        com = criar(self.caso["id"], "prazo", "Com checklist", "2026-11-04", None, None, self.agora)
+        sem = criar(self.caso["id"], "tarefa", "Sem checklist", None, None, None, self.agora)
+        feita = criar(self.caso["id"], "tarefa", "Feita", None, None, None, self.agora)
+        self.gestao.atualizar_atividade(self.caso["id"], feita["id"], status="concluida")
+        i1 = self.gestao.criar_item_checklist(self.caso["id"], com["id"], "Item 1", self.agora)
+        self.gestao.criar_item_checklist(self.caso["id"], com["id"], "Item 2", self.agora)
+        self.gestao.atualizar_item_checklist(self.caso["id"], com["id"], i1["id"], concluido=True)
+        por_id = {a["id"]: a for a in self.gestao.listar_atividades(self.caso["id"])}
+        self.assertEqual(por_id[com["id"]]["checklist"], {"total": 2, "concluidos": 1})
+        self.assertIsNone(por_id[sem["id"]]["checklist"])
+        self.pubs.registrar("h9", None, None, self.numero, {"texto": "x"}, "nao_tratada", self.caso["id"], self.agora)
+        self.assertEqual(self.gestao.contagens_caso(self.caso["id"]), {"atividades_abertas": 2, "publicacoes_a_revisar": 1})
+
 
 if __name__ == "__main__":
     unittest.main()

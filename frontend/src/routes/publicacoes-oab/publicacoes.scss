@@ -61,3 +61,6 @@
   p { margin: 0; }
 }
 .oab-cartao-acoes { border-top: 1px solid var(--gray-a3); padding-top: 0.625rem; }
+
+// Aba Publicações do processo: mesma linha da tabela de Publicações OAB, sem a coluna Processo.
+.pubcaso-tabela > thead > tr > th:first-child { inline-size: 2.5rem; padding-inline: 0.25rem; }

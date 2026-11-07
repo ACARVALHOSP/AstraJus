@@ -4840,7 +4840,8 @@ class _AutenticacaoBearer:
         if caso is None:
             await _json(send, 404, _erro("Caso não encontrado."))
             return
-        await _json(send, 200, {**caso, "eventos": self.gestao.eventos_do_caso(caso_id)})
+        await _json(send, 200, {**caso, "eventos": self.gestao.eventos_do_caso(caso_id),
+                                "contagens": self.gestao.contagens_caso(caso_id)})
 
     async def _lancamentos(self, scope, receive, send) -> None:
         """GET /lancamentos: lista todos os lançamentos financeiros.
