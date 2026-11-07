@@ -1,10 +1,14 @@
 import CabecalhoPagina from '../CabecalhoPagina'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Info, CheckCircle2 } from 'lucide-react'
-import { Button, Callout, Card, Dialog, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
+import { Badge, Button, Callout, Dialog, Flex, Heading, Select, Tabs, Text, TextField } from '@radix-ui/themes'
 import Carregamento from '../Carregamento'
+import TabelaResponsiva from '../TabelaResponsiva'
+import AcoesTabela from '../AcoesTabela'
 import { useCliente } from '../api/ClienteContext'
-import { formatarNumeroCNJ } from '../utils/formatadores'
+import { diasEntreDatas, formatarNumeroCNJ, hojeIso } from '../utils/formatadores'
+import { useEstreita } from '../utils/useEstreita'
+import './monitoramentos/monitoramentos.scss'
 import { formatarData } from '../utils/listasRapidas'
 
 type Criterio = {
@@ -53,6 +57,29 @@ function criterio(c: Criterio = {}) {
   ]
     .filter(Boolean)
     .join(' · ')
+}
+
+const DIAS_AVISO_EXPIRACAO = 30
+const ROTINAS: Record<string, string> = { monitoramentos: 'Verificação de publicações', captura_oab: 'Captura por OAB', movimentos: 'Atualização das capas' }
+const ESTADOS_ROTINA: Record<string, string> = { concluida: 'Concluída', falha: 'Falha ou conclusão parcial', interrompida: 'Interrompida', executando: 'Em andamento' }
+
+function diasParaExpirar(mon: Monitoramento): number | null {
+  return mon.expira_em ? diasEntreDatas(hojeIso(), mon.expira_em) : null
+}
+/** Situação resumida da última coleta (verificação e, para OAB, captura). */
+function situacaoColeta(mon: Monitoramento): { cor: 'green' | 'red' | 'blue' | 'gray'; rotulo: string; detalhe: string; quando?: string } {
+  const execucoes = [mon.verificacao, mon.criterio?.numero_oab ? mon.captura_oab : undefined].filter((e): e is Execucao => Boolean(e))
+  const quando = execucoes.map(e => e.ultima_tentativa).filter((q): q is string => Boolean(q)).sort().pop()
+  const comErro = execucoes.find(e => e.erro)
+  if (execucoes.some(e => e.estado === 'executando')) return { cor: 'blue', rotulo: 'Verificando', detalhe: 'Coleta em andamento', quando }
+  if (comErro) return { cor: 'red', rotulo: 'Falhou', detalhe: comErro.erro!, quando }
+  if (!quando) return { cor: 'gray', rotulo: 'Aguardando', detalhe: 'Primeira coleta no próximo ciclo' }
+  const pendentes = execucoes.reduce((t, e) => t + (e.emails_pendentes ?? 0) + (e.locais_pendentes ?? 0), 0)
+  const encontradas = execucoes.reduce((t, e) => t + (e.encontradas ?? 0), 0)
+  return {
+    cor: 'green', rotulo: 'Em dia', quando,
+    detalhe: pendentes ? `${pendentes} entrega(s) pendente(s)` : encontradas ? `${encontradas} publicação(ões) na última coleta` : 'Nenhuma publicação nova',
+  }
 }
 
 function EstadoExecucao({ titulo, dados }: { titulo: string; dados?: Execucao }) {
@@ -109,6 +136,8 @@ function Painel() {
   const [nome, setNome] = useState('')
   const [erroModal, setErroModal] = useState('')
   const [operacao, setOperacao] = useState(false)
+  const [detalhe, setDetalhe] = useState<Monitoramento | null>(null)
+  const estreita = useEstreita()
   const trava = useRef(false)
   const sequencia = useRef(0)
   const vivo = useRef(true)
@@ -189,141 +218,214 @@ function Painel() {
   }
   const lista = dados?.monitoramentos ?? []
   const bloqueado = operacao || carregando
+  const expirando = lista.filter(m => { const d = diasParaExpirar(m); return d !== null && d < DIAS_AVISO_EXPIRACAO })
+
+  function criterioCelula(mon: Monitoramento) {
+    const c = mon.criterio ?? {}
+    const oab = Boolean(c.numero_oab)
+    return (
+      <>
+        <Badge color={oab ? 'violet' : 'blue'} variant="soft">{oab ? 'OAB' : 'Processo'}</Badge>
+        <div className="mon-criterio">{oab ? `OAB ${c.numero_oab}/${c.uf_oab ?? '—'}` : formatarNumeroCNJ(c.numero_processo ?? '')}</div>
+        <div className="mon-secundario">{oab ? 'Captura diária no DJEN' : (c.sigla_tribunal ?? '').toUpperCase() || 'Verificação a cada 6 horas'}</div>
+      </>
+    )
+  }
+  function coletaCelula(mon: Monitoramento) {
+    const s = situacaoColeta(mon)
+    return (
+      <>
+        <Badge color={s.cor} variant="soft" radius="full">{s.rotulo}</Badge>
+        {s.quando && <div className="mon-secundario">{formatarData(s.quando)}</div>}
+        <div className={s.cor === 'red' ? 'mon-secundario mon-erro' : 'mon-secundario'}>{s.detalhe}</div>
+      </>
+    )
+  }
+  function expiraCelula(mon: Monitoramento) {
+    const dias = diasParaExpirar(mon)
+    const alerta = dias !== null && dias < DIAS_AVISO_EXPIRACAO
+    return (
+      <>
+        <div className="mon-data">{mon.expira_em ? formatarData(mon.expira_em).slice(0, 10) : '—'}</div>
+        {dias !== null && (
+          <div className={alerta ? 'mon-secundario mon-alerta' : 'mon-secundario'}>
+            {dias < 0 ? 'expirado' : dias === 0 ? 'expira hoje' : `faltam ${dias} dia${dias > 1 ? 's' : ''}`}
+          </div>
+        )}
+      </>
+    )
+  }
+  function acoes(mon: Monitoramento, grande = false) {
+    const dias = diasParaExpirar(mon)
+    const perto = dias !== null && dias < DIAS_AVISO_EXPIRACAO
+    return (
+      <Flex gap="1" justify="end" align="center" style={grande ? { width: '100%' } : undefined}>
+        <Button size={grande ? '3' : '1'} variant={perto ? 'solid' : 'soft'} color={perto ? undefined : 'gray'} style={grande ? { flex: 1 } : undefined}
+          disabled={bloqueado} onClick={() => executar('renovar', mon)}>Renovar</Button>
+        <AcoesTabela rotulo={criterio(mon.criterio)} acoes={[
+          { texto: 'Ver detalhes da coleta', executar: () => setDetalhe(mon) },
+          { texto: 'Remover', perigo: true, desabilitada: bloqueado, executar: () => { setErroModal(''); setModal(mon) } },
+        ]} />
+      </Flex>
+    )
+  }
+
   return (
     <>
-      <Flex direction="column" gap="6">
-        <Flex direction="column" gap="5">
-          <CabecalhoPagina
-            titulo="Monitoramentos"
-            descricao={<>Acompanhe publicações de processos ou OAB. Você tem {lista.length} de {dados?.limite ?? 5} monitoramentos.</>}
-          />
-          <div className="aj-acoes-linha">
+      <Flex direction="column" gap="5">
+        <CabecalhoPagina
+          titulo="Monitoramentos"
+          descricao={<>Acompanhe publicações de processos ou OAB. Você usa {lista.length} de {dados?.limite ?? 5} monitoramentos.</>}
+          acoes={<>
+            <Button variant="soft" color="gray" size="2" disabled={bloqueado} onClick={carregar}>Atualizar</Button>
             <Button
               size="2"
               disabled={!cliente || bloqueado || lista.length >= (dados?.limite ?? 5)}
-              onClick={() => {
-                setNumero('')
-                setUf('')
-                setNome('')
-                setErroModal('')
-                setTipo('oab')
-                setModal('criar')
-              }}
+              onClick={() => { setNumero(''); setUf(''); setNome(''); setErroModal(''); setTipo('oab'); setModal('criar') }}
             >
               Criar monitoramento
             </Button>
-            <Button variant="soft" color="gray" size="2" disabled={bloqueado} onClick={carregar}>
-              Atualizar
-            </Button>
-          </div>
-          <Text as="p" size="2" color="gray">Atualizar esta lista não dispara uma consulta ao DJEN.</Text>
-        </Flex>
-        <Flex direction="column" gap="4">
-          <Callout.Root color="blue" size="1">
-            <Callout.Icon><Info size={14} /></Callout.Icon>
-            <Callout.Text>
-              As publicações são verificadas a cada 6 horas; a captura por OAB também ocorre a cada 24 horas. A atualização diária da capa é independente dos avisos por e-mail. Novas publicações permanecem não tratadas até a revisão.
-            </Callout.Text>
-          </Callout.Root>
-          {(dados?.email_configurado === false || dados?.email_destinatario_configurado === false) && (
-            <Callout.Root color="yellow" size="1">
-              <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
-              <Callout.Text>
-                {dados?.email_destinatario_configurado === false
-                  ? 'E-mail do perfil não informado. Você pode criar monitoramentos e as publicações serão coletadas. Peça a um administrador para completar o e-mail do seu perfil; os envios pendentes serão retomados após a atualização.'
-                  : 'Envio de e-mail indisponível. A coleta continua. Os e-mails ficarão pendentes até a configuração do servidor ser restabelecida.'}
-              </Callout.Text>
-            </Callout.Root>
-          )}
-          {erro && (
-            <Callout.Root color="red" size="1">
-              <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
-              <Callout.Text>Não foi possível concluir: {erro}</Callout.Text>
-            </Callout.Root>
-          )}
-          {mensagem && (
-            <Callout.Root color="green" size="1">
-              <Callout.Icon><CheckCircle2 size={14} /></Callout.Icon>
-              <Callout.Text>{mensagem}</Callout.Text>
-            </Callout.Root>
-          )}
-          {carregando && <Carregamento tipo="cartoes" descricao="Carregando monitoramentos…" />}
-          {!carregando && dados && !lista.length && (
-            <Callout.Root color="blue" size="1">
-              <Callout.Icon><Info size={14} /></Callout.Icon>
-              <Callout.Text>Nenhum monitoramento ativo. Use Criar monitoramento para acompanhar uma OAB ou um processo.</Callout.Text>
-            </Callout.Root>
-          )}
-        </Flex>
-        {lista.map((mon) => (
-          <Card key={mon.id} variant="surface">
-            <Flex direction="column" gap="5">
-              <Heading as="h2" size="4">{criterio(mon.criterio)}</Heading>
-              {mon.criterio?.nome && <Text as="p" size="2">{mon.criterio.nome}</Text>}
-              <Text as="p" size="2">
-                Criado em {formatarData(mon.criado_em)}. Expira em {formatarData(mon.expira_em)} se não houver
-                publicação nova.
-              </Text>
-              <EstadoExecucao titulo="Verificação de publicações" dados={mon.verificacao} />
-              {mon.criterio?.numero_oab && <EstadoExecucao titulo="Captura por OAB" dados={mon.captura_oab} />}
-              <div className="aj-acoes-linha">
-                <Button variant="soft" size="1" disabled={bloqueado} onClick={() => executar('renovar', mon)}>
-                  Renovar por 180 dias
-                </Button>
-                <Button
-                  variant="ghost"
-                  color="red"
-                  size="1"
-                  disabled={bloqueado}
-                  onClick={() => {
-                    setErroModal('')
-                    setModal(mon)
-                  }}
-                >
-                  Remover
-                </Button>
+          </>}
+        />
+
+        <Tabs.Root defaultValue="ativos">
+          <Tabs.List aria-label="Monitoramentos">
+            <Tabs.Trigger value="ativos">Ativos <Text size="1" color="gray" ml="1">{lista.length}</Text></Tabs.Trigger>
+            <Tabs.Trigger value="historico">Histórico das rotinas automáticas</Tabs.Trigger>
+          </Tabs.List>
+
+          <Tabs.Content value="ativos">
+            <Flex direction="column" gap="4" pt="4">
+              {expirando.length > 0 && (
+                <Callout.Root color="amber" size="1">
+                  <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+                  <Callout.Text>
+                    <strong>{expirando.length === 1 ? '1 monitoramento expira' : `${expirando.length} monitoramentos expiram`} em menos de {DIAS_AVISO_EXPIRACAO} dias.</strong>{' '}
+                    Renove para continuar recebendo os avisos.
+                  </Callout.Text>
+                </Callout.Root>
+              )}
+              {(dados?.email_configurado === false || dados?.email_destinatario_configurado === false) && (
+                <Callout.Root color="yellow" size="1">
+                  <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+                  <Callout.Text>
+                    {dados?.email_destinatario_configurado === false
+                      ? 'E-mail do perfil não informado. Você pode criar monitoramentos e as publicações serão coletadas. Peça a um administrador para completar o e-mail do seu perfil; os envios pendentes serão retomados após a atualização.'
+                      : 'Envio de e-mail indisponível. A coleta continua. Os e-mails ficarão pendentes até a configuração do servidor ser restabelecida.'}
+                  </Callout.Text>
+                </Callout.Root>
+              )}
+              <div aria-live="polite">
+                {erro && (
+                  <Callout.Root color="red" size="1">
+                    <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+                    <Callout.Text>Não foi possível concluir: {erro}</Callout.Text>
+                  </Callout.Root>
+                )}
+                {mensagem && (
+                  <Callout.Root color="green" size="1">
+                    <Callout.Icon><CheckCircle2 size={14} /></Callout.Icon>
+                    <Callout.Text>{mensagem}</Callout.Text>
+                  </Callout.Root>
+                )}
+                {carregando && <Carregamento tipo="tabela" descricao="Carregando monitoramentos…" />}
+                {!carregando && dados && !lista.length && (
+                  <Callout.Root color="blue" size="1">
+                    <Callout.Icon><Info size={14} /></Callout.Icon>
+                    <Callout.Text>Nenhum monitoramento ativo. Use Criar monitoramento para acompanhar uma OAB ou um processo.</Callout.Text>
+                  </Callout.Root>
+                )}
               </div>
+
+              {!carregando && lista.length > 0 && (estreita ? (
+                <ul className="mon-cartoes">
+                  {lista.map(mon => (
+                    <li key={mon.id} className="mon-cartao">
+                      <div>{criterioCelula(mon)}</div>
+                      {mon.criterio?.nome && <Text as="p" size="2">{mon.criterio.nome}</Text>}
+                      <div className="mon-cartao-resumo">
+                        <div><div className="mon-rotulo">Última verificação</div>{coletaCelula(mon)}</div>
+                        <div><div className="mon-rotulo">Expira em</div>{expiraCelula(mon)}</div>
+                      </div>
+                      {acoes(mon, true)}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <TabelaResponsiva principais={['Critério']}>
+                  <table aria-label="Monitoramentos ativos" className="mon-tabela">
+                    <thead>
+                      <tr>
+                        <th className="mon-col-criterio">Critério</th>
+                        <th>Nome</th>
+                        <th className="mon-col-coleta">Última verificação</th>
+                        <th className="mon-col-expira">Expira em</th>
+                        <th className="tabela-acoes mon-col-acoes">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lista.map(mon => (
+                        <tr key={mon.id}>
+                          <td>{criterioCelula(mon)}</td>
+                          <td>{mon.criterio?.nome || <Text color="gray">—</Text>}</td>
+                          <td>{coletaCelula(mon)}</td>
+                          <td>{expiraCelula(mon)}</td>
+                          <td className="tabela-acoes">{acoes(mon)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </TabelaResponsiva>
+              ))}
+              <Text as="p" size="2" color="gray">
+                As publicações são verificadas a cada 6 horas; a captura por OAB ocorre a cada 24 horas. Atualizar esta lista não dispara uma consulta ao DJEN.
+                Novas publicações permanecem não tratadas até a revisão.
+              </Text>
             </Flex>
-          </Card>
-        ))}
-        {dados?.historico && (
-          <details>
-            <summary>Histórico das rotinas automáticas</summary>
-            <Flex direction="column" gap="5" mt="3">
-              {Object.entries(dados.historico).map(([rotina, execucoes]) => (
-                <section key={rotina} aria-label={rotina}>
-                  <Flex direction="column" gap="3">
-                    <Heading as="h2" size="3">
-                      {(
-                        {
-                          monitoramentos: 'Verificação de publicações',
-                          captura_oab: 'Captura por OAB',
-                          movimentos: 'Atualização das capas'
-                        } as Record<string, string>
-                      )[rotina] || rotina}
-                    </Heading>
-                    {!execucoes.length && <Text as="p" size="2">Aguardando primeira execução.</Text>}
-                    {execucoes.map((e) => (
-                      <Text as="p" size="2" key={e.inicio}>
-                        {formatarData(e.inicio)} ·{' '}
-                        {(
-                          {
-                            concluida: 'Concluída',
-                            falha: 'Falha ou conclusão parcial',
-                            interrompida: 'Interrompida',
-                            executando: 'Em andamento'
-                          } as Record<string, string>
-                        )[e.estado] || e.estado}
-                        {e.erro ? ` · ${e.erro}` : ''}
-                      </Text>
-                    ))}
-                  </Flex>
+          </Tabs.Content>
+
+          <Tabs.Content value="historico">
+            <Flex direction="column" gap="5" pt="4">
+              {!dados?.historico && <Text as="p" size="2" color="gray">{carregando ? 'Carregando…' : 'Histórico indisponível.'}</Text>}
+              {dados?.historico && Object.entries(dados.historico).map(([rotina, execucoes]) => (
+                <section key={rotina} aria-label={ROTINAS[rotina] || rotina}>
+                  <Heading as="h2" size="3" mb="2">{ROTINAS[rotina] || rotina}</Heading>
+                  {!execucoes.length ? <Text as="p" size="2" color="gray">Aguardando primeira execução.</Text> : (
+                    <ol className="mon-historico">
+                      {execucoes.map(e => (
+                        <li key={e.inicio}>
+                          <span className="mon-data">{formatarData(e.inicio)}</span>
+                          <Badge color={e.estado === 'concluida' ? 'green' : e.estado === 'executando' ? 'blue' : 'red'} variant="soft" radius="full">
+                            {ESTADOS_ROTINA[e.estado] || e.estado}
+                          </Badge>
+                          {e.erro && <Text size="2" color="gray">{e.erro}</Text>}
+                        </li>
+                      ))}
+                    </ol>
+                  )}
                 </section>
               ))}
             </Flex>
-          </details>
-        )}
+          </Tabs.Content>
+        </Tabs.Root>
       </Flex>
+
+      <Dialog.Root open={detalhe !== null} onOpenChange={(open) => { if (!open) setDetalhe(null) }}>
+        <Dialog.Content maxWidth="520px">
+          <Dialog.Title>{detalhe ? criterio(detalhe.criterio) : ''}</Dialog.Title>
+          {detalhe && (
+            <Flex direction="column" gap="5">
+              {detalhe.criterio?.nome && <Text as="p" size="2">{detalhe.criterio.nome}</Text>}
+              <Text as="p" size="2" color="gray">
+                Criado em {formatarData(detalhe.criado_em)}. Expira em {formatarData(detalhe.expira_em)} se não houver publicação nova.
+              </Text>
+              <EstadoExecucao titulo="Verificação de publicações" dados={detalhe.verificacao} />
+              {detalhe.criterio?.numero_oab && <EstadoExecucao titulo="Captura por OAB" dados={detalhe.captura_oab} />}
+              <Flex justify="end"><Dialog.Close><Button variant="soft" color="gray">Fechar</Button></Dialog.Close></Flex>
+            </Flex>
+          )}
+        </Dialog.Content>
+      </Dialog.Root>
 
       <Dialog.Root open={modal === 'criar'} onOpenChange={(open) => { if (!open && !operacao) setModal(null) }}>
         <Dialog.Content maxWidth="480px">

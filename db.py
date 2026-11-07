@@ -1464,13 +1464,36 @@ class RegistroClientesCasos:
     _COLUNAS_ATIVIDADE = "id, caso_id, tipo, titulo, data, hora, status, observacoes, responsavel, criado_em, origem_djen_hash"
 
     def listar_atividades(self, caso_id: str) -> list[dict]:
+        """Atividades do caso, cada uma com o resumo do checklist ({total, concluidos} ou None)."""
         with _abrir(self.caminho) as conexao:
             cursor = conexao.execute(
                 f"SELECT {self._COLUNAS_ATIVIDADE} "
                 "FROM caso_atividades WHERE caso_id = ? ORDER BY data ASC, criado_em ASC",
                 (caso_id,),
             )
-            return [_linha_atividade(linha) for linha in cursor.fetchall()]
+            atividades = [_linha_atividade(linha) for linha in cursor.fetchall()]
+            resumo = {
+                aid: {"total": total, "concluidos": concluidos or 0}
+                for aid, total, concluidos in conexao.execute(
+                    "SELECT i.atividade_id, COUNT(*), SUM(i.concluido) FROM atividade_checklist_itens i "
+                    "JOIN caso_atividades a ON a.id = i.atividade_id WHERE a.caso_id = ? GROUP BY i.atividade_id",
+                    (caso_id,),
+                )
+            }
+        for atividade in atividades:
+            atividade["checklist"] = resumo.get(atividade["id"])
+        return atividades
+
+    def contagens_caso(self, caso_id: str) -> dict:
+        """Números exibidos nas abas do processo: atividades abertas e publicações não tratadas."""
+        with _abrir(self.caminho) as conexao:
+            abertas = conexao.execute(
+                "SELECT COUNT(*) FROM caso_atividades WHERE caso_id = ? AND status != 'concluida'", (caso_id,)
+            ).fetchone()[0]
+            revisar = conexao.execute(
+                "SELECT COUNT(*) FROM publicacoes_capturadas WHERE caso_id = ? AND status = 'nao_tratada'", (caso_id,)
+            ).fetchone()[0]
+        return {"atividades_abertas": abertas, "publicacoes_a_revisar": revisar}
 
     _STATUS_ATIVIDADE_ABERTOS = ("pendente", "em_andamento", "aguardando")
 

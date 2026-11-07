@@ -31,12 +31,6 @@
   &:hover { text-decoration: underline; }
   &:focus-visible { outline: 2px solid var(--accent-8); outline-offset: 2px; border-radius: 2px; }
 }
-.atividades-pessoa { display: inline-flex; align-items: center; gap: 0.5rem; }
-.atividades-iniciais {
-  inline-size: 24px; block-size: 24px; flex-shrink: 0; border-radius: 50%;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: var(--accent-a3); color: var(--accent-11); font-size: 11px; font-weight: 600;
-}
 .atividades-cartoes {
   display: flex; flex-direction: column; gap: 1rem;
   ul { list-style: none; margin: 0.5rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
@@ -56,3 +50,16 @@
   .atividades-cartao-hora { margin-top: 2px; font-size: 12px; font-weight: 400; color: var(--gray-11); }
 }
 .atividades-cartao-corpo { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+
+// Aba Atividades do processo: checklist, linha expandida.
+.atividades-tabela {
+  .atividades-col-checklist { inline-size: 8rem; }
+  > thead > tr > th:first-child { inline-size: 2.5rem; padding-inline: 0.25rem; }
+}
+.atividades-progresso {
+  margin-top: 4px; block-size: 4px; border-radius: 2px; background: var(--gray-a4); overflow: hidden;
+  > div { block-size: 100%; background: var(--accent-9); }
+}
+.tabela-adaptavel .tabela-fluida td.atividades-detalhes-celula { background: var(--gray-2); padding: 0.75rem 1.5rem 1rem 5.5rem; }
+.atividades-detalhes { display: flex; flex-direction: column; gap: 0.75rem; p { margin: 0; } }
+.atividades-rotulo { text-transform: uppercase; letter-spacing: 0.03em; font-size: 11px; }

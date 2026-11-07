@@ -1,7 +1,9 @@
 import { ChevronLeft } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
-import { Button, Flex, Heading, Tabs } from '@radix-ui/themes'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Badge, Button, Flex, Heading, Tabs, Text } from '@radix-ui/themes'
+import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
+import { buscarJson } from '../api/rest'
 import { formatarNomeExibicao, formatarNumeroCNJ } from '../utils/formatadores'
 import ListaCasos, { type Caso } from './casos/ListaCasos'
 import CadastroCaso from './casos/CadastroCaso'
@@ -16,7 +18,20 @@ type AbaId = typeof ABAS[number]
 
 export default function Casos() {
   const { consumirPayload, versaoNavegacao } = useNavegacao()
+  const { cliente } = useCliente()
   const [casoId, setCasoId] = useState<string | null>(null)
+  const [contagensDe, setContagensDe] = useState<{ casoId: string; atividades_abertas: number; publicacoes_a_revisar: number } | null>(null)
+
+  // Números das abas; recarregados quando uma aba altera atividades ou publicações.
+  // Guardados com o id do processo para não mostrar os números de outro durante a troca.
+  const atualizarContagens = useCallback(() => {
+    if (!casoId) return
+    buscarJson<{ contagens?: { atividades_abertas: number; publicacoes_a_revisar: number } }>(cliente, `/casos/${casoId}`)
+      .then(r => setContagensDe(r.contagens ? { casoId, ...r.contagens } : null))
+      .catch(() => setContagensDe(null))
+  }, [cliente, casoId])
+  useEffect(atualizarContagens, [atualizarContagens])
+  const contagens = contagensDe && contagensDe.casoId === casoId ? contagensDe : null
   const [destinoAtividade, setDestinoAtividade] = useState<{ id?: string | number; versao: number }>({ versao: 0 })
   const [resumo, setResumo] = useState<Caso | null>(null)
   const [abaSelecionada, setAbaSelecionada] = useState<AbaId>('cadastro')
@@ -77,16 +92,24 @@ export default function Casos() {
             Voltar para processos
           </Button>
           <Heading as="h1" size="6" tabIndex={-1}>{titulo}</Heading>
-          {resumo?.processos?.map((numero) => (
-            <p key={numero} className="casos-cnj">{formatarNumeroCNJ(numero)}</p>
+          {resumo?.processos?.map((numero, i) => (
+            <p key={numero} className="casos-cnj">
+              {formatarNumeroCNJ(numero)}{i === 0 && resumo.foro ? ` · ${resumo.foro}` : ''}
+            </p>
           ))}
         </div>
         <Tabs.Root key={casoId} value={abaSelecionada} onValueChange={(v) => setAbaSelecionada(v as AbaId)}>
           <div ref={faixaAbas}>
             <Tabs.List className="casos-abas" aria-label="Detalhes do processo">
               <Tabs.Trigger value="cadastro">Cadastro</Tabs.Trigger>
-              <Tabs.Trigger value="atividades">Atividades</Tabs.Trigger>
-              <Tabs.Trigger value="publicacoes">Publicações</Tabs.Trigger>
+              <Tabs.Trigger value="atividades">
+                Atividades{contagens ? <Text size="1" color="gray" ml="1">{contagens.atividades_abertas}</Text> : null}
+              </Tabs.Trigger>
+              <Tabs.Trigger value="publicacoes">
+                Publicações{contagens?.publicacoes_a_revisar
+                  ? <Badge color="red" variant="solid" radius="full" ml="1" aria-label={`${contagens.publicacoes_a_revisar} a revisar`}>{contagens.publicacoes_a_revisar}</Badge>
+                  : null}
+              </Tabs.Trigger>
               <Tabs.Trigger value="movimentacoes">Movimentações</Tabs.Trigger>
               <Tabs.Trigger value="vinculos">Vínculos</Tabs.Trigger>
             </Tabs.List>
@@ -101,10 +124,10 @@ export default function Casos() {
             />
           </Tabs.Content>
           <Tabs.Content value="atividades">
-            <AtividadesCaso key={`${casoId}:${destinoAtividade.versao}`} casoId={casoId} atividadeInicialId={destinoAtividade.id} />
+            <AtividadesCaso key={`${casoId}:${destinoAtividade.versao}`} casoId={casoId} atividadeInicialId={destinoAtividade.id} onAlterado={atualizarContagens} />
           </Tabs.Content>
           <Tabs.Content value="publicacoes">
-            <PublicacoesCaso casoId={casoId} />
+            <PublicacoesCaso casoId={casoId} onAlterado={atualizarContagens} />
           </Tabs.Content>
           <Tabs.Content value="movimentacoes">
             <MovimentacoesCaso casoId={casoId} />

@@ -10,59 +10,20 @@ import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { ErroMCP } from '../api/mcpClient'
 import { buscarJson, enviarJson } from '../api/rest'
-import { formatarNomeExibicao, formatarNumeroCNJ, iniciaisNome } from '../utils/formatadores'
+import { formatarNomeExibicao, formatarNumeroCNJ } from '../utils/formatadores'
 import { useEstreita } from '../utils/useEstreita'
 import AtividadeModal from './casos/AtividadeModal'
 import type { Atividade as AtividadeCaso } from './casos/AtividadesCaso'
 import './atividades/atividades.scss'
+import {
+  COR_STATUS, COR_TIPO, dataCurta, grupoDe, isoLocal, ORDEM_GRUPOS, quandoRelativo, ROTULO_STATUS, ROTULO_TIPO, TITULO_GRUPO, type Atalho, type Grupo,
+} from './atividades/dados'
 
 type CasoResumo = { id: string; titulo?: string | null; responsavel?: string | null; processos?: string[] }
 type Atividade = {
   id: number | string; caso_id: string; titulo: string; tipo: string; status: string
   responsavel?: string | null; data?: string | null; hora?: string | null; observacoes?: string | null
   caso: CasoResumo; agenda?: unknown
-}
-type Grupo = 'atrasadas' | 'hoje' | 'semana' | 'depois' | 'sem_data'
-type Atalho = '' | 'atrasadas' | 'hoje' | 'semana' | 'sem_data'
-
-const ROTULO_TIPO: Record<string, string> = { tarefa: 'Tarefa', prazo: 'Prazo', audiencia: 'Audiência', reuniao: 'Reunião', outro: 'Outro' }
-const COR_TIPO: Record<string, 'red' | 'violet' | 'blue' | 'gray'> = { prazo: 'red', audiencia: 'violet', reuniao: 'blue', tarefa: 'gray', outro: 'gray' }
-const ROTULO_STATUS: Record<string, string> = { pendente: 'A fazer', em_andamento: 'Em andamento', aguardando: 'Aguardando retorno', concluida: 'Concluída' }
-const COR_STATUS: Record<string, 'gray' | 'blue' | 'amber' | 'green'> = { pendente: 'gray', em_andamento: 'blue', aguardando: 'amber', concluida: 'green' }
-const TITULO_GRUPO: Record<Grupo, string> = { atrasadas: 'Atrasadas', hoje: 'Hoje', semana: 'Próximos 7 dias', depois: 'Mais adiante', sem_data: 'Sem data' }
-const ORDEM_GRUPOS: Grupo[] = ['atrasadas', 'hoje', 'semana', 'depois', 'sem_data']
-const SEMANA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado']
-
-function isoLocal(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-function diasEntre(deIso: string, ateIso: string) {
-  const [a, b] = [deIso, ateIso].map(v => { const [y, m, d] = v.split('-').map(Number); return Date.UTC(y, m - 1, d) })
-  return Math.round((b - a) / 86_400_000)
-}
-function grupoDe(a: Atividade, hoje: string): Grupo {
-  if (!a.data) return 'sem_data'
-  const dias = diasEntre(hoje, a.data.slice(0, 10))
-  if (dias < 0) return 'atrasadas'
-  if (dias === 0) return 'hoje'
-  return dias <= 7 ? 'semana' : 'depois'
-}
-function dataCurta(iso?: string | null) {
-  if (!iso) return '—'
-  const [y, m, d] = iso.slice(0, 10).split('-')
-  return `${d}/${m}/${y}`
-}
-function quandoRelativo(a: Atividade, hoje: string): string {
-  if (!a.data) return 'definir data'
-  const dias = diasEntre(hoje, a.data.slice(0, 10))
-  const hora = a.hora ? a.hora.slice(0, 5) : ''
-  if (dias < -1) return `há ${-dias} dias`
-  if (dias === -1) return 'ontem'
-  if (dias === 0) return hora || 'dia inteiro'
-  if (dias === 1) return `amanhã${hora ? ` · ${hora}` : ''}`
-  const [y, m, d] = a.data.slice(0, 10).split('-').map(Number)
-  const semana = SEMANA[new Date(y, m - 1, d).getDay()]
-  return dias <= 7 ? `${semana}${hora ? ` · ${hora}` : ''}` : `em ${dias} dias`
 }
 const chave = (a: Atividade) => `${a.caso_id}:${a.id}`
 
@@ -377,8 +338,7 @@ export default function Atividades() {
                           {processoNumero(a) && <div className="atividades-secundario">{processoNumero(a)}</div>}
                         </td>
                         <td>
-                          <span className="atividades-pessoa">
-                            <span className="atividades-iniciais" aria-hidden="true">{iniciaisNome(a.responsavel)}</span>
+                          <span>
                             {a.responsavel ? formatarNomeExibicao(a.responsavel) : <Text color="gray">Sem responsável</Text>}
                           </span>
                         </td>
