@@ -1,200 +1,430 @@
 import CabecalhoPagina from '../CabecalhoPagina'
 import TabelaResponsiva from '../TabelaResponsiva'
-import TextoTabela from '../TextoTabela'
 import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
 import { useEffect, useState } from 'react'
-import { Button, Flex, Heading, Text, TextField } from '@radix-ui/themes'
+import { Info, Star } from 'lucide-react'
+import { AlertDialog, Badge, Button, Callout, Flex, IconButton, Select, Tabs, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { buscarJson } from '../api/rest'
 import type { PayloadProcesso } from './Processo'
 import type { PayloadPublicacoes } from './Publicacoes'
+import type { Caso } from './casos/ListaCasos'
+import { ROTULO_TIPO } from './atividades/dados'
 import {
   alternarCasoFavorito,
-  formatarData,
+  alternarFavorito,
+  ehFavorito,
   lerCasosFavoritos,
   lerFavoritos,
   lerHistorico,
   limparHistorico,
   removerFavorito,
+  removerHistorico,
   type Favorito,
   type ItemHistorico,
 } from '../utils/listasRapidas'
 import { formatarNomeExibicao, formatarNumeroCNJ } from '../utils/formatadores'
+import { useEstreita } from '../utils/useEstreita'
+import './casos/lista-casos.scss'
+import './historico/historico.scss'
 
-type CasoFavorito = { id: string; titulo?: string }
+type Cliente = { id: string; nome?: string }
+type Aba = 'processos' | 'consultas' | 'historico'
+type TipoFiltro = '' | 'processo' | 'publicacoes'
+
+const DIAS_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
+
+function isoLocal(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function diasEntre(deIso: string, ateIso: string) {
+  const [a, b] = [deIso, ateIso].map(v => { const [y, m, d] = v.split('-').map(Number); return Date.UTC(y, m - 1, d) })
+  return Math.round((b - a) / 86_400_000)
+}
+function dataCurta(iso?: string | null) {
+  if (!iso) return '—'
+  const [y, m, d] = iso.slice(0, 10).split('-')
+  return `${d}/${m}/${y}`
+}
+function normalizar(texto: string) {
+  return texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+}
+function haQuanto(iso: string, hoje: string) {
+  const dias = diasEntre(iso.slice(0, 10), hoje)
+  if (dias <= 0) return 'hoje'
+  if (dias === 1) return 'ontem'
+  return `há ${dias} dias`
+}
+
+/** Título e detalhe de uma consulta do histórico. */
+function descreverConsulta(item: ItemHistorico) {
+  const a = item.args as Record<string, string | undefined>
+  if (item.tipo === 'processo') {
+    return { titulo: formatarNumeroCNJ(a.numero_processo ?? ''), detalhe: `${(a.tribunal ?? '?').toUpperCase()} · DataJud` }
+  }
+  const titulo = a.numero_processo ? formatarNumeroCNJ(a.numero_processo) : `OAB ${a.numero_oab ?? '?'}/${a.uf_oab ?? '?'}`
+  const partes = ['DJEN']
+  if (a.sigla_tribunal) partes.push(a.sigla_tribunal)
+  if (a.data_disponibilizacao_inicio || a.data_disponibilizacao_fim) {
+    partes.push(`${dataCurta(a.data_disponibilizacao_inicio)} a ${dataCurta(a.data_disponibilizacao_fim)}`)
+  }
+  return { titulo, detalhe: partes.join(' · ') }
+}
 
 export default function Historico() {
   const { cliente } = useCliente()
   const { irPara } = useNavegacao()
+  const estreita = useEstreita()
+  const [hoje] = useState(() => isoLocal(new Date()))
+  const [aba, setAba] = useState<Aba>('processos')
+  const [busca, setBusca] = useState('')
+  const [tipoFiltro, setTipoFiltro] = useState<TipoFiltro>('')
   const [favoritos, setFavoritos] = useState<Favorito[]>(() => lerFavoritos())
   const [historico, setHistorico] = useState<ItemHistorico[]>(() => lerHistorico())
-  const [casosFavoritos, setCasosFavoritos] = useState<CasoFavorito[]>([])
-  const [filtroFavoritos, setFiltroFavoritos] = useState('')
-  const [filtroHistorico, setFiltroHistorico] = useState('')
-
-  const [carregandoFavoritos, setCarregandoFavoritos] = useState(() => !!cliente && lerCasosFavoritos().length > 0)
+  const [idsFavoritos, setIdsFavoritos] = useState<string[]>(() => lerCasosFavoritos())
+  const [casos, setCasos] = useState<Caso[]>([])
+  const [clientes, setClientes] = useState<Cliente[]>([])
+  const [carregando, setCarregando] = useState(() => !!cliente && lerCasosFavoritos().length > 0)
+  const [confirmarApagar, setConfirmarApagar] = useState(false)
 
   useEffect(() => {
     let atual = true
-    const ids = lerCasosFavoritos()
-    if (!ids.length || !cliente) {
-      setCasosFavoritos([])
-      setCarregandoFavoritos(false)
+    if (!lerCasosFavoritos().length || !cliente) {
+      // eslint-disable-next-line react/set-state-in-effect
+      setCarregando(false)
       return
     }
-    setCarregandoFavoritos(true)
-    buscarJson<{ casos: CasoFavorito[] }>(cliente, '/casos')
-      .then((r) => { if (atual) setCasosFavoritos((r.casos ?? []).filter((c) => ids.includes(c.id))) })
-      .catch(() => { if (atual) setCasosFavoritos([]) })
-      .finally(() => { if (atual) setCarregandoFavoritos(false) })
+    setCarregando(true)
+    Promise.all([
+      buscarJson<{ casos: Caso[] }>(cliente, '/casos'),
+      buscarJson<{ clientes: Cliente[] }>(cliente, '/clientes').catch(() => ({ clientes: [] as Cliente[] })),
+    ])
+      .then(([rc, rcl]) => { if (atual) { setCasos(rc.casos ?? []); setClientes(rcl.clientes ?? []) } })
+      .catch(() => { if (atual) setCasos([]) })
+      .finally(() => { if (atual) setCarregando(false) })
     return () => { atual = false }
   }, [cliente])
 
-  function removerCasoFavorito(id: string) {
-    alternarCasoFavorito(id)
-    setCasosFavoritos((atual) => atual.filter((c) => c.id !== id))
+  const nomeCliente = (id?: string) => formatarNomeExibicao(clientes.find(c => c.id === id)?.nome ?? '')
+  const termo = normalizar(busca.trim())
+
+  const casosFavoritos = idsFavoritos
+    .map(id => casos.find(c => c.id === id))
+    .filter((c): c is Caso => Boolean(c))
+  const casosVisiveis = casosFavoritos.filter(c => !termo || normalizar(
+    [c.titulo, c.foro, nomeCliente(c.cliente_id), ...(c.processos ?? []), ...(c.processos ?? []).map(formatarNumeroCNJ)].join(' '),
+  ).includes(termo))
+  const favoritosVisiveis = favoritos.filter(f => !termo || normalizar(`${f.tribunal} ${f.numero} ${formatarNumeroCNJ(f.numero)}`).includes(termo))
+  const historicoVisivel = historico.filter(h => (!tipoFiltro || h.tipo === tipoFiltro) && (!termo || normalizar(
+    `${h.resumo} ${descreverConsulta(h).titulo} ${descreverConsulta(h).detalhe}`,
+  ).includes(termo)))
+
+  const grupos = (() => {
+    const ordem = ['Hoje', 'Ontem', 'Esta semana', 'Mais antigas']
+    const mapa = new Map<string, ItemHistorico[]>()
+    for (const item of historicoVisivel) {
+      const dias = diasEntre(isoLocal(new Date(item.quando)), hoje)
+      const grupo = dias <= 0 ? 'Hoje' : dias === 1 ? 'Ontem' : dias < 7 ? 'Esta semana' : 'Mais antigas'
+      mapa.set(grupo, [...(mapa.get(grupo) ?? []), item])
+    }
+    return ordem.filter(g => mapa.has(g)).map(g => ({ titulo: g, itens: mapa.get(g)! }))
+  })()
+
+  function horario(item: ItemHistorico) {
+    const d = new Date(item.quando)
+    if (Number.isNaN(d.getTime())) return '—'
+    const hora = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    const dias = diasEntre(isoLocal(d), hoje)
+    if (dias <= 1) return hora
+    if (dias < 7) return `${DIAS_SEMANA[d.getDay()]} ${hora}`
+    return `${dataCurta(isoLocal(d)).slice(0, 5)} ${hora}`
   }
 
-  function remover(fav: Favorito) {
+  function tirarCasoDosFavoritos(id: string) {
+    alternarCasoFavorito(id)
+    setIdsFavoritos(lerCasosFavoritos())
+  }
+  function tirarConsultaDosFavoritos(fav: Favorito) {
     removerFavorito(fav.tribunal, fav.numero)
     setFavoritos(lerFavoritos())
   }
-
-  function consultarFavorito(fav: Favorito) {
+  function consultar(fav: Favorito) {
     const payload: PayloadProcesso = { tribunal: fav.tribunal, numero_processo: fav.numero }
     irPara('processo', payload)
   }
-
-  function apagarHistorico() {
-    limparHistorico()
-    setHistorico([])
+  function repetir(item: ItemHistorico) {
+    if (item.tipo === 'processo') irPara('processo', item.args as PayloadProcesso)
+    else irPara('publicacoes', item.args as PayloadPublicacoes)
+  }
+  function favoritarConsulta(item: ItemHistorico) {
+    const a = item.args as Record<string, string>
+    alternarFavorito(a.tribunal, a.numero_processo)
+    setFavoritos(lerFavoritos())
+  }
+  function tirarDoHistorico(item: ItemHistorico) {
+    removerHistorico(item.quando)
+    setHistorico(lerHistorico())
   }
 
-  function repetirItem(item: ItemHistorico) {
-    if (item.tipo === 'processo') {
-      irPara('processo', item.args as PayloadProcesso)
-    } else {
-      irPara('publicacoes', item.args as PayloadPublicacoes)
-    }
+  function estrela(c: Caso) {
+    return (
+      <IconButton variant="ghost" size="1" color="amber" aria-pressed aria-label={`Remover ${c.titulo || 'processo'} dos favoritos`} onClick={() => tirarCasoDosFavoritos(c.id)}>
+        <Star size={16} fill="currentColor" />
+      </IconButton>
+    )
   }
+  function compromisso(c: Caso) {
+    const p = c.proximo_compromisso
+    if (!p) return <Text size="1" color="gray">Nenhum compromisso</Text>
+    const atrasado = p.data.slice(0, 10) < hoje
+    return (
+      <>
+        <div className={atrasado ? 'casos-data casos-alerta' : 'casos-data'}>
+          {dataCurta(p.data)}{atrasado ? ' · atrasado' : p.hora ? ` · ${p.hora.slice(0, 5)}` : ''}
+        </div>
+        <div className="casos-secundario">{ROTULO_TIPO[p.tipo] ?? p.tipo}: {p.titulo}</div>
+      </>
+    )
+  }
+  function movimentacao(c: Caso) {
+    if (!c.ultima_movimentacao_data) return <Text size="1" color="gray">Sem movimentação registrada</Text>
+    return (
+      <>
+        <div className="hist-uma-linha" title={c.ultima_movimentacao_descricao ?? undefined}>{c.ultima_movimentacao_descricao || 'Movimentação'}</div>
+        <div className="casos-secundario">{dataCurta(c.ultima_movimentacao_data)} · {haQuanto(c.ultima_movimentacao_data, hoje)}</div>
+      </>
+    )
+  }
+  function numeroProcesso(c: Caso) {
+    const n = c.processos?.[0]
+    return (
+      <>
+        <div className="casos-data">{n ? formatarNumeroCNJ(n) : '—'}</div>
+        {c.foro && <div className="casos-secundario">{c.foro}</div>}
+      </>
+    )
+  }
+  function seloTipo(item: ItemHistorico) {
+    return item.tipo === 'processo'
+      ? <Badge color="blue" variant="soft">Processo</Badge>
+      : <Badge color="purple" variant="soft">Publicações</Badge>
+  }
+  function menuHistorico(item: ItemHistorico) {
+    const a = item.args as Record<string, string>
+    const podeFavoritar = item.tipo === 'processo' && a.tribunal && a.numero_processo && !ehFavorito(a.tribunal, a.numero_processo)
+    return <AcoesTabela rotulo={item.resumo} acoes={[
+      ...(podeFavoritar ? [{ texto: 'Adicionar às consultas favoritas', executar: () => favoritarConsulta(item) }] : []),
+      { texto: 'Remover do histórico', executar: () => tirarDoHistorico(item), perigo: true },
+    ]} />
+  }
+
+  const campoBusca = (placeholder: string) => (
+    <div className="form-campo aj-filtros-busca">
+      <label className="form-campo-label" htmlFor="hist-busca">Buscar</label>
+      <TextField.Root id="hist-busca" type="search" placeholder={placeholder} autoComplete="off" value={busca} onChange={e => setBusca(e.target.value)} />
+    </div>
+  )
+  const vazio = (texto: string) => (
+    <Callout.Root color="blue" size="1">
+      <Callout.Icon><Info size={14} /></Callout.Icon>
+      <Callout.Text>{texto}</Callout.Text>
+    </Callout.Root>
+  )
 
   return (
-    <Flex direction="column" gap="7">
-      <CabecalhoPagina titulo="Histórico e favoritos" descricao="Processos favoritos e consultas recentes feitas neste navegador." />
+    <Flex direction="column" gap="5">
+      <CabecalhoPagina titulo="Histórico e favoritos" descricao="Seus processos favoritos e as consultas que você fez recentemente." />
 
-      <section>
-        <Heading as="h3" size="3" mb="2">Processos favoritos</Heading>
-        <Text as="p" size="2" color="gray" mb="3">Processos marcados como favoritos na lista de Processos. Abrir leva diretamente ao processo.</Text>
-        {carregandoFavoritos ? <Carregamento descricao="Carregando processos favoritos…" /> : casosFavoritos.length === 0 ? (
-          <Text as="p" size="2">Nenhum processo favorito ainda.</Text>
-        ) : (
-          <Flex direction="column" gap="3">
-            {casosFavoritos.map((caso) => (
-              <Flex key={caso.id} justify="between" align="center" gap="3" wrap="wrap">
-                <Text size="2">{caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)'}</Text>
-                <Flex gap="2">
-                  <Button variant="ghost" size="1" onClick={() => irPara('casos', { id: caso.id })}>
-                    Abrir
-                  </Button>
-                  <Button variant="ghost" size="1" onClick={() => removerCasoFavorito(caso.id)}>
-                    Remover
-                  </Button>
-                </Flex>
-              </Flex>
-            ))}
-          </Flex>
-        )}
-      </section>
+      <Tabs.Root value={aba} onValueChange={v => { setAba(v as Aba); setBusca('') }}>
+        <Tabs.List>
+          <Tabs.Trigger value="processos">{estreita ? 'Processos' : 'Processos favoritos'} <Text size="1" color="gray" ml="1">{idsFavoritos.length}</Text></Tabs.Trigger>
+          <Tabs.Trigger value="consultas">{estreita ? 'Consultas' : 'Consultas favoritas'} <Text size="1" color="gray" ml="1">{favoritos.length}</Text></Tabs.Trigger>
+          <Tabs.Trigger value="historico">{estreita ? 'Histórico' : 'Histórico recente'} <Text size="1" color="gray" ml="1">{historico.length}</Text></Tabs.Trigger>
+        </Tabs.List>
 
-      <section>
-        <Heading as="h3" size="3" mb="2">Favoritos de consulta</Heading>
-        <Text as="p" size="2" color="gray" mb="3">Favoritos deste navegador, sem sincronização. Use Consultar para repetir a consulta ao DataJud.</Text>
-        {favoritos.length === 0 ? (
-          <Text as="p" size="2">Nenhum favorito ainda.</Text>
-        ) : (
-          <Flex direction="column" gap="3">
-            <div className="form-campo" style={{ maxWidth: 320 }}>
-              <TextField.Root placeholder="Filtrar por tribunal ou número…" value={filtroFavoritos} onChange={(e) => setFiltroFavoritos(e.target.value)} />
+        <Tabs.Content value="processos">
+          <Flex direction="column" gap="4" pt="4">
+            <div className="aj-filtros-linha">
+              {campoBusca('Título, número ou cliente')}
+              <Text size="2" color="gray" className="hist-dica">Marque ou desmarque a estrela na lista de Processos.</Text>
             </div>
-            <TabelaResponsiva principais={['Número do processo', 'Consulta']}>
-            <table aria-label="Favoritos de consulta">
-              <thead>
-                <tr>
-                  <th>Tribunal</th>
-                  <th>Número do processo</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {favoritos.filter((fav) => {
-                  const q = filtroFavoritos.trim().toLowerCase()
-                  if (!q) return true
-                  return (fav.tribunal || '').toLowerCase().includes(q) || formatarNumeroCNJ(fav.numero).toLowerCase().includes(q)
-                }).map((fav) => (
-                  <tr key={`${fav.tribunal}:${fav.numero}`}>
-                    <td>{(fav.tribunal || '?').toUpperCase()}</td>
-                    <td><TextoTabela texto={formatarNumeroCNJ(fav.numero)} /></td>
-                    <td>
-                      <AcoesTabela rotulo={`favorito ${fav.numero}`} acoes={[
-                        { texto: 'Consultar', executar: () => consultarFavorito(fav) },
-                        { texto: 'Remover', executar: () => remover(fav) },
-                      ]} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            </TabelaResponsiva>
-          </Flex>
-        )}
-      </section>
-
-      <section>
-        <Flex justify="between" align="center" mb="2" wrap="wrap" gap="2">
-          <Heading as="h3" size="3">Histórico recente</Heading>
-          {historico.length > 0 && (
-            <Button variant="ghost" color="red" size="1" onClick={apagarHistorico}>
-              Apagar histórico
-            </Button>
-          )}
-        </Flex>
-        <Text as="p" size="2" color="gray" mb="3">Últimas consultas feitas neste navegador. Clique para repetir.</Text>
-        {historico.length === 0 ? (
-          <Text as="p" size="2">Nenhuma consulta recente.</Text>
-        ) : (
-          <Flex direction="column" gap="3">
-            <div className="form-campo" style={{ maxWidth: 320 }}>
-              <TextField.Root placeholder="Filtrar histórico…" value={filtroHistorico} onChange={(e) => setFiltroHistorico(e.target.value)} />
-            </div>
-            <TabelaResponsiva principais={['Número do processo', 'Consulta']}>
-              <table aria-label="Histórico recente">
-                <thead>
-                  <tr>
-                    <th>Consulta</th>
-                    <th>Quando</th>
-                    <th>Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {historico
-                    .filter((item) => item.resumo.toLowerCase().includes(filtroHistorico.trim().toLowerCase()))
-                    .map((item, i) => (
-                    <tr key={i}>
-                      <td><TextoTabela texto={item.resumo} /></td>
-                      <td>{formatarData(item.quando)}</td>
-                      <td>
-                        <AcoesTabela rotulo={item.resumo} acoes={[{ texto: 'Repetir', executar: () => repetirItem(item) }]} />
-                      </td>
-                    </tr>
+            {carregando ? <Carregamento tipo="tabela" descricao="Carregando processos favoritos…" />
+              : !casosVisiveis.length ? vazio(casosFavoritos.length ? 'Nenhum processo favorito com esta busca.' : 'Nenhum processo favorito ainda. Use a estrela na lista de Processos.')
+              : estreita ? (
+                <ul className="hist-cartoes">
+                  {casosVisiveis.map(c => (
+                    <li key={c.id} className="hist-cartao">
+                      <Flex align="start" gap="2">
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div className="hist-titulo">{formatarNomeExibicao(c.titulo) || '(sem título)'}</div>
+                          {nomeCliente(c.cliente_id) && <div className="casos-secundario">{nomeCliente(c.cliente_id)}</div>}
+                        </div>
+                        {estrela(c)}
+                      </Flex>
+                      <div>{numeroProcesso(c)}</div>
+                      <div><Text as="div" size="1" color="gray">Próximo compromisso</Text>{compromisso(c)}</div>
+                      <Button size="3" variant="soft" color="gray" onClick={() => irPara('casos', { id: c.id })}>Abrir</Button>
+                    </li>
                   ))}
-                </tbody>
-              </table>
-            </TabelaResponsiva>
+                </ul>
+              ) : (
+                <TabelaResponsiva principais={['Título', 'Nº do processo']}>
+                  <table aria-label="Processos favoritos" className="hist-tabela-processos">
+                    <thead>
+                      <tr>
+                        <th className="tabela-controle" aria-label="Favorito"></th>
+                        <th>Título</th>
+                        <th className="hist-col-numero">Nº do processo</th>
+                        <th className="hist-col-compromisso">Próximo compromisso</th>
+                        <th className="hist-col-mov">Última movimentação</th>
+                        <th className="tabela-acoes hist-col-acoes">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {casosVisiveis.map(c => (
+                        <tr key={c.id}>
+                          <td className="tabela-controle">{estrela(c)}</td>
+                          <td>
+                            <button type="button" className="hist-link" onClick={() => irPara('casos', { id: c.id })}>{formatarNomeExibicao(c.titulo) || '(sem título)'}</button>
+                            {nomeCliente(c.cliente_id) && <div className="casos-secundario">{nomeCliente(c.cliente_id)}</div>}
+                          </td>
+                          <td>{numeroProcesso(c)}</td>
+                          <td>{compromisso(c)}</td>
+                          <td>{movimentacao(c)}</td>
+                          <td className="tabela-acoes"><Button size="1" variant="soft" color="gray" onClick={() => irPara('casos', { id: c.id })}>Abrir</Button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </TabelaResponsiva>
+              )}
           </Flex>
-        )}
-      </section>
+        </Tabs.Content>
+
+        <Tabs.Content value="consultas">
+          <Flex direction="column" gap="4" pt="4">
+            <div className="aj-filtros-linha">{campoBusca('Tribunal ou número')}</div>
+            {!favoritosVisiveis.length ? vazio(favoritos.length ? 'Nenhuma consulta favorita com esta busca.' : 'Nenhuma consulta favorita ainda. Use a estrela ao consultar um processo no DataJud.')
+              : (
+                <TabelaResponsiva principais={['Número do processo', 'Tribunal']}>
+                  <table aria-label="Consultas favoritas" className="hist-tabela-consultas">
+                    <thead>
+                      <tr>
+                        <th className="hist-col-tribunal">Tribunal</th>
+                        <th>Número do processo</th>
+                        <th className="tabela-acoes hist-col-acoes">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {favoritosVisiveis.map(fav => (
+                        <tr key={`${fav.tribunal}:${fav.numero}`}>
+                          <td><Badge color="gray" variant="soft">{(fav.tribunal || '?').toUpperCase()}</Badge></td>
+                          <td className="casos-data">{formatarNumeroCNJ(fav.numero)}</td>
+                          <td className="tabela-acoes">
+                            <Flex gap="1" justify="end" align="center">
+                              <Button size="1" variant="soft" color="gray" onClick={() => consultar(fav)}>Consultar</Button>
+                              <AcoesTabela rotulo={`favorito ${fav.numero}`} acoes={[{ texto: 'Remover dos favoritos', executar: () => tirarConsultaDosFavoritos(fav), perigo: true }]} />
+                            </Flex>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </TabelaResponsiva>
+              )}
+          </Flex>
+        </Tabs.Content>
+
+        <Tabs.Content value="historico">
+          <Flex direction="column" gap="4" pt="4">
+            <div className="aj-filtros-linha">
+              {campoBusca('Número, OAB ou tribunal')}
+              <div className="form-campo">
+                <label className="form-campo-label" id="hist-tipo-rotulo">Tipo</label>
+                <Select.Root value={tipoFiltro || '__todos__'} onValueChange={v => setTipoFiltro(v === '__todos__' ? '' : v as TipoFiltro)}>
+                  <Select.Trigger aria-labelledby="hist-tipo-rotulo" />
+                  <Select.Content>
+                    <Select.Item value="__todos__">Todos os tipos</Select.Item>
+                    <Select.Item value="processo">Processo</Select.Item>
+                    <Select.Item value="publicacoes">Publicações</Select.Item>
+                  </Select.Content>
+                </Select.Root>
+              </div>
+              {historico.length > 0 && (
+                <Button size="2" variant="soft" color="red" className="hist-apagar" onClick={() => setConfirmarApagar(true)}>Apagar histórico</Button>
+              )}
+            </div>
+            {!grupos.length ? vazio(historico.length ? 'Nenhuma consulta com estes filtros.' : 'Nenhuma consulta recente.')
+              : estreita ? (
+                <Flex direction="column" gap="4">
+                  {grupos.map(g => (
+                    <section key={g.titulo} aria-label={g.titulo}>
+                      <h2 className="hist-grupo-titulo">{g.titulo}</h2>
+                      <ul className="hist-cartoes">
+                        {g.itens.map(item => {
+                          const d = descreverConsulta(item)
+                          return (
+                            <li key={item.quando} className="hist-cartao">
+                              <Flex align="center" gap="2">{seloTipo(item)}<Text size="1" color="gray">{horario(item)}</Text></Flex>
+                              <div><div className="hist-titulo">{d.titulo}</div><div className="casos-secundario">{d.detalhe}</div></div>
+                              <Flex gap="2"><Button size="3" variant="soft" color="gray" style={{ flex: 1 }} onClick={() => repetir(item)}>Repetir</Button>{menuHistorico(item)}</Flex>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </section>
+                  ))}
+                </Flex>
+              ) : (
+                <div className="hist-tabela-caixa">
+                  <table aria-label="Consultas recentes" className="hist-tabela">
+                    <thead>
+                      <tr>
+                        <th className="hist-col-hora">Hora</th>
+                        <th className="hist-col-tipo">Tipo</th>
+                        <th>Consulta</th>
+                        <th className="hist-col-acoes-hist">Ações</th>
+                      </tr>
+                    </thead>
+                    {grupos.map(g => (
+                      <tbody key={g.titulo}>
+                        <tr className="hist-grupo">
+                          <th colSpan={4} scope="colgroup">{g.titulo} <span>· {g.itens.length} {g.itens.length === 1 ? 'consulta' : 'consultas'}</span></th>
+                        </tr>
+                        {g.itens.map(item => {
+                          const d = descreverConsulta(item)
+                          return (
+                            <tr key={item.quando}>
+                              <td className="hist-hora">{horario(item)}</td>
+                              <td>{seloTipo(item)}</td>
+                              <td><div className="hist-titulo">{d.titulo}</div><div className="casos-secundario">{d.detalhe}</div></td>
+                              <td><Flex gap="1" justify="end" align="center"><Button size="1" variant="soft" color="gray" onClick={() => repetir(item)}>Repetir</Button>{menuHistorico(item)}</Flex></td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    ))}
+                  </table>
+                </div>
+              )}
+          </Flex>
+        </Tabs.Content>
+      </Tabs.Root>
+
+      <Text size="1" color="gray">Favoritos e histórico ficam salvos só neste navegador. O histórico guarda as 10 consultas mais recentes.</Text>
+
+      <AlertDialog.Root open={confirmarApagar} onOpenChange={setConfirmarApagar}>
+        <AlertDialog.Content maxWidth="400px">
+          <AlertDialog.Title>Apagar histórico</AlertDialog.Title>
+          <AlertDialog.Description>Apagar as {historico.length} consultas recentes deste navegador? Os favoritos continuam salvos.</AlertDialog.Description>
+          <Flex gap="3" mt="4" justify="end">
+            <AlertDialog.Cancel><Button variant="soft" color="gray">Cancelar</Button></AlertDialog.Cancel>
+            <AlertDialog.Action><Button color="red" onClick={() => { limparHistorico(); setHistorico([]) }}>Apagar histórico</Button></AlertDialog.Action>
+          </Flex>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
     </Flex>
   )
 }

@@ -38,6 +38,10 @@ export function limparHistorico(): void {
   salvarLista(CHAVE_HISTORICO, [])
 }
 
+export function removerHistorico(quando: string): void {
+  salvarLista(CHAVE_HISTORICO, lerHistorico().filter((h) => h.quando !== quando))
+}
+
 export function adicionarHistorico(item: Omit<ItemHistorico, 'quando'>): void {
   const lista = lerHistorico().filter((h) => h.resumo !== item.resumo || h.tipo !== item.tipo)
   lista.unshift({ ...item, quando: new Date().toISOString() })
