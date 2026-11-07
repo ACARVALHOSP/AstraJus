@@ -386,7 +386,7 @@ function Painel() {
 
           <Tabs.Content value="historico">
             <Flex direction="column" gap="5" pt="4">
-              {!dados?.historico && <Text as="p" size="2" color="gray">{carregando ? 'Carregando…' : 'Histórico indisponível.'}</Text>}
+              {!dados?.historico && (carregando ? <Carregamento tipo="texto" descricao="Carregando histórico…" /> : <Text as="p" size="2" color="gray">Histórico indisponível.</Text>)}
               {dados?.historico && Object.entries(dados.historico).map(([rotina, execucoes]) => (
                 <section key={rotina} aria-label={ROTINAS[rotina] || rotina}>
                   <Heading as="h2" size="3" mb="2">{ROTINAS[rotina] || rotina}</Heading>
