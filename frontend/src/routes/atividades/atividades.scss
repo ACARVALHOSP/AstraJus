@@ -1,0 +1,58 @@
+// Tela Atividades: tabela agrupada por período (desktop) e cartões (celular).
+.atividades-tela { min-inline-size: 0; }
+.atividades-atalhos { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.atividades-lote {
+  display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+  padding: 0.5rem 0.75rem; border-radius: var(--radius-3);
+  background: var(--accent-a3); border: 1px solid var(--accent-a6);
+}
+.atividades-alerta { color: var(--red-11); font-weight: 600; }
+.atividades-tabela {
+  .atividades-col-quando { inline-size: 8rem; }
+  .atividades-col-processo { inline-size: 15rem; }
+  .atividades-col-resp { inline-size: 9.5rem; }
+  .atividades-col-situacao { inline-size: 9.5rem; }
+  .atividades-col-acoes { inline-size: 9rem; }
+  :is(th, td).tabela-controle { inline-size: 2.5rem; padding-inline: 0.25rem; }
+}
+.tabela-adaptavel .tabela-fluida tr.atividades-grupo > td {
+  background: var(--gray-2); padding-block: 0.5rem; font-size: 12px; font-weight: 600;
+}
+.atividades-grupo-qtd { margin-left: 0.375rem; font-weight: 400; color: var(--gray-11); }
+.atividades-selecionada > td { background: var(--accent-a2); }
+.atividades-data { font-weight: 600; font-variant-numeric: tabular-nums; }
+.atividades-relativo, .atividades-secundario { margin-top: 2px; font-size: 12px; color: var(--gray-11); }
+.atividades-relativo.atividades-alerta { color: var(--red-11); }
+.atividades-secundario { font-variant-numeric: tabular-nums; }
+.atividades-titulo { font-weight: 500; line-height: 1.4; }
+.atividades-link {
+  font: inherit; font-weight: 500; color: var(--accent-11); background: none; border: 0; padding: 0;
+  text-align: start; cursor: pointer; line-height: 1.4;
+  &:hover { text-decoration: underline; }
+  &:focus-visible { outline: 2px solid var(--accent-8); outline-offset: 2px; border-radius: 2px; }
+}
+.atividades-pessoa { display: inline-flex; align-items: center; gap: 0.5rem; }
+.atividades-iniciais {
+  inline-size: 24px; block-size: 24px; flex-shrink: 0; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent-a3); color: var(--accent-11); font-size: 11px; font-weight: 600;
+}
+.atividades-cartoes {
+  display: flex; flex-direction: column; gap: 1rem;
+  ul { list-style: none; margin: 0.5rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+}
+.atividades-grupo-titulo {
+  margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--gray-12);
+}
+.atividades-cartao {
+  display: flex; gap: 0.75rem; padding: 0.75rem 0.875rem;
+  background: var(--color-panel-solid); border: 1px solid var(--gray-a5); border-radius: var(--radius-3);
+  p { margin: 0; }
+}
+.atividades-cartao-data {
+  flex-shrink: 0; inline-size: 3.5rem; text-align: center; display: flex; flex-direction: column; gap: 2px;
+  .atividades-cartao-dia { font-size: 20px; font-weight: 700; line-height: 1; }
+  .atividades-cartao-mes { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--gray-11); }
+  .atividades-cartao-hora { margin-top: 2px; font-size: 12px; font-weight: 400; color: var(--gray-11); }
+}
+.atividades-cartao-corpo { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: 0.25rem; }

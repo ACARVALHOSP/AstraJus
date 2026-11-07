@@ -10,6 +10,7 @@ import { useCliente } from '../../api/ClienteContext'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { useNavegacao } from '../../api/NavegacaoContext'
 import { formatarNomeExibicao, formatarNumeroCNJ } from '../../utils/formatadores'
+import { useEstreita } from '../../utils/useEstreita'
 import {
   advogadosPublicacao, CHAVE_COLUNAS, COLUNAS_OPCIONAIS, COR_STATUS, corTipo, dataCaptura, dataCapturaCurta, dataDivulgacao, lerPreferencias,
   nomePublicacao, numeroPublicacao, orgaoPublicacao, ROTULO_STATUS, urlPublicacao, type ContagemStatus, type PublicacaoOab,
@@ -46,18 +47,6 @@ function intervalo(periodo: Periodo, desde: string, ate: string): { desde?: stri
   if (periodo === 'personalizado') return { ...(desde ? { desde } : {}), ...(ate ? { ate } : {}) }
   return {}
 }
-function useEstreita() {
-  const consulta = '(max-width: 672px)'
-  const [estreita, setEstreita] = useState(() => window.matchMedia(consulta).matches)
-  useEffect(() => {
-    const media = window.matchMedia(consulta)
-    const mudar = () => setEstreita(media.matches)
-    media.addEventListener('change', mudar)
-    return () => media.removeEventListener('change', mudar)
-  }, [])
-  return estreita
-}
-
 export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<{ onCapturado: () => void }> }) {
   const { cliente } = useCliente(), { irPara, consumirPayload, versaoNavegacao } = useNavegacao()
   const estreita = useEstreita()

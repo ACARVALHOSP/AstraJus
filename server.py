@@ -4217,6 +4217,9 @@ class _AutenticacaoBearer:
         if caminho.startswith("/casos/") and self.gestao is not None:
             await self._caso_detalhe(scope, receive, send, caminho[len("/casos/"):])
             return
+        if caminho == "/atividades" and self.gestao is not None:
+            await self._atividades_globais(scope, send)
+            return
         if caminho == "/lancamentos" and self.gestao is not None:
             await self._lancamentos(scope, receive, send)
             return
@@ -4955,6 +4958,38 @@ class _AutenticacaoBearer:
             return
         self.gestao.definir_cobranca_lancamento(lancamento_id, cobranca["id"])
         await _json(send, 201, cobranca)
+
+    async def _atividades_globais(self, scope, send) -> None:
+        """GET /atividades: atividades de todos os processos (tela Atividades).
+        Parâmetros: situacao (abertas|concluidas), tipo, responsavel (login; "__sem__" = sem
+        responsável), responsavel_processo, busca. Cada item traz `caso` (id, título,
+        responsável, números) e `agenda` (vínculo do usuário com a agenda Google, se houver)."""
+        if scope.get("method") != "GET":
+            await _responder(send, 405, b"Metodo nao permitido")
+            return
+        parametros = dict(_query(scope))
+        situacao = parametros.get("situacao") or "abertas"
+        if situacao not in ("abertas", "concluidas"):
+            await _json(send, 400, _erro("Situação inválida: use abertas ou concluidas."))
+            return
+        tipo = (parametros.get("tipo") or "").strip() or None
+        if tipo and tipo not in ("tarefa", "prazo", "audiencia", "reuniao", "outro"):
+            await _json(send, 400, _erro("Tipo inválido."))
+            return
+        responsavel = (parametros.get("responsavel") or "").strip()[:120] or None
+        atividades = self.gestao.listar_atividades_globais(
+            situacao=situacao, tipo=tipo,
+            responsavel=None if responsavel == "__sem__" else responsavel, sem_responsavel=responsavel == "__sem__",
+            responsavel_processo=(parametros.get("responsavel_processo") or "").strip()[:120] or None,
+            busca=(parametros.get("busca") or "").strip()[:120] or None,
+        )
+        vinculos = {}
+        for v in agenda_atividades.Repositorio(self.gestao.caminho).listar():
+            if not self.integracoes or v.get("usuario") == scope.get("usuario"):
+                vinculos[v["atividade_id"]] = agenda_atividades.resumo(v)
+        for a in atividades:
+            a["agenda"] = vinculos.get(a["id"])
+        await _json(send, 200, {"atividades": atividades, "situacao": situacao})
 
     async def _atividades_do_caso(self, scope, receive, send, caso_id: str, aid: int | None):
         """GET /casos/<id>/atividades, POST /casos/<id>/atividades,

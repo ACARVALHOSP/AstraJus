@@ -1424,6 +1424,69 @@ class RegistroClientesCasos:
             )
             return [_linha_atividade(linha) for linha in cursor.fetchall()]
 
+    _STATUS_ATIVIDADE_ABERTOS = ("pendente", "em_andamento", "aguardando")
+
+    def listar_atividades_globais(
+        self, *, situacao: str = "abertas", tipo: str | None = None, responsavel: str | None = None,
+        sem_responsavel: bool = False, responsavel_processo: str | None = None, busca: str | None = None,
+        limite: int = 1000,
+    ) -> list[dict]:
+        """Atividades de todos os processos, com título, responsável e números do processo.
+        `situacao`: "abertas" (pendente, em andamento, aguardando) ou "concluidas".
+        Ordem: com data primeiro (data, hora), depois as sem data, pela criação.
+        `busca` procura no título da atividade, no título do processo e no número CNJ."""
+        filtros, valores = [], []
+        if situacao == "concluidas":
+            filtros.append("a.status = 'concluida'")
+        else:
+            filtros.append("a.status IN (%s)" % ",".join("?" * len(self._STATUS_ATIVIDADE_ABERTOS)))
+            valores.extend(self._STATUS_ATIVIDADE_ABERTOS)
+        if tipo:
+            filtros.append("a.tipo = ?")
+            valores.append(tipo)
+        if sem_responsavel:
+            filtros.append("coalesce(a.responsavel, '') = ''")
+        elif responsavel:
+            filtros.append("a.responsavel = ?")
+            valores.append(responsavel)
+        if responsavel_processo:
+            filtros.append("c.responsavel = ?")
+            valores.append(responsavel_processo)
+        if busca:
+            termo = busca.strip()
+            escapado = termo.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            condicoes = ["lower(a.titulo) LIKE lower(?) ESCAPE '\\'", "lower(coalesce(c.titulo, '')) LIKE lower(?) ESCAPE '\\'"]
+            valores_busca = [f"%{escapado}%", f"%{escapado}%"]
+            digitos = "".join(ch for ch in termo if ch.isdigit())
+            if len(digitos) >= 4:
+                condicoes.append("EXISTS (SELECT 1 FROM caso_processos p WHERE p.caso_id = a.caso_id AND p.numero_processo LIKE ?)")
+                valores_busca.append(f"%{digitos}%")
+            filtros.append("(" + " OR ".join(condicoes) + ")")
+            valores.extend(valores_busca)
+        ordem = ("a.data IS NULL, a.data ASC, a.hora IS NULL, a.hora ASC, a.criado_em ASC"
+                 if situacao != "concluidas" else "a.data IS NULL, a.data DESC, a.criado_em DESC")
+        colunas = ", ".join(f"a.{c.strip()}" for c in self._COLUNAS_ATIVIDADE.split(","))
+        with _abrir(self.caminho) as conexao:
+            linhas = conexao.execute(
+                f"SELECT {colunas}, c.titulo, c.responsavel FROM caso_atividades a JOIN casos c ON c.id = a.caso_id "
+                f"WHERE {' AND '.join(filtros)} ORDER BY {ordem} LIMIT ?",
+                (*valores, limite),
+            ).fetchall()
+            ids = sorted({linha[1] for linha in linhas})
+            processos: dict[str, list[str]] = {i: [] for i in ids}
+            if ids:
+                ph = ",".join("?" * len(ids))
+                for caso_id, numero in conexao.execute(
+                        f"SELECT caso_id, numero_processo FROM caso_processos WHERE caso_id IN ({ph}) ORDER BY rowid", ids):
+                    processos[caso_id].append(numero)
+        resultado = []
+        for linha in linhas:
+            atividade = _linha_atividade(linha[:11])
+            atividade["caso"] = {"id": linha[1], "titulo": linha[11], "responsavel": linha[12],
+                                 "processos": processos.get(linha[1], [])}
+            resultado.append(atividade)
+        return resultado
+
     def criar_atividade(
         self, caso_id: str, tipo: str, titulo: str,
         data: str | None, hora: str | None, observacoes: str | None, agora,
