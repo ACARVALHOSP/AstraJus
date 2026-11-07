@@ -22,9 +22,7 @@ Não é necessário nenhum comando manual de deploy. Status em:
 `https://github.com/ACARVALHOSP/AstraJus/actions`
 
 ## Fluxo após cada alteração
-Sempre que concluir uma alteração:
-1. Perguntar: quer criar um PR?
-2. Perguntar: quer fazer merge para main?
-3. Verificar o status do workflow correspondente via GitHub Actions API e reportar o resultado (success / failure):
-   - mudanças em `frontend/` → `deploy-radix.yml` (já roda no push da `astrajus-radix`)
-   - mudanças no backend ou em `static/` → `deploy.yml` (roda após o merge em `main`)
+O desenvolvimento acontece na branch `astrajus-radix`.
+
+- **Somente frontend (`frontend/`, docs):** commit e push na `astrajus-radix`, depois verificar o workflow `deploy-radix.yml` via GitHub Actions API e reportar o resultado (success / failure). **Não** criar PR nem fazer merge em `main`.
+- **Com alteração de backend (Python, `static/`, Dockerfile etc.):** após o push na `astrajus-radix`, perguntar se deve criar o PR e fazer o merge da `astrajus-radix` em `main`. Após o merge, verificar o workflow `deploy.yml` e reportar o resultado.
