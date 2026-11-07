@@ -48,6 +48,18 @@ class AtividadesGlobaisTest(unittest.TestCase):
         self.assertEqual(self.titulos(busca="1001234-56"), ["Réplica à contestação"])
         self.assertEqual(self.titulos(busca="100%"), [])
 
+    def test_todas_com_checklist(self):
+        agora = lambda: datetime(2026, 11, 7, 8, tzinfo=timezone.utc)
+        item = self.gestao.criar_item_checklist(self.c1["id"], self.a_prazo["id"], "Juntar documentos", agora)
+        self.gestao.criar_item_checklist(self.c1["id"], self.a_prazo["id"], "Revisar", agora)
+        self.gestao.atualizar_item_checklist(self.c1["id"], self.a_prazo["id"], item["id"], concluido=True)
+        todas = self.gestao.listar_atividades_globais(situacao="todas")
+        self.assertEqual(len(todas), 4)
+        por_titulo = {a["titulo"]: a for a in todas}
+        self.assertEqual(por_titulo["Réplica à contestação"]["checklist"], {"total": 2, "concluidos": 1})
+        self.assertIsNone(por_titulo["Audiência de instrução"]["checklist"])
+        self.assertEqual(por_titulo["Tarefa antiga"]["status"], "concluida")
+
     def test_endpoint(self):
         registro = server.RegistroUsuarios(self.tmp / "usuarios.json")
         saida = io.StringIO()
@@ -63,7 +75,7 @@ class AtividadesGlobaisTest(unittest.TestCase):
         self.assertIsNone(dados["atividades"][0]["agenda"])
         status, corpo = _chamar_asgi(mw, "GET", "/atividades?responsavel=__sem__", headers=auth)
         self.assertEqual([a["titulo"] for a in json.loads(corpo)["atividades"]], ["Solicitar certidão"])
-        self.assertEqual(_chamar_asgi(mw, "GET", "/atividades?situacao=todas", headers=auth)[0], 400)
+        self.assertEqual(_chamar_asgi(mw, "GET", "/atividades?situacao=xyz", headers=auth)[0], 400)
         self.assertEqual(_chamar_asgi(mw, "GET", "/atividades?tipo=xyz", headers=auth)[0], 400)
 
 

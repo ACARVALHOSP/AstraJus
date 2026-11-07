@@ -11,6 +11,7 @@ import { ErroMCP } from '../api/mcpClient'
 import { buscarJson, enviarJson } from '../api/rest'
 import { formatarMoeda, formatarNomeExibicao } from '../utils/formatadores'
 import { useEstreita } from '../utils/useEstreita'
+import { useAvisos } from '../Avisos'
 import NovoLancamentoModal from './financeiro/NovoLancamentoModal'
 import './financeiro/financeiro.scss'
 
@@ -91,7 +92,7 @@ export default function Financeiro() {
   const [carregando, setCarregando] = useState(false)
   const [operando, setOperando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
-  const [mensagem, setMensagem] = useState('')
+  const { avisar } = useAvisos()
   const [lancamentos, setLancamentos] = useState<Lancamento[] | null>(null)
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [casos, setCasos] = useState<Caso[]>([])
@@ -173,28 +174,36 @@ export default function Financeiro() {
   const lote = selecionados.size > 0
   const todosSelecionados = visiveis.length > 0 && visiveis.every(l => selecionados.has(l.id))
 
-  async function definirPago(alvos: Lancamento[], pago: boolean) {
-    if (!alvos.length || operando) return
-    setOperando(true); setErro(null); setMensagem('')
+  async function definirPago(alvos: Lancamento[], pago: boolean, desfazendo = false) {
+    if (!alvos.length || (operando && !desfazendo)) return
+    setOperando(true)
     const feitos = new Set<string>()
+    let falha = ''
     for (const l of alvos) {
       try {
         await enviarJson(cliente, `/lancamentos/${l.id}`, { pago }, 'PATCH')
         feitos.add(l.id)
-      } catch (e) { setErro(e instanceof ErroMCP ? e.message : 'Falha ao atualizar.') }
+      } catch (e) { falha = e instanceof ErroMCP ? e.message : 'Falha ao atualizar.' }
     }
     setLancamentos(atual => atual?.map(l => (feitos.has(l.id) ? { ...l, pago } : l)) ?? null)
     setSelecionados(s => new Set([...s].filter(id => !feitos.has(id))))
-    if (alvos.length > 1) setMensagem(`${feitos.size} lançamento(s) atualizado(s).`)
     setOperando(false)
+    if (falha) avisar({ tipo: 'erro', texto: falha })
+    if (desfazendo || !feitos.size) return
+    const feitosLista = alvos.filter(l => feitos.has(l.id))
+    const unico = feitosLista.length === 1 ? feitosLista[0] : null
+    const texto = unico
+      ? `${partesDescricao(unico.descricao).texto}: ${pago ? (unico.direcao === 'RECEITA' ? 'marcado como recebido' : 'marcado como pago') : 'voltou para em aberto'}.`
+      : `${feitosLista.length} lançamentos ${pago ? 'marcados como pagos/recebidos' : 'voltaram para em aberto'}.`
+    avisar({ texto, desfazer: () => definirPago(feitosLista, !pago, true) })
   }
   async function gerarCobranca(l: Lancamento) {
     try {
       await enviarJson(cliente, `/lancamentos/${l.id}/cobranca`, {})
-      setMensagem('Cobrança gerada no Asaas.')
+      avisar({ texto: 'Cobrança gerada no Asaas.' })
       await carregar()
     } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Falha ao gerar cobrança.')
+      avisar({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Falha ao gerar cobrança.' })
     }
   }
   async function confirmarExclusao() {
@@ -202,10 +211,11 @@ export default function Financeiro() {
     setExcluindo(true)
     try {
       await enviarJson(cliente, `/lancamentos/${paraExcluir.id}`, {}, 'DELETE')
+      avisar({ texto: `Lançamento "${partesDescricao(paraExcluir.descricao).texto}" excluído.` })
       setParaExcluir(null)
       await carregar()
     } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Falha ao excluir.')
+      avisar({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Falha ao excluir.' })
     } finally {
       setExcluindo(false)
     }
@@ -284,9 +294,9 @@ export default function Financeiro() {
       />
 
       <dl className="fin-resumo">
-        <div><dt>A receber{sufixoMes}</dt><dd className="fin-receita">{formatarMoeda(soma(kpis.receber))}</dd><p>{kpis.receber.length} em aberto</p></div>
+        <div><dt>A receber{sufixoMes}</dt><dd className={kpis.receber.length ? 'fin-receita' : undefined}>{formatarMoeda(soma(kpis.receber))}</dd><p>{kpis.receber.length} em aberto</p></div>
         <div><dt>A pagar{sufixoMes}</dt><dd>{formatarMoeda(soma(kpis.pagar))}</dd><p>{kpis.pagar.length} em aberto</p></div>
-        <div><dt>Vencidos a receber</dt><dd className="fin-despesa">{formatarMoeda(soma(kpis.vencidos))}</dd><p>{kpis.vencidos.length} lançamento(s), de qualquer mês</p></div>
+        <div><dt>Vencidos a receber</dt><dd className={kpis.vencidos.length ? 'fin-despesa' : undefined}>{formatarMoeda(soma(kpis.vencidos))}</dd><p>{kpis.vencidos.length} lançamento(s), de qualquer mês</p></div>
         <div><dt>Recebido{sufixoMes}</dt><dd>{formatarMoeda(soma(kpis.recebido))}</dd><p>{kpis.recebido.length} quitado(s)</p></div>
       </dl>
 
@@ -351,6 +361,7 @@ export default function Financeiro() {
         </div>
       )}
 
+      {erro && <Callout.Root color="red" size="1" role="alert"><Callout.Icon><AlertTriangle size={14} /></Callout.Icon><Callout.Text>{erro}</Callout.Text></Callout.Root>}
       {carregando && <Carregamento tipo="tabela" descricao="Carregando…" />}
       {!carregando && lancamentos && !visiveis.length && (
         <Callout.Root color="blue" size="1">
@@ -431,10 +442,6 @@ export default function Financeiro() {
         </dl>
       )}
 
-      <div aria-live="polite">
-        {mensagem && <Callout.Root color="green" size="1"><Callout.Icon><Info size={14} /></Callout.Icon><Callout.Text>{mensagem}</Callout.Text></Callout.Root>}
-        {erro && <Callout.Root color="red" size="1"><Callout.Icon><AlertTriangle size={14} /></Callout.Icon><Callout.Text>{erro}</Callout.Text></Callout.Root>}
-      </div>
       <AlertDialog.Root open={paraExcluir !== null} onOpenChange={(open) => !open && setParaExcluir(null)}>
         <AlertDialog.Content maxWidth="400px">
           <AlertDialog.Title>Excluir lançamento</AlertDialog.Title>
@@ -456,6 +463,7 @@ export default function Financeiro() {
         onClose={() => setModalNovoAberto(false)}
         onSalvo={() => {
           setModalNovoAberto(false)
+          avisar({ texto: 'Lançamento criado.' })
           void carregar()
         }}
       />

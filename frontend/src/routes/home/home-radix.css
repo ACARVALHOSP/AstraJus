@@ -44,6 +44,7 @@
 .home-metrica-desc { font-size: 12px; color: var(--gray-11); }
 .home-metrica-atrasadas .home-metrica-num { color: var(--red-11); }
 .home-metrica-publicacoes .home-metrica-num { color: var(--accent-11); }
+.home-metrica.home-metrica--zero .home-metrica-num { color: var(--gray-11); }
 
 /* ── Filtros ── */
 .home-filtros {
@@ -88,11 +89,16 @@
 }
 .home-coluna-titulo-count { font-size: 12px; color: var(--gray-11); }
 .home-coluna-vazia {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
   padding: 1rem 0.5rem;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--gray-11);
   text-align: center;
 }
+.home-coluna-vazia p { margin: 0; }
 
 /* ── Cartão ── */
 .home-cartao {
@@ -102,11 +108,29 @@
   border: 1px solid var(--gray-a4);
   overflow-wrap: anywhere;
   cursor: grab;
-  transition: box-shadow 0.1s, opacity 0.1s;
+  transition: box-shadow 0.1s;
 }
 .home-cartao:hover { box-shadow: var(--shadow-2); }
 .home-cartao[aria-busy='true'] { cursor: progress; }
-.home-arrastando { opacity: 0.4; box-shadow: var(--shadow-4); }
+/* Espaço reservado: o card sai da coluna e deixa o lugar marcado, com a mesma altura. */
+.home-cartao.home-arrastando {
+  background: var(--accent-a2);
+  border: 2px dashed var(--accent-8);
+  box-shadow: none;
+  cursor: grabbing;
+}
+.home-cartao.home-arrastando > * { visibility: hidden; }
+/* Cópia do card que segue o cursor durante o arraste: opaca e elevada. */
+.home-cartao.home-cartao-flutuante {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: 1000;
+  margin: 0;
+  pointer-events: none;
+  box-shadow: var(--shadow-5);
+  cursor: grabbing;
+}
+body.home-arrastando-cursor, body.home-arrastando-cursor * { cursor: grabbing !important; user-select: none; }
 .home-tipo {
   font-size: 11px;
   font-weight: 600;

@@ -78,7 +78,7 @@ O frontend Radix (`/radix/`) é servido diretamente pelo Caddy a partir de `/srv
 
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/atividades` | Atividades de todos os processos (tela Atividades). Parâmetros: `situacao` (`abertas` padrão, `concluidas`), `tipo`, `responsavel` (`__sem__` = sem responsável), `responsavel_processo`, `busca`. Cada item traz `caso` (id, título, responsável, números) e `agenda` |
+| GET | `/atividades` | Atividades de todos os processos (telas Atividades e Meu dia). Parâmetros: `situacao` (`abertas` padrão, `concluidas`, `todas`), `tipo`, `responsavel` (`__sem__` = sem responsável), `responsavel_processo`, `busca`. Cada item traz `caso` (id, título, responsável, números), `checklist` (`{total, concluidos}` ou `null`) e `agenda` |
 
 **Financeiro e pagamentos**
 

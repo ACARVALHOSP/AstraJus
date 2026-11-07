@@ -9,6 +9,7 @@ import { ErroMCP } from '../api/mcpClient'
 import { TRIBUNAIS } from '../api/tribunais'
 import { formatarDataSimples, formatarNumeroCNJ } from '../utils/formatadores'
 import { adicionarHistorico, alternarFavorito, ehFavorito } from '../utils/listasRapidas'
+import { siglaTribunalPorNumero } from '../utils/tribunalPorNumero'
 
 type Movimento = {
   nome?: string
@@ -41,6 +42,8 @@ export default function Processo() {
   const { cliente } = useCliente()
   const { consumirPayload } = useNavegacao()
   const [tribunal, setTribunal] = useState('')
+  // true enquanto o tribunal veio do número CNJ (e não de uma escolha da pessoa).
+  const [tribunalAutomatico, setTribunalAutomatico] = useState(false)
   const [numero, setNumero] = useState('')
   const [consultando, setConsultando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
@@ -83,9 +86,33 @@ export default function Processo() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  function deduzir(valor: string) {
+    const sigla = siglaTribunalPorNumero(valor)
+    return sigla && (TRIBUNAIS as readonly string[]).includes(sigla) ? sigla : null
+  }
+
+  function aoDigitarNumero(valor: string) {
+    setNumero(valor)
+    // O número CNJ traz o tribunal (ex.: .8.26. = TJSP): preenche sozinho, sem sobrescrever
+    // uma escolha feita à mão.
+    const sigla = deduzir(valor)
+    if (sigla && (tribunalAutomatico || !tribunal)) {
+      setTribunal(sigla)
+      setTribunalAutomatico(true)
+    } else if (!sigla && tribunalAutomatico) {
+      setTribunal('')
+      setTribunalAutomatico(false)
+    }
+  }
+
   function aoEnviar(evento: FormEvent) {
     evento.preventDefault()
-    consultar(tribunal, numero)
+    const escolhido = tribunal || deduzir(numero) || ''
+    if (!escolhido) {
+      setErro('Não foi possível identificar o tribunal pelo número. Escolha o tribunal na lista.')
+      return
+    }
+    consultar(escolhido, numero)
   }
 
   return (
@@ -97,18 +124,6 @@ export default function Processo() {
       <form onSubmit={aoEnviar}>
         <Flex direction="column" gap="5">
           <div className="aj-form-grade">
-            <div className="form-campo">
-              <label className="form-campo-label" htmlFor="tribunal">Tribunal</label>
-              <Select.Root value={tribunal || '__none__'} onValueChange={(v) => setTribunal(v === '__none__' ? '' : v)}>
-                <Select.Trigger id="tribunal" placeholder="Selecione o tribunal" style={{ width: '100%' }} />
-                <Select.Content>
-                  <Select.Item value="__none__">Selecione o tribunal</Select.Item>
-                  {TRIBUNAIS.map((t) => (
-                    <Select.Item key={t} value={t}>{t.toUpperCase()}</Select.Item>
-                  ))}
-                </Select.Content>
-              </Select.Root>
-            </div>
             <div className="form-campo" style={{ gridColumn: 'span 2' }}>
               <label className="form-campo-label" htmlFor="numero-processo">Número do processo</label>
               <TextField.Root
@@ -117,9 +132,22 @@ export default function Processo() {
                 autoComplete="off"
                 required
                 value={numero}
-                onChange={(e) => setNumero(e.target.value)}
+                onChange={(e) => aoDigitarNumero(e.target.value)}
               />
-              <Text size="1" color="gray">20 dígitos, com ou sem máscara.</Text>
+              <Text size="1" color="gray">20 dígitos, com ou sem pontuação. O tribunal é identificado pelo número.</Text>
+            </div>
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="tribunal">Tribunal</label>
+              <Select.Root value={tribunal || '__none__'} onValueChange={(v) => { setTribunal(v === '__none__' ? '' : v); setTribunalAutomatico(false) }}>
+                <Select.Trigger id="tribunal" placeholder="Identificado pelo número" style={{ width: '100%' }} />
+                <Select.Content>
+                  <Select.Item value="__none__">Identificar pelo número</Select.Item>
+                  {TRIBUNAIS.map((t) => (
+                    <Select.Item key={t} value={t}>{t.toUpperCase()}</Select.Item>
+                  ))}
+                </Select.Content>
+              </Select.Root>
+              {tribunalAutomatico && <Text size="1" color="gray">Identificado pelo número. Altere se precisar.</Text>}
             </div>
           </div>
           <div>
