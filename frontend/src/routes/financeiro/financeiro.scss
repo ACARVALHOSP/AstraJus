@@ -31,12 +31,13 @@
   &:hover { text-decoration: underline; }
   &:focus-visible { outline: 2px solid var(--accent-8); outline-offset: 2px; border-radius: 2px; }
 }
-.fin-tabela {
-  .fin-col-venc { inline-size: 9rem; }
-  .fin-col-cliente { inline-size: 14rem; }
-  :is(th, td).fin-col-valor { inline-size: 9rem; text-align: right; }
-  .fin-col-situacao { inline-size: 9.5rem; }
-  .fin-col-acoes { inline-size: 11rem; }
+.tabela-adaptavel .tabela-fluida.fin-tabela {
+  // Descrição fica com o espaço que sobra; Cliente divide a largura em proporção.
+  .fin-col-venc { inline-size: 8.5rem; }
+  .fin-col-cliente { inline-size: 18%; }
+  :is(th, td).fin-col-valor { inline-size: 8.5rem; text-align: right; }
+  .fin-col-situacao { inline-size: 9rem; }
+  .fin-col-acoes { inline-size: 10.5rem; }
   :is(th, td).tabela-controle { inline-size: 2.5rem; padding-inline: 0.25rem; }
 }
 .fin-selecionado > td { background: var(--accent-a2); }

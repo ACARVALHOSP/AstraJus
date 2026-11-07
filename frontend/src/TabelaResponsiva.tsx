@@ -1,4 +1,4 @@
-import { Children, Fragment, cloneElement, isValidElement, useEffect, useId, useRef, useState, type MouseEvent, type ReactElement, type ReactNode } from 'react'
+import { Children, Fragment, cloneElement, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState, type MouseEvent, type ReactElement, type ReactNode } from 'react'
 import { Button } from '@radix-ui/themes'
 import './tabelas.scss'
 
@@ -39,6 +39,8 @@ function ajustarExpansao(linha: Elemento, quantidade: number): Elemento {
   return cloneElement(linha, {}, elementos(linha.props.children).map(celula => cloneElement(celula, { colSpan: quantidade })))
 }
 
+const LARGURA_MINIMA_TEXTO = 112
+
 /** Adapta tabelas nativas à largura do contêiner, inclusive dentro de modais. */
 export default function TabelaResponsiva({ children, principais = [] }: { children: Elemento; principais?: string[] }) {
   const raiz = useRef<HTMLDivElement>(null)
@@ -61,7 +63,11 @@ export default function TabelaResponsiva({ children, principais = [] }: { childr
     const monetaria = /^(Valor|Parcela)$/.test(rotulo)
     return { cabecalho, rotulo, controle, fixa: controle || rotulo === 'Ações', monetaria, numerica: monetaria || /^(Vencimento|Data e hora|Data|Cadastro|Último acesso|Disponibilizado em|Quando)$/.test(rotulo) }
   })
-  const compacto = largura > 0 && largura < Math.max(600, colunas.length * 128)
+  // Para cada quantidade de colunas visíveis, a largura abaixo da qual alguma coluna de texto
+  // ficou estreita demais (medida no navegador). Evita espremer a descrição ou o nome.
+  const [apertos, setApertos] = useState<Record<number, number>>({})
+  const apertada = (n: number) => largura < (apertos[n] ?? 0)
+  const compacto = largura > 0 && (largura < Math.max(600, colunas.length * 128) || apertada(colunas.length))
   const prioritarias = colunas.map((c, i) => principais.includes(c.rotulo) ? i : -1).filter(i => i >= 0)
   // Se uma coluna configurável foi removida pelo usuário, mantém a primeira coluna de dados disponível.
   if (!prioritarias.length) {
@@ -71,7 +77,9 @@ export default function TabelaResponsiva({ children, principais = [] }: { childr
   const visiveis = new Set(colunas.map((c, i) => !compacto || colunas.length <= 3 || c.fixa || prioritarias.includes(i) ? i : -1).filter(i => i >= 0))
   // Usa o espaço intermediário para revelar progressivamente mais colunas.
   if (compacto && largura >= 600) {
-    const limite = Math.max(visiveis.size, Math.floor(largura / 145))
+    const base = visiveis.size
+    let limite = Math.max(base, Math.floor(largura / 145))
+    while (limite > base && apertada(limite)) limite--
     colunas.forEach((_, i) => { if (visiveis.size < limite) visiveis.add(i) })
   }
   const complementares = colunas.map((_, i) => i).filter(i => !visiveis.has(i))
@@ -86,6 +94,25 @@ export default function TabelaResponsiva({ children, principais = [] }: { childr
     ...ordem.map(i => { const c = colunas[i]; return cloneElement(c.cabecalho, { className: classe(c.cabecalho, c.controle ? 'tabela-controle' : c.rotulo === 'Ações' ? 'tabela-acoes' : c.monetaria ? 'tabela-numero tabela-valor' : c.numerica ? 'tabela-numero' : '') }, c.controle && c.rotulo ? <span className="aj-sr-only">{c.rotulo}</span> : c.cabecalho.props.children) }),
     adicionarColuna ? <th key="detalhes" scope="col" className="tabela-acoes">Detalhes</th> : null,
   ])) : cabeca
+
+  // Com table-layout fixed, as colunas de largura fixa podem espremer as de texto até quase zero.
+  // Quando isso acontece, guarda essa largura para passar ao modo compacto a partir dela.
+  // Sem lista de dependências: as colunas mudam de largura com o contêiner e com as colunas
+  // configuradas; o setState só registra uma largura maior para a mesma quantidade de colunas, que passa a
+  // mostrar menos colunas — por isso termina.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    const alvo = raiz.current
+    if (!alvo || !largura) return
+    const cabecalhos = [...alvo.querySelectorAll<HTMLTableCellElement>(':scope > table > thead > tr:first-child > th')]
+    const espremida = cabecalhos.some((th, i) => {
+      const c = colunas[ordem[i]]
+      return c && !c.fixa && !c.controle && th.getBoundingClientRect().width < LARGURA_MINIMA_TEXTO
+    })
+    // eslint-disable-next-line react/set-state-in-effect
+    const n = visiveis.size
+    if (espremida && (apertos[n] ?? 0) <= largura) setApertos(a => ({ ...a, [n]: largura + 1 }))
+  })
 
   function adaptarCorpo(corpo: Elemento) {
     const linhas = elementos(corpo.props.children)
