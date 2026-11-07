@@ -432,7 +432,7 @@ export default function Atividades() {
                 <Select.Content>{processos.map(p => <Select.Item key={p.id} value={p.id}>{formatarNomeExibicao(p.titulo) || 'Processo sem título'}</Select.Item>)}</Select.Content>
               </Select.Root>
             </div>
-          ) : <Text as="p" size="2" color="gray">Carregando processos…</Text>}
+          ) : <Carregamento tipo="texto" descricao="Carregando processos…" />}
           <Flex gap="3" mt="4" justify="end">
             <Dialog.Close><Button variant="soft" color="gray">Cancelar</Button></Dialog.Close>
             <Button disabled={!processoNovo} onClick={() => { setDialogo(''); setEditando({ casoId: processoNovo, atividade: null }) }}>Continuar</Button>
