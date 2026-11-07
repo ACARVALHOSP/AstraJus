@@ -41,7 +41,7 @@
   color: var(--gray-12);
   margin: 0.25rem 0;
 }
-.home-metrica-desc { font-size: 12px; color: var(--gray-11); }
+.home-metrica-desc { font-size: 13px; color: var(--gray-11); }
 .home-metrica-atrasadas .home-metrica-num { color: var(--red-11); }
 .home-metrica-publicacoes .home-metrica-num { color: var(--accent-11); }
 .home-metrica.home-metrica--zero .home-metrica-num { color: var(--gray-11); }
@@ -132,7 +132,7 @@
 }
 body.home-arrastando-cursor, body.home-arrastando-cursor * { cursor: grabbing !important; user-select: none; }
 .home-tipo {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -161,19 +161,19 @@ body.home-arrastando-cursor, body.home-arrastando-cursor * { cursor: grabbing !i
   background: transparent;
   color: var(--gray-11);
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   text-align: start;
   cursor: pointer;
   margin-block: 0.3rem;
 }
 .home-processo-btn:hover { color: var(--accent-11); text-decoration: underline; }
-.home-executor-text { font-size: 12px; color: var(--gray-11); margin-bottom: 0.375rem; }
+.home-executor-text { font-size: 13px; color: var(--gray-11); margin-bottom: 0.375rem; }
 .home-cartao-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 0.375rem;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--gray-11);
   margin-block: 0.375rem;
 }

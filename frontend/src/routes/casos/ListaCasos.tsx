@@ -1,3 +1,4 @@
+import LinhaFiltros from '../../LinhaFiltros'
 import CabecalhoPagina from '../../CabecalhoPagina'
 import TabelaResponsiva from '../../TabelaResponsiva'
 import AcoesTabela from '../../AcoesTabela'
@@ -10,7 +11,7 @@ import { ErroMCP } from '../../api/mcpClient'
 import { useNavegacao } from '../../api/NavegacaoContext'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { diasEntreDatas, formatarNomeExibicao, formatarNumeroCNJ, hojeIso } from '../../utils/formatadores'
-import { alternarCasoFavorito, ehCasoFavorito } from '../../utils/listasRapidas'
+import { alternarCasoFavorito, ehCasoFavorito, EVENTO_PREFERENCIAS } from '../../utils/listasRapidas'
 import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
 import { useEstreita } from '../../utils/useEstreita'
 import NovoProcessoModal from './NovoProcessoModal'
@@ -121,6 +122,12 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(carregar, [cliente])
+
+  useEffect(() => {
+    const reler = () => setVersaoFavoritos(v => v + 1)
+    window.addEventListener(EVENTO_PREFERENCIAS, reler)
+    return () => window.removeEventListener(EVENTO_PREFERENCIAS, reler)
+  }, [])
 
   function favoritar(casoId: string) {
     alternarCasoFavorito(casoId)
@@ -326,7 +333,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
           })}
         </div>
 
-        <div className="aj-filtros-linha">
+        <LinhaFiltros ativos={[responsavel, tribunal].filter(Boolean).length}>
           <div className="form-campo aj-filtros-busca">
             <label className="form-campo-label" htmlFor="casos-busca">Buscar</label>
             <TextField.Root id="casos-busca" type="search" placeholder="Título, cliente, parte, número ou pasta" autoComplete="off"
@@ -365,7 +372,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
             </Select.Root>
           </div>
           {filtrosAtivos && <Button size="2" variant="soft" color="gray" onClick={() => mudarFiltro(() => { setBusca(''); setResponsavel(''); setTribunal('') })}>Limpar filtros</Button>}
-        </div>
+        </LinhaFiltros>
 
         <div aria-live="polite">
           {carregando && <Carregamento colunas={6} />}

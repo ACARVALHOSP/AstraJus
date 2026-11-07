@@ -109,7 +109,7 @@ export default function PublicacoesCaso({ casoId, onAlterado }: { casoId: string
   function acaoPrincipal(p: PublicacaoOab, grande = false) {
     const props = { size: (grande ? '3' : '1') as '1' | '3', style: grande ? { flex: 1 } : undefined, disabled: operando }
     return p.status === 'nao_tratada'
-      ? <Button {...props} onClick={() => setCriandoAtividade({ ...p, caso_id: casoId })}>Criar atividade</Button>
+      ? <Button {...props} variant="soft" onClick={() => setCriandoAtividade({ ...p, caso_id: casoId })}>Criar atividade</Button>
       : <Button {...props} variant="soft" color="gray" onClick={() => mudarStatus(p, 'nao_tratada')}>Reabrir</Button>
   }
   function menu(p: PublicacaoOab) {

@@ -1,3 +1,4 @@
+import LinhaFiltros from '../../LinhaFiltros'
 import { useAvisos } from '../../Avisos'
 import CabecalhoPagina from '../../CabecalhoPagina'
 import CampoData from '../../CampoData'
@@ -187,9 +188,9 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
       return <Button size={largura ? '3' : '1'} variant="soft" color="gray" style={estilo} disabled={bloqueada} onClick={() => mudarStatus([p.hash], 'nao_tratada')}>Reabrir</Button>
     }
     if (!p.caso_id) {
-      return <Button size={largura ? '3' : '1'} style={estilo} disabled={bloqueada || numeroPublicacao(p).length !== 20} onClick={() => abrirAcao('processo', p)}>Vincular processo</Button>
+      return <Button size={largura ? '3' : '1'} variant="soft" style={estilo} disabled={bloqueada || numeroPublicacao(p).length !== 20} onClick={() => abrirAcao('processo', p)}>Vincular processo</Button>
     }
-    return <Button size={largura ? '3' : '1'} style={estilo} disabled={bloqueada} onClick={() => abrirAcao('atividade', p)}>Criar atividade</Button>
+    return <Button size={largura ? '3' : '1'} variant="soft" style={estilo} disabled={bloqueada} onClick={() => abrirAcao('atividade', p)}>Criar atividade</Button>
   }
   function menuAcoes(p: PublicacaoOab) {
     const bloqueada = ocupada || lote, link = urlPublicacao(p)
@@ -273,7 +274,7 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
         })}
       </div>
 
-      <div className="aj-filtros-linha">
+      <LinhaFiltros ativos={[tipo, periodo].filter(Boolean).length}>
         <div className="form-campo aj-filtros-busca">
           <label className="form-campo-label" htmlFor="oab-busca">Buscar</label>
           <TextField.Root id="oab-busca" type="search" placeholder="Número do processo, parte ou advogado" autoComplete="off"
@@ -338,7 +339,7 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
             </Popover.Content>
           </Popover.Root>
         )}
-      </div>
+      </LinhaFiltros>
 
       {lote && (
         <div className="oab-lote" role="region" aria-label="Ações em lote">

@@ -384,6 +384,30 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 resultado TEXT NOT NULL,
                 criado_em REAL NOT NULL
             );
+
+            -- Preferências por usuário guardadas no servidor (favoritos e histórico de consultas),
+            -- para valerem em qualquer navegador. `valor` é JSON.
+            CREATE TABLE IF NOT EXISTS preferencias_usuario (
+                usuario TEXT NOT NULL,
+                chave TEXT NOT NULL,
+                valor TEXT NOT NULL,
+                atualizado_em TEXT NOT NULL,
+                PRIMARY KEY (usuario, chave)
+            );
+
+            -- Cópia local das cobranças do Asaas (por ambiente), atualizada pelo webhook e por
+            -- sincronizações periódicas; a tela Pagamentos lê daqui.
+            CREATE TABLE IF NOT EXISTS asaas_cobrancas (
+                ambiente TEXT NOT NULL,
+                id TEXT NOT NULL,
+                dados TEXT NOT NULL,
+                atualizado_em TEXT NOT NULL,
+                PRIMARY KEY (ambiente, id)
+            );
+            CREATE TABLE IF NOT EXISTS asaas_sincronizacao (
+                ambiente TEXT PRIMARY KEY,
+                sincronizado_em TEXT NOT NULL
+            );
             """
         )
         conexao.execute("""CREATE TABLE IF NOT EXISTS processos_datajud (
@@ -1483,6 +1507,64 @@ class RegistroClientesCasos:
         for atividade in atividades:
             atividade["checklist"] = resumo.get(atividade["id"])
         return atividades
+
+    # ── Preferências por usuário (favoritos e histórico) ──
+    CHAVES_PREFERENCIA = ("favoritos_casos", "favoritos_consultas", "historico_consultas")
+
+    def obter_preferencias(self, usuario: str) -> dict:
+        """Todas as preferências do usuário: {chave: valor}. Chaves sem registro ficam de fora."""
+        with _abrir(self.caminho) as conexao:
+            linhas = conexao.execute(
+                "SELECT chave, valor FROM preferencias_usuario WHERE usuario = ?", (usuario,)).fetchall()
+        resultado = {}
+        for chave, valor in linhas:
+            try:
+                resultado[chave] = json.loads(valor)
+            except ValueError:
+                continue
+        return resultado
+
+    def salvar_preferencia(self, usuario: str, chave: str, valor, agora) -> None:
+        if chave not in self.CHAVES_PREFERENCIA:
+            raise ValueError("Preferência desconhecida.")
+        with _abrir(self.caminho) as conexao, conexao:
+            conexao.execute(
+                "INSERT INTO preferencias_usuario (usuario, chave, valor, atualizado_em) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(usuario, chave) DO UPDATE SET valor = excluded.valor, atualizado_em = excluded.atualizado_em",
+                (usuario, chave, json.dumps(valor, ensure_ascii=False), agora().isoformat()))
+
+    # ── Cópia local das cobranças do Asaas ──
+    def salvar_cobrancas_asaas(self, ambiente: str, cobrancas: list[dict], agora, *, completa: bool = False) -> None:
+        """Grava (ou atualiza) cobranças. Com `completa=True`, a lista é o retrato inteiro do
+        Asaas: apaga as que sumiram e registra o horário da sincronização."""
+        momento = agora().isoformat()
+        with _abrir(self.caminho) as conexao, conexao:
+            if completa:
+                conexao.execute("DELETE FROM asaas_cobrancas WHERE ambiente = ?", (ambiente,))
+            conexao.executemany(
+                "INSERT INTO asaas_cobrancas (ambiente, id, dados, atualizado_em) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(ambiente, id) DO UPDATE SET dados = excluded.dados, atualizado_em = excluded.atualizado_em",
+                [(ambiente, c["id"], json.dumps(c, ensure_ascii=False), momento) for c in cobrancas if c.get("id")])
+            if completa:
+                conexao.execute(
+                    "INSERT INTO asaas_sincronizacao (ambiente, sincronizado_em) VALUES (?, ?) "
+                    "ON CONFLICT(ambiente) DO UPDATE SET sincronizado_em = excluded.sincronizado_em",
+                    (ambiente, momento))
+
+    def remover_cobranca_asaas(self, ambiente: str, cobranca_id: str) -> None:
+        with _abrir(self.caminho) as conexao, conexao:
+            conexao.execute("DELETE FROM asaas_cobrancas WHERE ambiente = ? AND id = ?", (ambiente, cobranca_id))
+
+    def listar_cobrancas_asaas(self, ambiente: str, customer_id: str | None = None) -> tuple[list[dict], str | None]:
+        """Cobranças guardadas e o horário da última sincronização completa (ou None)."""
+        with _abrir(self.caminho) as conexao:
+            linhas = conexao.execute("SELECT dados FROM asaas_cobrancas WHERE ambiente = ?", (ambiente,)).fetchall()
+            sinc = conexao.execute(
+                "SELECT sincronizado_em FROM asaas_sincronizacao WHERE ambiente = ?", (ambiente,)).fetchone()
+        cobrancas = [json.loads(l[0]) for l in linhas]
+        if customer_id:
+            cobrancas = [c for c in cobrancas if c.get("customer") == customer_id]
+        return cobrancas, (sinc[0] if sinc else None)
 
     def contagens_caso(self, caso_id: str) -> dict:
         """Números exibidos nas abas do processo: atividades abertas e publicações não tratadas."""

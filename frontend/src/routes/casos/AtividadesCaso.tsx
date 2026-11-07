@@ -147,7 +147,7 @@ export default function AtividadesCaso({ casoId, atividadeInicialId, onAlterado 
     const props = { size: (grande ? '3' : '1') as '1' | '3', style: grande ? { flex: 1 } : undefined, disabled: operando || lote }
     return a.status === 'concluida'
       ? <Button {...props} variant="soft" color="gray" onClick={() => atualizar([a], { status: 'pendente' })}>Reabrir</Button>
-      : <Button {...props} onClick={() => atualizar([a], { status: 'concluida' })}>Concluir</Button>
+      : <Button {...props} variant="soft" onClick={() => atualizar([a], { status: 'concluida' })}>Concluir</Button>
   }
   function menu(a: Atividade) {
     const mudar = (status: string) => ({ texto: `Marcar como “${ROTULO_STATUS[status].toLowerCase()}”`, desabilitada: operando || a.status === status, executar: () => atualizar([a], { status }) })

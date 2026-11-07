@@ -87,8 +87,11 @@ O frontend Radix (`/radix/`) é servido diretamente pelo Caddy a partir de `/srv
 | GET, POST | `/lancamentos` | Lista / cria lançamentos (parcelados ou não) |
 | PATCH, DELETE | `/lancamentos/<id>` | Marca como pago/recebido / exclui |
 | POST | `/lancamentos/<id>/cobranca` | Emite boleto no Asaas para o lançamento |
-| GET, POST | `/pagamentos` | Lista (`?cliente_id=&status=&offset=`) / cria cobrança Asaas. Com `?situacao=a_receber\|vencidas\|recebidas\|todas` (e `forma`, `vencimento_de`, `vencimento_ate`, `busca`, `offset`) devolve o painel: `resumo`, `contagens`, `cobrancas` (20 por página), `totalCount`, `hasMore`, `truncado` |
+| GET, POST | `/pagamentos` | Lista (`?cliente_id=&status=&offset=`) / cria cobrança Asaas. Com `?situacao=a_receber\|vencidas\|recebidas\|todas` (e `forma`, `vencimento_de`, `vencimento_ate`, `busca`, `offset`, `atualizar=1`) devolve o painel a partir da cópia local das cobranças (refeita a cada 30 min ou com `atualizar=1`; mantida pelo webhook): `resumo`, `contagens`, `cobrancas` (20 por página), `totalCount`, `hasMore`, `truncado`, `atualizado_em`, `aviso` |
 | DELETE | `/pagamentos/<id>` | Cancela cobrança ainda não paga |
+| POST | `/asaas/webhook` | Avisos do Asaas sobre cobranças (sem token de usuário; exige o cabeçalho `asaas-access-token` igual a `ASAAS_WEBHOOK_TOKEN`). Atualiza a cópia local usada pela tela Pagamentos |
+| GET | `/preferencias` | Favoritos e histórico do usuário (`favoritos_casos`, `favoritos_consultas`, `historico_consultas`) |
+| PUT | `/preferencias/<chave>` | Substitui uma dessas listas (`{"valor": [...]}`, até 500 itens) |
 
 **Publicações OAB, pendências e automações**
 

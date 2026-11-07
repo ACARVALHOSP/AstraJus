@@ -1,3 +1,4 @@
+import LinhaFiltros from '../../LinhaFiltros'
 import CabecalhoPagina from '../../CabecalhoPagina'
 import TabelaResponsiva from '../../TabelaResponsiva'
 import AcoesTabela from '../../AcoesTabela'
@@ -200,7 +201,7 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
         })}
       </div>
 
-      <div className="aj-filtros-linha">
+      <LinhaFiltros ativos={[tipo, etiqueta].filter(Boolean).length}>
         <div className="form-campo aj-filtros-busca">
           <label className="form-campo-label" htmlFor="contatos-busca">Buscar</label>
           <TextField.Root id="contatos-busca" type="search" placeholder="Nome, CPF/CNPJ, telefone ou e-mail" autoComplete="off"
@@ -228,7 +229,7 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
           </Select.Root>
         </div>
         {filtrosAtivos && <Button size="2" variant="soft" color="gray" onClick={() => mudarFiltro(() => { setBusca(''); setTipo(''); setEtiqueta('') })}>Limpar filtros</Button>}
-      </div>
+      </LinhaFiltros>
 
       {idsLote.length > 0 && (
         <div className="contatos-lote" role="region" aria-label="Ações em lote">

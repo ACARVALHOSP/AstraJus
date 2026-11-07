@@ -1,3 +1,4 @@
+import LinhaFiltros from '../LinhaFiltros'
 import CabecalhoPagina from '../CabecalhoPagina'
 import { useAvisos } from '../Avisos'
 import CampoData from '../CampoData'
@@ -156,7 +157,7 @@ export default function Atividades() {
     const tamanho = grande ? '3' : '1'
     return a.status === 'concluida'
       ? <Button size={tamanho} variant="soft" color="gray" style={grande ? { flex: 1 } : undefined} disabled={ocupado || lote} onClick={() => atualizar([a], { status: 'pendente' }, 'reabertas')}>Reabrir</Button>
-      : <Button size={tamanho} style={grande ? { flex: 1 } : undefined} disabled={ocupado || lote} onClick={() => atualizar([a], { status: 'concluida' }, 'concluídas')}>Concluir</Button>
+      : <Button size={tamanho} variant="soft" style={grande ? { flex: 1 } : undefined} disabled={ocupado || lote} onClick={() => atualizar([a], { status: 'concluida' }, 'concluídas')}>Concluir</Button>
   }
   function menu(a: Atividade) {
     const bloqueado = ocupado || lote
@@ -212,7 +213,7 @@ export default function Atividades() {
         </Button>
       </div>
 
-      <div className="aj-filtros-linha">
+      <LinhaFiltros ativos={[tipo, responsavel, responsavelProcesso].filter(Boolean).length}>
         <div className="form-campo aj-filtros-busca">
           <label className="form-campo-label" htmlFor="atividades-busca">Buscar</label>
           <TextField.Root id="atividades-busca" type="search" placeholder="Atividade, processo ou número" autoComplete="off"
@@ -255,7 +256,7 @@ export default function Atividades() {
             Limpar filtros
           </Button>
         )}
-      </div>
+      </LinhaFiltros>
 
       {lote && (
         <div className="atividades-lote" role="region" aria-label="Ações em lote">
