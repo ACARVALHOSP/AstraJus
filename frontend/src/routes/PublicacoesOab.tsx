@@ -54,10 +54,8 @@ function CapturaManual({ onCapturado }: { onCapturado: () => void }) {
   }
 
   return (
-    <details>
-      <summary>Capturar publicações por OAB</summary>
-      <form onSubmit={aoEnviar}>
-        <Flex direction="column" gap="5" mt="3">
+    <form onSubmit={aoEnviar}>
+        <Flex direction="column" gap="5">
           <Text as="p" size="2" color="gray">Captura avulsa: informe a OAB e as duas datas obrigatórias. Para ativar a captura recorrente, crie um monitoramento na tela Monitoramentos.</Text>
           <div className="aj-form-grade">
             <div className="form-campo">
@@ -115,7 +113,6 @@ function CapturaManual({ onCapturado }: { onCapturado: () => void }) {
             </Callout.Root>
           )}
         </Flex>
-      </form>
-    </details>
+    </form>
   )
 }

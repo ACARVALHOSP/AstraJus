@@ -88,7 +88,7 @@ O frontend Radix (`/radix/`) é servido diretamente pelo Caddy a partir de `/srv
 
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/publicacoes-oab` | Publicações capturadas pelos monitoramentos por OAB (paginado, filtro de status) |
+| GET | `/publicacoes-oab` | Publicações capturadas por OAB. Parâmetros: `status`, `tipo`, `desde`/`ate` (AAAA-MM-DD), `busca`, `ordem` (`divulgado_desc`, `divulgado_asc`, `capturado_desc`, `capturado_asc`), `pagina`, `tamanho`. Devolve também `contagem_status`, `tipos_disponiveis` e `caso_titulo` em cada publicação |
 | POST | `/publicacoes-oab/status` | Atualização de status em lote (`{hashes, status}`) |
 | POST | `/publicacoes-oab/capturar-manual` | Captura sob demanda por OAB + intervalo de datas |
 | POST | `/publicacoes-oab/<hash>/criar-caso` | Cria caso a partir da publicação |
