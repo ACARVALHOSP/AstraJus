@@ -87,7 +87,7 @@ O frontend Radix (`/radix/`) é servido diretamente pelo Caddy a partir de `/srv
 | GET, POST | `/lancamentos` | Lista / cria lançamentos (parcelados ou não) |
 | PATCH, DELETE | `/lancamentos/<id>` | Marca como pago/recebido / exclui |
 | POST | `/lancamentos/<id>/cobranca` | Emite boleto no Asaas para o lançamento |
-| GET, POST | `/pagamentos` | Lista (`?cliente_id=&status=&offset=`) / cria cobrança Asaas |
+| GET, POST | `/pagamentos` | Lista (`?cliente_id=&status=&offset=`) / cria cobrança Asaas. Com `?situacao=a_receber\|vencidas\|recebidas\|todas` (e `forma`, `vencimento_de`, `vencimento_ate`, `busca`, `offset`) devolve o painel: `resumo`, `contagens`, `cobrancas` (20 por página), `totalCount`, `hasMore`, `truncado` |
 | DELETE | `/pagamentos/<id>` | Cancela cobrança ainda não paga |
 
 **Publicações OAB, pendências e automações**

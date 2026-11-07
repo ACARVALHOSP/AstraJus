@@ -4584,7 +4584,9 @@ class _AutenticacaoBearer:
 
     async def _pagamentos(self, scope, receive, send) -> None:
         """GET /pagamentos[?cliente_id=&status=&offset=]: lista cobranças Asaas, com o cliente
-        local já associado (para a página Financeiro > Pagamentos). POST /pagamentos: cria uma
+        local já associado (para a página Financeiro > Pagamentos). Com `situacao`
+        (a_receber|vencidas|recebidas|todas) devolve o painel: resumo, contagens e a página
+        filtrada por forma, vencimento_de/ate e busca. POST /pagamentos: cria uma
         cobrança (boleto ou Pix) para um cliente já cadastrado."""
         config = _asaas_config()
         if config is None:
@@ -4678,11 +4680,20 @@ class _AutenticacaoBearer:
             offset = max(0, int(query.get("offset") or 0))
         except ValueError:
             offset = 0
+        situacao = (query.get("situacao") or "").strip()
+        truncado = False
         try:
-            async with _cliente(20) as http_cliente:
-                resultado = await asaas_integracao.listar_cobrancas(
-                    http_cliente, url_base, api_key, customer_id=customer_id, status=status, offset=offset,
-                )
+            async with _cliente(40 if situacao else 20) as http_cliente:
+                if situacao:
+                    # Painel: busca todas as cobranças para calcular totais e contadores.
+                    todas, truncado = await asaas_integracao.listar_todas_cobrancas(
+                        http_cliente, url_base, api_key, customer_id=customer_id,
+                    )
+                    resultado = {"data": todas}
+                else:
+                    resultado = await asaas_integracao.listar_cobrancas(
+                        http_cliente, url_base, api_key, customer_id=customer_id, status=status, offset=offset,
+                    )
         except asaas_integracao.ErroAsaas as erro:
             log.warning("Falha ao listar cobranças Asaas: %s", erro)
             await _json(send, 502, _erro(f"Falha ao consultar o Asaas: {erro}"))
@@ -4698,6 +4709,19 @@ class _AutenticacaoBearer:
             vinculado = clientes_por_asaas_id.get(cobranca.get("customer"))
             cobranca["cliente_id"] = vinculado["id"] if vinculado else None
             cobranca["cliente_nome"] = vinculado["nome"] if vinculado else None
+        if situacao:
+            def _data(chave: str) -> str:
+                valor = (query.get(chave) or "").strip()
+                return valor if re.fullmatch(r"\d{4}-\d{2}-\d{2}", valor) else ""
+            painel = asaas_integracao.montar_painel_pagamentos(
+                cobrancas, hoje=datetime.now(ZoneInfo("America/Sao_Paulo")).date(), situacao=situacao,
+                forma=(query.get("forma") or "").strip(), vencimento_de=_data("vencimento_de"),
+                vencimento_ate=_data("vencimento_ate"), busca=(query.get("busca") or "").strip(),
+                cpf_por_cliente={c["id"]: c.get("cpf_cnpj") or "" for c in clientes}, offset=offset,
+            )
+            painel["truncado"] = truncado
+            await _json(send, 200, painel)
+            return
         await _json(send, 200, {
             "cobrancas": cobrancas, "totalCount": resultado.get("totalCount", len(cobrancas)),
             "hasMore": resultado.get("hasMore", False),

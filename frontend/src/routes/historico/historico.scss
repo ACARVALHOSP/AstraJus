@@ -1,0 +1,41 @@
+// Tela Histórico e favoritos.
+.hist-dica { align-self: center; margin-inline-start: auto; }
+.hist-apagar { margin-inline-start: auto; align-self: flex-end; }
+.hist-titulo { font-weight: 600; font-variant-numeric: tabular-nums; }
+.hist-uma-linha { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-link {
+  font: inherit; font-weight: 600; color: var(--gray-12); background: none; border: 0; padding: 0;
+  cursor: pointer; text-align: start;
+  &:hover { color: var(--accent-11); text-decoration: underline; }
+  &:focus-visible { outline: 2px solid var(--accent-8); outline-offset: 2px; border-radius: 2px; }
+}
+.tabela-adaptavel .tabela-fluida.hist-tabela-processos {
+  :is(th, td).tabela-controle { inline-size: 2.5rem; padding-inline: 0.25rem; }
+  .hist-col-numero { inline-size: 14.5rem; }
+  .hist-col-compromisso { inline-size: 12rem; }
+  .hist-col-mov { inline-size: 13rem; }
+  .hist-col-acoes { inline-size: 6rem; }
+}
+.tabela-adaptavel .tabela-fluida.hist-tabela-consultas {
+  .hist-col-tribunal { inline-size: 9rem; }
+  .hist-col-acoes { inline-size: 10rem; }
+}
+.hist-tabela-caixa { border: 1px solid var(--gray-a5); border-radius: var(--radius-3); overflow: hidden; background: var(--color-panel-solid); }
+.hist-tabela {
+  inline-size: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px;
+  th, td { padding: 0.625rem 0.75rem; text-align: start; vertical-align: top; border-bottom: 1px solid var(--gray-a3); }
+  thead th { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; color: var(--gray-11); background: var(--gray-a2); }
+  .hist-col-hora { inline-size: 7rem; }
+  .hist-col-tipo { inline-size: 8.5rem; }
+  .hist-col-acoes-hist { inline-size: 9rem; text-align: end; }
+  .hist-hora { color: var(--gray-11); font-variant-numeric: tabular-nums; }
+  .hist-grupo th { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; background: var(--gray-a2); }
+  .hist-grupo span { font-weight: 400; color: var(--gray-11); text-transform: none; letter-spacing: 0; }
+  tbody:last-child tr:last-child td { border-bottom: 0; }
+}
+.hist-grupo-titulo { margin: 0 0 0.5rem; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--gray-11); }
+.hist-cartoes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+.hist-cartao {
+  display: flex; flex-direction: column; gap: 0.625rem; padding: 0.875rem;
+  background: var(--color-panel-solid); border: 1px solid var(--gray-a5); border-radius: var(--radius-3);
+}

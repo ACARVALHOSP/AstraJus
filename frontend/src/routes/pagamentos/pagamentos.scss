@@ -1,0 +1,12 @@
+// Tela Pagamentos: totais, tabela de cobranças (reaproveita as classes fin-* de Lançamentos).
+.fin-resumo.pag-resumo { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1055px) { .fin-resumo.pag-resumo { grid-template-columns: minmax(0, 1fr); } }
+.fin-resumo .pag-resumo-alerta { background: var(--red-2); }
+.tabela-adaptavel .tabela-fluida.pag-tabela {
+  .pag-col-venc { inline-size: 9rem; }
+  :is(th, td).pag-col-valor { inline-size: 9.5rem; text-align: right; }
+  .pag-col-forma { inline-size: 6rem; }
+  .pag-col-situacao { inline-size: 10rem; }
+  .pag-col-acoes { inline-size: 10.5rem; }
+}
+.pag-descricao { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
