@@ -9,6 +9,7 @@ import { AlertTriangle, Info, Plus, RefreshCw } from 'lucide-react'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { buscarJson, enviarJson } from '../api/rest'
+import { ErroMCP } from '../api/mcpClient'
 import AtividadeModal from './casos/AtividadeModal'
 import { formatarDataSimples, formatarNomeExibicao } from '../utils/formatadores'
 import {
@@ -73,9 +74,23 @@ function PainelHome() {
       // Duas chamadas fixas, independentes da quantidade de processos: a lista de processos
       // (para criar atividade e filtrar) e todas as atividades, já com o resumo do checklist.
       try {
+        type Resposta = { atividades: (AtividadeHome & { caso: ProcessoHome; checklist?: ItemHome['checklist'] })[] }
+        const buscarAtividades = async (): Promise<Resposta> => {
+          try {
+            return await buscarJson<Resposta>(cliente, '/atividades?situacao=todas', signal)
+          } catch (e) {
+            // Servidor anterior a "situacao=todas": busca abertas e concluídas separadamente.
+            if (!(e instanceof ErroMCP) || e.status !== 400) throw e
+            const [abertas, concluidas] = await Promise.all([
+              buscarJson<Resposta>(cliente, '/atividades?situacao=abertas', signal),
+              buscarJson<Resposta>(cliente, '/atividades?situacao=concluidas', signal),
+            ])
+            return { atividades: [...(abertas.atividades ?? []), ...(concluidas.atividades ?? [])] }
+          }
+        }
         const [respProcessos, respAtividades] = await Promise.all([
           buscarJson<{ casos: ProcessoHome[] }>(cliente, '/casos', signal),
-          buscarJson<{ atividades: (AtividadeHome & { caso: ProcessoHome; checklist?: ItemHome['checklist'] })[] }>(cliente, '/atividades?situacao=todas', signal),
+          buscarAtividades(),
         ])
         if (!Array.isArray(respProcessos.casos) || !Array.isArray(respAtividades.atividades)) throw new Error('Resposta inválida do servidor.')
         if (signal.aborted) return
