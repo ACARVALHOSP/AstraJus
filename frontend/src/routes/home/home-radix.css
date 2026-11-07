@@ -44,6 +44,7 @@
 .home-metrica-desc { font-size: 12px; color: var(--gray-11); }
 .home-metrica-atrasadas .home-metrica-num { color: var(--red-11); }
 .home-metrica-publicacoes .home-metrica-num { color: var(--accent-11); }
+.home-metrica.home-metrica--zero .home-metrica-num { color: var(--gray-11); }
 
 /* ── Filtros ── */
 .home-filtros {
@@ -88,11 +89,16 @@
 }
 .home-coluna-titulo-count { font-size: 12px; color: var(--gray-11); }
 .home-coluna-vazia {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
   padding: 1rem 0.5rem;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--gray-11);
   text-align: center;
 }
+.home-coluna-vazia p { margin: 0; }
 
 /* ── Cartão ── */
 .home-cartao {

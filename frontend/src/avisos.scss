@@ -1,0 +1,41 @@
+// Avisos flutuantes: canto inferior direito; no celular, faixa inferior de largura total.
+.avisos-regiao {
+  position: fixed;
+  z-index: 2000;
+  right: max(1.5rem, env(safe-area-inset-right, 0px));
+  bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+.aviso {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-inline-size: 18rem;
+  max-inline-size: 28rem;
+  padding: 0.625rem 0.5rem 0.625rem 0.875rem;
+  border-radius: var(--radius-3);
+  background: var(--gray-12);
+  color: var(--gray-1);
+  box-shadow: var(--shadow-5);
+  font-size: 14px;
+  line-height: 1.4;
+  animation: aviso-entrada 160ms ease-out;
+}
+.aviso-texto { flex: 1; min-inline-size: 0; overflow-wrap: anywhere; }
+.aviso-icone { flex: none; }
+.aviso-sucesso .aviso-icone { color: var(--green-7); }
+.aviso-info .aviso-icone { color: var(--blue-7); }
+.aviso-erro { background: var(--red-11); color: #fff; }
+.aviso .rt-IconButton { color: inherit; }
+.aviso .rt-Button { background: color-mix(in srgb, currentColor 18%, transparent); color: inherit; }
+@keyframes aviso-entrada { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .aviso { animation: none; } }
+@media (max-width: 672px) {
+  .avisos-regiao { left: 1rem; right: 1rem; bottom: max(1rem, env(safe-area-inset-bottom, 0px)); align-items: stretch; }
+  .aviso { min-inline-size: 0; max-inline-size: none; }
+}

@@ -120,7 +120,7 @@ export default function Publicacoes() {
   return (
     <Flex direction="column" gap="6">
       <CabecalhoPagina
-        titulo="Consultar publicações"
+        titulo="Buscar no DJEN"
         descricao="Busca publicações no DJEN por número do processo ou OAB."
       />
       <form onSubmit={aoEnviar}>
@@ -194,7 +194,7 @@ export default function Publicacoes() {
           <Text size="2" color="gray">Informe o número do processo ou a OAB. Os demais campos são opcionais.</Text>
           <div>
             <Button size="2" type="submit" disabled={consultando}>
-              Consultar publicações
+              Buscar
             </Button>
           </div>
         </Flex>

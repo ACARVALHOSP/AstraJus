@@ -1,3 +1,4 @@
+import { useAvisos } from '../../Avisos'
 import CabecalhoPagina from '../../CabecalhoPagina'
 import CampoData from '../../CampoData'
 import TabelaResponsiva from '../../TabelaResponsiva'
@@ -71,7 +72,8 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
   const [preferencias, setPreferencias] = useState(lerPreferencias)
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set()), [expandidas, setExpandidas] = useState<Set<string>>(new Set())
   const [carregando, setCarregando] = useState(true), [operacao, setOperacao] = useState(false)
-  const [erro, setErro] = useState(''), [mensagem, setMensagem] = useState('')
+  const [erro, setErro] = useState('')
+  const { avisar } = useAvisos()
   const [modal, setModal] = useState<{ tipo: 'processo' | 'atividade'; p: PublicacaoOab } | null>(null)
   const [capturaAberta, setCapturaAberta] = useState(false)
   const trava = useRef(false), sequencia = useRef(0)
@@ -120,7 +122,7 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
 
   function filtrar(acao: () => void) {
     if (ocupada) return
-    acao(); setPagina(1); setSelecionadas(new Set()); setMensagem('')
+    acao(); setPagina(1); setSelecionadas(new Set())
   }
   function alternar(id: string) {
     if (ocupada || trava.current) return
@@ -129,9 +131,11 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
   function alternarExpandida(id: string) {
     setExpandidas(s => { const novo = new Set(s); if (novo.has(id)) novo.delete(id); else novo.add(id); return novo })
   }
-  async function mudarStatus(hashes: string[], novo: Status, emLote = false) {
-    if (trava.current || ocupada || !hashes.length || (!emLote && lote)) return
-    trava.current = true; setOperacao(true); setErro(''); setMensagem('')
+  async function mudarStatus(hashes: string[], novo: Status, emLote = false, desfazendo = false) {
+    if (trava.current || (!desfazendo && (ocupada || (!emLote && lote))) || !hashes.length) return
+    // Situação anterior de cada publicação, para o "Desfazer".
+    const anteriores = new Map(publicacoes.filter(p => hashes.includes(p.hash)).map(p => [p.hash, p.status as Status]))
+    trava.current = true; setOperacao(true)
     try {
       // The backend limits request bodies to 4096 bytes. Keep each batch below that.
       const r: ResultadoStatus = { hashes_atualizados: [], hashes_falharam: [] }
@@ -142,21 +146,32 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
           if (!Array.isArray(parcial.hashes_atualizados) || !Array.isArray(parcial.hashes_falharam)) throw new Error('Resposta de status incompleta. Atualize a lista antes de repetir.')
           r.hashes_atualizados.push(...parcial.hashes_atualizados); r.hashes_falharam.push(...parcial.hashes_falharam)
         } catch (e) {
-          r.hashes_falharam.push(...hashes.slice(inicio)); setErro((e as Error).message); break
+          r.hashes_falharam.push(...hashes.slice(inicio)); avisar({ tipo: 'erro', texto: (e as Error).message }); break
         }
       }
       const sucessos = new Set(r.hashes_atualizados)
       setSelecionadas(s => new Set([...s].filter(h => !sucessos.has(h))))
-      setMensagem(`${sucessos.size} publicação(ões) atualizada(s) para ${ROTULO_STATUS[novo].toLowerCase()}.`)
-      if (r.hashes_falharam.length) setMensagem(`${sucessos.size} atualizada(s); ${r.hashes_falharam.length} falharam. As falhas permanecem selecionadas quando disponíveis.`)
+      if (r.hashes_falharam.length) {
+        avisar({ tipo: 'erro', texto: `${sucessos.size} atualizada(s); ${r.hashes_falharam.length} falharam. As falhas permanecem selecionadas quando disponíveis.` })
+      } else if (!desfazendo && sucessos.size) {
+        const grupos = new Map<Status, string[]>()
+        for (const h of sucessos) {
+          const antes = anteriores.get(h)
+          if (antes && antes !== novo) grupos.set(antes, [...(grupos.get(antes) ?? []), h])
+        }
+        avisar({
+          texto: sucessos.size === 1 ? `Publicação marcada como ${ROTULO_STATUS[novo].toLowerCase()}.` : `${sucessos.size} publicações marcadas como ${ROTULO_STATUS[novo].toLowerCase()}.`,
+          desfazer: grupos.size ? async () => { for (const [status, lista] of grupos) await mudarStatus(lista, status, true, true) } : undefined,
+        })
+      }
       await carregar()
-    } catch (e) { setErro((e as Error).message) }
+    } catch (e) { avisar({ tipo: 'erro', texto: (e as Error).message }) }
     finally { trava.current = false; setOperacao(false) }
   }
   function escolherColuna(chave: string, marcada: boolean) {
     const novas = marcada ? [...new Set([...preferencias, chave])] : preferencias.filter(k => k !== chave)
     setPreferencias(novas)
-    try { localStorage.setItem(CHAVE_COLUNAS, JSON.stringify(novas)) } catch { setMensagem('Preferências aplicadas nesta sessão; armazenamento indisponível.') }
+    try { localStorage.setItem(CHAVE_COLUNAS, JSON.stringify(novas)) } catch { avisar({ tipo: 'info', texto: 'Preferências aplicadas nesta sessão; armazenamento indisponível.' }) }
   }
   function abrirAcao(tipoAcao: 'processo' | 'atividade', p: PublicacaoOab) {
     if (ocupada || lote || trava.current) return
@@ -220,7 +235,7 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
   return (
     <Flex direction="column" gap="5" className="oab-painel">
       <CabecalhoPagina
-        titulo="Publicações monitoradas"
+        titulo="Publicações recebidas"
         descricao="Revise as publicações capturadas pelos monitoramentos por OAB."
         acoes={<>
           <Popover.Root>
@@ -365,7 +380,7 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
           </ul>
         ) : (
           <TabelaResponsiva principais={['Processo', 'Situação']}>
-            <table aria-label="Publicações monitoradas" className="oab-tabela">
+            <table aria-label="Publicações recebidas" className="oab-tabela">
               <thead>
                 <tr>
                   <th aria-label="Detalhes" />
@@ -442,6 +457,12 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
         )}
       </section>
 
+      {erro && (
+        <Callout.Root color="red" size="1" role="alert">
+          <Callout.Icon><Info size={14} /></Callout.Icon>
+          <Callout.Text>{erro} <Button variant="ghost" size="1" disabled={ocupada} onClick={carregar}>Tentar novamente</Button></Callout.Text>
+        </Callout.Root>
+      )}
       {carregando && <Carregamento tipo="tabela" descricao="Carregando publicações…" />}
       {!carregando && !erro && !publicacoes.length && (
         <Callout.Root color="blue" size="1">
@@ -454,7 +475,7 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
         </Callout.Root>
       )}
 
-      <nav aria-label="Páginas de publicações monitoradas" className="aj-paginacao">
+      <nav aria-label="Páginas de publicações recebidas" className="aj-paginacao">
         <Text size="2" color="gray">{total ? `Mostrando ${primeira}–${ultima} de ${total} publicações` : '0 publicações'}</Text>
         <span style={{ marginLeft: 'auto' }} />
         <Flex align="center" gap="2">
@@ -471,21 +492,6 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
         <Button variant="soft" color="gray" size="2" disabled={ocupada || pagina >= totalPaginas} onClick={() => setPagina(p => p + 1)} aria-label="Próxima página">Próxima</Button>
       </nav>
 
-      <div aria-live="polite">
-        {mensagem && (
-          <Callout.Root color="blue" size="1">
-            <Callout.Icon><Info size={14} /></Callout.Icon>
-            <Callout.Text>{mensagem}</Callout.Text>
-          </Callout.Root>
-        )}
-        {erro && (
-          <Callout.Root color="red" size="1">
-            <Callout.Icon><Info size={14} /></Callout.Icon>
-            <Callout.Text>{erro}</Callout.Text>
-          </Callout.Root>
-        )}
-      </div>
-      {erro && <Button variant="soft" size="1" disabled={ocupada} onClick={carregar} style={{ alignSelf: 'flex-start' }}>Tentar atualizar novamente</Button>}
 
       <Dialog.Root open={capturaAberta} onOpenChange={setCapturaAberta}>
         <Dialog.Content maxWidth="640px">
@@ -497,8 +503,8 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
           </Flex>
         </Dialog.Content>
       </Dialog.Root>
-      {modal?.tipo === 'processo' && <ProcessoPublicacao publicacao={modal.p} onClose={() => { setModal(null); void carregar() }} onConcluido={m => { setMensagem(m); setModal(null); void carregar() }} />}
-      {modal?.tipo === 'atividade' && <AtividadePublicacao publicacao={modal.p} onClose={() => setModal(null)} onConcluido={m => { setMensagem(m); setModal(null); void carregar() }} />}
+      {modal?.tipo === 'processo' && <ProcessoPublicacao publicacao={modal.p} onClose={() => { setModal(null); void carregar() }} onConcluido={m => { avisar({ texto: m }); setModal(null); void carregar() }} />}
+      {modal?.tipo === 'atividade' && <AtividadePublicacao publicacao={modal.p} onClose={() => setModal(null)} onConcluido={m => { avisar({ texto: m }); setModal(null); void carregar() }} />}
     </Flex>
   )
 }

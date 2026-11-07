@@ -1,3 +1,4 @@
+import { useAvisos } from '../Avisos'
 import CabecalhoPagina from '../CabecalhoPagina'
 import { useCallback, useEffect, useRef, useState, type PointerEvent as EventoPonteiro } from 'react'
 import {
@@ -32,7 +33,7 @@ function PainelHome() {
   const [carregando, setCarregando] = useState(Boolean(cliente))
   const [erro, setErro] = useState('')
   const [aviso, setAviso] = useState('')
-  const [mensagem, setMensagem] = useState('')
+  const { avisar } = useAvisos()
   const [executor, setExecutor] = useState('')
   const [responsavel, setResponsavel] = useState('')
   const [tipo, setTipo] = useState('')
@@ -56,7 +57,7 @@ function PainelHome() {
     const controle = new AbortController()
     requisicao.current = controle
     const { signal } = controle
-    setCarregando(true); setErro(''); setAviso(''); setMensagem('')
+    setCarregando(true); setErro(''); setAviso('')
     setItens([]); setProcessos([]); setPublicacoes(null)
     const avisos: string[] = []
     const carregarPublicacoes = async () => {
@@ -69,37 +70,22 @@ function PainelHome() {
       }
     }
     const carregarAtividades = async () => {
+      // Duas chamadas fixas, independentes da quantidade de processos: a lista de processos
+      // (para criar atividade e filtrar) e todas as atividades, já com o resumo do checklist.
       try {
-        const dados = await buscarJson<{ casos: ProcessoHome[] }>(cliente, '/casos', signal)
-        if (!Array.isArray(dados.casos)) throw new Error('Resposta de processos inválida.')
+        const [respProcessos, respAtividades] = await Promise.all([
+          buscarJson<{ casos: ProcessoHome[] }>(cliente, '/casos', signal),
+          buscarJson<{ atividades: (AtividadeHome & { caso: ProcessoHome; checklist?: ItemHome['checklist'] })[] }>(cliente, '/atividades?situacao=todas', signal),
+        ])
+        if (!Array.isArray(respProcessos.casos) || !Array.isArray(respAtividades.atividades)) throw new Error('Resposta inválida do servidor.')
         if (signal.aborted) return
-        setProcessos(dados.casos)
-        const resultados: ItemHome[] = []
-        const falhas: string[] = []
-        let indice = 0, falhasChecklist = 0
-        await Promise.all(Array.from({ length: Math.min(4, dados.casos.length) }, async () => {
-          while (indice < dados.casos.length && !signal.aborted) {
-            const processo = dados.casos[indice++]
-            try {
-              const resposta = await buscarJson<{ atividades: AtividadeHome[] }>(cliente, `/casos/${processo.id}/atividades`, signal)
-              if (!Array.isArray(resposta.atividades)) throw new Error('Resposta de atividades inválida.')
-              for (const atividade of resposta.atividades) {
-                if (signal.aborted) return
-                let checklist: ItemHome['checklist'] = null
-                try {
-                  const respostaChecklist = await buscarJson<{ itens: { concluido: boolean }[] }>(cliente, `/casos/${processo.id}/atividades/${atividade.id}/checklist`, signal)
-                  if (!Array.isArray(respostaChecklist.itens)) throw new Error('Checklist inválido')
-                  checklist = { total: respostaChecklist.itens.length, concluidos: respostaChecklist.itens.filter(i => i.concluido).length }
-                } catch { if (!signal.aborted) falhasChecklist++ }
-                resultados.push({ processo, atividade, checklist })
-              }
-            } catch { if (!signal.aborted) falhas.push(processo.titulo || 'Processo sem título') }
-          }
-        }))
-        if (signal.aborted) return
-        setItens(resultados)
-        if (falhas.length) avisos.push(`Atividades indisponíveis em ${falhas.length} processo(s): ${falhas.join(', ')}.`)
-        if (falhasChecklist) avisos.push(`${falhasChecklist} checklist(s) indisponível(is).`)
+        setProcessos(respProcessos.casos)
+        const porId = new Map(respProcessos.casos.map(c => [c.id, c]))
+        setItens(respAtividades.atividades.map(({ caso, checklist, ...atividade }) => ({
+          processo: porId.get(caso.id) ?? caso,
+          atividade,
+          checklist: checklist ?? null,
+        })))
       } catch (e) {
         if (!signal.aborted) setErro(e instanceof Error ? e.message : 'Não foi possível carregar as atividades.')
       }
@@ -115,17 +101,23 @@ function PainelHome() {
     return () => { montado.current = false; requisicao.current?.abort(); window.clearInterval(relogio) }
   }, [carregar])
 
-  async function mover(item: ItemHome, novoStatus: StatusAtividade) {
+  async function mover(item: ItemHome, novoStatus: StatusAtividade, desfazendo = false) {
     const chave = chaveItem(item)
     if (carregando || trava.current.has(chave) || item.atividade.status === novoStatus) return
-    trava.current.add(chave); setSalvando(new Set(trava.current)); setErro(''); setMensagem('')
+    const anterior = colunaAtividade(item.atividade.status)
+    trava.current.add(chave); setSalvando(new Set(trava.current))
     try {
       const atualizada = await enviarJson<AtividadeHome>(cliente, `/casos/${item.processo.id}/atividades/${item.atividade.id}`, { status: novoStatus }, 'PATCH')
       if (!montado.current) return
       setItens(atuais => atuais.map(i => chaveItem(i) === chave ? { ...i, atividade: atualizada } : i))
-      setMensagem(`${item.atividade.titulo}: movida para ${COLUNAS.find(c => c.id === novoStatus)?.titulo}.`)
+      if (!desfazendo) {
+        avisar({
+          texto: `“${item.atividade.titulo}” movida para ${COLUNAS.find(c => c.id === novoStatus)?.titulo}.`,
+          desfazer: () => mover({ ...item, atividade: atualizada }, anterior, true),
+        })
+      }
     } catch (e) {
-      if (montado.current) setErro(e instanceof Error ? e.message : 'Não foi possível alterar o status. Tente novamente.')
+      if (montado.current) avisar({ tipo: 'erro', texto: e instanceof Error ? e.message : 'Não foi possível alterar o status. Tente novamente.' })
     } finally {
       trava.current.delete(chave)
       if (montado.current) setSalvando(new Set(trava.current))
@@ -197,10 +189,12 @@ function PainelHome() {
   const filtrados = base.filter(i => noPeriodo(i.atividade, periodo, agora)).sort(ordenarItens)
   const totais = (p: Periodo) => base.filter(i => noPeriodo(i.atividade, p, agora)).length
   const resumo = [
-    { id: 'atrasadas' as const, titulo: 'Atrasadas', descricao: 'Requerem atenção' },
-    { id: 'hoje' as const, titulo: 'Vencem hoje', descricao: 'Atividades para hoje' },
-    { id: 'semana' as const, titulo: 'Próximos 7 dias', descricao: 'A partir de amanhã' },
+    { id: 'atrasadas' as const, titulo: 'Atrasadas', descricao: 'Requerem atenção', vazio: 'Nada atrasado' },
+    { id: 'hoje' as const, titulo: 'Vencem hoje', descricao: 'Atividades para hoje', vazio: 'Nada para hoje' },
+    { id: 'semana' as const, titulo: 'Próximos 7 dias', descricao: 'A partir de amanhã', vazio: 'Nada nos próximos dias' },
   ]
+  const filtrosAtivos = Boolean(executor || responsavel || tipo || periodo)
+  const semDados = carregando || Boolean(erro && !itens.length)
 
   return (
     <div className="home">
@@ -237,26 +231,27 @@ function PainelHome() {
             {resumo.map(r => (
               <button
                 key={r.id}
-                className={`home-metrica home-metrica-${r.id}`}
+                // Zero em cor neutra: o vermelho de "Atrasadas" só aparece quando há atraso.
+                className={`home-metrica home-metrica-${r.id}${!semDados && totais(r.id) === 0 ? ' home-metrica--zero' : ''}`}
                 aria-pressed={periodo === r.id}
-                disabled={carregando || Boolean(erro && !itens.length)}
+                disabled={semDados}
                 onClick={() => { setPeriodo(periodo === r.id ? '' : r.id); setColunaMobile('pendente') }}
               >
                 <span className="home-metrica-titulo">{r.titulo}</span>
                 <strong className="home-metrica-num">
-                  {carregando || (erro && !itens.length) ? '—' : totais(r.id)}
+                  {semDados ? '—' : totais(r.id)}
                 </strong>
-                <small className="home-metrica-desc">{r.descricao}</small>
+                <small className="home-metrica-desc">{!semDados && totais(r.id) === 0 ? r.vazio : r.descricao}</small>
               </button>
             ))}
             <button
-              className="home-metrica home-metrica-publicacoes"
+              className={`home-metrica home-metrica-publicacoes${publicacoes === 0 ? ' home-metrica--zero' : ''}`}
               onClick={() => irPara('publicacoes-oab', { status: 'nao_tratada' })}
             >
               <span className="home-metrica-titulo">Publicações para revisar</span>
               <strong className="home-metrica-num">{publicacoes ?? '—'}</strong>
               <small className="home-metrica-desc">
-                {publicacoes === null && !carregando ? 'Contagem indisponível · acessar triagem' : 'Acessar triagem'}
+                {publicacoes === null && !carregando ? 'Contagem indisponível · acessar triagem' : publicacoes === 0 ? 'Nenhuma para revisar' : 'Acessar triagem'}
               </small>
             </button>
           </div>
@@ -322,9 +317,11 @@ function PainelHome() {
               placeholder="Todos os períodos"
               opcoes={resumo.map(r => ({ value: r.id, label: r.titulo }))}
             />
-            <Flex align="end">
-              <Button variant="soft" color="gray" size="2" onClick={limparFiltros}>Limpar filtros</Button>
-            </Flex>
+            {filtrosAtivos && (
+              <Flex align="end">
+                <Button variant="soft" color="gray" size="2" onClick={limparFiltros}>Limpar filtros</Button>
+              </Flex>
+            )}
           </div>
 
           {/* Notificações */}
@@ -346,7 +343,6 @@ function PainelHome() {
               </Callout.Text>
             </Callout.Root>
           )}
-          <Text as="p" size="2" role="status" className="home-status">{mensagem}</Text>
 
           {/* Seletor de coluna (mobile) */}
           <Box className="home-seletor-mobile">
@@ -435,11 +431,7 @@ function PainelHome() {
                               {atividade.data ? formatarDataSimples(atividade.data) : 'Sem data'}
                               {atividade.hora ? ` · ${atividade.hora}` : ''}
                             </span>
-                            <span>
-                              {checklist
-                                ? `Checklist ${checklist.concluidos}/${checklist.total}`
-                                : 'Checklist indisponível'}
-                            </span>
+                            {checklist && <span>Checklist {checklist.concluidos}/{checklist.total}</span>}
                           </div>
                           <Select.Root
                             size="1"
@@ -462,11 +454,24 @@ function PainelHome() {
                     })}
 
                     {!todos.length && (
-                      <p className="home-coluna-vazia">
-                        {erro
-                          ? 'Dados indisponíveis ou nenhum item carregado.'
-                          : 'Nenhuma atividade com os filtros atuais.'}
-                      </p>
+                      <div className="home-coluna-vazia">
+                        {erro && !itens.length ? (
+                          <p>Não foi possível carregar as atividades.</p>
+                        ) : filtrosAtivos ? (
+                          <>
+                            <p>Nenhuma atividade com estes filtros.</p>
+                            <Button variant="ghost" size="1" onClick={limparFiltros}>Limpar filtros</Button>
+                          </>
+                        ) : coluna.id === 'pendente' ? (
+                          <>
+                            <p>Nenhuma atividade a fazer.</p>
+                            <Button variant="ghost" size="1" disabled={!cliente || salvando.size > 0}
+                              onClick={() => { setProcessoNovo(''); setEscolhendoProcesso(true) }}>Nova atividade</Button>
+                          </>
+                        ) : (
+                          <p>Nenhuma atividade aqui.</p>
+                        )}
+                      </div>
                     )}
                     {coluna.id === 'concluida' && todos.length > 10 && (
                       <Button variant="ghost" size="1" onClick={() => setTodasConcluidas(!todasConcluidas)}>

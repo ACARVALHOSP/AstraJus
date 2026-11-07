@@ -1,4 +1,5 @@
 import AcoesTabela from '../../AcoesTabela'
+import { useAvisos } from '../../Avisos'
 import Carregamento from '../../Carregamento'
 import TabelaResponsiva from '../../TabelaResponsiva'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -35,6 +36,7 @@ export default function AtividadesCaso({ casoId, atividadeInicialId, onAlterado 
   casoId: string; atividadeInicialId?: string | number; onAlterado?: () => void
 }) {
   const { cliente } = useCliente()
+  const { avisar } = useAvisos()
   const estreita = useEstreita()
   const [hoje] = useState(() => isoLocal(new Date()))
   const [carregando, setCarregando] = useState(true)
@@ -90,31 +92,47 @@ export default function AtividadesCaso({ casoId, atividadeInicialId, onAlterado 
   const lote = selecionadas.size > 0
   const todasVisiveis = visiveis.length > 0 && visiveis.every(a => selecionadas.has(String(a.id)))
 
-  async function atualizar(alvos: Atividade[], campos: Record<string, unknown>) {
-    if (!alvos.length || operando) return
-    setOperando(true); setErro(null)
-    const feitas = new Set<string>()
-    for (const a of alvos) {
+  type Par = [Atividade, Record<string, unknown>]
+  async function aplicar(pares: Par[]) {
+    const feitas: Atividade[] = []
+    let falha = ''
+    for (const [a, campos] of pares) {
       try {
         await enviarJson(cliente, `/casos/${casoId}/atividades/${a.id}`, campos, 'PATCH')
-        feitas.add(String(a.id))
-      } catch (e) { setErro(e instanceof ErroMCP ? e.message : 'Falha ao atualizar.') }
+        feitas.push(a)
+      } catch (e) { falha = e instanceof ErroMCP ? e.message : 'Falha ao atualizar.' }
     }
-    setSelecionadas(s => new Set([...s].filter(id => !feitas.has(id))))
+    if (falha) avisar({ tipo: 'erro', texto: falha })
+    return feitas
+  }
+  async function atualizar(alvos: Atividade[], campos: Record<string, unknown>) {
+    if (!alvos.length || operando) return
+    setOperando(true)
+    const feitas = await aplicar(alvos.map(a => [a, campos] as Par))
+    const ids = new Set(feitas.map(a => String(a.id)))
+    setSelecionadas(s => new Set([...s].filter(id => !ids.has(id))))
     setOperando(false)
     carregar()
     onAlterado?.()
+    if (!feitas.length) return
+    const anteriores: Par[] = feitas.map(a => [a, Object.fromEntries(Object.keys(campos).map(k => [k, (a as Record<string, unknown>)[k] ?? null]))])
+    const novo = typeof campos.status === 'string' ? (ROTULO_STATUS[campos.status] ?? campos.status).toLowerCase() : 'atualizada'
+    avisar({
+      texto: feitas.length === 1 ? `“${feitas[0].titulo}”: ${novo}.` : `${feitas.length} atividades: ${novo}.`,
+      desfazer: async () => { await aplicar(anteriores); carregar(); onAlterado?.() },
+    })
   }
   async function confirmarExclusao() {
     if (!paraExcluir) return
     setExcluindo(true)
     try {
       await enviarJson(cliente, `/casos/${casoId}/atividades/${paraExcluir.id}`, {}, 'DELETE')
+      avisar({ texto: `Atividade “${paraExcluir.titulo}” excluída.` })
       setParaExcluir(null)
       carregar()
       onAlterado?.()
     } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Falha ao excluir.')
+      avisar({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Falha ao excluir.' })
     } finally {
       setExcluindo(false)
     }

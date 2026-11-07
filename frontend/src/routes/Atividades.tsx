@@ -1,4 +1,5 @@
 import CabecalhoPagina from '../CabecalhoPagina'
+import { useAvisos } from '../Avisos'
 import CampoData from '../CampoData'
 import Carregamento from '../Carregamento'
 import TabelaResponsiva from '../TabelaResponsiva'
@@ -41,7 +42,8 @@ export default function Atividades() {
   const [atividades, setAtividades] = useState<Atividade[]>([])
   const [responsaveis, setResponsaveis] = useState<string[]>([])
   const [carregando, setCarregando] = useState(true), [operando, setOperando] = useState(false)
-  const [erro, setErro] = useState(''), [mensagem, setMensagem] = useState('')
+  const [erro, setErro] = useState('')
+  const { avisar } = useAvisos()
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set())
   const [dialogo, setDialogo] = useState<'' | 'reatribuir' | 'data' | 'nova'>('')
   const [novoResponsavel, setNovoResponsavel] = useState(''), [novaData, setNovaData] = useState('')
@@ -107,23 +109,35 @@ export default function Atividades() {
   function alternar(a: Atividade) {
     setSelecionadas(s => { const n = new Set(s); const k = chave(a); if (n.has(k)) n.delete(k); else n.add(k); return n })
   }
-  async function atualizar(alvos: Atividade[], campos: Record<string, unknown>, descricao: string) {
-    if (!alvos.length || operando) return
-    setOperando(true); setErro(''); setMensagem('')
-    const feitas = new Set<string>()
+  type Par = [Atividade, Record<string, unknown>]
+  async function aplicar(pares: Par[]) {
+    const feitas: Atividade[] = []
     const falhas: string[] = []
-    for (const a of alvos) {
+    for (const [a, campos] of pares) {
       try {
         await enviarJson(cliente, `/casos/${a.caso_id}/atividades/${a.id}`, campos, 'PATCH')
-        feitas.add(chave(a))
+        feitas.push(a)
       } catch (e) { falhas.push(`${a.titulo}: ${e instanceof ErroMCP ? e.message : 'falha inesperada'}`) }
     }
+    if (falhas.length) avisar({ tipo: 'erro', texto: `Não foi possível atualizar ${falhas.length}: ${falhas.join('; ')}` })
+    return feitas
+  }
+  async function atualizar(alvos: Atividade[], campos: Record<string, unknown>, descricao: string) {
+    if (!alvos.length || operando) return
+    setOperando(true)
+    const feitas = await aplicar(alvos.map(a => [a, campos] as Par))
     // Falhas continuam selecionadas para nova tentativa.
-    setSelecionadas(s => new Set([...s].filter(k => !feitas.has(k))))
-    setMensagem(`${feitas.size} atividade(s) ${descricao}.`)
-    if (falhas.length) setErro(`Não foi possível atualizar ${falhas.length}: ${falhas.join('; ')}`)
+    const chavesFeitas = new Set(feitas.map(chave))
+    setSelecionadas(s => new Set([...s].filter(k => !chavesFeitas.has(k))))
     setOperando(false)
     await carregar()
+    if (!feitas.length) return
+    // Guarda os valores anteriores de cada atividade para o "Desfazer".
+    const anteriores: Par[] = feitas.map(a => [a, Object.fromEntries(Object.keys(campos).map(k => [k, (a as Record<string, unknown>)[k] ?? null]))])
+    avisar({
+      texto: feitas.length === 1 ? `“${feitas[0].titulo}” ${descricao.slice(0, -1)}.` : `${feitas.length} atividades ${descricao}.`,
+      desfazer: async () => { await aplicar(anteriores); await carregar() },
+    })
   }
   const selecionadasLista = () => atividades.filter(a => selecionadas.has(chave(a)))
   function abrirProcesso(a: Atividade) { irPara('casos', { id: a.caso_id, aba: 'atividades', atividadeId: a.id }) }
@@ -356,6 +370,7 @@ export default function Atividades() {
         )}
       </section>
 
+      {erro && <Callout.Root color="red" size="1" role="alert"><Callout.Icon><AlertTriangle size={14} /></Callout.Icon><Callout.Text>{erro}</Callout.Text></Callout.Root>}
       {carregando && <Carregamento tipo="tabela" descricao="Carregando atividades…" />}
       {!carregando && !erro && !visiveis.length && (
         <Callout.Root color="blue" size="1">
@@ -373,10 +388,6 @@ export default function Atividades() {
         </Text>
       )}
 
-      <div aria-live="polite">
-        {mensagem && <Callout.Root color="green" size="1"><Callout.Icon><Info size={14} /></Callout.Icon><Callout.Text>{mensagem}</Callout.Text></Callout.Root>}
-        {erro && <Callout.Root color="red" size="1"><Callout.Icon><AlertTriangle size={14} /></Callout.Icon><Callout.Text>{erro}</Callout.Text></Callout.Root>}
-      </div>
 
       <Dialog.Root open={dialogo === 'reatribuir'} onOpenChange={v => { if (!v) setDialogo('') }}>
         <Dialog.Content maxWidth="420px">

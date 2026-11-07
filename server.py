@@ -4986,16 +4986,17 @@ class _AutenticacaoBearer:
 
     async def _atividades_globais(self, scope, send) -> None:
         """GET /atividades: atividades de todos os processos (tela Atividades).
-        Parâmetros: situacao (abertas|concluidas), tipo, responsavel (login; "__sem__" = sem
+        Parâmetros: situacao (abertas|concluidas|todas), tipo, responsavel (login; "__sem__" = sem
         responsável), responsavel_processo, busca. Cada item traz `caso` (id, título,
-        responsável, números) e `agenda` (vínculo do usuário com a agenda Google, se houver)."""
+        responsável, números), `checklist` ({total, concluidos} ou null) e `agenda` (vínculo do
+        usuário com a agenda Google, se houver)."""
         if scope.get("method") != "GET":
             await _responder(send, 405, b"Metodo nao permitido")
             return
         parametros = dict(_query(scope))
         situacao = parametros.get("situacao") or "abertas"
-        if situacao not in ("abertas", "concluidas"):
-            await _json(send, 400, _erro("Situação inválida: use abertas ou concluidas."))
+        if situacao not in ("abertas", "concluidas", "todas"):
+            await _json(send, 400, _erro("Situação inválida: use abertas, concluidas ou todas."))
             return
         tipo = (parametros.get("tipo") or "").strip() or None
         if tipo and tipo not in ("tarefa", "prazo", "audiencia", "reuniao", "outro"):

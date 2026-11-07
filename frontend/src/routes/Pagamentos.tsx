@@ -11,6 +11,7 @@ import { ErroMCP } from '../api/mcpClient'
 import { buscarJson, enviarJson } from '../api/rest'
 import { formatarMoeda, formatarNomeExibicao } from '../utils/formatadores'
 import { useEstreita } from '../utils/useEstreita'
+import { useAvisos } from '../Avisos'
 import NovaCobrancaModal from './pagamentos/NovaCobrancaModal'
 import './financeiro/financeiro.scss'
 import './pagamentos/pagamentos.scss'
@@ -110,7 +111,7 @@ export default function Pagamentos() {
   const [carregando, setCarregando] = useState(false)
   const [carregandoMais, setCarregandoMais] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
-  const [mensagem, setMensagem] = useState('')
+  const { avisar } = useAvisos()
   const [avisoIntegracao, setAvisoIntegracao] = useState<string | null>(null)
   const [painel, setPainel] = useState<Painel | null>(null)
   const [paraCancelar, setParaCancelar] = useState<Cobranca | null>(null)
@@ -171,7 +172,7 @@ export default function Pagamentos() {
     if (!link) return
     try {
       await navigator.clipboard.writeText(link)
-      setMensagem(`Link da cobrança de ${formatarNomeExibicao(c.cliente_nome ?? '') || 'cliente'} copiado.`)
+      avisar({ texto: `Link da cobrança de ${formatarNomeExibicao(c.cliente_nome ?? '') || 'cliente'} copiado.` })
     } catch {
       window.open(link, '_blank', 'noopener')
     }
@@ -183,10 +184,10 @@ export default function Pagamentos() {
     try {
       await enviarJson(cliente, `/pagamentos/${paraCancelar.id}`, {}, 'DELETE')
       setParaCancelar(null)
-      setMensagem('Cobrança cancelada.')
+      avisar({ texto: 'Cobrança cancelada no Asaas.' })
       await carregar(0)
     } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Falha ao cancelar.')
+      avisar({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Falha ao cancelar.' })
     } finally {
       setCancelando(false)
     }
@@ -326,6 +327,7 @@ export default function Pagamentos() {
         </>
       )}
 
+      {erro && <Callout.Root color="red" size="1" role="alert"><Callout.Icon><AlertTriangle size={14} /></Callout.Icon><Callout.Text>{erro}</Callout.Text></Callout.Root>}
       {carregando && <Carregamento tipo="tabela" descricao="Carregando cobranças…" />}
       {!carregando && painel && cobrancas.length === 0 && (
         <Callout.Root color="blue" size="1">
@@ -406,10 +408,6 @@ export default function Pagamentos() {
         <Text size="1" color="gray">Os totais consideram as 1.000 cobranças mais recentes do Asaas.</Text>
       )}
 
-      <div aria-live="polite">
-        {mensagem && <Callout.Root color="green" size="1"><Callout.Icon><Info size={14} /></Callout.Icon><Callout.Text>{mensagem}</Callout.Text></Callout.Root>}
-        {erro && <Callout.Root color="red" size="1"><Callout.Icon><AlertTriangle size={14} /></Callout.Icon><Callout.Text>{erro}</Callout.Text></Callout.Root>}
-      </div>
 
       <AlertDialog.Root open={paraCancelar !== null} onOpenChange={(open) => !open && setParaCancelar(null)}>
         <AlertDialog.Content maxWidth="400px">
@@ -433,7 +431,7 @@ export default function Pagamentos() {
         onClose={() => setModalNovaAberto(false)}
         onCriada={() => {
           setModalNovaAberto(false)
-          setMensagem('Cobrança criada.')
+          avisar({ texto: 'Cobrança criada.' })
           void carregar(0)
         }}
       />

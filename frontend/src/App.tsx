@@ -7,6 +7,7 @@ import {
   Palette, ChevronDown, ChevronRight, Check,
 } from 'lucide-react'
 import { ClienteProvider, useCliente } from './api/ClienteContext'
+import { AvisosProvider } from './Avisos'
 import { CHAVE_TEMA } from './api/mcpClient'
 import BuscaGlobal from './BuscaGlobal'
 import ContaUsuario from './ContaUsuario'
@@ -47,17 +48,17 @@ const GRUPOS_NAVEGACAO = [
     id: 'consultas', label: 'Consultas', icone: Search,
     abas: [
       { id: 'processo', label: 'Consultar processo', icone: FileSearch },
-      { id: 'publicacoes', label: 'Publicações', icone: Newspaper },
+      { id: 'publicacoes', label: 'Buscar no DJEN', icone: Newspaper },
       { id: 'jurimetria', label: 'Jurimetria', icone: BarChart2 },
       { id: 'jurisprudencia', label: 'Jurisprudência', icone: BookOpen },
-      { id: 'historico', label: 'Histórico', icone: History },
+      { id: 'historico', label: 'Histórico e favoritos', icone: History },
     ],
   },
   {
     id: 'acompanhamento', label: 'Acompanhamento', icone: Eye,
     abas: [
       { id: 'monitoramentos', label: 'Monitoramentos', icone: BellRing },
-      { id: 'publicacoes-oab', label: 'Publicações OAB', icone: Gavel },
+      { id: 'publicacoes-oab', label: 'Publicações recebidas', icone: Gavel },
     ],
   },
   {
@@ -287,6 +288,7 @@ export default function App() {
 
   return (
     <Theme accentColor={accent} grayColor="slate" radius="medium" appearance={aparencia}>
+      <AvisosProvider>
       <ClienteProvider>
         <NavegacaoProvider abaInicial="inicio">
           <div className="aj-shell">
@@ -326,6 +328,7 @@ export default function App() {
           </div>
         </NavegacaoProvider>
       </ClienteProvider>
+      </AvisosProvider>
     </Theme>
   )
 }

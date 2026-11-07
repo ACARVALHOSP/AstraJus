@@ -1,3 +1,4 @@
+import { useAvisos } from '../../Avisos'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import TabelaResponsiva from '../../TabelaResponsiva'
@@ -29,7 +30,7 @@ export default function PublicacoesCaso({ casoId, onAlterado }: { casoId: string
   const [carregando, setCarregando] = useState(true)
   const [operando, setOperando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
-  const [mensagem, setMensagem] = useState('')
+  const { avisar } = useAvisos()
   const [publicacoes, setPublicacoes] = useState<PublicacaoOab[] | null>(null)
   const [atividades, setAtividades] = useState<AtividadeResumo[]>([])
   const [filtro, setFiltro] = useState<'nao_tratada' | ''>('')
@@ -58,28 +59,45 @@ export default function PublicacoesCaso({ casoId, onAlterado }: { casoId: string
   const visiveis = filtro ? ordenadas.filter(p => p.status === filtro) : ordenadas
   const atividadeDe = (p: PublicacaoOab) => atividades.find(a => a.origem_djen_hash === p.hash)
 
-  async function mudarStatus(p: PublicacaoOab, status: Status) {
-    if (operando) return
-    setOperando(true); setErro(null); setMensagem('')
+  async function mudarStatus(p: PublicacaoOab, status: Status, desfazendo = false) {
+    if (operando && !desfazendo) return
+    const anterior = p.status as Status
+    setOperando(true)
     try {
       await enviarJson(cliente, '/publicacoes-oab/status', { hashes: [p.hash], status })
-      setMensagem(`Publicação marcada como ${ROTULO_STATUS[status].toLowerCase()}.`)
+      if (!desfazendo) {
+        avisar({
+          texto: `Publicação marcada como ${ROTULO_STATUS[status].toLowerCase()}.`,
+          desfazer: anterior && anterior !== status ? () => mudarStatus(p, anterior, true) : undefined,
+        })
+      }
       carregar()
       onAlterado?.()
     } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Falha ao atualizar.')
+      avisar({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Falha ao atualizar.' })
     } finally { setOperando(false) }
+  }
+  async function vincularDeNovo(hash: string) {
+    try {
+      await enviarJson(cliente, `/casos/${casoId}/publicacoes`, { hash })
+      carregar()
+      onAlterado?.()
+    } catch (e) {
+      avisar({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Falha ao vincular de novo.' })
+    }
   }
   async function confirmarDesvincular() {
     if (!paraDesvincular) return
+    const hash = paraDesvincular.hash
     setOperando(true)
     try {
-      await enviarJson(cliente, `/casos/${casoId}/publicacoes/${paraDesvincular.hash}`, {}, 'DELETE')
+      await enviarJson(cliente, `/casos/${casoId}/publicacoes/${hash}`, {}, 'DELETE')
       setParaDesvincular(null)
+      avisar({ texto: 'Publicação desvinculada do processo.', desfazer: () => vincularDeNovo(hash) })
       carregar()
       onAlterado?.()
     } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Falha ao desvincular.')
+      avisar({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Falha ao desvincular.' })
     } finally {
       setOperando(false)
     }
@@ -148,7 +166,6 @@ export default function PublicacoesCaso({ casoId, onAlterado }: { casoId: string
 
       <div aria-live="polite">
         {carregando && <Carregamento tipo="tabela" descricao="Carregando…" />}
-        {mensagem && <Callout.Root color="green" size="1"><Callout.Icon><Info size={14} /></Callout.Icon><Callout.Text>{mensagem}</Callout.Text></Callout.Root>}
         {erro && (
           <Callout.Root color="red" size="1">
             <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
@@ -230,12 +247,12 @@ export default function PublicacoesCaso({ casoId, onAlterado }: { casoId: string
 
       {criandoAtividade && (
         <AtividadePublicacao publicacao={criandoAtividade} onClose={() => setCriandoAtividade(null)}
-          onConcluido={m => { setMensagem(m); setCriandoAtividade(null); carregar(); onAlterado?.() }} />
+          onConcluido={m => { avisar({ texto: m }); setCriandoAtividade(null); carregar(); onAlterado?.() }} />
       )}
       <AlertDialog.Root open={paraDesvincular !== null} onOpenChange={(open) => !open && setParaDesvincular(null)}>
         <AlertDialog.Content maxWidth="400px">
           <AlertDialog.Title>Desvincular publicação</AlertDialog.Title>
-          <AlertDialog.Description>Desvincular esta publicação do processo? Ela continua em Publicações OAB, sem processo vinculado.</AlertDialog.Description>
+          <AlertDialog.Description>Desvincular esta publicação do processo? Ela continua em Publicações recebidas, sem processo vinculado.</AlertDialog.Description>
           <Flex gap="3" mt="4" justify="end">
             <AlertDialog.Cancel>
               <Button variant="soft" color="gray">Cancelar</Button>

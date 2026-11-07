@@ -1503,12 +1503,15 @@ class RegistroClientesCasos:
         limite: int = 1000,
     ) -> list[dict]:
         """Atividades de todos os processos, com título, responsável e números do processo.
-        `situacao`: "abertas" (pendente, em andamento, aguardando) ou "concluidas".
+        `situacao`: "abertas" (pendente, em andamento, aguardando), "concluidas" ou "todas".
+        Cada atividade traz o resumo do checklist ({total, concluidos} ou None).
         Ordem: com data primeiro (data, hora), depois as sem data, pela criação.
         `busca` procura no título da atividade, no título do processo e no número CNJ."""
-        filtros, valores = [], []
+        filtros, valores = ["1 = 1"], []
         if situacao == "concluidas":
             filtros.append("a.status = 'concluida'")
+        elif situacao == "todas":
+            pass
         else:
             filtros.append("a.status IN (%s)" % ",".join("?" * len(self._STATUS_ATIVIDADE_ABERTOS)))
             valores.extend(self._STATUS_ATIVIDADE_ABERTOS)
@@ -1550,11 +1553,20 @@ class RegistroClientesCasos:
                 for caso_id, numero in conexao.execute(
                         f"SELECT caso_id, numero_processo FROM caso_processos WHERE caso_id IN ({ph}) ORDER BY rowid", ids):
                     processos[caso_id].append(numero)
+            ids_atividades = [linha[0] for linha in linhas]
+            resumo: dict = {}
+            for inicio in range(0, len(ids_atividades), 500):
+                lote = ids_atividades[inicio:inicio + 500]
+                for aid, total, concluidos in conexao.execute(
+                        "SELECT atividade_id, COUNT(*), SUM(concluido) FROM atividade_checklist_itens "
+                        f"WHERE atividade_id IN ({','.join('?' * len(lote))}) GROUP BY atividade_id", lote):
+                    resumo[aid] = {"total": total, "concluidos": concluidos or 0}
         resultado = []
         for linha in linhas:
             atividade = _linha_atividade(linha[:11])
             atividade["caso"] = {"id": linha[1], "titulo": linha[11], "responsavel": linha[12],
                                  "processos": processos.get(linha[1], [])}
+            atividade["checklist"] = resumo.get(atividade["id"])
             resultado.append(atividade)
         return resultado
 

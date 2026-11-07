@@ -1,4 +1,5 @@
 import CabecalhoPagina from '../CabecalhoPagina'
+import { useAvisos } from '../Avisos'
 import TabelaResponsiva from '../TabelaResponsiva'
 import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
@@ -76,6 +77,7 @@ function descreverConsulta(item: ItemHistorico) {
 export default function Historico() {
   const { cliente } = useCliente()
   const { irPara } = useNavegacao()
+  const { avisar } = useAvisos()
   const estreita = useEstreita()
   const [hoje] = useState(() => isoLocal(new Date()))
   const [aba, setAba] = useState<Aba>('processos')
@@ -145,10 +147,19 @@ export default function Historico() {
   function tirarCasoDosFavoritos(id: string) {
     alternarCasoFavorito(id)
     setIdsFavoritos(lerCasosFavoritos())
+    const titulo = formatarNomeExibicao(casos.find(c => c.id === id)?.titulo) || 'Processo'
+    avisar({
+      texto: `${titulo} saiu dos favoritos.`,
+      desfazer: () => { if (!lerCasosFavoritos().includes(id)) alternarCasoFavorito(id); setIdsFavoritos(lerCasosFavoritos()) },
+    })
   }
   function tirarConsultaDosFavoritos(fav: Favorito) {
     removerFavorito(fav.tribunal, fav.numero)
     setFavoritos(lerFavoritos())
+    avisar({
+      texto: `${formatarNumeroCNJ(fav.numero)} saiu das consultas favoritas.`,
+      desfazer: () => { if (!ehFavorito(fav.tribunal, fav.numero)) alternarFavorito(fav.tribunal, fav.numero); setFavoritos(lerFavoritos()) },
+    })
   }
   function consultar(fav: Favorito) {
     const payload: PayloadProcesso = { tribunal: fav.tribunal, numero_processo: fav.numero }
@@ -162,6 +173,7 @@ export default function Historico() {
     const a = item.args as Record<string, string>
     alternarFavorito(a.tribunal, a.numero_processo)
     setFavoritos(lerFavoritos())
+    avisar({ texto: `${formatarNumeroCNJ(a.numero_processo)} adicionado às consultas favoritas.` })
   }
   function tirarDoHistorico(item: ItemHistorico) {
     removerHistorico(item.quando)
@@ -421,7 +433,7 @@ export default function Historico() {
           <AlertDialog.Description>Apagar as {historico.length} consultas recentes deste navegador? Os favoritos continuam salvos.</AlertDialog.Description>
           <Flex gap="3" mt="4" justify="end">
             <AlertDialog.Cancel><Button variant="soft" color="gray">Cancelar</Button></AlertDialog.Cancel>
-            <AlertDialog.Action><Button color="red" onClick={() => { limparHistorico(); setHistorico([]) }}>Apagar histórico</Button></AlertDialog.Action>
+            <AlertDialog.Action><Button color="red" onClick={() => { limparHistorico(); setHistorico([]); avisar({ texto: 'Histórico apagado.' }) }}>Apagar histórico</Button></AlertDialog.Action>
           </Flex>
         </AlertDialog.Content>
       </AlertDialog.Root>
