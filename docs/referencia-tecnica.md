@@ -74,6 +74,12 @@ O frontend Radix (`/radix/`) é servido diretamente pelo Caddy a partir de `/srv
 | POST | `/casos/<id>/processos/<numero>/capa/atualizar` | Preenche a capa via DataJud + DJEN (`{tribunal}`) |
 | POST, DELETE | `/casos/<id>/processos/<numero>/capa/monitorar` | Cria / remove monitoramento do processo |
 
+**Atividades (todas)**
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/atividades` | Atividades de todos os processos (tela Atividades). Parâmetros: `situacao` (`abertas` padrão, `concluidas`), `tipo`, `responsavel` (`__sem__` = sem responsável), `responsavel_processo`, `busca`. Cada item traz `caso` (id, título, responsável, números) e `agenda` |
+
 **Financeiro e pagamentos**
 
 | Método | Rota | Descrição |
