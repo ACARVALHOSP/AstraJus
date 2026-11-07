@@ -1,5 +1,18 @@
 const URL_MCP = '/mcp'
 
+/** Mensagem para quem usa o sistema quando o servidor não explica o erro. */
+export function mensagemPorStatus(status: number): string {
+  if (status === 0) return 'Não foi possível falar com o servidor. Confira sua conexão e tente de novo.'
+  if (status === 401) return 'Seu acesso expirou ou foi revogado. Entre de novo em Configurações › Acesso.'
+  if (status === 403) return 'Seu usuário não tem permissão para esta ação. Fale com o administrador.'
+  if (status === 404) return 'Não encontramos este item. Ele pode ter sido excluído; atualize a página.'
+  if (status === 409) return 'Este item foi alterado por outra pessoa. Atualize a página e tente de novo.'
+  if (status === 413) return 'O conteúdo enviado é grande demais.'
+  if (status === 429) return 'Muitas tentativas em pouco tempo. Aguarde alguns segundos e tente de novo.'
+  if (status >= 500) return 'O servidor não conseguiu responder agora. Tente de novo em alguns minutos; nada foi perdido.'
+  return 'Não foi possível concluir a ação. Tente de novo.'
+}
+
 export class ErroMCP extends Error {
   status: number
   constructor(status: number, mensagem: string) {
@@ -71,7 +84,9 @@ export class ClienteMCP {
         await this.iniciar()
         return this.enviar(corpo, { comResposta, podeReiniciar: false })
       }
-      throw new ErroMCP(resposta.status, texto || `Falha inesperada (HTTP ${resposta.status}).`)
+      // Corpo em texto puro do servidor só é mostrado quando é uma mensagem curta e legível.
+      const legivel = texto && texto.length < 200 && !/^\s*[<{]/.test(texto) && resposta.status < 500
+      throw new ErroMCP(resposta.status, legivel ? texto : mensagemPorStatus(resposta.status))
     }
 
     if (!comResposta) {

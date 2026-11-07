@@ -1,5 +1,6 @@
 import LinhaFiltros from '../LinhaFiltros'
 import CabecalhoPagina from '../CabecalhoPagina'
+import Paginacao, { paginaPara, POR_PAGINA } from '../Paginacao'
 import TabelaResponsiva from '../TabelaResponsiva'
 import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
@@ -115,7 +116,7 @@ export default function Financeiro() {
       setClientes(respClientes.clientes ?? [])
       setCasos(respCasos.casos ?? [])
     } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Falha inesperada ao carregar.')
+      setErro(e instanceof ErroMCP ? e.message : 'Não foi possível carregar os dados. Tente de novo.')
     } finally {
       setCarregando(false)
     }
@@ -173,7 +174,12 @@ export default function Financeiro() {
   }, [lancamentos, clientes])
   const filtrosAtivos = Boolean(direcao || clienteFiltro || responsavelFiltro || busca)
   const lote = selecionados.size > 0
-  const todosSelecionados = visiveis.length > 0 && visiveis.every(l => selecionados.has(l.id))
+  // 20 por página; volta para a 1ª quando mês, atalho ou filtros mudam. Os totais somam a lista toda.
+  const chavePagina = [mes, todosMeses, atalho, direcao, clienteFiltro, responsavelFiltro, busca].join('|')
+  const [estadoPagina, setEstadoPagina] = useState({ chave: chavePagina, pagina: 1 })
+  const pagina = paginaPara(estadoPagina, chavePagina)
+  const naPagina = useMemo(() => visiveis.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA), [visiveis, pagina])
+  const todosSelecionados = naPagina.length > 0 && naPagina.every(l => selecionados.has(l.id))
 
   async function definirPago(alvos: Lancamento[], pago: boolean, desfazendo = false) {
     if (!alvos.length || (operando && !desfazendo)) return
@@ -373,7 +379,7 @@ export default function Financeiro() {
 
       {!carregando && visiveis.length > 0 && (estreita ? (
         <ul className="fin-cartoes">
-          {visiveis.map(l => (
+          {naPagina.map(l => (
             <li key={l.id} className="fin-cartao">
               <Flex align="center" gap="2" wrap="wrap">
                 <Checkbox aria-label={`Selecionar ${l.descricao}`} checked={selecionados.has(l.id)} disabled={operando}
@@ -398,7 +404,7 @@ export default function Financeiro() {
               <tr>
                 <th className="tabela-controle">
                   <Checkbox aria-label="Selecionar todos os lançamentos visíveis" checked={todosSelecionados ? true : lote ? 'indeterminate' : false}
-                    onCheckedChange={() => setSelecionados(todosSelecionados ? new Set() : new Set(visiveis.map(l => l.id)))} />
+                    onCheckedChange={() => setSelecionados(todosSelecionados ? new Set() : new Set(naPagina.map(l => l.id)))} />
                 </th>
                 <th className="fin-col-venc">Vencimento</th>
                 <th>Descrição</th>
@@ -409,7 +415,7 @@ export default function Financeiro() {
               </tr>
             </thead>
             <tbody>
-              {visiveis.map(l => (
+              {naPagina.map(l => (
                 <tr key={l.id} className={selecionados.has(l.id) ? 'fin-selecionado' : undefined}>
                   <td className="tabela-controle">
                     <Checkbox aria-label={`Selecionar ${l.descricao}`} checked={selecionados.has(l.id)} disabled={operando}
@@ -433,6 +439,11 @@ export default function Financeiro() {
           </table>
         </TabelaResponsiva>
       ))}
+
+      {!carregando && (
+        <Paginacao pagina={pagina} total={visiveis.length} nome="lançamentos"
+          onPagina={n => { setEstadoPagina({ chave: chavePagina, pagina: n }); document.getElementById('main-content')?.scrollTo({ top: 0 }) }} />
+      )}
 
       {!carregando && visiveis.length > 0 && (
         <dl className="fin-totais" aria-label="Totais da lista">

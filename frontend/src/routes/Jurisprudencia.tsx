@@ -14,7 +14,6 @@ import {
   Text,
   TextField,
   Checkbox,
-  Tooltip,
 } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
@@ -227,7 +226,7 @@ export default function Jurisprudencia() {
       setOpcoesOrgaos((anteriores) => mesclarFacetas(anteriores, novasOrgaos))
     } catch (e) {
       if (idRequisicao !== requisicaoAtual.current) return
-      setErro(e instanceof ErroMCP ? e.message : 'Falha inesperada ao consultar.')
+      setErro(e instanceof ErroMCP ? e.message : 'Não foi possível concluir a consulta. Tente de novo.')
     } finally {
       if (idRequisicao === requisicaoAtual.current) setConsultando(false)
     }
@@ -288,7 +287,7 @@ export default function Jurisprudencia() {
     <Flex direction="column" gap="6">
       <CabecalhoPagina
         titulo="Jurisprudência"
-        descricao='Consulta a acórdãos da base "Jurisprudência Selecionada" do TJSP. Os resultados vêm direto do tribunal. Integração não oficial (sem API pública documentada), sujeita a mudanças sem aviso do tribunal.'
+        descricao='Acórdãos da base "Jurisprudência Selecionada" do TJSP, consultados direto no site do tribunal.'
       />
 
       <form onSubmit={aoEnviarBuscaPrincipal}>
@@ -296,10 +295,7 @@ export default function Jurisprudencia() {
           <div className="aj-form-grade">
             <div className="form-campo" style={{ gridColumn: 'span 2' }}>
               <label className="form-campo-label" htmlFor="juris-termo">
-                <Flex gap="1" align="center" display="inline-flex">
-                  Pesquisa por termos (obrigatório)
-                  <LabelAjuda />
-                </Flex>
+                Pesquisa por termos (obrigatório)
               </label>
               <TextField.Root
                 id="juris-termo"
@@ -310,7 +306,9 @@ export default function Jurisprudencia() {
                 onChange={(e) => setTermo(e.target.value)}
                 onBlur={() => setTermoTocado(true)}
               />
-              {termoTocado && !termo.trim() && <Text size="1" color="red">Informe o termo de pesquisa.</Text>}
+              {termoTocado && !termo.trim()
+                ? <Text size="1" color="red">Informe o termo de pesquisa.</Text>
+                : <Text size="1" color="gray">Use aspas para expressão exata, OU, NÃO e *. <LabelAjuda /></Text>}
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="juris-buscar-em">Buscar em</label>
@@ -456,31 +454,32 @@ export default function Jurisprudencia() {
           </Flex>
         )}
       </div>
+      <details className="aj-sobre-fonte">
+        <summary>Sobre esta fonte</summary>
+        <Text as="p" size="2" color="gray">
+          O TJSP não oferece um serviço oficial para esta consulta: os resultados vêm da página pública de
+          jurisprudência do tribunal. Se o tribunal mudar essa página, a busca pode parar de funcionar até ser ajustada.
+        </Text>
+      </details>
     </Flex>
   )
 }
 
 function LabelAjuda() {
+  // Abre ao clicar (e não ao passar o mouse), para funcionar também no celular.
   return (
-    <Tooltip
-      content={
-        <div>
-          <Text as="p" size="1" mb="1">Operadores de busca suportados pelo TJSP:</Text>
-          {OPERADORES_BUSCA.map(({ operador, exemplo }) => (
-            <Text as="p" size="1" key={operador}>
-              <Text weight="bold">{operador}</Text> — ex.: {exemplo}
-            </Text>
-          ))}
-        </div>
-      }
-    >
-      <button
-        type="button"
-        aria-label="Operadores de busca suportados"
-        style={{ display: 'inline-flex', alignItems: 'center', border: 'none', background: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent-11)' }}
-      >
-        <Info size={14} />
-      </button>
-    </Tooltip>
+    <Popover.Root>
+      <Popover.Trigger>
+        <button type="button" className="aj-link-ajuda">Ver exemplos</button>
+      </Popover.Trigger>
+      <Popover.Content size="1" maxWidth="320px">
+        <Text as="p" size="2" weight="bold" mb="2">Operadores de busca do TJSP</Text>
+        {OPERADORES_BUSCA.map(({ operador, exemplo }) => (
+          <Text as="p" size="2" key={operador}>
+            <Text weight="bold">{operador}</Text> — ex.: {exemplo}
+          </Text>
+        ))}
+      </Popover.Content>
+    </Popover.Root>
   )
 }

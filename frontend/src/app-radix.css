@@ -437,3 +437,10 @@ html, body { margin: 0; padding: 0; }
 .tabela-adaptavel .tabela-fluida .tabela-acoes-grupo .tabela-detalhes-botao { margin-block-start: 0; }
 .aj-form-estreito { max-width: 40rem; }
 .aj-campo-data-botao { min-width: 24px; min-height: 24px; }
+
+/* Link de ajuda dentro de textos de apoio (abre explicação ao clicar). */
+.aj-link-ajuda { font: inherit; color: var(--accent-11); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.aj-link-ajuda:focus-visible { outline: 2px solid var(--accent-8); outline-offset: 2px; border-radius: 2px; }
+.aj-sobre-fonte { font-size: 14px; color: var(--gray-11); }
+.aj-sobre-fonte summary { cursor: pointer; font-weight: 500; margin-bottom: 0.5rem; }
+.aj-sobre-fonte summary:focus-visible { outline: 2px solid var(--accent-8); outline-offset: 2px; }

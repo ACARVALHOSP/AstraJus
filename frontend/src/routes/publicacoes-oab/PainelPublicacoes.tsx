@@ -6,7 +6,7 @@ import TabelaResponsiva from '../../TabelaResponsiva'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { Fragment, useCallback, useEffect, useRef, useState, type ComponentType } from 'react'
-import { Archive, Check, ChevronDown, ChevronRight, Info, Unlink } from 'lucide-react'
+import { Archive, Check, ChevronDown, ChevronRight, Info, Keyboard, Unlink } from 'lucide-react'
 import { Badge, Button, Callout, Checkbox, Dialog, Flex, IconButton, Popover, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -180,6 +180,47 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
     setModal({ tipo: tipoAcao, p })
   }
 
+  // Atalhos de teclado para a triagem (no computador): J/K navegam, T trata, E arquiva, U reabre,
+  // A cria atividade, V vincula processo, O abre o texto, X seleciona, ? mostra a lista.
+  const [foco, setFoco] = useState<string | null>(null)
+  const [atalhosAbertos, setAtalhosAbertos] = useState(false)
+  useEffect(() => {
+    if (estreita) return
+    function aoTeclar(e: KeyboardEvent) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      const alvo = e.target as HTMLElement | null
+      if (alvo && (alvo.closest('input, textarea, select, [contenteditable="true"], [role="combobox"], [role="menu"]'))) return
+      if (modal || capturaAberta || document.querySelector('[role="dialog"], [role="alertdialog"]')) return
+      if (e.key === '?') { e.preventDefault(); setAtalhosAbertos(v => !v); return }
+      if (!publicacoes.length) return
+      const indice = foco ? publicacoes.findIndex(p => p.hash === foco) : -1
+      const mover = (passo: number) => {
+        const novo = publicacoes[Math.min(publicacoes.length - 1, Math.max(0, indice + passo))]
+        setFoco(novo.hash)
+        document.querySelector(`[data-publicacao="${novo.hash}"]`)?.scrollIntoView({ block: 'nearest' })
+      }
+      const tecla = e.key.toLowerCase()
+      if (tecla === 'j' || e.key === 'ArrowDown' && indice >= 0) { e.preventDefault(); mover(indice < 0 ? 0 : 1); return }
+      if (tecla === 'k' || e.key === 'ArrowUp' && indice >= 0) { e.preventDefault(); mover(indice < 0 ? 0 : -1); return }
+      const atual = indice >= 0 ? publicacoes[indice] : null
+      if (!atual) return
+      const acoes: Record<string, () => void> = {
+        t: () => { if (atual.status !== 'tratada') void mudarStatus([atual.hash], 'tratada') },
+        e: () => { if (atual.status !== 'arquivada') void mudarStatus([atual.hash], 'arquivada') },
+        u: () => { if (atual.status !== 'nao_tratada') void mudarStatus([atual.hash], 'nao_tratada') },
+        a: () => { if (atual.caso_id) abrirAcao('atividade', atual) },
+        v: () => { if (atual.caso_id || numeroPublicacao(atual).length === 20) abrirAcao('processo', atual) },
+        o: () => alternarExpandida(atual.hash),
+        enter: () => alternarExpandida(atual.hash),
+        x: () => alternar(atual.hash),
+      }
+      const acao = acoes[tecla]
+      if (acao) { e.preventDefault(); acao() }
+    }
+    window.addEventListener('keydown', aoTeclar)
+    return () => window.removeEventListener('keydown', aoTeclar)
+  })
+
   /** Próxima ação provável da publicação, exibida como botão visível. */
   function acaoPrincipal(p: PublicacaoOab, largura = false) {
     const bloqueada = ocupada || lote
@@ -251,6 +292,22 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
               </Text>
             </Popover.Content>
           </Popover.Root>
+          {!estreita && (
+            <Popover.Root open={atalhosAbertos} onOpenChange={setAtalhosAbertos}>
+              <Popover.Trigger>
+                <IconButton variant="ghost" color="gray" size="2" aria-label="Atalhos de teclado"><Keyboard size={16} /></IconButton>
+              </Popover.Trigger>
+              <Popover.Content style={{ maxWidth: 340 }}>
+                <Text as="p" size="2" weight="bold" mb="2">Atalhos de teclado</Text>
+                <dl className="oab-atalhos-teclado">
+                  {[['J / K', 'Próxima / anterior'], ['O ou Enter', 'Abrir ou fechar o texto'], ['T', 'Marcar como tratada'], ['E', 'Arquivar'], ['U', 'Voltar para não tratada'],
+                    ['A', 'Criar atividade'], ['V', 'Vincular ou abrir processo'], ['X', 'Selecionar'], ['?', 'Mostrar esta lista']].map(([k, d]) => (
+                    <div key={k}><dt><kbd>{k}</kbd></dt><dd>{d}</dd></div>
+                  ))}
+                </dl>
+              </Popover.Content>
+            </Popover.Root>
+          )}
           <Button variant="soft" size="2" disabled={ocupada || lote} onClick={() => setCapturaAberta(true)}>Capturar por OAB</Button>
           <Button variant="soft" color="gray" size="2" disabled={ocupada} onClick={carregar}>Atualizar</Button>
         </>}
@@ -411,7 +468,8 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
                   const aberta = expandidas.has(p.hash)
                   return (
                     <Fragment key={p.hash}>
-                      <tr className={selecionadas.has(p.hash) ? 'oab-linha-selecionada' : undefined}>
+                      <tr data-publicacao={p.hash} onClick={() => setFoco(p.hash)}
+                        className={[selecionadas.has(p.hash) ? 'oab-linha-selecionada' : '', foco === p.hash ? 'oab-linha-foco' : ''].filter(Boolean).join(' ') || undefined}>
                         <td>
                           <IconButton variant="ghost" size="1" aria-expanded={aberta} aria-controls={`oab-detalhes-${p.hash}`}
                             aria-label={`${aberta ? 'Recolher' : 'Expandir'} publicação ${formatarNumeroCNJ(numeroPublicacao(p))}`}

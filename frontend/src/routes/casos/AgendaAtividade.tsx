@@ -1,3 +1,4 @@
+import { mensagemPorStatus } from '../../api/mcpClient'
 import { useRef, useState } from 'react'
 import { AlertDialog, Button, Flex, Link } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
@@ -55,7 +56,7 @@ export default function AgendaAtividade({
         headers: { Authorization: `Bearer ${cliente.token}`, 'Content-Type': 'application/json', ...cabecalhos },
         body: JSON.stringify(corpo),
       }).then(async (r) => {
-        if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.mensagem || `HTTP ${r.status}`)
+        if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.mensagem || mensagemPorStatus(r.status))
       })
       onAtualizado()
     } catch {

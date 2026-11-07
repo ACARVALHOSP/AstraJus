@@ -65,7 +65,7 @@ export default function CartaoPublicacao({ item }: { item: ItemPublicacao }) {
         setStatusCertidao({ tipo: 'aviso', texto: dados.aviso ?? 'Não foi possível gerar o link.' })
       }
     } catch (e) {
-      setStatusCertidao({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Falha inesperada.' })
+      setStatusCertidao({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Não foi possível concluir a ação. Tente de novo.' })
     } finally {
       setGerandoCertidao(false)
     }

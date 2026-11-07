@@ -3,16 +3,19 @@ import CabecalhoPagina from '../CabecalhoPagina'
 import Carregamento from '../Carregamento'
 import { useState, type FormEvent } from 'react'
 import { AlertTriangle } from 'lucide-react'
-import { Badge, Button, Callout, Card, Flex, Heading, Text, TextField } from '@radix-ui/themes'
+import { Badge, Button, Callout, Card, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 import { formatarNumeroCNJ, formatarPercentual, formatarReais } from '../utils/formatadores'
 
 type Analise = 'benchmark_valor' | 'perfil_magistrado'
 
+// Quantas páginas do CJPG buscar (10 sentenças por página), descritas em sentenças.
+const QUANTIDADES: [number, string][] = [[1, '10 sentenças (mais rápido)'], [3, '30 sentenças'], [5, '50 sentenças'], [10, '100 sentenças'], [15, '150 sentenças (mais lento)']]
+
 const TITULO_ANALISE: Record<Analise, string> = {
-  benchmark_valor: 'Benchmark de valor',
-  perfil_magistrado: 'Perfil do magistrado',
+  benchmark_valor: 'Quanto se costuma conceder',
+  perfil_magistrado: 'Como este juiz costuma decidir',
 }
 
 const ROTULO_DESFECHO: Record<string, [string, string]> = {
@@ -71,40 +74,6 @@ type RespostaJurimetria = {
   resultados?: ItemResultado[]
 }
 
-const CONCEITOS_FUTUROS = [
-  {
-    titulo: 'Due diligence de parte adversa',
-    texto: 'Histórico de ações de uma empresa ou pessoa como parte ré: quantidade de processos, teses de defesa usadas e taxa de derrota.',
-    dados: 'Dados: busca pelo nome da parte no inteiro teor.',
-  },
-  {
-    titulo: 'Comparação entre comarcas/varas',
-    texto:
-      'Para a mesma tese jurídica, compara valor de condenação e taxa de procedência entre comarcas diferentes — útil para decidir onde ajuizar quando há competência concorrente.',
-    dados: 'Dados: mesma busca repetida variando o filtro de comarca.',
-  },
-  {
-    titulo: 'Rastreamento de tese ao longo do tempo',
-    texto:
-      'Frequência de uso de uma expressão jurídica (uma súmula, "dano moral in re ipsa" etc.) em janelas de tempo sucessivas, para detectar mudança de entendimento antes de virar tendência visível.',
-    dados: 'Dados: mesma busca textual repetida em intervalos de data sucessivos.',
-  },
-  {
-    titulo: 'Ranking de litigância habitual',
-    texto: 'Para um assunto específico, conta quantas vezes cada réu aparece nos resultados — identifica quem mais litiga e, cruzando com o desfecho, quem mais perde.',
-    dados: 'Dados: busca por assunto + contagem de ocorrências do campo "Requerido".',
-  },
-  {
-    titulo: 'Tempo de tramitação por classe/vara',
-    texto: 'Estima a duração média de processos comparando o ano de distribuição (embutido no número do processo) com a data de disponibilização da sentença.',
-    dados: 'Dados: já disponíveis nos campos retornados pela busca — não exige extração extra.',
-  },
-  {
-    titulo: 'Taxa de "jurisprudência defensiva"',
-    texto: 'Proporção de processos extintos sem resolução de mérito frente aos julgados no mérito, por vara — indicador de quão disposta uma vara está a discutir o fundo da questão.',
-    dados: 'Dados: busca por vara + classificação do texto da sentença (extinção vs. mérito).',
-  },
-]
 
 export default function Jurimetria() {
   const { cliente } = useCliente()
@@ -150,7 +119,7 @@ export default function Jurimetria() {
       )) as RespostaJurimetria
       setResultado(dados)
     } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Falha inesperada ao consultar.')
+      setErro(e instanceof ErroMCP ? e.message : 'Não foi possível concluir a consulta. Tente de novo.')
     } finally {
       setConsultando(false)
     }
@@ -165,45 +134,50 @@ export default function Jurimetria() {
     <Flex direction="column" gap="6">
       <CabecalhoPagina
         titulo="Jurimetria"
-        descricao="Preencha os filtros abaixo e escolha a análise. Todas usam a mesma busca no CJPG (julgados de 1º grau do TJSP). As demais ideias ao final ainda são conceitos de próximos passos."
+        descricao="Números das sentenças de 1º grau do TJSP para responder a duas perguntas: quanto se costuma conceder e como um juiz costuma decidir."
       />
       <form onSubmit={(e) => aoEnviar(e, 'benchmark_valor')}>
         <Flex direction="column" gap="5">
           <div className="form-campo">
-            <label className="form-campo-label" htmlFor="jur-termo">Pesquisa livre</label>
-            <TextField.Root id="jur-termo" placeholder="Ex.: dano moral" autoComplete="off" value={termo} onChange={(e) => setTermo(e.target.value)} />
+            <label className="form-campo-label" htmlFor="jur-termo">Assunto</label>
+            <TextField.Root id="jur-termo" placeholder="Ex.: dano moral por negativação indevida" autoComplete="off" value={termo} onChange={(e) => setTermo(e.target.value)} />
           </div>
           <div className="form-campo">
-            <label className="form-campo-label" htmlFor="jur-magistrado">Magistrado</label>
-            <TextField.Root id="jur-magistrado" placeholder="Nome do magistrado" autoComplete="off" value={magistrado} onChange={(e) => setMagistrado(e.target.value)} />
-            <Text size="1" color="gray">O nome entra automaticamente entre aspas na pesquisa livre. Obrigatório para o perfil do magistrado.</Text>
+            <label className="form-campo-label" htmlFor="jur-magistrado">Juiz (opcional)</label>
+            <TextField.Root id="jur-magistrado" placeholder="Nome do juiz ou juíza" autoComplete="off" value={magistrado} onChange={(e) => setMagistrado(e.target.value)} />
+            <Text size="1" color="gray">Necessário para &quot;Como este juiz costuma decidir?&quot;. Na outra pergunta, limita as sentenças a esse juiz.</Text>
           </div>
           <div className="aj-form-grade">
             <div className="form-campo">
-              <label className="form-campo-label" htmlFor="jur-data-inicio">Data de disponibilização - início</label>
+              <label className="form-campo-label" htmlFor="jur-data-inicio">Sentenças publicadas de</label>
               <CampoData id="jur-data-inicio" value={dataInicio} onChange={v => setDataInicio(v)} />
             </div>
             <div className="form-campo">
-              <label className="form-campo-label" htmlFor="jur-data-fim">Data de disponibilização - fim</label>
+              <label className="form-campo-label" htmlFor="jur-data-fim">até</label>
               <CampoData id="jur-data-fim" value={dataFim} onChange={v => setDataFim(v)} />
             </div>
             <div className="form-campo">
-              <label className="form-campo-label" htmlFor="jur-paginas">Páginas a buscar (10 resultados cada)</label>
-              <TextField.Root id="jur-paginas" type="number" min={1} max={15} value={paginas} onChange={(e) => setPaginas(Number(e.target.value) || 1)} />
+              <label className="form-campo-label" id="jur-quantidade-rotulo">Analisar até</label>
+              <Select.Root value={String(paginas)} onValueChange={v => setPaginas(Number(v))}>
+                <Select.Trigger aria-labelledby="jur-quantidade-rotulo" style={{ width: '100%' }} />
+                <Select.Content>
+                  {QUANTIDADES.map(([n, rotulo]) => <Select.Item key={n} value={String(n)}>{rotulo}</Select.Item>)}
+                </Select.Content>
+              </Select.Root>
             </div>
           </div>
           <div className="aj-acoes-linha">
             <Button size="2" type="submit" disabled={consultando}>
-              Benchmark de valor
+              Quanto se costuma conceder?
             </Button>
             <Button size="2" variant="soft" disabled={consultando} onClick={() => executar('perfil_magistrado')}>
-              Perfil do magistrado
+              Como este juiz costuma decidir?
             </Button>
           </div>
         </Flex>
       </form>
       <div aria-live="polite">
-        {consultando && <Carregamento tipo="cartoes" descricao="Consultando o CJPG — pode levar alguns segundos por página pedida…" />}
+        {consultando && <Carregamento tipo="cartoes" descricao="Buscando sentenças no TJSP; quanto mais sentenças, mais demora…" />}
         {erro && (
           <Callout.Root color="red" size="1">
             <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
@@ -226,7 +200,8 @@ export default function Jurimetria() {
               </Callout.Root>
             ))}
             <Text size="2">
-              Total no servidor: {resultado.total_servidor ?? '?'} | Buscados nesta consulta: {resultado.buscados}
+              {resultado.total_servidor != null ? `${resultado.total_servidor.toLocaleString('pt-BR')} sentenças encontradas; ` : ''}
+              {resultado.buscados} analisadas nesta consulta.
             </Text>
             {resultado.agregado && <ResumoAgregado agregado={resultado.agregado} />}
             {resultado.perfil && <ResumoPerfil perfil={resultado.perfil} />}
@@ -241,26 +216,15 @@ export default function Jurimetria() {
           </Flex>
         )}
       </div>
-      <details>
-        <summary>Análises futuras em estudo ({CONCEITOS_FUTUROS.length} conceitos)</summary>
-        <Flex direction="column" gap="4" mt="3">
-          <Text as="p" size="2">Ainda são só conceitos de próximos passos, não funcionalidades disponíveis.</Text>
-          {CONCEITOS_FUTUROS.map((c) => (
-            <Card key={c.titulo} variant="surface">
-              <Flex direction="column" gap="2">
-                <Badge color="gray" size="1" style={{ alignSelf: 'flex-start' }}>Conceito</Badge>
-                <Heading as="h4" size="2">{c.titulo}</Heading>
-                <Text as="p" size="2">{c.texto}</Text>
-                <Text as="p" size="2" color="gray">{c.dados}</Text>
-              </Flex>
-            </Card>
-          ))}
-        </Flex>
+      <details className="aj-sobre-fonte">
+        <summary>Como funciona</summary>
+        <Text as="p" size="2" color="gray">
+          As duas perguntas usam a busca de sentenças de 1º grau do TJSP (CJPG). &quot;Quanto se costuma conceder?&quot;
+          lê os valores das sentenças encontradas e mostra a mediana e a faixa mais comum. &quot;Como este juiz costuma
+          decidir?&quot; conta os resultados das sentenças do juiz informado. A busca do tribunal devolve no máximo cerca
+          de 10.000 sentenças por consulta; para estudos maiores, divida por período.
+        </Text>
       </details>
-      <Text as="p" size="2" color="gray">
-        Limitação conhecida: cada consulta ao CJPG tem um teto de ~10.000 resultados (limite do próprio índice de busca
-        do TJSP). Estudos em maior volume exigem fatiar a consulta por data ou comarca em várias buscas.
-      </Text>
     </Flex>
   )
 }
@@ -285,12 +249,12 @@ function ResumoAgregado({ agregado }: { agregado: Agregado }) {
     <Flex direction="column" gap="3">
       <Grade>
         <CeluaResumo rotulo="Procedentes/parciais" valor={String(agregado.procedentes_ou_parciais)} />
-        <CeluaResumo rotulo="Com valor extraído" valor={String(agregado.com_valor_extraido)} />
+        <CeluaResumo rotulo="Sentenças com valor identificado" valor={String(agregado.com_valor_extraido)} />
         {agregado.mediana !== undefined && (
           <>
-            <CeluaResumo rotulo="Mediana" valor={formatarReais(agregado.mediana)} />
-            <CeluaResumo rotulo="P25" valor={formatarReais(agregado.p25)} />
-            <CeluaResumo rotulo="P75" valor={formatarReais(agregado.p75)} />
+            <CeluaResumo rotulo="Valor típico (mediana)" valor={formatarReais(agregado.mediana)} />
+            <CeluaResumo rotulo="1 em cada 4 sentenças fica abaixo de" valor={formatarReais(agregado.p25)} />
+            <CeluaResumo rotulo="3 em cada 4 sentenças ficam abaixo de" valor={formatarReais(agregado.p75)} />
           </>
         )}
       </Grade>
@@ -313,7 +277,7 @@ function ResumoPerfil({ perfil }: { perfil: Perfil }) {
         ))}
         <CeluaResumo rotulo="Valor médio de indenização" valor={formatarReais(perfil.valor_medio_indenizacao)} />
         <CeluaResumo rotulo="Decisões classificadas" valor={String(perfil.total_classificados ?? '-')} />
-        <CeluaResumo rotulo="Com valor extraído" valor={String(perfil.com_valor_extraido ?? '-')} />
+        <CeluaResumo rotulo="Sentenças com valor identificado" valor={String(perfil.com_valor_extraido ?? '-')} />
       </Grade>
       {perfil.aviso && (
         <Callout.Root color="yellow" size="1">
