@@ -1973,28 +1973,92 @@ class RegistroPublicacoesOAB:
             return inseriu
 
     @staticmethod
-    def _filtro_data(status=None, data=None):
+    def _filtro_data(status=None, data=None, tipo=None, desde=None, ate=None, busca=None):
+        """Filtros da listagem. `data`, `desde` e `ate` comparam a data de disponibilização
+        (AAAA-MM-DD); `tipo` é o tipoComunicacao do DJEN (sem diferenciar maiúsculas); `busca`
+        procura no número do processo (só dígitos), na referência pesquisada e nas partes,
+        advogados, órgão, classe e texto da publicação, sem diferenciar maiúsculas ASCII."""
         filtros, valores = [], []
+        dia = "substr(json_extract(dados, '$.data_disponibilizacao'), 1, 10)"
         if status:
             filtros.append("status = ?")
             valores.append(status)
         if data:
-            filtros.append("substr(json_extract(dados, '$.data_disponibilizacao'), 1, 10) = ?")
+            filtros.append(f"{dia} = ?")
             valores.append(data)
+        if desde:
+            filtros.append(f"{dia} >= ?")
+            valores.append(desde)
+        if ate:
+            filtros.append(f"{dia} <= ?")
+            valores.append(ate)
+        if tipo:
+            filtros.append("lower(json_extract(dados, '$.tipoComunicacao')) = lower(?)")
+            valores.append(tipo)
+        if busca:
+            termo = busca.strip()
+            escapado = termo.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            campos = " || ' ' || ".join(
+                f"coalesce(json_extract(dados, '$.{c}'), '')"
+                for c in ("destinatarios", "destinatarioadvogados", "nomeOrgao", "nomeClasse", "texto"))
+            condicoes = [f"lower({campos}) LIKE lower(?) ESCAPE '\\'", "lower(coalesce(nome_pesquisado, '')) LIKE lower(?) ESCAPE '\\'"]
+            valores_busca = [f"%{escapado}%", f"%{escapado}%"]
+            digitos = "".join(c for c in termo if c.isdigit())
+            if len(digitos) >= 4:
+                condicoes.append("numero_processo LIKE ?")
+                valores_busca.append(f"%{digitos}%")
+            filtros.append("(" + " OR ".join(condicoes) + ")")
+            valores.extend(valores_busca)
         return (" WHERE " + " AND ".join(filtros) if filtros else ""), valores
 
+    _ORDENS = {
+        "divulgado_desc": "coalesce(nullif(substr(json_extract(dados, '$.data_disponibilizacao'), 1, 10), ''), "
+                          "substr(criado_em, 1, 10)) DESC, criado_em DESC, hash DESC",
+        "divulgado_asc": "coalesce(nullif(substr(json_extract(dados, '$.data_disponibilizacao'), 1, 10), ''), "
+                         "substr(criado_em, 1, 10)) ASC, criado_em ASC, hash ASC",
+        "capturado_desc": "criado_em DESC, hash DESC",
+        "capturado_asc": "criado_em ASC, hash ASC",
+    }
+
     def listar(self, status: str | None = None, limite: int = 300, deslocamento: int = 0,
-               data: str | None = None) -> list[dict]:
-        filtro, valores = self._filtro_data(status, data)
+               data: str | None = None, *, tipo: str | None = None, desde: str | None = None,
+               ate: str | None = None, busca: str | None = None, ordem: str = "divulgado_desc") -> list[dict]:
+        filtro, valores = self._filtro_data(status, data, tipo, desde, ate, busca)
+        ordenacao = self._ORDENS.get(ordem, self._ORDENS["divulgado_desc"])
         with _abrir(self.caminho) as conexao:
             cursor = conexao.execute(
                 "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, "
                 "caso_id, criado_em FROM publicacoes_capturadas" + filtro +
-                " ORDER BY coalesce(nullif(substr(json_extract(dados, '$.data_disponibilizacao'), 1, 10), ''), "
-                "substr(criado_em, 1, 10)) DESC, criado_em DESC, hash DESC LIMIT ? OFFSET ?",
+                " ORDER BY " + ordenacao + " LIMIT ? OFFSET ?",
                 (*valores, limite, deslocamento),
             )
-            return [_linha_publicacao(linha) for linha in cursor.fetchall()]
+            linhas = [_linha_publicacao(linha) for linha in cursor.fetchall()]
+            ids = sorted({p["caso_id"] for p in linhas if p["caso_id"]})
+            titulos = {}
+            if ids:
+                marcadores = ",".join("?" * len(ids))
+                titulos = dict(conexao.execute(f"SELECT id, titulo FROM casos WHERE id IN ({marcadores})", ids).fetchall())
+        for p in linhas:
+            p["caso_titulo"] = titulos.get(p["caso_id"]) if p["caso_id"] else None
+        return linhas
+
+    def contar_por_status(self, data: str | None = None, *, tipo: str | None = None, desde: str | None = None,
+                          ate: str | None = None, busca: str | None = None) -> dict[str, int]:
+        """Quantidade por situação com os demais filtros aplicados (atalhos da tela)."""
+        filtro, valores = self._filtro_data(None, data, tipo, desde, ate, busca)
+        contagem = {s: 0 for s in sorted(_STATUS_PUBLICACAO_VALIDOS)}
+        with _abrir(self.caminho) as conexao:
+            for status, quantidade in conexao.execute(
+                    "SELECT status, COUNT(*) FROM publicacoes_capturadas" + filtro + " GROUP BY status", valores):
+                contagem[status] = quantidade
+        return contagem
+
+    def tipos_disponiveis(self) -> list[str]:
+        """Tipos de comunicação já capturados (opções do filtro Tipo)."""
+        with _abrir(self.caminho) as conexao:
+            return [r[0] for r in conexao.execute(
+                "SELECT DISTINCT json_extract(dados, '$.tipoComunicacao') AS t FROM publicacoes_capturadas "
+                "WHERE t IS NOT NULL AND t != '' ORDER BY t")]
 
     def datas_disponiveis(self, status: str | None = None) -> dict[str, int]:
         filtro, valores = self._filtro_data(status)
@@ -2012,8 +2076,9 @@ class RegistroPublicacoesOAB:
                 "json_each(publicacoes_capturadas.dados) AS campo ORDER BY campo.key"
             )]
 
-    def hashes_disponiveis(self, status: str | None = None, data: str | None = None) -> list[str]:
-        filtro, valores = self._filtro_data(status, data)
+    def hashes_disponiveis(self, status: str | None = None, data: str | None = None, *, tipo: str | None = None,
+                           desde: str | None = None, ate: str | None = None, busca: str | None = None) -> list[str]:
+        filtro, valores = self._filtro_data(status, data, tipo, desde, ate, busca)
         with _abrir(self.caminho) as conexao:
             return [r[0] for r in conexao.execute(
                 "SELECT hash FROM publicacoes_capturadas" + filtro, valores)]
@@ -2038,8 +2103,9 @@ class RegistroPublicacoesOAB:
         return {"atualizadas": len(existentes), "hashes_atualizados": existentes,
                 "hashes_falharam": [h for h in hashes if h not in encontrados]}
 
-    def contar(self, status: str | None = None, data: str | None = None) -> int:
-        filtro, valores = self._filtro_data(status, data)
+    def contar(self, status: str | None = None, data: str | None = None, *, tipo: str | None = None,
+               desde: str | None = None, ate: str | None = None, busca: str | None = None) -> int:
+        filtro, valores = self._filtro_data(status, data, tipo, desde, ate, busca)
         with _abrir(self.caminho) as conexao:
             return conexao.execute("SELECT COUNT(*) FROM publicacoes_capturadas" + filtro, valores).fetchone()[0]
 

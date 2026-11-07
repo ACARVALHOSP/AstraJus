@@ -5534,21 +5534,34 @@ class _AutenticacaoBearer:
         except ValueError:
             await _json(send, 400, _erro("Paginação inválida: página deve ser positiva e tamanho entre 1 e 300."))
             return
-        data = parametros.get("data") or None
-        if data:
-            try:
-                if datetime.strptime(data, "%Y-%m-%d").strftime("%Y-%m-%d") != data:
-                    raise ValueError
-            except ValueError:
-                await _json(send, 400, _erro("Data inválida: use AAAA-MM-DD."))
-                return
-        total = self.publicacoes.contar(status, data)
+        datas = {}
+        for chave in ("data", "desde", "ate"):
+            valor = parametros.get(chave) or None
+            if valor:
+                try:
+                    if datetime.strptime(valor, "%Y-%m-%d").strftime("%Y-%m-%d") != valor:
+                        raise ValueError
+                except ValueError:
+                    await _json(send, 400, _erro("Data inválida: use AAAA-MM-DD."))
+                    return
+            datas[chave] = valor
+        data = datas["data"]
+        ordem = parametros.get("ordem") or "divulgado_desc"
+        if ordem not in RegistroPublicacoesOAB._ORDENS:
+            await _json(send, 400, _erro("Ordenação inválida."))
+            return
+        busca = (parametros.get("busca") or "").strip()[:120] or None
+        tipo = (parametros.get("tipo") or "").strip()[:80] or None
+        filtros = {"tipo": tipo, "desde": datas["desde"], "ate": datas["ate"], "busca": busca}
+        total = self.publicacoes.contar(status, data, **filtros)
         pagina = min(pagina, max(1, (total + tamanho - 1) // tamanho))
-        publicacoes = self.publicacoes.listar(status, tamanho, (pagina - 1) * tamanho, data)
+        publicacoes = self.publicacoes.listar(status, tamanho, (pagina - 1) * tamanho, data, ordem=ordem, **filtros)
         await _json(send, 200, {"publicacoes": publicacoes, "total": total,
                               "pagina": pagina, "tamanho": tamanho, "campos_djen": self.publicacoes.campos_djen(),
+                              "contagem_status": self.publicacoes.contar_por_status(data, **filtros),
+                              "tipos_disponiveis": self.publicacoes.tipos_disponiveis(),
                               "datas_disponiveis": self.publicacoes.datas_disponiveis(status),
-                              "hashes_disponiveis": self.publicacoes.hashes_disponiveis(status, data)})
+                              "hashes_disponiveis": self.publicacoes.hashes_disponiveis(status, data, **filtros)})
 
     async def _publicacoes_oab_status(self, scope, receive, send):
         """POST /publicacoes-oab/status: atualização em lote - {hashes: [...], status: "..."}."""

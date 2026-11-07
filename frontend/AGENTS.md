@@ -2,7 +2,7 @@
 
 ### PR e merge
 
-Ao concluir alterações neste projeto, sempre criar um pull request e fazer o merge após as validações aplicáveis. Somente deixar de criar o PR ou de fazer o merge quando o usuário disser explicitamente que não deseja essa etapa.
+Alterações somente no frontend são publicadas pelo push na branch `astrajus-radix` (workflow `deploy-radix.yml`): não criar PR nem fazer merge em `main`. PR e merge da `astrajus-radix` em `main` só quando houver alteração de backend, e somente após confirmação do usuário (ver `CLAUDE.md` na raiz).
 
 ### VPS
 

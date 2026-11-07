@@ -7,3 +7,57 @@
 .oab-inteiro-teor { white-space: pre-wrap; overflow-wrap: anywhere; text-align: justify; font-size: 0.8125rem; line-height: 1.25rem; }
 .oab-demonstrativo { max-block-size: 20rem; overflow: auto; padding-inline-start: 1.5rem; font-size: 0.8125rem; }
 .oab-painel :is(button, summary):focus-visible { outline: 2px solid var(--accent-8); outline-offset: -2px; }
+
+// Nova organização da tabela (mockup aprovado): atalhos por situação, selos e linha expandida.
+.oab-atalhos { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.oab-lote {
+  display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+  padding: 0.5rem 0.75rem; border-radius: var(--radius-3);
+  background: var(--accent-a3); border: 1px solid var(--accent-a6);
+}
+.oab-tabela {
+  .oab-col-data { inline-size: 7.5rem; }
+  .oab-col-processo { inline-size: 14.5rem; }
+  .oab-col-tipo { inline-size: 7rem; }
+  :is(th, td).tabela-controle { inline-size: 2.5rem; padding-inline: 0.25rem; }
+  .oab-col-situacao { inline-size: 10rem; }
+  .oab-col-acoes { inline-size: 11rem; }
+}
+.oab-linha-selecionada > td { background: var(--accent-a2); }
+.oab-data { font-weight: 600; font-variant-numeric: tabular-nums; }
+.oab-numero { font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.oab-secundario { margin-top: 2px; font-size: 12px; color: var(--gray-11); }
+.oab-ordenar {
+  font: inherit; text-transform: inherit; letter-spacing: inherit; color: inherit;
+  background: none; border: 0; padding: 0; cursor: pointer;
+  &:hover { color: var(--gray-12); }
+  &:focus-visible { outline: 2px solid var(--accent-8); outline-offset: 2px; border-radius: 2px; }
+}
+.oab-vinculo-linha { margin-top: 0.375rem; }
+.oab-vinculo {
+  font: inherit; font-size: 12px; color: var(--accent-11); background: none; border: 0; padding: 0;
+  cursor: pointer; text-align: start; text-decoration: underline; text-underline-offset: 2px;
+  &:disabled { cursor: default; color: var(--gray-11); }
+}
+.oab-sem-vinculo { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 12px; color: var(--amber-11); }
+.tabela-adaptavel .tabela-fluida td.oab-detalhes-celula { background: var(--gray-2); padding: 1rem 1.5rem 1.25rem 5.5rem; }
+.oab-detalhes { display: flex; flex-direction: column; gap: 1rem; }
+.oab-detalhes-grade {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.75rem 1.5rem; margin: 0;
+  dt { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--gray-11); }
+  dd { margin: 0.25rem 0 0; font-size: 13px; overflow-wrap: anywhere; }
+}
+.oab-rotulo { text-transform: uppercase; letter-spacing: 0.03em; font-size: 11px; }
+.oab-detalhes .oab-inteiro-teor {
+  margin: 0.375rem 0 0; max-inline-size: 90ch; padding: 0.75rem 1rem; text-align: start;
+  font-size: 14px; line-height: 1.6; background: var(--color-panel-solid);
+  border: 1px solid var(--gray-a4); border-radius: var(--radius-2);
+}
+.oab-link { font-size: 13px; color: var(--accent-11); }
+.oab-cartoes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+.oab-cartao {
+  display: flex; flex-direction: column; gap: 0.625rem; padding: 0.875rem;
+  background: var(--color-panel-solid); border: 1px solid var(--gray-a5); border-radius: var(--radius-3);
+  p { margin: 0; }
+}
+.oab-cartao-acoes { border-top: 1px solid var(--gray-a3); padding-top: 0.625rem; }
