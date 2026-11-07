@@ -1296,6 +1296,50 @@ class RegistroClientesCasos:
             ):
                 monitorado_set.add(str(caso_id))
 
+            # Resumos para a lista de Processos: próximo compromisso, publicações a revisar e a
+            # última movimentação conhecida (DataJud na capa ou publicação vinculada).
+            proximo_map: dict[str, dict] = {}
+            for caso_id, aid, tipo, titulo, data, hora in conexao.execute(
+                f"SELECT caso_id, id, tipo, titulo, data, hora FROM caso_atividades WHERE caso_id IN ({ph}) "
+                "AND status != 'concluida' AND coalesce(data, '') != '' "
+                "ORDER BY data ASC, hora IS NULL, hora ASC, id ASC", ids,
+            ):
+                proximo_map.setdefault(str(caso_id), {"id": aid, "tipo": tipo, "titulo": titulo, "data": data, "hora": hora})
+
+            revisar_map: dict[str, int] = {
+                str(caso_id): qtd for caso_id, qtd in conexao.execute(
+                    f"SELECT caso_id, COUNT(*) FROM publicacoes_capturadas WHERE caso_id IN ({ph}) "
+                    "AND status = 'nao_tratada' GROUP BY caso_id", ids)
+            }
+
+            movimento_map: dict[str, tuple[str, str]] = {}
+
+            def _considerar(caso_id: str, data: str | None, descricao: str | None) -> None:
+                if not data:
+                    return
+                atual = movimento_map.get(caso_id)
+                if atual is None or data > atual[0]:
+                    movimento_map[caso_id] = (data, (descricao or "").strip())
+
+            for caso_id, movimentos in conexao.execute(
+                f"SELECT caso_id, movimentos FROM caso_processo_capa WHERE caso_id IN ({ph}) AND movimentos IS NOT NULL", ids,
+            ):
+                try:
+                    lista = json.loads(movimentos) or []
+                except (TypeError, ValueError):
+                    continue
+                for mov in lista if isinstance(lista, list) else []:
+                    if isinstance(mov, dict):
+                        _considerar(str(caso_id), mov.get("dataHora"), mov.get("nome"))
+            for caso_id, criado_em, disponibilizacao, tipo_comunicacao in conexao.execute(
+                "SELECT e.caso_id, e.criado_em, json_extract(e.conteudo, '$.data_disponibilizacao'), "
+                "json_extract(e.conteudo, '$.tipoComunicacao') FROM caso_eventos e "
+                f"JOIN (SELECT caso_id, MAX(criado_em) AS ultimo FROM caso_eventos WHERE caso_id IN ({ph}) GROUP BY caso_id) u "
+                "ON u.caso_id = e.caso_id AND u.ultimo = e.criado_em", ids,
+            ):
+                _considerar(str(caso_id), disponibilizacao or criado_em,
+                            f"Publicação: {tipo_comunicacao}" if tipo_comunicacao else "Publicação no DJEN")
+
             return [
                 {
                     **_linha_caso(linha),
@@ -1303,6 +1347,10 @@ class RegistroClientesCasos:
                     "clientes_adicionais": clientes_add_map[str(linha[0])],
                     "ultima_movimentacao": ultima_mov_map.get(str(linha[0])) or linha[6],
                     "monitorado": str(linha[0]) in monitorado_set,
+                    "proximo_compromisso": proximo_map.get(str(linha[0])),
+                    "publicacoes_a_revisar": revisar_map.get(str(linha[0]), 0),
+                    "ultima_movimentacao_data": movimento_map.get(str(linha[0]), (None, None))[0],
+                    "ultima_movimentacao_descricao": movimento_map.get(str(linha[0]), (None, None))[1] or None,
                 }
                 for linha in linhas
             ]

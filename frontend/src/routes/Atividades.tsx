@@ -10,7 +10,7 @@ import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { ErroMCP } from '../api/mcpClient'
 import { buscarJson, enviarJson } from '../api/rest'
-import { formatarNomeExibicao, formatarNumeroCNJ } from '../utils/formatadores'
+import { formatarNomeExibicao, formatarNumeroCNJ, iniciaisNome } from '../utils/formatadores'
 import { useEstreita } from '../utils/useEstreita'
 import AtividadeModal from './casos/AtividadeModal'
 import type { Atividade as AtividadeCaso } from './casos/AtividadesCaso'
@@ -63,11 +63,6 @@ function quandoRelativo(a: Atividade, hoje: string): string {
   const [y, m, d] = a.data.slice(0, 10).split('-').map(Number)
   const semana = SEMANA[new Date(y, m - 1, d).getDay()]
   return dias <= 7 ? `${semana}${hora ? ` · ${hora}` : ''}` : `em ${dias} dias`
-}
-function iniciais(nome?: string | null) {
-  if (!nome) return '—'
-  const partes = formatarNomeExibicao(nome).split(/\s+/).filter(p => /^[\p{Lu}]/u.test(p))
-  return ((partes[0]?.[0] ?? '') + (partes.length > 1 ? partes[partes.length - 1][0] : '')).toUpperCase() || nome[0].toUpperCase()
 }
 const chave = (a: Atividade) => `${a.caso_id}:${a.id}`
 
@@ -383,7 +378,7 @@ export default function Atividades() {
                         </td>
                         <td>
                           <span className="atividades-pessoa">
-                            <span className="atividades-iniciais" aria-hidden="true">{iniciais(a.responsavel)}</span>
+                            <span className="atividades-iniciais" aria-hidden="true">{iniciaisNome(a.responsavel)}</span>
                             {a.responsavel ? formatarNomeExibicao(a.responsavel) : <Text color="gray">Sem responsável</Text>}
                           </span>
                         </td>
