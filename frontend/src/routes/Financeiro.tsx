@@ -1,10 +1,11 @@
+import CabecalhoPagina from '../CabecalhoPagina'
 import TabelaResponsiva from '../TabelaResponsiva'
 import TextoTabela from '../TextoTabela'
 import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, Info } from 'lucide-react'
-import { AlertDialog, Badge, Button, Callout, Checkbox, Flex, Heading, Text } from '@radix-ui/themes'
+import { AlertDialog, Badge, Button, Callout, Checkbox, Flex, Text } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 import { buscarJson, enviarJson } from '../api/rest'
@@ -100,12 +101,11 @@ export default function Financeiro() {
 
   return (
     <Flex direction="column" gap="6">
-      <Flex justify="between" align="center" wrap="wrap" gap="2">
-        <Heading as="h1" size="6">Lançamentos</Heading>
-        <Button size="2" onClick={() => setModalNovoAberto(true)}>
-          Novo lançamento
-        </Button>
-      </Flex>
+      <CabecalhoPagina
+        titulo="Lançamentos"
+        descricao="Receitas e despesas do escritório vinculadas a clientes e processos."
+        acoes={<Button size="2" onClick={() => setModalNovoAberto(true)}>Novo lançamento</Button>}
+      />
       <div aria-live="polite">
         {carregando && <Carregamento tipo="tabela" descricao="Carregando…" />}
         {erro && (

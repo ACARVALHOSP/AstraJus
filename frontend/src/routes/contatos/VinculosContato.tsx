@@ -66,7 +66,7 @@ export default function VinculosContato({ clienteId, tipo }: { clienteId: string
     <Flex direction="column" gap="5">
       <div className="aj-layout-38">
         <Heading as="h2" size="4">{tipo === 'processos' ? 'Processos vinculados' : 'Financeiro do cliente'}</Heading>
-        <Button variant="outline" size="1" disabled={carregando} onClick={() => setRevisao((r) => r + 1)}>
+        <Button variant="soft" size="1" disabled={carregando} onClick={() => setRevisao((r) => r + 1)}>
           {tipo === 'processos' ? 'Atualizar processos' : 'Atualizar financeiro'}
         </Button>
       </div>

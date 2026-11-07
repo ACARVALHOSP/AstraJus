@@ -1,3 +1,4 @@
+import CabecalhoPagina from '../CabecalhoPagina'
 import Carregamento from '../Carregamento'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Badge, Button, Callout, Card, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
@@ -89,16 +90,19 @@ export default function Processo() {
 
   return (
     <Flex direction="column" gap="6">
-      <Heading as="h1" size="6">Consultar processo</Heading>
+      <CabecalhoPagina
+        titulo="Consultar processo"
+        descricao="Consulta a capa e as movimentações de um processo no DataJud (CNJ)."
+      />
       <form onSubmit={aoEnviar}>
         <Flex direction="column" gap="5">
           <div className="aj-form-grade">
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="tribunal">Tribunal</label>
               <Select.Root value={tribunal || '__none__'} onValueChange={(v) => setTribunal(v === '__none__' ? '' : v)}>
-                <Select.Trigger id="tribunal" placeholder="— selecione o tribunal —" style={{ width: '100%' }} />
+                <Select.Trigger id="tribunal" placeholder="Selecione o tribunal" style={{ width: '100%' }} />
                 <Select.Content>
-                  <Select.Item value="__none__">— selecione o tribunal —</Select.Item>
+                  <Select.Item value="__none__">Selecione o tribunal</Select.Item>
                   {TRIBUNAIS.map((t) => (
                     <Select.Item key={t} value={t}>{t.toUpperCase()}</Select.Item>
                   ))}

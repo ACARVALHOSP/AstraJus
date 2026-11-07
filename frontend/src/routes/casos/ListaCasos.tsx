@@ -1,10 +1,11 @@
+import CabecalhoPagina from '../../CabecalhoPagina'
 import TabelaResponsiva from '../../TabelaResponsiva'
 import TextoTabela from '../../TextoTabela'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { Star } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { AlertDialog, Badge, Button, Callout, Flex, Heading, Text, TextField } from '@radix-ui/themes'
+import { AlertDialog, Badge, Button, Callout, Flex, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
@@ -127,15 +128,12 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
   return (
     <div className="casos-lista">
       <Flex direction="column" gap="6">
-        <div className="casos-titulo-linha">
-          <div>
-            <Heading as="h1" size="6" tabIndex={-1}>Processos</Heading>
-            <p className="casos-ajuda">Cadastros, atividades e acompanhamento do escritório.</p>
-          </div>
-          <Button ref={botaoNovo} size="2" onClick={() => setModalNovoAberto(true)}>
-            Novo processo
-          </Button>
-        </div>
+        <CabecalhoPagina
+          titulo="Processos"
+          focavel
+          descricao="Cadastros, atividades e acompanhamento do escritório."
+          acoes={<Button ref={botaoNovo} size="2" onClick={() => setModalNovoAberto(true)}>Novo processo</Button>}
+        />
         {casoCriado && (
           <Callout.Root color="green" size="1">
             <Callout.Icon><Info size={14} /></Callout.Icon>
@@ -169,7 +167,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                 <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
                 <Callout.Text>{erro}</Callout.Text>
               </Callout.Root>
-              <Button variant="outline" size="1" onClick={carregar} disabled={carregando} style={{ alignSelf: 'flex-start' }}>Tentar novamente</Button>
+              <Button variant="soft" size="1" onClick={carregar} disabled={carregando} style={{ alignSelf: 'flex-start' }}>Tentar novamente</Button>
             </Flex>
           )}
           {!carregando && casos && casos.length === 0 && (

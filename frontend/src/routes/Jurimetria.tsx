@@ -1,3 +1,5 @@
+import CampoData from '../CampoData'
+import CabecalhoPagina from '../CabecalhoPagina'
 import Carregamento from '../Carregamento'
 import { useState, type FormEvent } from 'react'
 import { AlertTriangle } from 'lucide-react'
@@ -161,32 +163,29 @@ export default function Jurimetria() {
 
   return (
     <Flex direction="column" gap="6">
-      <div>
-        <Heading as="h1" size="6">Jurimetria</Heading>
-        <Text as="p" size="2" color="gray" mt="1">
-          Preencha os filtros abaixo e escolha a análise - todas usam a mesma busca no CJPG (julgados de 1º grau do
-          TJSP). As demais ideias ao final ainda são só conceitos de próximos passos.
-        </Text>
-      </div>
+      <CabecalhoPagina
+        titulo="Jurimetria"
+        descricao="Preencha os filtros abaixo e escolha a análise. Todas usam a mesma busca no CJPG (julgados de 1º grau do TJSP). As demais ideias ao final ainda são conceitos de próximos passos."
+      />
       <form onSubmit={(e) => aoEnviar(e, 'benchmark_valor')}>
         <Flex direction="column" gap="5">
           <div className="form-campo">
             <label className="form-campo-label" htmlFor="jur-termo">Pesquisa livre</label>
-            <TextField.Root id="jur-termo" placeholder="ex.: dano moral" autoComplete="off" value={termo} onChange={(e) => setTermo(e.target.value)} />
+            <TextField.Root id="jur-termo" placeholder="Ex.: dano moral" autoComplete="off" value={termo} onChange={(e) => setTermo(e.target.value)} />
           </div>
           <div className="form-campo">
             <label className="form-campo-label" htmlFor="jur-magistrado">Magistrado</label>
-            <TextField.Root id="jur-magistrado" placeholder="digite o nome…" autoComplete="off" value={magistrado} onChange={(e) => setMagistrado(e.target.value)} />
+            <TextField.Root id="jur-magistrado" placeholder="Nome do magistrado" autoComplete="off" value={magistrado} onChange={(e) => setMagistrado(e.target.value)} />
             <Text size="1" color="gray">O nome entra automaticamente entre aspas na pesquisa livre. Obrigatório para o perfil do magistrado.</Text>
           </div>
           <div className="aj-form-grade">
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="jur-data-inicio">Data de disponibilização - início</label>
-              <TextField.Root id="jur-data-inicio" type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+              <CampoData id="jur-data-inicio" value={dataInicio} onChange={v => setDataInicio(v)} />
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="jur-data-fim">Data de disponibilização - fim</label>
-              <TextField.Root id="jur-data-fim" type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+              <CampoData id="jur-data-fim" value={dataFim} onChange={v => setDataFim(v)} />
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="jur-paginas">Páginas a buscar (10 resultados cada)</label>

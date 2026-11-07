@@ -1,10 +1,11 @@
+import CabecalhoPagina from '../../CabecalhoPagina'
 import TabelaResponsiva from '../../TabelaResponsiva'
 import AcoesTabela from '../../AcoesTabela'
 import TextoTabela from '../../TextoTabela'
 import Carregamento from '../../Carregamento'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { Archive, Check, ChevronDown, ChevronRight, ExternalLink, Info } from 'lucide-react'
-import { Button, Callout, Card, Checkbox, Flex, Heading, IconButton, Popover, Select, Text } from '@radix-ui/themes'
+import { Button, Callout, Card, Checkbox, Flex, IconButton, Popover, Select, Text } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { useNavegacao } from '../../api/NavegacaoContext'
@@ -118,10 +119,7 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
 
   return (
     <Flex direction="column" gap="6" className="oab-painel">
-      <div>
-        <Heading as="h1" size="6">Publicações monitoradas</Heading>
-        <Text as="p" size="2" color="gray" mt="1">Revise as publicações capturadas pelos monitoramentos por OAB.</Text>
-      </div>
+      <CabecalhoPagina titulo="Publicações monitoradas" descricao="Revise as publicações capturadas pelos monitoramentos por OAB." />
       <Callout.Root color="blue" size="1">
         <Callout.Icon><Info size={14} /></Callout.Icon>
         <Callout.Text>
@@ -149,20 +147,21 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
               </Flex>
             </Card>
           ) : (
-            <div className="aj-acoes-linha">
+            <div className="aj-filtros-linha">
               <div className="form-campo" style={{ minWidth: 180 }}>
+                <label className="form-campo-label" id="oab-filtro-status-rotulo">Status</label>
                 <Select.Root value={status || '__todos__'} disabled={ocupada} onValueChange={(v) => { const novo = v === '__todos__' ? '' : v; setStatus(novo); setPagina(1); setSelecionadas(new Set()); setMensagem('') }}>
-                  <Select.Trigger placeholder="Status" style={{ width: '100%' }} />
+                  <Select.Trigger aria-labelledby="oab-filtro-status-rotulo" style={{ width: '100%' }} />
                   <Select.Content>
-                    <Select.Item value="__todos__">Todos</Select.Item>
+                    <Select.Item value="__todos__">Todos os status</Select.Item>
                     {Object.entries(ROTULO_STATUS).map(([v, r]) => <Select.Item key={v} value={v}>{r}</Select.Item>)}
                   </Select.Content>
                 </Select.Root>
               </div>
-              <Button size="1" variant="ghost" disabled={ocupada} onClick={carregar}>Atualizar lista</Button>
+              <Button size="2" variant="soft" color="gray" disabled={ocupada} onClick={carregar}>Atualizar</Button>
               <Popover.Root>
                 <Popover.Trigger>
-                  <Button size="1" variant="outline" color="gray" disabled={ocupada}>Colunas</Button>
+                  <Button size="2" variant="soft" color="gray" disabled={ocupada}>Colunas</Button>
                 </Popover.Trigger>
                 <Popover.Content style={{ width: 280 }}>
                   <Text size="1" weight="bold" mb="2">Colunas visíveis</Text>
@@ -288,9 +287,9 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
                 {[5, 10, 20].map(n => <Select.Item key={n} value={String(n)}>{n} por página</Select.Item>)}
               </Select.Content>
             </Select.Root>
-            <Button variant="ghost" size="1" disabled={ocupada || pagina <= 1} onClick={() => setPagina(p => p - 1)}>Página anterior</Button>
+            <Button variant="soft" color="gray" size="2" disabled={ocupada || pagina <= 1} onClick={() => setPagina(p => p - 1)} aria-label="Página anterior">Anterior</Button>
             <Text size="2">Página {pagina} de {totalPaginas}</Text>
-            <Button variant="ghost" size="1" disabled={ocupada || pagina >= totalPaginas} onClick={() => setPagina(p => p + 1)}>Próxima página</Button>
+            <Button variant="soft" color="gray" size="2" disabled={ocupada || pagina >= totalPaginas} onClick={() => setPagina(p => p + 1)} aria-label="Próxima página">Próxima</Button>
             <Text size="2" color="gray">{total ? `${total} publicações` : '0 publicações'}</Text>
           </nav>
         </Flex>

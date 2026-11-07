@@ -1,3 +1,4 @@
+import CabecalhoPagina from '../CabecalhoPagina'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Info, CheckCircle2 } from 'lucide-react'
 import { Button, Callout, Card, Dialog, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
@@ -192,11 +193,10 @@ function Painel() {
     <>
       <Flex direction="column" gap="6">
         <Flex direction="column" gap="5">
-          <Heading as="h1" size="6">Monitoramentos</Heading>
-          <Text as="p" size="2">
-            Acompanhe publicações de processos ou OAB. Você tem {lista.length} de {dados?.limite ?? 5}{' '}
-            monitoramentos.
-          </Text>
+          <CabecalhoPagina
+            titulo="Monitoramentos"
+            descricao={<>Acompanhe publicações de processos ou OAB. Você tem {lista.length} de {dados?.limite ?? 5} monitoramentos.</>}
+          />
           <div className="aj-acoes-linha">
             <Button
               size="2"
@@ -212,8 +212,8 @@ function Painel() {
             >
               Criar monitoramento
             </Button>
-            <Button variant="ghost" size="2" disabled={bloqueado} onClick={carregar}>
-              Atualizar lista
+            <Button variant="soft" color="gray" size="2" disabled={bloqueado} onClick={carregar}>
+              Atualizar
             </Button>
           </div>
           <Text as="p" size="2" color="gray">Atualizar esta lista não dispara uma consulta ao DJEN.</Text>
@@ -267,7 +267,7 @@ function Painel() {
               <EstadoExecucao titulo="Verificação de publicações" dados={mon.verificacao} />
               {mon.criterio?.numero_oab && <EstadoExecucao titulo="Captura por OAB" dados={mon.captura_oab} />}
               <div className="aj-acoes-linha">
-                <Button variant="outline" size="1" disabled={bloqueado} onClick={() => executar('renovar', mon)}>
+                <Button variant="soft" size="1" disabled={bloqueado} onClick={() => executar('renovar', mon)}>
                   Renovar por 180 dias
                 </Button>
                 <Button

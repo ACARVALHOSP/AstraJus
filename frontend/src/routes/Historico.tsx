@@ -1,3 +1,4 @@
+import CabecalhoPagina from '../CabecalhoPagina'
 import TabelaResponsiva from '../TabelaResponsiva'
 import TextoTabela from '../TextoTabela'
 import AcoesTabela from '../AcoesTabela'
@@ -81,7 +82,7 @@ export default function Historico() {
 
   return (
     <Flex direction="column" gap="7">
-      <Heading as="h1" size="6">Histórico e favoritos</Heading>
+      <CabecalhoPagina titulo="Histórico e favoritos" descricao="Processos favoritos e consultas recentes feitas neste navegador." />
 
       <section>
         <Heading as="h3" size="3" mb="2">Processos favoritos</Heading>

@@ -12,9 +12,10 @@ type Estrutura = {
   isSortHeader?: boolean
   sortDirection?: string
   onClick?: (evento: MouseEvent<HTMLButtonElement>) => void
+  'aria-label'?: string
 }
 type Elemento = ReactElement<Estrutura>
-type Coluna = { cabecalho: Elemento; rotulo: string; controle: boolean; fixa: boolean; numerica: boolean }
+type Coluna = { cabecalho: Elemento; rotulo: string; controle: boolean; fixa: boolean; numerica: boolean; monetaria: boolean }
 
 // Achata apenas a estrutura da tabela; o conteúdo e os handlers das células são preservados.
 function elementos(conteudo: ReactNode, prefixo = ''): Elemento[] {
@@ -54,9 +55,11 @@ export default function TabelaResponsiva({ children, principais = [] }: { childr
   const cabeca = partes.find(parte => parte.type === 'thead')
   const linhaCabecalho = elementos(cabeca?.props.children)[0]
   const colunas: Coluna[] = elementos(linhaCabecalho?.props.children).map(cabecalho => {
-    const rotulo = texto(cabecalho.props.children)
-    const controle = rotulo === 'Favorito' || rotulo === 'Detalhes'
-    return { cabecalho, rotulo, controle, fixa: controle || rotulo === 'Ações', numerica: /^(Valor|Vencimento|Parcela|Data e hora|Data|Cadastro|Último acesso|Disponibilizado em|Quando)$/.test(rotulo) }
+    const rotulo = texto(cabecalho.props.children).trim() || cabecalho.props['aria-label'] || ''
+    // Cabeçalhos sem texto (seleção, expansão, favorito) são colunas de controle estreitas.
+    const controle = rotulo === 'Favorito' || rotulo === 'Detalhes' || !texto(cabecalho.props.children).trim() || /\btabela-controle\b/.test(cabecalho.props.className ?? '')
+    const monetaria = /^(Valor|Parcela)$/.test(rotulo)
+    return { cabecalho, rotulo, controle, fixa: controle || rotulo === 'Ações', monetaria, numerica: monetaria || /^(Vencimento|Data e hora|Data|Cadastro|Último acesso|Disponibilizado em|Quando)$/.test(rotulo) }
   })
   const compacto = largura > 0 && largura < Math.max(600, colunas.length * 128)
   const prioritarias = colunas.map((c, i) => principais.includes(c.rotulo) ? i : -1).filter(i => i >= 0)
@@ -80,7 +83,7 @@ export default function TabelaResponsiva({ children, principais = [] }: { childr
   const ordem = [...visiveis].sort((a, b) => compacto && temDetalhes ? prioridade(a) - prioridade(b) : a - b)
   const ordenaveis = colunas.filter(c => c.cabecalho.props.isSortable && c.cabecalho.props.onClick)
   const novaCabeca = cabeca && linhaCabecalho ? cloneElement(cabeca, {}, cloneElement(linhaCabecalho, {}, [
-    ...ordem.map(i => { const c = colunas[i]; return cloneElement(c.cabecalho, { className: classe(c.cabecalho, c.controle ? 'tabela-controle' : c.rotulo === 'Ações' ? 'tabela-acoes' : c.numerica ? 'tabela-numero' : '') }, c.controle && c.rotulo ? <span className="aj-sr-only">{c.rotulo}</span> : c.cabecalho.props.children) }),
+    ...ordem.map(i => { const c = colunas[i]; return cloneElement(c.cabecalho, { className: classe(c.cabecalho, c.controle ? 'tabela-controle' : c.rotulo === 'Ações' ? 'tabela-acoes' : c.monetaria ? 'tabela-numero tabela-valor' : c.numerica ? 'tabela-numero' : '') }, c.controle && c.rotulo ? <span className="aj-sr-only">{c.rotulo}</span> : c.cabecalho.props.children) }),
     adicionarColuna ? <th key="detalhes" scope="col" className="tabela-acoes">Detalhes</th> : null,
   ])) : cabeca
 
@@ -123,9 +126,10 @@ function LinhaAdaptavel({ linha, expansao, colunas, ordem, complementares, indic
     const celula = celulas[indice]
     if (!celula) return []
     const coluna = colunas[indice]
-    return [cloneElement(celula, { className: classe(celula, coluna?.controle ? 'tabela-controle' : indice === indiceAcoes ? 'tabela-acoes' : coluna?.numerica ? 'tabela-numero' : '') }, <>
-      {celula.props.children}
-      {indice === indiceAcoes && complementares.length > 0 && botao}
+    return [cloneElement(celula, { className: classe(celula, coluna?.controle ? 'tabela-controle' : indice === indiceAcoes ? 'tabela-acoes' : coluna?.monetaria ? 'tabela-numero tabela-valor' : coluna?.numerica ? 'tabela-numero' : '') }, <>
+      {indice === indiceAcoes && complementares.length > 0
+        ? <div className="tabela-acoes-grupo">{celula.props.children}{botao}</div>
+        : celula.props.children}
     </>)]
   })
   if (indiceAcoes < 0 && complementares.length > 0) conteudo.push(<td key="detalhes" className="tabela-acoes">{botao}</td>)

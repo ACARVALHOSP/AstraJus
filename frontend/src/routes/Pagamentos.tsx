@@ -1,10 +1,11 @@
+import CabecalhoPagina from '../CabecalhoPagina'
 import TabelaResponsiva from '../TabelaResponsiva'
 import TextoTabela from '../TextoTabela'
 import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, Info } from 'lucide-react'
-import { AlertDialog, Badge, Button, Callout, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
+import { AlertDialog, Badge, Button, Callout, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 import { buscarJson, enviarJson } from '../api/rest'
@@ -123,13 +124,11 @@ export default function Pagamentos() {
 
   return (
     <Flex direction="column" gap="6">
-      <Flex justify="between" align="center" wrap="wrap" gap="2">
-        <Heading as="h1" size="6">Pagamentos</Heading>
-        <Button size="2" onClick={() => setModalNovaAberto(true)}>
-          Nova cobrança
-        </Button>
-      </Flex>
-      <Text as="p" size="2" color="gray">Cobranças (boleto ou Pix) emitidas via Asaas para os clientes cadastrados.</Text>
+      <CabecalhoPagina
+        titulo="Pagamentos"
+        descricao="Cobranças (boleto ou Pix) emitidas via Asaas para os clientes cadastrados."
+        acoes={<Button size="2" onClick={() => setModalNovaAberto(true)}>Nova cobrança</Button>}
+      />
       {avisoIntegracao && (
         <Callout.Root color="blue" size="1">
           <Callout.Icon><Info size={14} /></Callout.Icon>
@@ -142,7 +141,7 @@ export default function Pagamentos() {
           <Select.Root value={status || '__todos__'} onValueChange={(v) => setStatus(v === '__todos__' ? '' : v)}>
             <Select.Trigger id="pagamentos-filtro-status" style={{ width: '100%' }} />
             <Select.Content>
-              <Select.Item value="__todos__">— todos —</Select.Item>
+              <Select.Item value="__todos__">Todos os status</Select.Item>
               <Select.Item value="PENDING">Pendente</Select.Item>
               <Select.Item value="OVERDUE">Vencido</Select.Item>
               <Select.Item value="RECEIVED">Recebido</Select.Item>

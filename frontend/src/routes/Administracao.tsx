@@ -1,3 +1,4 @@
+import CabecalhoPagina from '../CabecalhoPagina'
 import TabelaResponsiva from '../TabelaResponsiva'
 import { useState } from 'react'
 import { AlertTriangle, Check } from 'lucide-react'
@@ -90,8 +91,7 @@ export default function Administracao() {
   const lista = usuarios.filter(u => `${u.login} ${u.nome_completo} ${u.email || ''}`.toLocaleLowerCase('pt-BR').includes(filtro.toLocaleLowerCase('pt-BR')))
 
   return <section className="administracao" aria-busy={ocupado}>
-    <Heading as="h1" size="6">Administração</Heading>
-    <Text as="p" size="2" color="gray">Gerencie os usuários e acompanhe o banco de dados do sistema.</Text>
+    <CabecalhoPagina titulo="Administração" descricao="Gerencie os usuários e acompanhe o banco de dados do sistema." />
     {erro && (
       <Callout.Root color="red" size="1">
         <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
@@ -115,7 +115,7 @@ export default function Administracao() {
       <Button size="2" type="submit" disabled={ocupado || !(credencial || cliente?.token)}>{ocupado ? 'Verificando…' : 'Acessar administração'}</Button>
     </form> : <>
       <div className="administracao__acoes">
-        <Button variant="outline" size="2" disabled={ocupado} onClick={() => void executar(() => carregar(sessao))}>Atualizar usuários</Button>
+        <Button variant="soft" size="2" disabled={ocupado} onClick={() => void executar(() => carregar(sessao))}>Atualizar usuários</Button>
         <Button variant="ghost" size="2" disabled={ocupado} onClick={sair}>Encerrar administração</Button>
       </div>
       <Tabs.Root defaultValue="usuarios">
@@ -143,8 +143,8 @@ export default function Administracao() {
           <Text as="p" size="2" color="gray">Consulte o estado do SQLite e gere uma cópia consistente dos dados.</Text>
           <div className="administracao__acoes">
             <Button size="2" disabled={ocupado} onClick={() => void executar(async () => { setBanco(await (await requisicao('/admin/banco/api', sessao)).json()) })}>Carregar informações</Button>
-            <Button variant="outline" size="2" disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/banco/integridade', sessao, 'POST')).json(); if (!r.integro) throw new Error('A verificação identificou inconsistências no banco.'); setMensagem(`Integridade verificada em ${data(r.verificado_em)}.`) })}>Verificar integridade</Button>
-            <Button variant="outline" size="2" disabled={ocupado} onClick={() => setConfirmarBackup(true)}>Baixar backup</Button>
+            <Button variant="soft" size="2" disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/banco/integridade', sessao, 'POST')).json(); if (!r.integro) throw new Error('A verificação identificou inconsistências no banco.'); setMensagem(`Integridade verificada em ${data(r.verificado_em)}.`) })}>Verificar integridade</Button>
+            <Button variant="soft" size="2" disabled={ocupado} onClick={() => setConfirmarBackup(true)}>Baixar backup</Button>
             <Button variant="ghost" color="red" size="2" disabled={ocupado} onClick={() => setLimpeza({ categorias: [], texto: '', resultado: null })}>Limpar dados</Button>
           </div>
           {banco && <dl className="administracao__resumo"><div><dt>Banco</dt><dd>{banco.tipo}</dd></div><div><dt>Tamanho</dt><dd>{(banco.tamanho_bytes / 1024 / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} MB</dd></div><div><dt>Tabelas</dt><dd>{banco.tabelas}</dd></div></dl>}
