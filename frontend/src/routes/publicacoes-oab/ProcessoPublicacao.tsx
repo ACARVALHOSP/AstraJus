@@ -8,6 +8,10 @@ import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
 import type { Caso } from '../casos/ListaCasos'
 import { nomePublicacao, numeroPublicacao, type PublicacaoOab } from './dados'
 
+function semAcento(texto?: string) {
+  return (texto ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
 export default function ProcessoPublicacao({ publicacao, onClose, onConcluido }: {
   publicacao: PublicacaoOab; onClose: () => void; onConcluido: (mensagem: string) => void
 }) {
@@ -19,7 +23,9 @@ export default function ProcessoPublicacao({ publicacao, onClose, onConcluido }:
   const [clientes, setClientes] = useState<Array<{ id: string; nome: string }>>([])
   const [responsaveis, setResponsaveis] = useState<string[]>([])
   const [clienteId, setClienteId] = useState('')
-  const [nomeCliente, setNomeCliente] = useState(publicacao.nome_pesquisado ?? '')
+  // Começa vazio: o nome pesquisado na captura é o do advogado, não o do cliente.
+  const [nomeCliente, setNomeCliente] = useState('')
+  const partes = [...new Set((publicacao.dados?.destinatarios ?? []).map(d => (d.nome ?? '').trim()).filter(Boolean))]
   const [responsavel, setResponsavel] = useState('')
   const [termo, setTermo] = useState(numero)
   const [escolhido, setEscolhido] = useState('')
@@ -65,7 +71,7 @@ export default function ProcessoPublicacao({ publicacao, onClose, onConcluido }:
         criado.current = caso; setProcessoCriado(true)
       }
       if (!caso) {
-        if (!clienteId && !nomeCliente.trim()) throw new Error('Selecione um cliente ou informe o nome do novo cliente.')
+        if (!clienteId && !nomeCliente.trim()) throw new Error('Escolha um cliente cadastrado ou digite o nome do novo cliente.')
         if (!responsavel) throw new Error('Selecione um responsável.')
         // Repeat the exact-CNJ lookup immediately before creating.
         const r = await buscarJson<{ casos: Caso[] }>(cliente, `/casos?q=${encodeURIComponent(numero)}`)
@@ -117,23 +123,29 @@ export default function ProcessoPublicacao({ publicacao, onClose, onConcluido }:
             </div>
             {escolhido ? <Text as="p" size="2">Confirme o vínculo com o processo acima. O cadastro e a capa existentes serão preservados.</Text> : <>
               <div className="form-campo">
-                <label className="form-campo-label" htmlFor="oab-processo-cliente">Cliente</label>
-                <Select.Root value={clienteId || '__novo__'} disabled={salvando} onValueChange={(v) => setClienteId(v === '__novo__' ? '' : v)}>
-                  <Select.Trigger id="oab-processo-cliente" style={{ width: '100%' }} />
-                  <Select.Content>
-                    <Select.Item value="__novo__">Novo cliente</Select.Item>
-                    {clientes.map(c => <Select.Item key={c.id} value={c.id}>{formatarNomeExibicao(c.nome)}</Select.Item>)}
-                  </Select.Content>
-                </Select.Root>
+                <label className="form-campo-label" htmlFor="oab-processo-cliente">Cliente <span className="aj-obrigatorio" aria-hidden="true">*</span></label>
+                <TextField.Root id="oab-processo-cliente" placeholder="Busque um cliente cadastrado ou digite o nome de um novo"
+                  autoComplete="off" disabled={salvando}
+                  value={clienteId ? formatarNomeExibicao(clientes.find(c => c.id === clienteId)?.nome) : nomeCliente}
+                  onChange={e => { setClienteId(''); setNomeCliente(e.target.value) }} />
+                {!clienteId && nomeCliente.trim() && (() => {
+                  const termo = semAcento(nomeCliente.trim())
+                  const achados = clientes.filter(c => semAcento(c.nome).includes(termo)).slice(0, 6)
+                  return achados.length > 0
+                    ? <Flex direction="column" gap="1" className="busca-resultados" role="listbox" aria-label="Clientes cadastrados">
+                        {achados.map(c => <button key={c.id} type="button" role="option" aria-selected={false} className="aj-busca-item" onClick={() => setClienteId(c.id)}>{formatarNomeExibicao(c.nome)}</button>)}
+                      </Flex>
+                    : <Text size="1" color="gray">Nenhum cliente com esse nome: será cadastrado um novo cliente.</Text>
+                })()}
+                {!clienteId && !nomeCliente.trim() && partes.length > 0 && (
+                  <Text size="1" color="gray">
+                    Partes da publicação:{' '}
+                    {partes.map((nome, i) => <span key={nome}>{i > 0 && ' · '}<button type="button" className="aj-link-ajuda" onClick={() => setNomeCliente(formatarNomeExibicao(nome))}>{formatarNomeExibicao(nome)}</button></span>)}
+                  </Text>
+                )}
               </div>
-              {!clienteId && (
-                <div className="form-campo">
-                  <label className="form-campo-label" htmlFor="oab-processo-novo-cliente">Nome do novo cliente</label>
-                  <TextField.Root id="oab-processo-novo-cliente" value={nomeCliente} disabled={salvando} onChange={e => setNomeCliente(e.target.value)} />
-                </div>
-              )}
               <div className="form-campo">
-                <label className="form-campo-label" htmlFor="oab-processo-responsavel">Responsável</label>
+                <label className="form-campo-label" htmlFor="oab-processo-responsavel">Responsável <span className="aj-obrigatorio" aria-hidden="true">*</span></label>
                 <Select.Root value={responsavel || '__none__'} disabled={salvando} onValueChange={(v) => setResponsavel(v === '__none__' ? '' : v)}>
                   <Select.Trigger id="oab-processo-responsavel" style={{ width: '100%' }} />
                   <Select.Content>

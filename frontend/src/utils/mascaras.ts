@@ -45,3 +45,26 @@ export function erroCpfCnpj(valor: string): string {
   if (d.length === 14) return cnpjValido(d) ? '' : 'CNPJ inválido. Confira os números digitados.'
   return 'O CPF deve ter 11 dígitos e o CNPJ, 14.'
 }
+
+/** (11) 99999-0000 para celular, (11) 3333-0000 para fixo; aceita +55 no início. */
+export function mascaraTelefone(valor: string): string {
+  let d = valor.replace(/\D/g, '')
+  if (d.length > 11 && d.startsWith('55')) d = d.slice(2)
+  d = d.slice(0, 11)
+  if (d.length <= 2) return d ? `(${d}` : ''
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`
+}
+
+export function erroTelefone(valor: string): string {
+  const d = valor.replace(/\D/g, '')
+  if (!d) return ''
+  return d.length === 10 || d.length === 11 ? '' : 'Telefone com DDD: 10 ou 11 dígitos.'
+}
+
+export function erroEmail(valor: string): string {
+  const v = valor.trim()
+  if (!v) return ''
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) ? '' : 'E-mail incompleto. Confira, por exemplo: nome@exemplo.com.br'
+}

@@ -1,8 +1,9 @@
+import { useAvisos } from '../Avisos'
 import { mensagemPorStatus } from '../api/mcpClient'
 import CabecalhoPagina from '../CabecalhoPagina'
 import TabelaResponsiva from '../TabelaResponsiva'
 import { useState } from 'react'
-import { AlertTriangle, Check } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import {
   AlertDialog,
   Button,
@@ -39,7 +40,8 @@ export default function Administracao() {
   const [acessos, setAcessos] = useState<{ ocorrido_em: string; usuario: string }[]>([])
   const [banco, setBanco] = useState<Banco | null>(null)
   const [erro, setErro] = useState('')
-  const [mensagem, setMensagem] = useState('')
+  const { avisar } = useAvisos()
+  const setMensagem = (texto: string) => { if (texto) avisar({ texto }) }
   const [ocupado, setOcupado] = useState(false)
   const [filtro, setFiltro] = useState('')
   const [editor, setEditor] = useState<{ login: string | null; campos: typeof VAZIO } | null>(null)
@@ -97,12 +99,6 @@ export default function Administracao() {
       <Callout.Root color="red" size="1">
         <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
         <Callout.Text>{erro}</Callout.Text>
-      </Callout.Root>
-    )}
-    {mensagem && (
-      <Callout.Root color="green" size="1">
-        <Callout.Icon><Check size={14} /></Callout.Icon>
-        <Callout.Text>{mensagem}</Callout.Text>
       </Callout.Root>
     )}
     {!sessao ? <form className="administracao__acesso" onSubmit={e => { e.preventDefault(); void executar(() => carregar(credencial || cliente?.token || '')) }}>

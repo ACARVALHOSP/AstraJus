@@ -1,3 +1,4 @@
+import { confirmarSaida, useAlteracoesPendentes } from '../../AlteracoesPendentes'
 import CampoData from '../../CampoData'
 import Carregamento from '../../Carregamento'
 import PreviaParcelas from '../../PreviaParcelas'
@@ -150,9 +151,10 @@ export default function NovoLancamentoModal({ open, onClose, onSalvo }: { open: 
     }
   }
 
+  const pendente = open && Boolean(clienteSelecionado || buscaCliente.trim() || descricao.trim() || valor.trim() || vencimento || responsavel)
+  useAlteracoesPendentes(pendente)
   function fechar() {
-    limpar()
-    onClose()
+    confirmarSaida(() => { limpar(); onClose() })
   }
 
   return (

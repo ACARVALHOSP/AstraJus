@@ -5,9 +5,10 @@ import { Button, Callout, Checkbox, Dialog, Flex, Select, Text, TextField } from
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { enviarJson } from '../../api/rest'
-import { mascaraCpfCnpj } from '../../utils/mascaras'
 import TabelaParcelas from '../../PreviaParcelas'
-import { calcularValoresParcelas, somarMeses } from '../../utils/parcelas'
+import { calcularValoresParcelas, somarMeses, valorLancamentoEmReais } from '../../utils/parcelas'
+import { formatarNomeExibicao } from '../../utils/formatadores'
+import { confirmarSaida, useAlteracoesPendentes } from '../../AlteracoesPendentes'
 
 type Cliente = { id: string; nome?: string; cpf_cnpj?: string }
 
@@ -23,7 +24,8 @@ export default function NovaCobrancaModal({
   onCriada: () => void
 }) {
   const { cliente } = useCliente()
-  const [cpfCnpj, setCpfCnpj] = useState('')
+  // Busca do cliente por nome ou CPF/CNPJ, como em Novo lançamento.
+  const [busca, setBusca] = useState('')
   const [clienteEncontrado, setClienteEncontrado] = useState<Cliente | null>(null)
   const [tipo, setTipo] = useState<'BOLETO' | 'PIX'>('BOLETO')
   const [parcelar, setParcelar] = useState(false)
@@ -35,7 +37,7 @@ export default function NovaCobrancaModal({
   const [erro, setErro] = useState<string | null>(null)
 
   function limpar() {
-    setCpfCnpj('')
+    setBusca('')
     setClienteEncontrado(null)
     setTipo('BOLETO')
     setParcelar(false)
@@ -46,25 +48,36 @@ export default function NovaCobrancaModal({
     setErro(null)
   }
 
-  function aoDigitarCpfCnpj(valorDigitado: string) {
-    const mascarado = mascaraCpfCnpj(valorDigitado)
-    setCpfCnpj(mascarado)
-    const digitos = mascarado.replace(/\D/g, '')
-    setClienteEncontrado(digitos.length >= 11 ? clientes.find((c) => (c.cpf_cnpj ?? '').replace(/\D/g, '') === digitos) ?? null : null)
-  }
+  const termo = normalizar(busca.trim())
+  const digitosBusca = busca.replace(/\D/g, '')
+  const resultados = !clienteEncontrado && termo
+    ? clientes.filter(c => normalizar(c.nome ?? '').includes(termo)
+        || (digitosBusca.length >= 3 && (c.cpf_cnpj ?? '').replace(/\D/g, '').includes(digitosBusca))).slice(0, 8)
+    : []
+  const valorNumerico = valorLancamentoEmReais(valor)
+  const pendente = open && Boolean(clienteEncontrado || busca.trim() || valor.trim() || vencimento || descricao.trim())
+  useAlteracoesPendentes(pendente)
 
-  function statusCpfCnpj(): string {
-    const digitos = cpfCnpj.replace(/\D/g, '')
-    if (!digitos) return 'Digite o CPF/CNPJ de um cliente já cadastrado.'
-    if (clienteEncontrado) return `Cliente: ${clienteEncontrado.nome}`
-    if (digitos.length >= 11) return 'Nenhum cliente cadastrado com esse CPF/CNPJ.'
-    return ''
+  function fechar() {
+    confirmarSaida(() => { limpar(); onClose() })
   }
 
   async function criar() {
     setErro(null)
     if (!clienteEncontrado) {
-      setErro('Digite o CPF/CNPJ de um cliente já cadastrado antes de criar a cobrança.')
+      setErro('Escolha o cliente na lista: busque pelo nome ou CPF/CNPJ.')
+      return
+    }
+    if (valorNumerico === null) {
+      setErro('Informe um valor maior que zero, como 1.500,00.')
+      return
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(vencimento)) {
+      setErro('Informe a data de vencimento.')
+      return
+    }
+    if (!clienteEncontrado.cpf_cnpj) {
+      setErro('Este cliente não tem CPF/CNPJ no cadastro, e o Asaas exige o documento. Complete o cadastro em Contatos.')
       return
     }
     setEnviando(true)
@@ -72,7 +85,7 @@ export default function NovaCobrancaModal({
       await enviarJson(cliente, '/pagamentos', {
         cliente_id: clienteEncontrado.id,
         billing_type: tipo,
-        valor,
+        valor: valorNumerico,
         vencimento: vencimento.trim(),
         descricao: descricao.trim(),
         ...(parcelar ? { parcelas } : {}),
@@ -80,27 +93,38 @@ export default function NovaCobrancaModal({
       limpar()
       onCriada()
     } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Falha ao criar cobrança.')
+      setErro(e instanceof ErroMCP ? e.message : 'Não foi possível criar a cobrança. Tente de novo.')
     } finally {
       setEnviando(false)
     }
   }
 
   return (
-    <Dialog.Root open={open} onOpenChange={(v) => { if (!v) { limpar(); onClose() } }}>
+    <Dialog.Root open={open} onOpenChange={(v) => { if (!v) fechar() }}>
       <Dialog.Content maxWidth="560px">
         <Dialog.Title>Nova cobrança</Dialog.Title>
         <Flex direction="column" gap="5">
           <div className="form-campo">
-            <label className="form-campo-label" htmlFor="cobranca-cliente-cpf">Cliente (CPF/CNPJ) *</label>
+            <label className="form-campo-label" htmlFor="cobranca-cliente">Cliente *</label>
             <TextField.Root
-              id="cobranca-cliente-cpf"
-              placeholder="Ex.: 123.456.789-00"
+              id="cobranca-cliente"
+              placeholder="Busque por nome ou CPF/CNPJ"
               autoComplete="off"
-              value={cpfCnpj}
-              onChange={(e) => aoDigitarCpfCnpj(e.target.value)}
+              value={clienteEncontrado ? formatarNomeExibicao(clienteEncontrado.nome) : busca}
+              onChange={(e) => { setClienteEncontrado(null); setBusca(e.target.value) }}
             />
-            {statusCpfCnpj() && <Text size="1" color="gray">{statusCpfCnpj()}</Text>}
+            {resultados.length > 0 && (
+              <Flex direction="column" gap="1" className="busca-resultados" role="listbox" aria-label="Clientes encontrados">
+                {resultados.map(c => (
+                  <button key={c.id} type="button" role="option" aria-selected={false} className="aj-busca-item"
+                    onClick={() => { setClienteEncontrado(c); setBusca('') }}>
+                    {formatarNomeExibicao(c.nome)}{c.cpf_cnpj ? ` — ${c.cpf_cnpj}` : ' — sem CPF/CNPJ'}
+                  </button>
+                ))}
+              </Flex>
+            )}
+            {busca.trim() && !clienteEncontrado && !resultados.length && <Text size="1" color="gray">Nenhum cliente encontrado. Cadastre-o antes em Contatos.</Text>}
+            {clienteEncontrado && !clienteEncontrado.cpf_cnpj && <Text size="1" color="red">Este cliente não tem CPF/CNPJ; o Asaas exige o documento.</Text>}
           </div>
           <Text as="label" size="2">
             <Flex gap="2" align="center">
@@ -136,10 +160,9 @@ export default function NovaCobrancaModal({
               <label className="form-campo-label" htmlFor="cobranca-valor">{parcelar ? 'Valor total *' : 'Valor *'}</label>
               <TextField.Root
                 id="cobranca-valor"
-                type="number"
-                placeholder="Ex.: 1500.00"
-                min="0.01"
-                step="0.01"
+                inputMode="decimal"
+                placeholder="Ex.: 1.500,00"
+                autoComplete="off"
                 value={valor}
                 onChange={(e) => setValor(e.target.value)}
               />
@@ -153,7 +176,7 @@ export default function NovaCobrancaModal({
               />
             </div>
           </div>
-          <PreviaParcelas parcelar={parcelar} valor={valor} parcelas={parcelas} vencimento={vencimento} />
+          <PreviaParcelas parcelar={parcelar} valor={valorNumerico ?? 0} parcelas={parcelas} vencimento={vencimento} />
           <div className="form-campo">
             <label className="form-campo-label" htmlFor="cobranca-descricao">Descrição</label>
             <TextField.Root
@@ -171,9 +194,7 @@ export default function NovaCobrancaModal({
             </Callout.Root>
           )}
           <Flex gap="3" mt="2" justify="end">
-            <Dialog.Close>
-              <Button variant="soft" color="gray">Cancelar</Button>
-            </Dialog.Close>
+            <Button variant="soft" color="gray" onClick={fechar}>Cancelar</Button>
             <Button size="2" disabled={enviando} onClick={criar}>Criar cobrança</Button>
           </Flex>
         </Flex>
@@ -182,8 +203,12 @@ export default function NovaCobrancaModal({
   )
 }
 
-function PreviaParcelas({ parcelar, valor, parcelas, vencimento }: { parcelar: boolean; valor: string; parcelas: number; vencimento: string }) {
-  const total = Number(valor)
+function normalizar(texto: string) {
+  return texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
+function PreviaParcelas({ parcelar, valor, parcelas, vencimento }: { parcelar: boolean; valor: number; parcelas: number; vencimento: string }) {
+  const total = valor
   if (!parcelar || !(total > 0) || !(parcelas >= 2) || !/^\d{4}-\d{2}-\d{2}$/.test(vencimento)) return null
   const valoresCentavos = calcularValoresParcelas(Math.round(total * 100), parcelas)
   return (

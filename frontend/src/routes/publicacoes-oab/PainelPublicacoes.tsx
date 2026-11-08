@@ -5,7 +5,7 @@ import CampoData from '../../CampoData'
 import TabelaResponsiva from '../../TabelaResponsiva'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
-import { Fragment, useCallback, useEffect, useRef, useState, type ComponentType } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import { Archive, Check, ChevronDown, ChevronRight, Info, Keyboard, Unlink } from 'lucide-react'
 import { Badge, Button, Callout, Checkbox, Dialog, Flex, IconButton, Popover, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
@@ -49,7 +49,7 @@ function intervalo(periodo: Periodo, desde: string, ate: string): { desde?: stri
   if (periodo === 'personalizado') return { ...(desde ? { desde } : {}), ...(ate ? { ate } : {}) }
   return {}
 }
-export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<{ onCapturado: () => void }> }) {
+export default function PainelPublicacoes({ Captura, abas }: { Captura: ComponentType<{ onCapturado: () => void }>; abas?: ReactNode }) {
   const { cliente } = useCliente(), { irPara, consumirPayload, versaoNavegacao } = useNavegacao()
   const estreita = useEstreita()
   const [status, setStatus] = useState<Status | ''>('nao_tratada')
@@ -279,6 +279,7 @@ export default function PainelPublicacoes({ Captura }: { Captura: ComponentType<
       <CabecalhoPagina
         titulo="Publicações recebidas"
         descricao="Revise as publicações capturadas pelos monitoramentos por OAB."
+        abas={abas}
         acoes={<>
           <Popover.Root>
             <Popover.Trigger>

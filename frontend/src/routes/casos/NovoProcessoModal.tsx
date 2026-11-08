@@ -1,3 +1,4 @@
+import { confirmarSaida, useAlteracoesPendentes } from '../../AlteracoesPendentes'
 import React, { useEffect, useState } from 'react'
 import { Button, Callout, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle } from 'lucide-react'
@@ -56,6 +57,10 @@ export default function NovoProcessoModal({
     setErro(null)
   }
 
+  const pendente = open && Boolean(clienteSelecionado || textoBusca.trim() || titulo.trim() || responsavel || acao.trim() || foro.trim() || pasta.trim() || processos.trim())
+  useAlteracoesPendentes(pendente)
+  const fechar = () => confirmarSaida(() => { limpar(); onClose() })
+
   function aoDigitarCliente(valor: string) {
     setTextoBusca(valor)
     const encontrado = clientes.find((c) => formatarNomeExibicao(c.nome).toLowerCase() === valor.toLowerCase())
@@ -88,7 +93,7 @@ export default function NovoProcessoModal({
   }
 
   return (
-    <Dialog.Root open={open} onOpenChange={(o) => { if (!o) { limpar(); onClose() } }}>
+    <Dialog.Root open={open} onOpenChange={(o) => { if (!o) fechar() }}>
       <Dialog.Content maxWidth="600px">
         <Dialog.Title>Novo processo</Dialog.Title>
         <Flex direction="column" gap="3">
@@ -156,7 +161,7 @@ export default function NovoProcessoModal({
           )}
         </Flex>
         <Flex gap="3" mt="4" justify="end">
-          <Button variant="soft" color="gray" onClick={() => { limpar(); onClose() }}>Cancelar</Button>
+          <Button variant="soft" color="gray" onClick={fechar}>Cancelar</Button>
           <Button onClick={cadastrar} disabled={enviando}>Cadastrar processo</Button>
         </Flex>
       </Dialog.Content>

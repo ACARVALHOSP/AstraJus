@@ -6,8 +6,9 @@ import { AlertTriangle, Check } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
-import { erroCpfCnpj, mascaraCpfCnpj } from '../../utils/mascaras'
+import { erroCpfCnpj, erroEmail, erroTelefone, mascaraCpfCnpj, mascaraTelefone } from '../../utils/mascaras'
 import { useAvisos } from '../../Avisos'
+import { useAlteracoesPendentes } from '../../AlteracoesPendentes'
 import CampoRepetivel from './CampoRepetivel'
 import EnderecosRepetivel, { type Endereco } from './EnderecosRepetivel'
 
@@ -81,6 +82,8 @@ export default function CadastroContato({
   const [erroDocumento, setErroDocumento] = useState('')
   const [existente, setExistente] = useState<{ id: string; nome: string } | null>(null)
   const [registro, setRegistro] = useState<ClienteRegistro>(vazio())
+  // Cópia do que está salvo, para saber se há alterações pendentes.
+  const [original, setOriginal] = useState<string>(() => JSON.stringify(vazio()))
   const [carregando, setCarregando] = useState(!!clienteId)
   const [erroCarregar, setErroCarregar] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
@@ -93,6 +96,7 @@ export default function CadastroContato({
   useEffect(() => {
     if (!clienteId) {
       setRegistro(vazio())
+      setOriginal(JSON.stringify(vazio()))
       setCarregando(false)
       return
     }
@@ -100,7 +104,7 @@ export default function CadastroContato({
     setErroCarregar(null)
     buscarJson<ClienteRegistro>(cliente, `/clientes/${clienteId}`)
       .then((dados) => {
-        setRegistro({
+        const carregado: ClienteRegistro = {
           ...vazio(),
           ...dados,
           telefones: dados.telefones?.length ? dados.telefones : dados.telefone ? [{ tipo: '', telefone: dados.telefone, operadora: '' }] : [],
@@ -120,7 +124,9 @@ export default function CadastroContato({
                   pais: dados.endereco_pais ?? 'Brasil',
                 }]
               : [],
-        })
+        }
+        setRegistro(carregado)
+        setOriginal(JSON.stringify(carregado))
         onCarregado?.(dados)
       })
       .catch((e) => setErroCarregar(e instanceof ErroMCP ? e.message : 'Falha ao carregar cliente.'))
@@ -131,6 +137,7 @@ export default function CadastroContato({
     setRegistro((r) => ({ ...r, [chave]: valor }))
   }
 
+  useAlteracoesPendentes(!carregando && JSON.stringify(registro) !== original)
   const rotulo = registro.perfil === 'contato' ? 'contato' : 'cliente'
   const juridica = registro.tipo_pessoa === 'juridica'
 
@@ -139,6 +146,13 @@ export default function CadastroContato({
       setAba('pessoais')
       setMensagem({ tipo: 'erro', texto: 'Informe o nome antes de salvar.' })
       setTimeout(() => document.getElementById('contato-nome')?.focus(), 0)
+      return
+    }
+    const problemaContato = (registro.telefones ?? []).map(t => erroTelefone(t.telefone)).find(Boolean)
+      || (registro.emails ?? []).map(e => erroEmail(e.email)).find(Boolean)
+    if (problemaContato) {
+      setAba('pessoais')
+      setMensagem({ tipo: 'erro', texto: `Confira os contatos: ${problemaContato}` })
       return
     }
     const problemaDocumento = erroCpfCnpj(registro.cpf_cnpj ?? '')
@@ -169,6 +183,7 @@ export default function CadastroContato({
         ? await enviarJson<ClienteRegistro>(cliente, '/clientes', corpo)
         : await enviarJson<ClienteRegistro>(cliente, `/clientes/${clienteId}`, corpo, 'PATCH')
       // Aviso flutuante: continua visível mesmo com a tela trocando para o cadastro recém-criado.
+      setOriginal(JSON.stringify(registro))
       avisar({ texto: criando ? `${rotulo === 'contato' ? 'Contato cadastrado' : 'Cliente cadastrado'}: ${corpo.nome}.` : 'Alterações salvas.' })
       onSalvo(salvo)
     } catch (e) {
@@ -179,7 +194,7 @@ export default function CadastroContato({
         setErroDocumento(texto)
         setExistente(e.dados?.cliente_existente ?? null)
       }
-      setMensagem({ tipo: 'erro', texto })
+      avisar({ tipo: 'erro', texto })
     } finally {
       setSalvando(false)
     }
@@ -192,7 +207,7 @@ export default function CadastroContato({
       await enviarJson(cliente, `/clientes/${clienteId}`, {}, 'DELETE')
       onExcluido()
     } catch (e) {
-      setMensagem({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Falha ao excluir.' })
+      avisar({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Não foi possível excluir. Tente de novo.' })
       setParaExcluir(false)
     } finally {
       setExcluindo(false)
@@ -209,6 +224,7 @@ export default function CadastroContato({
 
   return (
     <Flex direction="column" gap="6">
+      <Text size="1" color="gray"><span className="aj-obrigatorio" aria-hidden="true">*</span> Campo obrigatório. Os demais podem ser preenchidos depois.</Text>
       <Tabs.Root value={aba} onValueChange={setAba}>
         <Tabs.List aria-label="Seções do cadastro">
           <Tabs.Trigger value="pessoais">Informações pessoais</Tabs.Trigger>
@@ -240,12 +256,13 @@ export default function CadastroContato({
               </div>
             </div>
             <div className="form-campo">
-              <label className="form-campo-label" htmlFor="contato-nome">Nome</label>
+              <label className="form-campo-label" htmlFor="contato-nome">Nome <span className="aj-obrigatorio" aria-hidden="true">*</span></label>
               <TextField.Root
                 id="contato-nome"
                 placeholder="Ex.: Maria Aparecida Souza"
                 autoComplete="name"
                 required
+                aria-required="true"
                 value={registro.nome}
                 onChange={(e) => atualizar('nome', e.target.value)}
               />
@@ -258,7 +275,7 @@ export default function CadastroContato({
                   { valor: '', rotulo: 'Tipo' }, { valor: 'celular', rotulo: 'Celular' }, { valor: 'residencial', rotulo: 'Residencial' },
                   { valor: 'comercial', rotulo: 'Comercial' }, { valor: 'whatsapp', rotulo: 'WhatsApp' }, { valor: 'outro', rotulo: 'Outro' },
                 ] },
-                { chave: 'telefone', tipo: 'texto', rotulo: 'Telefone', tipoInput: 'tel' },
+                { chave: 'telefone', tipo: 'texto', rotulo: 'Telefone', tipoInput: 'tel', placeholder: '(11) 99999-0000', mascara: mascaraTelefone, validar: erroTelefone },
                 { chave: 'operadora', tipo: 'texto', rotulo: 'Operadora' },
               ]}
               onAdicionar={() => atualizar('telefones', [...(registro.telefones ?? []), { tipo: '', telefone: '', operadora: '' }])}
@@ -274,7 +291,7 @@ export default function CadastroContato({
                 { chave: 'tipo', tipo: 'select', rotulo: 'Tipo', opcoes: [
                   { valor: '', rotulo: 'Tipo' }, { valor: 'pessoal', rotulo: 'Pessoal' }, { valor: 'comercial', rotulo: 'Comercial' }, { valor: 'outro', rotulo: 'Outro' },
                 ] },
-                { chave: 'email', tipo: 'texto', rotulo: 'E-mail', tipoInput: 'email' },
+                { chave: 'email', tipo: 'texto', rotulo: 'E-mail', tipoInput: 'email', placeholder: 'nome@exemplo.com.br', validar: erroEmail },
               ]}
               onAdicionar={() => atualizar('emails', [...(registro.emails ?? []), { tipo: '', email: '' }])}
               onRemover={(i) => atualizar('emails', (registro.emails ?? []).filter((_, idx) => idx !== i))}

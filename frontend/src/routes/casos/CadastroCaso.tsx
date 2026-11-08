@@ -1,7 +1,9 @@
+import { useAvisos } from '../../Avisos'
+import { useAlteracoesPendentes } from '../../AlteracoesPendentes'
 import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
 import { AlertDialog, Button, Callout, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
-import { AlertTriangle, Check } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -23,6 +25,7 @@ export default function CadastroCaso({
   onMovimentacoes: () => void
 }) {
   const { cliente } = useCliente()
+  const { avisar } = useAvisos()
   const [caso, setCaso] = useState<Caso | null>(null)
   const [carregando, setCarregando] = useState(true)
   const [erroCarregar, setErroCarregar] = useState<string | null>(null)
@@ -33,7 +36,6 @@ export default function CadastroCaso({
   const [acesso, setAcesso] = useState('equipe')
 
   const [salvando, setSalvando] = useState(false)
-  const [mensagem, setMensagem] = useState<{ tipo: 'erro' | 'sucesso'; texto: string } | null>(null)
   const [paraExcluir, setParaExcluir] = useState(false)
   const [excluindo, setExcluindo] = useState(false)
 
@@ -61,14 +63,13 @@ export default function CadastroCaso({
 
   async function salvar() {
     setSalvando(true)
-    setMensagem(null)
     try {
       const atualizado = await enviarJson<Caso>(cliente, `/casos/${casoId}`, { responsavel: responsavel.trim(), pasta: pasta.trim(), acesso }, 'PATCH')
       setCaso(atualizado)
-      setMensagem({ tipo: 'sucesso', texto: 'Processo atualizado' })
+      avisar({ texto: 'Alterações do processo salvas.' })
       onSalvo(atualizado)
     } catch (e) {
-      setMensagem({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Falha ao salvar.' })
+      avisar({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Não foi possível salvar. Tente de novo.' })
     } finally {
       setSalvando(false)
     }
@@ -80,12 +81,15 @@ export default function CadastroCaso({
       await enviarJson(cliente, `/casos/${casoId}`, {}, 'DELETE')
       onExcluido()
     } catch (e) {
-      setMensagem({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Falha ao excluir.' })
+      avisar({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Não foi possível excluir. Tente de novo.' })
       setParaExcluir(false)
     } finally {
       setExcluindo(false)
     }
   }
+
+  const pendente = Boolean(caso) && (responsavel !== (caso?.responsavel ?? '') || pasta !== (caso?.pasta ?? '') || acesso !== (caso?.acesso ?? 'equipe'))
+  useAlteracoesPendentes(pendente)
 
   if (carregando) return <Carregamento tipo="detalhe" />
   if (erroCarregar) return (
@@ -159,14 +163,6 @@ export default function CadastroCaso({
         <Button variant="ghost" color="red" size="2" onClick={() => setParaExcluir(true)}>
           Excluir processo
         </Button>
-      </div>
-      <div aria-live="polite">
-        {mensagem && (
-          <Callout.Root color={mensagem.tipo === 'erro' ? 'red' : 'green'} size="1">
-            <Callout.Icon>{mensagem.tipo === 'erro' ? <AlertTriangle size={14} /> : <Check size={14} />}</Callout.Icon>
-            <Callout.Text>{mensagem.texto}</Callout.Text>
-          </Callout.Root>
-        )}
       </div>
       <AlertDialog.Root open={paraExcluir} onOpenChange={(open) => !open && setParaExcluir(false)}>
         <AlertDialog.Content maxWidth="400px">

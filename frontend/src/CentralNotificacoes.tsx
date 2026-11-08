@@ -19,11 +19,17 @@ function PainelNotificacoes({ cliente }: { cliente: ClienteMCP | null }) {
   const [somenteNaoLidas, setSomenteNaoLidas] = useState(false)
   const { itens, naoLidas, cursor, carregando, carregou, erro, acaoPendente, carregar, marcarLida, buscarDestino } = useNotificacoes(cliente, aberta, somenteNaoLidas)
   const ocupado = carregando || acaoPendente !== null
+  const naoLidasVisiveis = itens.filter(n => !n.lida_em)
+  async function marcarTodas() {
+    for (const n of naoLidasVisiveis) await marcarLida(n)
+  }
   const rotulo = !cliente ? 'Conecte-se para consultar notificações' : naoLidas === null ? 'Contagem indisponível' : `${naoLidas} não lidas`
 
   async function abrirDestino(item: Notificacao) {
     const destino = await buscarDestino(item)
     if (!destino) return
+    // Abrir a notificação já conta como lida.
+    if (!item.lida_em) void marcarLida(item)
     setAberta(false)
     if (destino.tipo === 'publicacoes_monitoradas') irPara('publicacoes-oab')
     else irPara('casos', {
@@ -51,7 +57,10 @@ function PainelNotificacoes({ cliente }: { cliente: ClienteMCP | null }) {
         <Flex direction="column" gap="3" role="region" aria-label="Notificações">
           <Flex align="center" justify="between">
             <Heading size="3">Notificações</Heading>
-            <Button variant="ghost" size="1" onClick={() => carregar()} disabled={!cliente || ocupado}>Atualizar</Button>
+            <Flex gap="3">
+              {naoLidasVisiveis.length > 1 && <Button variant="ghost" size="1" onClick={() => void marcarTodas()} disabled={ocupado}>Marcar todas como lidas</Button>}
+              <Button variant="ghost" size="1" onClick={() => carregar()} disabled={!cliente || ocupado}>Atualizar</Button>
+            </Flex>
           </Flex>
           <Text size="2" color="gray" role="status">{rotulo}</Text>
           {!cliente ? <Text size="2">Conecte-se na aba Acesso para consultar suas notificações.</Text> : <>
@@ -81,9 +90,9 @@ function PainelNotificacoes({ cliente }: { cliente: ClienteMCP | null }) {
               <Flex direction="column" gap="3" asChild>
                 <ul className="aj-notif-lista">
                   {itens.map(item => (
-                    <li key={item.id}>
+                    <li key={item.id} className={item.lida_em ? 'aj-notif-lida' : 'aj-notif-nao-lida'}>
                       <Flex direction="column" gap="1" aria-busy={acaoPendente === item.id}>
-                        <Text weight="bold" size="2">{item.titulo}</Text>
+                        <Text weight={item.lida_em ? 'regular' : 'bold'} size="2">{!item.lida_em && <span className="aj-notif-ponto" aria-hidden="true" />}{item.titulo}</Text>
                         <Text size="2" color="gray">{item.mensagem}</Text>
                         <Text size="1" color="gray">
                           <time dateTime={item.criado_em}>{new Date(item.criado_em).toLocaleString('pt-BR')}</time> · {item.lida_em ? 'Lida' : 'Não lida'}
