@@ -8,7 +8,7 @@ import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { usePerfil } from '../api/PerfilContext'
 import { ErroMCP } from '../api/mcpClient'
-import { buscarJson } from '../api/rest'
+import { buscarJson, enviarJson } from '../api/rest'
 import { formatarNomeExibicao } from '../utils/formatadores'
 import { useEstreita } from '../utils/useEstreita'
 import AtividadeModal from './casos/AtividadeModal'
@@ -46,6 +46,8 @@ export default function Agenda() {
   const [editando, setEditando] = useState<{ casoId: string; atividade: AtividadeCaso | null; data?: string } | null>(null)
   const [escolhendo, setEscolhendo] = useState(false)
   const sequencia = useRef(0)
+  const [arrastando, setArrastando] = useState<Item | null>(null)
+  const [sobre, setSobre] = useState<string | null>(null)
 
   useEffect(() => {
     const relogio = window.setInterval(() => setHoje(isoLocal(new Date())), 60_000)
@@ -119,10 +121,28 @@ export default function Agenda() {
     URL.revokeObjectURL(link.href)
   }
 
+  // Arrastar uma atividade para outro dia muda a data; a hora e o resto ficam como estão.
+  async function mover(a: Item, novaData: string, desfazendo = false) {
+    const antiga = a.data?.slice(0, 10)
+    if (!antiga || antiga === novaData) return
+    const alterar = (data: string) => setItens(lista => lista.map(x => (x.caso_id === a.caso_id && x.id === a.id ? { ...x, data } : x)))
+    alterar(novaData)
+    try {
+      await enviarJson(cliente, `/casos/${a.caso_id}/atividades/${a.id}`, { data: novaData }, 'PATCH')
+      if (desfazendo) { avisar({ texto: `Atividade devolvida para ${dataCurta(novaData)}.` }); return }
+      avisar({ texto: `"${a.titulo}" movida para ${dataCurta(novaData)}.`, desfazer: () => mover({ ...a, data: novaData }, antiga, true) })
+    } catch (e) {
+      alterar(antiga)
+      avisar({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Não foi possível mudar a data da atividade.' })
+    }
+  }
+  const arrastavel = podeEditar('atividades') && !estreita
   const atrasada = (a: Item) => a.status !== 'concluida' && !!a.data && a.data.slice(0, 10) < hoje
   const doDia = porDia.get(selecionado) ?? []
   const chip = (a: Item) => (
-    <button key={`${a.caso_id}:${a.id}`} type="button"
+    <button key={`${a.caso_id}:${a.id}`} type="button" draggable={arrastavel}
+      onDragStart={(e) => { setArrastando(a); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', a.titulo) }}
+      onDragEnd={() => { setArrastando(null); setSobre(null) }}
       className={`aj-ag-chip aj-ag-chip--${COR_TIPO[a.tipo] ?? 'gray'}${a.status === 'concluida' ? ' aj-ag-chip--feita' : ''}`}
       onClick={(e) => { e.stopPropagation(); abrir(a) }}
       title={`${ROTULO_TIPO[a.tipo] ?? a.tipo}: ${a.titulo}${a.caso?.titulo ? ` — ${a.caso.titulo}` : ''}`}>
@@ -196,7 +216,9 @@ export default function Agenda() {
               const d = paraData(dia)
               return (
                 <div key={dia} role="gridcell" tabIndex={0}
-                  className={`aj-ag-dia${fora ? ' aj-ag-dia--fora' : ''}${dia === hoje ? ' aj-ag-dia--hoje' : ''}${dia === selecionado ? ' aj-ag-dia--sel' : ''}`}
+                  className={`aj-ag-dia${fora ? ' aj-ag-dia--fora' : ''}${dia === hoje ? ' aj-ag-dia--hoje' : ''}${dia === selecionado ? ' aj-ag-dia--sel' : ''}${arrastando && sobre === dia ? ' aj-ag-dia--alvo' : ''}`}
+                  onDragOver={(e) => { if (arrastando) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (sobre !== dia) setSobre(dia) } }}
+                  onDrop={(e) => { e.preventDefault(); const a = arrastando; setArrastando(null); setSobre(null); if (a) void mover(a, dia) }}
                   aria-label={`${d.getDate()}/${d.getMonth() + 1}: ${lista.length} atividade${lista.length === 1 ? '' : 's'}`}
                   aria-selected={dia === selecionado}
                   onClick={() => escolherDia(dia)}

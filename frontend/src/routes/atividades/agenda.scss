@@ -18,6 +18,8 @@
 }
 .aj-ag-grade--semana .aj-ag-dia { min-block-size: 14rem; }
 .aj-ag-dia--fora { background: var(--gray-a2); .aj-ag-num { color: var(--gray-9); } }
+.aj-ag-dia--alvo { outline: 2px dashed var(--accent-9); outline-offset: -2px; background: var(--accent-a4); }
+.aj-ag-chip[draggable=true] { cursor: grab; }
 .aj-ag-dia--sel { background: var(--accent-a3); }
 .aj-ag-num {
   align-self: flex-start; min-inline-size: 1.5rem; text-align: center; font-size: 13px; font-weight: 600;
