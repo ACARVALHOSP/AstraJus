@@ -10,7 +10,7 @@ import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { ErroMCP } from '../api/mcpClient'
 import { TRIBUNAIS } from '../api/tribunais'
-import { UFS } from '../api/ufs'
+import { interpretarConsulta } from '../utils/consultaDjen'
 import { formatarDataSimples, formatarNumeroCNJ } from '../utils/formatadores'
 import { adicionarHistorico } from '../utils/listasRapidas'
 import CartaoPublicacao, { type ItemPublicacao } from './publicacoes/CartaoPublicacao'
@@ -38,13 +38,13 @@ export default function Publicacoes() {
   const { cliente } = useCliente()
   const { consumirPayload } = useNavegacao()
 
-  const [numeroProcesso, setNumeroProcesso] = useState('')
+  // Um campo só: número do processo (20 dígitos) ou OAB ("123456/SP", "OAB 123456 SP").
+  const [consulta, setConsulta] = useState('')
   const [tribunal, setTribunal] = useState('')
-  const [numeroOab, setNumeroOab] = useState('')
-  const [ufOab, setUfOab] = useState('')
   const [dataInicio, setDataInicio] = useState('')
   const [dataFim, setDataFim] = useState('')
   const [itensPorPagina, setItensPorPagina] = useState(20)
+  const entendido = interpretarConsulta(consulta)
 
   const [consultando, setConsultando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
@@ -52,17 +52,17 @@ export default function Publicacoes() {
   const [busca, setBusca] = useState<{ args: ArgsBusca; pagina: number } | null>(null)
 
   function montarArgs(): ArgsBusca | null {
-    const numero = numeroProcesso.trim()
-    const oab = numeroOab.trim()
-    if (!numero && !oab) {
-      setErro('Informe o número do processo ou o número da OAB.')
+    if (!entendido) {
+      setErro('Digite o número do processo (20 dígitos) ou a OAB com a UF, por exemplo 123456/SP.')
       return null
     }
     const args: ArgsBusca = {}
-    if (numero) args.numero_processo = numero
-    if (oab) args.numero_oab = oab
+    if (entendido.tipo === 'processo') args.numero_processo = entendido.numero
+    else {
+      args.numero_oab = entendido.numero
+      if (entendido.uf) args.uf_oab = entendido.uf
+    }
     if (tribunal) args.sigla_tribunal = tribunal.toUpperCase()
-    if (ufOab) args.uf_oab = ufOab.toUpperCase()
     if (dataInicio) args.data_disponibilizacao_inicio = dataInicio
     if (dataFim) args.data_disponibilizacao_fim = dataFim
     if (itensPorPagina > 0) args.itens_por_pagina = itensPorPagina
@@ -89,7 +89,7 @@ export default function Publicacoes() {
         }
       }
     } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Falha inesperada ao consultar.')
+      setErro(e instanceof ErroMCP ? e.message : 'Não foi possível concluir a consulta. Tente de novo.')
     } finally {
       setConsultando(false)
     }
@@ -105,10 +105,11 @@ export default function Publicacoes() {
   useEffect(() => {
     const payload = consumirPayload<PayloadPublicacoes>('publicacoes')
     if (!payload) return
-    setNumeroProcesso(payload.numero_processo ?? '')
+    setConsulta(payload.numero_processo
+      ? formatarNumeroCNJ(payload.numero_processo)
+      : payload.numero_oab ? `${payload.numero_oab}${payload.uf_oab ? '/' + payload.uf_oab : ''}` : '')
     setTribunal(payload.sigla_tribunal?.toLowerCase() ?? '')
-    setNumeroOab(payload.numero_oab ?? '')
-    setUfOab(payload.uf_oab ?? '')
+    if (payload.itens_por_pagina) setItensPorPagina(payload.itens_por_pagina)
     executarBusca(payload, 1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -126,47 +127,33 @@ export default function Publicacoes() {
       <form onSubmit={aoEnviar}>
         <Flex direction="column" gap="5">
           <div className="aj-form-grade">
-            <div className="form-campo">
-              <label className="form-campo-label" htmlFor="pub-numero-processo">Número do processo</label>
+            <div className="form-campo" style={{ gridColumn: 'span 2' }}>
+              <label className="form-campo-label" htmlFor="pub-consulta">Processo ou OAB</label>
               <TextField.Root
-                id="pub-numero-processo"
-                placeholder="1006314-27.2023.8.26.0005"
+                id="pub-consulta"
+                placeholder="1006314-27.2023.8.26.0005 ou 123456/SP"
                 autoComplete="off"
-                value={numeroProcesso}
-                onChange={(e) => setNumeroProcesso(e.target.value)}
+                value={consulta}
+                onChange={(e) => setConsulta(e.target.value)}
               />
+              <Text size="1" color="gray">
+                {!consulta.trim()
+                  ? 'Número do processo (20 dígitos) ou OAB com a UF.'
+                  : entendido?.tipo === 'processo'
+                    ? `Processo ${formatarNumeroCNJ(entendido.numero)}`
+                    : entendido
+                      ? `OAB ${entendido.numero}${entendido.uf ? '/' + entendido.uf : ' (sem UF: busca em todas)'}`
+                      : 'Não reconhecido. Use os 20 dígitos do processo ou a OAB, como 123456/SP.'}
+              </Text>
             </div>
             <div className="form-campo">
-              <label className="form-campo-label" htmlFor="pub-sigla-tribunal">Tribunal</label>
+              <label className="form-campo-label" htmlFor="pub-sigla-tribunal">Tribunal (opcional)</label>
               <Select.Root value={tribunal || '__todos__'} onValueChange={(v) => setTribunal(v === '__todos__' ? '' : v)}>
                 <Select.Trigger id="pub-sigla-tribunal" style={{ width: '100%' }} />
                 <Select.Content>
                   <Select.Item value="__todos__">Todos os tribunais</Select.Item>
                   {TRIBUNAIS.map((t) => (
                     <Select.Item key={t} value={t}>{t.toUpperCase()}</Select.Item>
-                  ))}
-                </Select.Content>
-              </Select.Root>
-            </div>
-            <div className="form-campo">
-              <label className="form-campo-label" htmlFor="pub-numero-oab">Número da OAB</label>
-              <TextField.Root
-                id="pub-numero-oab"
-                placeholder="330659"
-                maxLength={6}
-                autoComplete="off"
-                value={numeroOab}
-                onChange={(e) => setNumeroOab(e.target.value)}
-              />
-            </div>
-            <div className="form-campo">
-              <label className="form-campo-label" htmlFor="pub-uf-oab">UF da OAB</label>
-              <Select.Root value={ufOab || '__todas__'} onValueChange={(v) => setUfOab(v === '__todas__' ? '' : v)}>
-                <Select.Trigger id="pub-uf-oab" style={{ width: '100%' }} />
-                <Select.Content>
-                  <Select.Item value="__todas__">Todas as UFs</Select.Item>
-                  {UFS.map((uf) => (
-                    <Select.Item key={uf} value={uf}>{uf}</Select.Item>
                   ))}
                 </Select.Content>
               </Select.Root>
@@ -179,19 +166,7 @@ export default function Publicacoes() {
               <label className="form-campo-label" htmlFor="pub-data-fim">Publicado até</label>
               <CampoData id="pub-data-fim" value={dataFim} onChange={v => setDataFim(v)} />
             </div>
-            <div className="form-campo">
-              <label className="form-campo-label" htmlFor="pub-itens">Itens por página</label>
-              <TextField.Root
-                id="pub-itens"
-                type="number"
-                min={1}
-                max={100}
-                value={itensPorPagina}
-                onChange={(e) => setItensPorPagina(Number(e.target.value) || 20)}
-              />
-            </div>
           </div>
-          <Text size="2" color="gray">Informe o número do processo ou a OAB. Os demais campos são opcionais.</Text>
           <div>
             <Button size="2" type="submit" disabled={consultando}>
               Buscar
@@ -228,20 +203,32 @@ export default function Publicacoes() {
           </Flex>
         )}
       </div>
-      {temPaginacao && busca && (
+      {busca && total > 0 && (
         <nav aria-label="Páginas de publicações" className="aj-paginacao">
-          <Button variant="ghost" size="1" disabled={busca.pagina <= 1} onClick={() => executarBusca(busca.args, busca.pagina - 1)}>
-            Anterior
-          </Button>
-          <Text size="2">Página {busca.pagina}</Text>
-          <Button
-            variant="ghost"
-            size="1"
-            disabled={busca.pagina * itensPorPaginaBusca >= total}
-            onClick={() => executarBusca(busca.args, busca.pagina + 1)}
-          >
-            Próxima
-          </Button>
+          <Flex align="center" gap="2">
+            <Text size="2" id="pub-itens-rotulo">Por página</Text>
+            <Select.Root value={String(itensPorPaginaBusca)} onValueChange={v => {
+              const n = Number(v)
+              setItensPorPagina(n)
+              executarBusca({ ...busca.args, itens_por_pagina: n }, 1)
+            }}>
+              <Select.Trigger aria-labelledby="pub-itens-rotulo" />
+              <Select.Content>
+                {[20, 50, 100].map(n => <Select.Item key={n} value={String(n)}>{n}</Select.Item>)}
+              </Select.Content>
+            </Select.Root>
+          </Flex>
+          {temPaginacao && (
+            <Flex align="center" gap="2">
+              <Button variant="soft" color="gray" size="2" disabled={busca.pagina <= 1} onClick={() => executarBusca(busca.args, busca.pagina - 1)}>
+                Anterior
+              </Button>
+              <Text size="2">Página {busca.pagina} de {Math.max(1, Math.ceil(total / itensPorPaginaBusca))}</Text>
+              <Button variant="soft" color="gray" size="2" disabled={busca.pagina * itensPorPaginaBusca >= total} onClick={() => executarBusca(busca.args, busca.pagina + 1)}>
+                Próxima
+              </Button>
+            </Flex>
+          )}
         </nav>
       )}
     </Flex>

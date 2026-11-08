@@ -1,5 +1,6 @@
 import LinhaFiltros from '../LinhaFiltros'
 import CabecalhoPagina from '../CabecalhoPagina'
+import Paginacao, { paginaPara, POR_PAGINA } from '../Paginacao'
 import { useAvisos } from '../Avisos'
 import CampoData from '../CampoData'
 import Carregamento from '../Carregamento'
@@ -77,7 +78,7 @@ export default function Atividades() {
       const visiveis = new Set((dados.atividades ?? []).map(chave))
       setSelecionadas(s => new Set([...s].filter(k => visiveis.has(k))))
     } catch (e) {
-      if (pedido === sequencia.current) setErro(e instanceof ErroMCP ? e.message : 'Falha inesperada ao carregar as atividades.')
+      if (pedido === sequencia.current) setErro(e instanceof ErroMCP ? e.message : 'Não foi possível carregar as atividades. Tente de novo.')
     } finally { if (pedido === sequencia.current) setCarregando(false) }
   }, [cliente, situacao, tipo, responsavel, responsavelProcesso, busca])
   useEffect(() => {
@@ -97,15 +98,21 @@ export default function Atividades() {
     return c
   }, [atividades, hoje])
   const visiveis = useMemo(() => situacao === 'concluidas' || !atalho ? atividades : atividades.filter(a => grupoDe(a, hoje) === atalho), [atividades, atalho, situacao, hoje])
+  // 20 por página; volta para a 1ª página quando os filtros mudam. Os grupos (Atrasadas, Hoje…)
+  // são montados com os itens da página, que já vêm em ordem de data.
+  const chavePagina = [situacao, atalho, tipo, responsavel, responsavelProcesso, busca].join('|')
+  const [estadoPagina, setEstadoPagina] = useState({ chave: chavePagina, pagina: 1 })
+  const pagina = paginaPara(estadoPagina, chavePagina)
+  const naPagina = useMemo(() => visiveis.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA), [visiveis, pagina])
   const grupos = useMemo(() => {
-    if (situacao === 'concluidas') return [{ grupo: null as Grupo | null, itens: visiveis }]
-    return ORDEM_GRUPOS.map(g => ({ grupo: g as Grupo | null, itens: visiveis.filter(a => grupoDe(a, hoje) === g) })).filter(g => g.itens.length)
-  }, [visiveis, situacao, hoje])
+    if (situacao === 'concluidas') return [{ grupo: null as Grupo | null, itens: naPagina }]
+    return ORDEM_GRUPOS.map(g => ({ grupo: g as Grupo | null, itens: naPagina.filter(a => grupoDe(a, hoje) === g) })).filter(g => g.itens.length)
+  }, [naPagina, situacao, hoje])
   const responsaveisProcesso = useMemo(() => [...new Set(atividades.map(a => a.caso.responsavel).filter((r): r is string => Boolean(r)))].sort(), [atividades])
   const filtrosAtivos = Boolean(tipo || responsavel || responsavelProcesso || busca)
   const lote = selecionadas.size > 0
   const ocupado = carregando || operando
-  const todasVisiveis = visiveis.length > 0 && visiveis.every(a => selecionadas.has(chave(a)))
+  const todasVisiveis = naPagina.length > 0 && naPagina.every(a => selecionadas.has(chave(a)))
 
   function alternar(a: Atividade) {
     setSelecionadas(s => { const n = new Set(s); const k = chave(a); if (n.has(k)) n.delete(k); else n.add(k); return n })
@@ -309,9 +316,9 @@ export default function Atividades() {
               <thead>
                 <tr>
                   <th className="tabela-controle">
-                    <Checkbox aria-label="Selecionar todas as atividades visíveis" disabled={ocupado || !visiveis.length}
+                    <Checkbox aria-label="Selecionar todas as atividades desta página" disabled={ocupado || !naPagina.length}
                       checked={todasVisiveis ? true : selecionadas.size ? 'indeterminate' : false}
-                      onCheckedChange={() => setSelecionadas(todasVisiveis ? new Set() : new Set(visiveis.map(chave)))} />
+                      onCheckedChange={() => setSelecionadas(todasVisiveis ? new Set() : new Set(naPagina.map(chave)))} />
                   </th>
                   <th className="atividades-col-quando">Quando</th>
                   <th>Atividade</th>
@@ -383,7 +390,11 @@ export default function Atividades() {
           </Callout.Text>
         </Callout.Root>
       )}
-      {!carregando && visiveis.length > 0 && (
+      {!carregando && visiveis.length > POR_PAGINA && (
+        <Paginacao pagina={pagina} total={visiveis.length} nome="atividades"
+          onPagina={n => { setEstadoPagina({ chave: chavePagina, pagina: n }); document.getElementById('main-content')?.scrollTo({ top: 0 }) }} />
+      )}
+      {!carregando && visiveis.length > 0 && visiveis.length <= POR_PAGINA && (
         <Text size="2" color="gray">
           {situacao === 'concluidas' ? `${visiveis.length} atividade(s) concluída(s)` : `${visiveis.length} de ${atividades.length} atividade(s) abertas`}
         </Text>

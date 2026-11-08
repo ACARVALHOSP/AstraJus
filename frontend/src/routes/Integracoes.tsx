@@ -12,7 +12,7 @@ const TOM_SELO: Record<StatusSelo, { texto: string; tom: 'blue' | 'green' | 'gra
   configurado: { texto: 'Configurado', tom: 'green' },
   'nao-configurado': { texto: 'Não configurado', tom: 'gray' },
   'acesso-necessario': { texto: 'Acesso necessário', tom: 'gray' },
-  falha: { texto: 'Falha na verificação', tom: 'gray' },
+  falha: { texto: 'Não verificado', tom: 'gray' },
 }
 
 function Selo({ status }: { status: StatusSelo }) {
@@ -49,13 +49,13 @@ export default function Integracoes() {
       if (!resposta.ok) {
         throw new Error(
           resposta.status === 401
-            ? 'Acesso expirado. Conecte-se novamente na aba Acesso.'
-            : `Falha ao verificar os serviços (HTTP ${resposta.status}). Tente novamente.`,
+            ? 'Seu acesso expirou. Entre de novo em Configurações › Acesso.'
+            : 'Não conseguimos verificar os serviços agora. As integrações continuam funcionando como antes; tente de novo em alguns minutos.',
         )
       }
       const dados = (await resposta.json()) as { google?: boolean; asaas?: boolean; zapsign?: boolean }
       if (typeof dados.google !== 'boolean' || typeof dados.asaas !== 'boolean') {
-        throw new Error('Resposta de configuração inválida. Tente novamente.')
+        throw new Error('Não conseguimos ler a situação dos serviços. Tente de novo em alguns minutos.')
       }
       setGoogleStatus(dados.google ? 'configurado' : 'nao-configurado')
       setAsaasStatus(dados.asaas ? 'configurado' : 'nao-configurado')
@@ -102,8 +102,8 @@ export default function Integracoes() {
         acoes={<Button variant="soft" color="gray" size="2" onClick={carregar}>Verificar novamente</Button>}
       />
       <Text as="p" size="2" color="gray">
-        A configuração é mantida pelo administrador. "Configurado" indica credenciais cadastradas; não confirma a
-        disponibilidade do serviço externo.
+        Quem configura as integrações é o administrador do escritório. "Configurado" quer dizer que os dados de
+        acesso foram cadastrados.
       </Text>
       <div>
         <a href="/admin/integracoes" target="_blank" rel="noopener">

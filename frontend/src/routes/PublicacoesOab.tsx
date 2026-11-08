@@ -46,7 +46,7 @@ function CapturaManual({ onCapturado }: { onCapturado: () => void }) {
       onCapturado()
     } catch (e) {
       setFalhou(true)
-      setStatus(e instanceof ErroMCP ? e.message : 'Falha inesperada.')
+      setStatus(e instanceof ErroMCP ? e.message : 'Não foi possível concluir a ação. Tente de novo.')
       onCapturado()
     } finally {
       setEnviando(false)

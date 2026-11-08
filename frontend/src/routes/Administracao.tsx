@@ -1,3 +1,4 @@
+import { mensagemPorStatus } from '../api/mcpClient'
 import CabecalhoPagina from '../CabecalhoPagina'
 import TabelaResponsiva from '../TabelaResponsiva'
 import { useState } from 'react'
@@ -57,7 +58,7 @@ export default function Administracao() {
     }, ...(corpo === undefined ? {} : { body: JSON.stringify(corpo) }) })
     if (!r.ok) {
       const e = await r.json().catch(() => ({}))
-      throw new Error(e.mensagem || e.erro || `Falha na operação (HTTP ${r.status}).`)
+      throw new Error(e.mensagem || e.erro || mensagemPorStatus(r.status))
     }
     return r
   }

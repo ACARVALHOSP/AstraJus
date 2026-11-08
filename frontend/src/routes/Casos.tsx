@@ -1,6 +1,6 @@
 import { ChevronLeft } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Badge, Button, Flex, Heading, Tabs, Text } from '@radix-ui/themes'
+import { Badge, Button, Flex, Heading, Skeleton, Tabs, Text } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { buscarJson } from '../api/rest'
@@ -35,7 +35,7 @@ export default function Casos() {
   const [destinoAtividade, setDestinoAtividade] = useState<{ id?: string | number; versao: number }>({ versao: 0 })
   const [resumo, setResumo] = useState<Caso | null>(null)
   const [abaSelecionada, setAbaSelecionada] = useState<AbaId>('cadastro')
-  const [titulo, setTitulo] = useState('Carregando…')
+  const [titulo, setTitulo] = useState<string | null>(null)
   const faixaAbas = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -43,7 +43,7 @@ export default function Casos() {
     if (!destino) return
     setCasoId(destino.id)
     setResumo(null)
-    setTitulo('Carregando…')
+    setTitulo(null)
     setAbaSelecionada(destino.aba === 'atividades' ? 'atividades' : destino.aba === 'publicacoes' ? 'publicacoes' : 'cadastro')
     setDestinoAtividade({ id: destino.atividadeId, versao: versaoNavegacao })
   }, [consumirPayload, versaoNavegacao])
@@ -75,7 +75,7 @@ export default function Casos() {
     setDestinoAtividade({ versao: versaoNavegacao })
     setAbaSelecionada('cadastro')
     setResumo(null)
-    setTitulo('Carregando…')
+    setTitulo(null)
     setCasoId(id)
   }
 
@@ -91,7 +91,7 @@ export default function Casos() {
             <ChevronLeft size={16} />
             Voltar para processos
           </Button>
-          <Heading as="h1" size="6" tabIndex={-1}>{titulo}</Heading>
+          <Heading as="h1" size="6" tabIndex={-1}>{titulo ?? <Skeleton width="16rem" height="1.75rem" aria-label="Carregando…" />}</Heading>
           {resumo?.processos?.map((numero, i) => (
             <p key={numero} className="casos-cnj">
               {formatarNumeroCNJ(numero)}{i === 0 && resumo.foro ? ` · ${resumo.foro}` : ''}

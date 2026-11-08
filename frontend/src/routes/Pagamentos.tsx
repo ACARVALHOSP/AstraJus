@@ -164,7 +164,7 @@ export default function Pagamentos() {
         setAvisoIntegracao(e.message)
         setPainel(null)
       } else {
-        setErro(e instanceof ErroMCP ? e.message : 'Falha inesperada ao carregar.')
+        setErro(e instanceof ErroMCP ? e.message : 'Não foi possível carregar os dados. Tente de novo.')
       }
     } finally {
       if (meu === pedido.current) {

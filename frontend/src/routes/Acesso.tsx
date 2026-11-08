@@ -22,7 +22,7 @@ export default function Acesso() {
     try {
       await conectar(valor, lembrar)
     } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Falha inesperada ao conectar.')
+      setErro(e instanceof ErroMCP ? e.message : 'Não foi possível conectar. Confira o token e tente de novo.')
     }
   }
 

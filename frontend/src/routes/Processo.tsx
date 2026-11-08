@@ -71,7 +71,7 @@ export default function Processo() {
         })
       }
     } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Falha inesperada ao consultar.')
+      setErro(e instanceof ErroMCP ? e.message : 'Não foi possível concluir a consulta. Tente de novo.')
     } finally {
       setConsultando(false)
     }
