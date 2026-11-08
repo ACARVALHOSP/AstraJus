@@ -2121,6 +2121,8 @@ _EMAIL = re.compile(r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}")
 _TAMANHO_MAX_FORM = 4096
 # Cadastro de cliente: vários telefones, e-mails, endereços e observações passam fácil de 4 KB.
 _TAMANHO_MAX_CADASTRO = 64 * 1024
+# Rotas autenticadas da API: observações, descrições e checklists passam fácil de 4 KB.
+_TAMANHO_MAX_API = 64 * 1024
 
 MENSAGEM_CADASTRO_OK = (
     "Se o e-mail informado for válido, você receberá o seu token em instantes. "
@@ -3351,7 +3353,7 @@ class ServidorOAuth:
             if not permitido:
                 await _json(send, 429, {"error": "temporarily_unavailable", "error_description": motivo})
                 return
-        corpo = await _ler_corpo(receive)
+        corpo = await _ler_corpo(receive, limite=_TAMANHO_MAX_FORM)
         try:
             dados = json.loads((corpo or b"").decode("utf-8") or "{}")
         except (ValueError, UnicodeDecodeError):
@@ -3395,7 +3397,7 @@ class ServidorOAuth:
                          tipo="text/html; charset=utf-8")
 
     async def _autorizar_envio(self, receive, send) -> None:
-        corpo = await _ler_corpo(receive)
+        corpo = await _ler_corpo(receive, limite=_TAMANHO_MAX_FORM)
         if corpo is None:
             await _responder(send, 413, b"Formulario grande demais")
             return
@@ -3423,7 +3425,7 @@ class ServidorOAuth:
         await _responder(send, 302, b"", cabecalhos_extra=[(b"location", destino.encode("utf-8"))])
 
     async def _token(self, receive, send) -> None:
-        corpo = await _ler_corpo(receive)
+        corpo = await _ler_corpo(receive, limite=_TAMANHO_MAX_FORM)
         if corpo is None:
             await _json(send, 413, {"error": "invalid_request"})
             return
@@ -4156,6 +4158,9 @@ class _AutenticacaoBearer:
                 await _json(send, 403, _erro('Seu nível de acesso permite somente consulta.'))
                 return
             corpo_consulta = await _ler_corpo(receive)
+            if corpo_consulta is None:
+                await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
+                return
             try:
                 permitido = corpo_consulta is not None and usuarios_admin.mcp_consulta_permitido(json.loads(corpo_consulta))
             except (ValueError, UnicodeDecodeError):
@@ -4371,7 +4376,7 @@ class _AutenticacaoBearer:
             await _responder(send, 200, pagina.encode("utf-8"), tipo="text/html; charset=utf-8")
             return
         if scope.get("method") == "POST":
-            corpo = await _ler_corpo(receive)
+            corpo = await _ler_corpo(receive, limite=_TAMANHO_MAX_FORM)
             if corpo is None:
                 await _responder(send, 413, b"Formulario grande demais")
                 return
@@ -4437,7 +4442,7 @@ class _AutenticacaoBearer:
                                      tipo="text/html; charset=utf-8",
                                      cabecalhos_extra=[(b"retry-after", str(espera).encode())])
                     return
-            corpo = await _ler_corpo(receive)
+            corpo = await _ler_corpo(receive, limite=_TAMANHO_MAX_FORM)
             if corpo is None:
                 await _responder(send, 413, b"Formulario grande demais")
                 return
@@ -4480,6 +4485,9 @@ class _AutenticacaoBearer:
             await _responder(send, 404, b"Integracao Google nao configurada (faltam credenciais no servidor).")
             return
         corpo = await _ler_corpo(receive)
+        if corpo is None:
+            await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
+            return
         campos = {k: v[0] for k, v in parse_qs((corpo or b"").decode("utf-8", "replace"), keep_blank_values=True).items()}
         if not usuarios_admin.validar_token_admin(self.registro, campos.get("token_admin", "")):
             await _responder(send, 401, b"Token administrativo invalido.")
@@ -4527,6 +4535,9 @@ class _AutenticacaoBearer:
 
     async def _google_desconectar(self, scope, receive, send) -> None:
         corpo = await _ler_corpo(receive)
+        if corpo is None:
+            await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
+            return
         campos = {k: v[0] for k, v in parse_qs((corpo or b"").decode("utf-8", "replace"), keep_blank_values=True).items()}
         if not usuarios_admin.validar_token_admin(self.registro, campos.get("token_admin", "")):
             await _responder(send, 401, b"Token administrativo invalido.")
@@ -4549,7 +4560,7 @@ class _AutenticacaoBearer:
             return
         corpo = await _ler_corpo(receive)
         if corpo is None:
-            await _json(send, 413, _erro("Corpo da requisição grande demais."))
+            await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
             return
         try:
             dados = json.loads(corpo.decode("utf-8") or "{}")
@@ -4695,6 +4706,9 @@ class _AutenticacaoBearer:
             await _responder(send, 405, b"Metodo nao permitido")
             return
         corpo = await _ler_corpo(receive)
+        if corpo is None:
+            await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
+            return
         try:
             dados = json.loads((corpo or b"").decode("utf-8") or "{}")
         except (ValueError, UnicodeDecodeError):
@@ -4926,7 +4940,7 @@ class _AutenticacaoBearer:
         if metodo == "POST":
             corpo = await _ler_corpo(receive)
             if corpo is None:
-                await _json(send, 413, _erro("Corpo da requisição grande demais."))
+                await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
                 return
             try:
                 dados = json.loads(corpo.decode("utf-8") or "{}")
@@ -4989,6 +5003,9 @@ class _AutenticacaoBearer:
             return
         if metodo == "PATCH":
             corpo = await _ler_corpo(receive)
+            if corpo is None:
+                await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
+                return
             try:
                 dados = json.loads((corpo or b"").decode("utf-8") or "{}")
             except (ValueError, UnicodeDecodeError):
@@ -5048,6 +5065,9 @@ class _AutenticacaoBearer:
             await _responder(send, 405, b"Metodo nao permitido")
             return
         corpo = await _ler_corpo(receive)
+        if corpo is None:
+            await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
+            return
         try:
             dados = json.loads((corpo or b"").decode("utf-8") or "{}")
         except (ValueError, UnicodeDecodeError):
@@ -5104,6 +5124,9 @@ class _AutenticacaoBearer:
             await _json(send, 200 if excluiu else 404, {"excluido": excluiu})
             return
         corpo = await _ler_corpo(receive)
+        if corpo is None:
+            await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
+            return
         try:
             dados = json.loads((corpo or b"").decode("utf-8") or "{}")
         except (ValueError, UnicodeDecodeError):
@@ -5208,6 +5231,9 @@ class _AutenticacaoBearer:
                 return
             if metodo == "POST":
                 corpo = await _ler_corpo(receive)
+                if corpo is None:
+                    await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
+                    return
                 try:
                     dados = json.loads((corpo or b"").decode("utf-8") or "{}")
                 except (ValueError, UnicodeDecodeError):
@@ -5251,6 +5277,9 @@ class _AutenticacaoBearer:
             return
         if metodo == "PATCH":
             corpo = await _ler_corpo(receive)
+            if corpo is None:
+                await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
+                return
             try:
                 dados = json.loads((corpo or b"").decode("utf-8") or "{}")
             except (ValueError, UnicodeDecodeError):
@@ -5335,7 +5364,7 @@ class _AutenticacaoBearer:
             if item and metodo == "PATCH":
                 corpo = await _ler_corpo(receive)
                 if corpo is None:
-                    await _json(send, 413, _erro("Corpo da requisição grande demais."))
+                    await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
                     return
                 try:
                     dados = json.loads(corpo.decode("utf-8"))
@@ -5367,7 +5396,7 @@ class _AutenticacaoBearer:
                 return
             corpo = await _ler_corpo(receive)
             if corpo is None:
-                await _json(send, 413, _erro("Corpo da requisição grande demais."))
+                await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
                 return
             try:
                 dados = json.loads(corpo.decode("utf-8") or "{}")
@@ -5446,6 +5475,9 @@ class _AutenticacaoBearer:
                 return
             if metodo == "POST":
                 corpo = await _ler_corpo(receive)
+                if corpo is None:
+                    await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
+                    return
                 try:
                     dados = json.loads((corpo or b"").decode("utf-8") or "{}")
                 except (ValueError, UnicodeDecodeError):
@@ -5465,6 +5497,9 @@ class _AutenticacaoBearer:
             return
         if metodo == "PATCH":
             corpo = await _ler_corpo(receive)
+            if corpo is None:
+                await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
+                return
             try:
                 dados = json.loads((corpo or b"").decode("utf-8") or "{}")
             except (ValueError, UnicodeDecodeError):
@@ -5528,6 +5563,9 @@ class _AutenticacaoBearer:
                 await _responder(send, 405, b"Metodo nao permitido")
                 return
             corpo = await _ler_corpo(receive)
+            if corpo is None:
+                await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
+                return
             try:
                 dados = json.loads((corpo or b"").decode("utf-8") or "{}")
             except (ValueError, UnicodeDecodeError):
@@ -5599,6 +5637,9 @@ class _AutenticacaoBearer:
             return
         if metodo == "PATCH":
             corpo = await _ler_corpo(receive)
+            if corpo is None:
+                await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
+                return
             try:
                 dados = json.loads((corpo or b"").decode("utf-8") or "{}")
             except (ValueError, UnicodeDecodeError):
@@ -5628,6 +5669,9 @@ class _AutenticacaoBearer:
             await _json(send, 400, _erro("Conecte sua agenda individual na página Integrações antes de criar eventos."))
             return
         corpo = await _ler_corpo(receive)
+        if corpo is None:
+            await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
+            return
         try:
             dados = json.loads((corpo or b"").decode("utf-8") or "{}")
         except (ValueError, UnicodeDecodeError):
@@ -5800,6 +5844,9 @@ class _AutenticacaoBearer:
             await _responder(send, 404, b"Nao encontrado")
             return
         corpo = await _ler_corpo(receive)
+        if corpo is None:
+            await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
+            return
         try:
             dados = json.loads((corpo or b"").decode("utf-8") or "{}")
         except (ValueError, UnicodeDecodeError):
@@ -5822,6 +5869,9 @@ class _AutenticacaoBearer:
             await _responder(send, 404, b"Nao encontrado")
             return
         corpo = await _ler_corpo(receive)
+        if corpo is None:
+            await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
+            return
         try:
             dados = json.loads((corpo or b"").decode("utf-8") or "{}")
         except (ValueError, UnicodeDecodeError):
@@ -5847,6 +5897,9 @@ class _AutenticacaoBearer:
             await _json(send, 400, _erro("Publicação sem número de processo identificado; não é possível criar caso."))
             return
         corpo = await _ler_corpo(receive)
+        if corpo is None:
+            await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
+            return
         try:
             dados_corpo = json.loads((corpo or b"").decode("utf-8") or "{}")
         except (ValueError, UnicodeDecodeError):
@@ -5897,8 +5950,9 @@ async def _com_tempo_minimo(atendimento, scope, receive, send) -> None:
         await send(mensagem)
 
 
-async def _ler_corpo(receive, limite: int = _TAMANHO_MAX_FORM) -> bytes | None:
-    """Lê o corpo da requisição. Devolve None se passar do tamanho máximo (formulário, por padrão)."""
+async def _ler_corpo(receive, limite: int = _TAMANHO_MAX_API) -> bytes | None:
+    """Lê o corpo da requisição. Devolve None se passar do limite (64 KB nas rotas autenticadas;
+    as públicas, como login e cadastro, passam _TAMANHO_MAX_FORM)."""
     partes: list[bytes] = []
     total = 0
     while True:
