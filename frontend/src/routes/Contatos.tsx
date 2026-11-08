@@ -26,7 +26,7 @@ export default function Contatos() {
           setVisao({ tipo: 'detalhe', clienteId: id })
         }}
         onNovo={() => {
-          setNomeDetalhe('Novo cliente')
+          setNomeDetalhe('Novo contato')
           setVisao({ tipo: 'detalhe', clienteId: null })
         }}
       />
@@ -35,9 +35,9 @@ export default function Contatos() {
 
   return (
     <Flex direction="column" gap="6">
-      <Button variant="ghost" size="1" onClick={() => setVisao({ tipo: 'lista' })}>
+      <Button variant="ghost" size="1" style={{ alignSelf: 'flex-start' }} onClick={() => setVisao({ tipo: 'lista' })}>
         <ChevronLeft size={16} />
-        Voltar para clientes
+        Voltar para contatos
       </Button>
       <Heading as="h1" size="6">{nomeDetalhe ?? <Skeleton width="16rem" height="1.75rem" aria-label="Carregando…" />}</Heading>
       <Tabs.Root key={visao.clienteId ?? 'novo'} defaultValue="cadastro">
@@ -55,6 +55,7 @@ export default function Contatos() {
               setVisao({ tipo: 'detalhe', clienteId: cli.id ?? null })
             }}
             onExcluido={() => setVisao({ tipo: 'lista' })}
+            onAbrirExistente={(id) => { setNomeDetalhe('Carregando…'); setVisao({ tipo: 'detalhe', clienteId: id }) }}
           />
         </Tabs.Content>
         {visao.clienteId && (

@@ -15,9 +15,12 @@ export function mensagemPorStatus(status: number): string {
 
 export class ErroMCP extends Error {
   status: number
-  constructor(status: number, mensagem: string) {
+  /** Corpo JSON da resposta de erro, quando o servidor manda detalhes (ex.: cliente_existente). */
+  dados?: Record<string, any>
+  constructor(status: number, mensagem: string, dados?: Record<string, any>) {
     super(mensagem)
     this.status = status
+    this.dados = dados
   }
 }
 

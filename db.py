@@ -973,6 +973,18 @@ class RegistroClientesCasos:
             self._salvar_telefones(conexao, cliente_id, telefones)
         return self.obter_cliente(cliente_id)
 
+    def buscar_cliente_por_documento(self, digitos: str, exceto_id: str | None = None) -> dict | None:
+        """Cliente com o mesmo CPF/CNPJ (comparando só os dígitos), para evitar cadastro duplicado."""
+        if not digitos:
+            return None
+        with _abrir(self.caminho) as conexao:
+            linha = conexao.execute(
+                "SELECT id, nome FROM clientes WHERE replace(replace(replace(replace(coalesce(cpf_cnpj, ''), "
+                "'.', ''), '-', ''), '/', ''), ' ', '') = ? AND id != ? LIMIT 1",
+                (digitos, exceto_id or ""),
+            ).fetchone()
+        return {"id": linha[0], "nome": linha[1]} if linha else None
+
     def buscar_cliente_por_nome(self, nome: str) -> dict | None:
         """Casamento exato (sem diferenciar maiúsculas) - usado para não duplicar cliente quando
         a mesma parte aparece em casos/publicações diferentes."""
