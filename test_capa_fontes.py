@@ -54,3 +54,21 @@ class ExtracaoDjenTest(unittest.TestCase):
 
 if __name__=='__main__':
     unittest.main()
+
+
+class CapaVariasInstanciasTest(unittest.TestCase):
+    """O mesmo processo costuma ter 1º e 2º grau no DataJud, cada um informando campos diferentes."""
+
+    def test_junta_assuntos_municipio_e_sigilo_das_instancias(self):
+        import server
+        g2 = {'grau': 'G2', 'assuntos': ['Indenização por Dano Moral'], 'nivelSigilo': 0, 'orgaoJulgador': '2ª Câmara'}
+        g1 = {'grau': 'G1', 'assuntos': ['Tutela de Urgência', 'Indenização por Dano Moral'], 'nivelSigilo': 1,
+              'codigoMunicipioIBGE': 3550308, 'orgaoJulgador': '2ª Vara Cível'}
+        for ordem in ([g2, g1], [g1, g2]):
+            c = server._dados_comuns_das_instancias(ordem)
+            self.assertEqual(c['principal']['grau'], 'G2')  # a instância mais avançada
+            self.assertEqual(c['assuntos'], ['Indenização por Dano Moral', 'Tutela de Urgência'])  # sem repetir
+            self.assertEqual(c['codigo_municipio'], '3550308')  # só o 1º grau informa o município
+            self.assertEqual(c['nivel_sigilo'], 1)  # o maior
+        vazio = server._dados_comuns_das_instancias([{'grau': 'G1'}])
+        self.assertEqual((vazio['assuntos'], vazio['codigo_municipio'], vazio['nivel_sigilo']), ([], '', None))

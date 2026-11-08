@@ -3855,6 +3855,28 @@ _TIPO_JUSTICA_POR_SEGMENTO = {
 }
 
 
+_ORDEM_GRAU = {"G3": 0, "G2": 1, "JE": 1, "G1": 2}
+
+
+def _dados_comuns_das_instancias(instancias: list[dict]) -> dict:
+    """O mesmo processo pode ter várias instâncias no DataJud (1º e 2º grau), cada uma com seus
+    próprios campos preenchidos. A principal é a mais avançada; assuntos, município e sigilo
+    juntam o que todas informam: assuntos de todas (sem repetir), município da primeira instância
+    (a comarca onde o processo foi ajuizado) e o maior nível de sigilo."""
+    ordenadas = sorted(instancias, key=lambda i: _ORDEM_GRAU.get(i.get("grau"), 9))
+    assuntos: list[str] = []
+    for i in ordenadas:
+        for nome in i.get("assuntos") or []:
+            if nome and nome not in assuntos:
+                assuntos.append(nome)
+    codigo = next((str(i["codigoMunicipioIBGE"]) for i in reversed(ordenadas) if i.get("codigoMunicipioIBGE")), "")
+    sigilos = [i["nivelSigilo"] for i in ordenadas if isinstance(i.get("nivelSigilo"), int)]
+    return {
+        "principal": ordenadas[0] if ordenadas else {}, "assuntos": assuntos, "codigo_municipio": codigo,
+        "nivel_sigilo": max(sigilos) if sigilos else None,
+    }
+
+
 async def _montar_capa_via_tribunal(numero: str, tribunal: str) -> tuple[dict | None, dict | None]:
     """Consulta consultar_processo_unificado (DataJud + DJEN) e monta os campos de capa
     correspondentes. Usado tanto pelo botão "Atualizar capa" (acao=atualizar) quanto pelo job
@@ -3867,9 +3889,10 @@ async def _montar_capa_via_tribunal(numero: str, tribunal: str) -> tuple[dict | 
     capa_djen = resultado.get("capa_djen") or {}
     if not instancias and not (capa_djen or resultado.get("partes") or resultado.get("advogados")):
         return None, _erro("Nenhum dado encontrado no DataJud ou no DJEN. A capa anterior foi preservada.")
-    instancia = (instancias or [{}])[0]
+    comuns = _dados_comuns_das_instancias(instancias)
+    instancia = comuns["principal"]
     municipios = json.loads((Path(__file__).parent / "static" / "municipios.json").read_text(encoding="utf-8"))["data"]
-    codigo = str(instancia.get("codigoMunicipioIBGE") or "")
+    codigo = comuns["codigo_municipio"]
     municipio = next((m for m in municipios if str(m["Codigo"]) == codigo), None)
     localidade = {"cidade": municipio["Nome"], "uf": municipio["Uf"]} if municipio else {}
     movimentos = [{**m, "numero": numero, "grau": i.get("grau_descricao") or i.get("grau")}
@@ -3889,8 +3912,8 @@ async def _montar_capa_via_tribunal(numero: str, tribunal: str) -> tuple[dict | 
         **{k: v for k, v in automaticos.items() if v},
         "tribunal": instancia.get("tribunal") or capa_djen.get("tribunal") or tribunal.upper(),
         "classe": instancia.get("classe") or capa_djen.get("classe"),
-        "assuntos": instancia.get("assuntos"), "grau": instancia.get("grau"),
-        "data_distribuicao": instancia.get("dataAjuizamento"), "nivel_sigilo": instancia.get("nivelSigilo"),
+        "assuntos": comuns["assuntos"], "grau": instancia.get("grau"),
+        "data_distribuicao": instancia.get("dataAjuizamento"), "nivel_sigilo": comuns["nivel_sigilo"],
         **({"nome_processo": nome_processo} if nome_processo else {}),
         **localidade, "movimentos": movimentos, "partes": resultado.get("partes") or [],
         "advogados": resultado.get("advogados") or [],
