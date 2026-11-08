@@ -24,7 +24,10 @@ class PerfilSessaoTest(unittest.TestCase):
                     r = await c.get('/responsaveis/me', headers={'Authorization': 'Bearer '+ana['token']})
                     self.assertEqual(r.status_code, 200)
                     self.assertEqual(r.headers['cache-control'], 'no-store')
-                    self.assertEqual(r.json(), {'usuario': {'login': 'ana', 'nome_completo': 'Ana Exemplo', 'nivel_acesso': 'consulta'}})
+                    usuario = r.json()['usuario']
+                    self.assertEqual({k: usuario[k] for k in ('login', 'nome_completo', 'nivel_acesso')},
+                                     {'login': 'ana', 'nome_completo': 'Ana Exemplo', 'nivel_acesso': 'consulta'})
+                    self.assertEqual(set(usuario['permissoes'].values()), {'ver'})
                     usuarios_admin.alterar(registro, {'status': 'bloqueado'}, 'bootstrap', 'ana')
                     self.assertEqual((await c.get('/responsaveis/me', headers={'Authorization': 'Bearer '+ana['token']})).status_code, 401)
         asyncio.run(verificar())

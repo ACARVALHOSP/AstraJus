@@ -18,6 +18,7 @@ import {
   TextField,
 } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
+import { AREAS, type Grau } from '../api/PerfilContext'
 import './administracao.scss'
 
 type Usuario = {
@@ -25,10 +26,14 @@ type Usuario = {
   nivel_acesso: string; status: string; criado_em: string | null; atualizado_em: string | null
   ultimo_acesso_em: string | null; email_verificado_em: string | null
   criado_por: string | null; revogado_em: string | null; revogado_por: string | null
+  permissoes?: Record<string, Grau>
 }
 type Historico = { ocorrido_em: string; ator: string; usuario: string; acao: string; campos: string }
 type Banco = { tipo: string; tamanho_bytes: number; tabelas: number }
-const VAZIO = { login: '', nome_completo: '', email: '', nivel_acesso: 'operador', status: 'ativo' }
+const VAZIO = { login: '', nome_completo: '', email: '', nivel_acesso: 'operador', status: 'ativo', permissoes: {} as Record<string, Grau> }
+const GRAUS: [Grau, string][] = [['editar', 'Ver e alterar'], ['ver', 'Somente ver'], ['nenhum', 'Sem acesso']]
+// O que cada nível permite quando nada foi personalizado (igual ao servidor).
+const grauPadrao = (nivel: string): Grau => nivel === 'consulta' ? 'ver' : 'editar'
 const data = (valor: string | null) => valor ? new Date(valor).toLocaleString('pt-BR') : 'Não registrado'
 
 export default function Administracao() {
@@ -83,7 +88,7 @@ export default function Administracao() {
   async function salvar() {
     if (!editor || !sessao) return
     const { login, campos } = editor
-    const corpo = login === null ? campos : { nome_completo: campos.nome_completo, email: campos.email, nivel_acesso: campos.nivel_acesso, status: campos.status }
+    const corpo = login === null ? campos : { nome_completo: campos.nome_completo, email: campos.email, nivel_acesso: campos.nivel_acesso, status: campos.status, permissoes: campos.permissoes }
     const r = await requisicao(login === null ? '/admin/usuarios/api' : `/admin/usuarios/api/${encodeURIComponent(login)}`, sessao, login === null ? 'POST' : 'PATCH', corpo)
     const resultado = await r.json() as { token?: string }
     setEditor(null)
@@ -131,7 +136,7 @@ export default function Administracao() {
             <Button size="2" disabled={ocupado} onClick={() => { setErro(''); setEditor({ login: null, campos: { ...VAZIO } }) }}>Criar usuário</Button>
           </div>
           <div className="administracao__tabela" role="region" aria-label="Usuários cadastrados" tabIndex={0}><TabelaResponsiva principais={['Nome e login', 'Status', 'Data', 'Usuário']}><table><caption>Usuários do sistema — {lista.length} resultado(s)</caption><thead><tr>{['Nome e login', 'E-mail', 'Nível de acesso', 'Status', 'Cadastro', 'Último acesso', 'Ações'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>
-            {lista.map(u => <tr key={u.usuario_id}><td>{u.nome_completo}<small>{u.login}</small></td><td>{u.email || 'Não informado'}</td><td>{u.nivel_acesso}</td><td>{u.status}</td><td>{data(u.criado_em)}</td><td>{data(u.ultimo_acesso_em)}</td><td><Button size="1" variant="ghost" disabled={ocupado} onClick={() => { setErro(''); setEditor({ login: u.login, campos: { login: u.login, nome_completo: u.nome_completo, email: u.email || '', nivel_acesso: u.nivel_acesso, status: u.status } }) }}>Editar<Text className="aj-sr-only"> {u.nome_completo}</Text></Button></td></tr>)}
+            {lista.map(u => <tr key={u.usuario_id}><td>{u.nome_completo}<small>{u.login}</small></td><td>{u.email || 'Não informado'}</td><td>{u.nivel_acesso}</td><td>{u.status}</td><td>{data(u.criado_em)}</td><td>{data(u.ultimo_acesso_em)}</td><td><Button size="1" variant="ghost" disabled={ocupado} onClick={() => { setErro(''); setEditor({ login: u.login, campos: { login: u.login, nome_completo: u.nome_completo, email: u.email || '', nivel_acesso: u.nivel_acesso, status: u.status, permissoes: u.permissoes ?? {} } }) }}>Editar<Text className="aj-sr-only"> {u.nome_completo}</Text></Button></td></tr>)}
             {!lista.length && <tr><td colSpan={7}>Nenhum usuário encontrado.</td></tr>}
           </tbody></table></TabelaResponsiva></div>
         </Tabs.Content>
@@ -205,6 +210,33 @@ export default function Administracao() {
               </Select.Content>
             </Select.Root>
           </div>
+          {editor.campos.nivel_acesso !== 'administrador' && (
+            <fieldset className="administracao__permissoes">
+              <legend>Acesso por área</legend>
+              <Text as="p" size="1" color="gray">
+                Parte do nível escolhido; mude só o que esta pessoa precisa. {editor.campos.nivel_acesso === 'consulta' && 'No nível Consulta ninguém altera dados.'}
+              </Text>
+              {Object.entries(AREAS).map(([area, rotulo]) => {
+                const padrao = grauPadrao(editor.campos.nivel_acesso)
+                const atual = editor.campos.permissoes[area] ?? padrao
+                return (
+                  <div className="administracao__permissao" key={area}>
+                    <Text size="2" id={`perm-${area}`}>{rotulo}</Text>
+                    <Select.Root value={atual} disabled={ocupado} onValueChange={v => {
+                      const permissoes = { ...editor.campos.permissoes }
+                      if (v === padrao) delete permissoes[area]; else permissoes[area] = v as Grau
+                      setEditor({ ...editor, campos: { ...editor.campos, permissoes } })
+                    }}>
+                      <Select.Trigger aria-labelledby={`perm-${area}`} />
+                      <Select.Content>
+                        {GRAUS.filter(([g]) => !(editor.campos.nivel_acesso === 'consulta' && g === 'editar')).map(([g, t]) => <Select.Item key={g} value={g}>{t}</Select.Item>)}
+                      </Select.Content>
+                    </Select.Root>
+                  </div>
+                )
+              })}
+            </fieldset>
+          )}
           <Text as="p" size="2" color="gray">Administrador gerencia o sistema; operador altera dados; consulta permite leitura. Revogar encerra o acesso permanentemente.</Text>
           {editor.login && (() => { const u = usuarios.find(u => u.login === editor.login); return u && <dl><dt>ID</dt><dd>{u.usuario_id}</dd><dt>Atualizado em</dt><dd>{data(u.atualizado_em)}</dd><dt>E-mail verificado em</dt><dd>{data(u.email_verificado_em)}</dd><dt>Criado por</dt><dd>{u.criado_por || 'Não registrado'}</dd><dt>Revogado em</dt><dd>{data(u.revogado_em)}</dd><dt>Revogado por</dt><dd>{u.revogado_por || 'Não registrado'}</dd></dl> })()}
           <Flex gap="3" mt="4" justify="end">

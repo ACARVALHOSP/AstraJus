@@ -4159,6 +4159,10 @@ class _AutenticacaoBearer:
         import usuarios_admin
         usuarios_admin.registrar_acesso(self.registro, usuario)
         perfil = self.registro.carregar().get(usuario, {})
+        recusa = usuarios_admin.liberar_rota(perfil, caminho, scope.get('method') or 'GET')
+        if recusa:
+            await _json(send, 403, _erro(recusa))
+            return
         if perfil.get('nivel_acesso') == 'consulta' and scope.get('method') not in ('GET', 'HEAD', 'OPTIONS'):
             # Favoritos e histórico são pessoais: quem só consulta também pode guardá-los.
             if (caminho != '/mcp' or scope.get('method') != 'POST') and not caminho.startswith('/preferencias/'):
@@ -4234,6 +4238,7 @@ class _AutenticacaoBearer:
                 "login": usuario,
                 "nome_completo": perfil.get("nome_completo") or usuario,
                 "nivel_acesso": perfil.get("nivel_acesso") or "operador",
+                "permissoes": usuarios_admin.permissoes_efetivas(perfil),
             }}, ensure_ascii=False).encode("utf-8"), tipo="application/json; charset=utf-8",
                 cabecalhos_extra=[(b"cache-control", b"no-store")])
             return
