@@ -104,11 +104,12 @@ html, body { margin: 0; padding: 0; }
 }
 
 @media (max-width: 560px) {
-  .aj-status-pill { display: none; }
+  .aj-status-texto { display: none; }
+  .aj-status-pill { padding: 8px; }
 }
 .aj-status-dot {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -130,7 +131,13 @@ html, body { margin: 0; padding: 0; }
   justify-content: center;
   transition: transform 0.12s;
 }
+.aj-accent-dot { position: relative; }
 .aj-accent-dot:hover { transform: scale(1.08); }
+/* Toque: mantém o visual e amplia a área clicável para 44px. */
+@media (pointer: coarse) {
+  .aj-ib { min-width: 44px; min-height: 44px; }
+  .aj-accent-dot::after { content: ""; position: absolute; inset: -8px; }
+}
 .aj-accent-dot[aria-checked="true"] { box-shadow: 0 0 0 2px var(--color-panel-solid), 0 0 0 4px var(--gray-12); }
 
 /* ── Body ── */

@@ -97,9 +97,9 @@ function StatusConexao() {
     'sem-token': 'Sem token',
   }
   return (
-    <div className="aj-status-pill">
-      <span className="aj-status-dot" style={{ background: cores[status] ?? cores['sem-token'] }} />
-      <span>{labels[status] ?? status}</span>
+    <div className="aj-status-pill" role="status" aria-label={`Conexão: ${labels[status] ?? status}`} title={labels[status] ?? status}>
+      <span className="aj-status-dot" aria-hidden="true" style={{ background: cores[status] ?? cores['sem-token'] }} />
+      <span className="aj-status-texto" aria-hidden="true">{labels[status] ?? status}</span>
     </div>
   )
 }
