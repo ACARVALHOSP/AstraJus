@@ -1,12 +1,13 @@
 import CampoData from '../../CampoData'
 import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
-import { AlertDialog, Button, Callout, Flex, Select, Tabs, TextField } from '@radix-ui/themes'
+import { AlertDialog, Button, Callout, Flex, Select, Tabs, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Check } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
-import { mascaraCpfCnpj } from '../../utils/mascaras'
+import { erroCpfCnpj, mascaraCpfCnpj } from '../../utils/mascaras'
+import { useAvisos } from '../../Avisos'
 import CampoRepetivel from './CampoRepetivel'
 import EnderecosRepetivel, { type Endereco } from './EnderecosRepetivel'
 
@@ -65,13 +66,20 @@ export default function CadastroContato({
   onSalvo,
   onExcluido,
   onCarregado,
+  onAbrirExistente,
 }: {
   clienteId: string | null
   onSalvo: (cliente: ClienteRegistro) => void
   onExcluido: () => void
   onCarregado?: (cliente: ClienteRegistro) => void
+  /** Abre outro cadastro (quando o CPF/CNPJ informado já pertence a ele). */
+  onAbrirExistente?: (id: string) => void
 }) {
   const { cliente } = useCliente()
+  const { avisar } = useAvisos()
+  const [aba, setAba] = useState('pessoais')
+  const [erroDocumento, setErroDocumento] = useState('')
+  const [existente, setExistente] = useState<{ id: string; nome: string } | null>(null)
   const [registro, setRegistro] = useState<ClienteRegistro>(vazio())
   const [carregando, setCarregando] = useState(!!clienteId)
   const [erroCarregar, setErroCarregar] = useState<string | null>(null)
@@ -123,14 +131,27 @@ export default function CadastroContato({
     setRegistro((r) => ({ ...r, [chave]: valor }))
   }
 
+  const rotulo = registro.perfil === 'contato' ? 'contato' : 'cliente'
+  const juridica = registro.tipo_pessoa === 'juridica'
+
   async function salvar() {
     if (!(registro.nome ?? '').trim()) {
+      setAba('pessoais')
       setMensagem({ tipo: 'erro', texto: 'Informe o nome antes de salvar.' })
-      document.getElementById('contato-nome')?.focus()
+      setTimeout(() => document.getElementById('contato-nome')?.focus(), 0)
+      return
+    }
+    const problemaDocumento = erroCpfCnpj(registro.cpf_cnpj ?? '')
+    if (problemaDocumento) {
+      setAba('documentacao')
+      setErroDocumento(problemaDocumento)
+      setMensagem({ tipo: 'erro', texto: problemaDocumento })
+      setTimeout(() => document.getElementById('contato-cpf-cnpj')?.focus(), 0)
       return
     }
     setSalvando(true)
     setMensagem(null)
+    setExistente(null)
     const corpo = {
       nome: (registro.nome ?? '').trim(),
       cpf_cnpj: (registro.cpf_cnpj ?? '').trim(),
@@ -147,10 +168,18 @@ export default function CadastroContato({
       const salvo = criando
         ? await enviarJson<ClienteRegistro>(cliente, '/clientes', corpo)
         : await enviarJson<ClienteRegistro>(cliente, `/clientes/${clienteId}`, corpo, 'PATCH')
-      setMensagem({ tipo: 'sucesso', texto: criando ? 'Cliente cadastrado' : 'Cliente atualizado' })
+      // Aviso flutuante: continua visível mesmo com a tela trocando para o cadastro recém-criado.
+      avisar({ texto: criando ? `${rotulo === 'contato' ? 'Contato cadastrado' : 'Cliente cadastrado'}: ${corpo.nome}.` : 'Alterações salvas.' })
       onSalvo(salvo)
     } catch (e) {
-      setMensagem({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Falha ao salvar.' })
+      const texto = e instanceof ErroMCP ? e.message : 'Não foi possível salvar. Tente de novo.'
+      if (e instanceof ErroMCP && e.status === 409) {
+        // Mesmo CPF/CNPJ já cadastrado: mostra o cadastro existente para abrir.
+        setAba('documentacao')
+        setErroDocumento(texto)
+        setExistente(e.dados?.cliente_existente ?? null)
+      }
+      setMensagem({ tipo: 'erro', texto })
     } finally {
       setSalvando(false)
     }
@@ -180,7 +209,7 @@ export default function CadastroContato({
 
   return (
     <Flex direction="column" gap="6">
-      <Tabs.Root defaultValue="pessoais">
+      <Tabs.Root value={aba} onValueChange={setAba}>
         <Tabs.List aria-label="Seções do cadastro">
           <Tabs.Trigger value="pessoais">Informações pessoais</Tabs.Trigger>
           <Tabs.Trigger value="documentacao">Documentação</Tabs.Trigger>
@@ -281,14 +310,27 @@ export default function CadastroContato({
         <Tabs.Content value="documentacao">
           <div className="casos-formulario-grade" style={{ marginTop: 'var(--space-4)' }}>
             <div className="form-campo">
-              <label className="form-campo-label" htmlFor="contato-cpf-cnpj">{registro.tipo_pessoa === 'juridica' ? 'CNPJ' : 'CPF'}</label>
+              <label className="form-campo-label" htmlFor="contato-cpf-cnpj">{juridica ? 'CNPJ' : 'CPF'}</label>
               <TextField.Root
                 id="contato-cpf-cnpj"
-                placeholder={registro.tipo_pessoa === 'juridica' ? 'Ex.: 12.345.678/0001-90' : 'Ex.: 123.456.789-00'}
+                placeholder={juridica ? 'Ex.: 12.345.678/0001-90' : 'Ex.: 123.456.789-00'}
                 value={registro.cpf_cnpj}
-                onChange={(e) => atualizar('cpf_cnpj', mascaraCpfCnpj(e.target.value))}
+                color={erroDocumento ? 'red' : undefined}
+                aria-invalid={Boolean(erroDocumento)}
+                aria-describedby={erroDocumento ? 'contato-cpf-cnpj-erro' : undefined}
+                onChange={(e) => { atualizar('cpf_cnpj', mascaraCpfCnpj(e.target.value)); setErroDocumento(''); setExistente(null) }}
+                onBlur={() => setErroDocumento(erroCpfCnpj(registro.cpf_cnpj ?? ''))}
               />
+              {erroDocumento && (
+                <Text id="contato-cpf-cnpj-erro" size="1" color="red">
+                  {erroDocumento}{' '}
+                  {existente && onAbrirExistente && (
+                    <button type="button" className="aj-link-ajuda" onClick={() => onAbrirExistente(existente.id)}>Abrir esse cadastro</button>
+                  )}
+                </Text>
+              )}
             </div>
+            {!juridica && <>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="contato-rg-numero">RG — Número</label>
               <TextField.Root id="contato-rg-numero" value={registro.rg_numero} onChange={(e) => atualizar('rg_numero', e.target.value)} />
@@ -321,11 +363,12 @@ export default function CadastroContato({
               <label className="form-campo-label" htmlFor="contato-pis">PIS</label>
               <TextField.Root id="contato-pis" value={registro.pis} onChange={(e) => atualizar('pis', e.target.value)} />
             </div>
+            </>}
           </div>
         </Tabs.Content>
         <Tabs.Content value="complementares">
           <Flex direction="column" gap="4" mt="4">
-            <div className="casos-formulario-grade">
+            {!juridica && <div className="casos-formulario-grade">
               <div className="form-campo">
                 <label className="form-campo-label" htmlFor="contato-estado-civil">Estado civil</label>
                 <Select.Root value={registro.estado_civil || '__none__'} onValueChange={(v) => atualizar('estado_civil', v === '__none__' ? '' : v)}>
@@ -349,7 +392,7 @@ export default function CadastroContato({
                 <label className="form-campo-label" htmlFor="contato-profissao">Profissão</label>
                 <TextField.Root id="contato-profissao" placeholder="Ex.: Engenheira civil" value={registro.profissao} onChange={(e) => atualizar('profissao', e.target.value)} />
               </div>
-            </div>
+            </div>}
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="contato-observacoes">Observações</label>
               <TextField.Root id="contato-observacoes" placeholder="Ex.: indicação de cliente antigo" value={registro.observacoes} onChange={(e) => atualizar('observacoes', e.target.value)} />
@@ -359,11 +402,11 @@ export default function CadastroContato({
       </Tabs.Root>
       <div className="aj-layout-28">
         <Button onClick={salvar} disabled={salvando}>
-          {criando ? 'Cadastrar cliente' : 'Salvar alterações'}
+          {salvando ? 'Salvando…' : criando ? `Cadastrar ${rotulo}` : 'Salvar alterações'}
         </Button>
         {!criando && (
           <Button variant="outline" color="red" onClick={() => setParaExcluir(true)}>
-            Excluir cliente
+            Excluir {rotulo}
           </Button>
         )}
       </div>
@@ -377,9 +420,9 @@ export default function CadastroContato({
       </div>
       <AlertDialog.Root open={paraExcluir} onOpenChange={(open) => !open && setParaExcluir(false)}>
         <AlertDialog.Content maxWidth="400px">
-          <AlertDialog.Title>Excluir cliente</AlertDialog.Title>
+          <AlertDialog.Title>Excluir {rotulo}</AlertDialog.Title>
           <AlertDialog.Description>
-            Excluir o cliente "{registro.nome || 'este cliente'}"? Essa ação não pode ser desfeita.
+            Excluir o cadastro de "{registro.nome || `este ${rotulo}`}"? Essa ação não pode ser desfeita.
           </AlertDialog.Description>
           <Flex gap="3" mt="4" justify="end">
             <AlertDialog.Cancel>

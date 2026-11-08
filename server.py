@@ -2119,6 +2119,8 @@ _HOSTS_LOCAIS = {"127.0.0.1", "localhost", "::1"}
 _NOME_USUARIO = re.compile(r"[a-z0-9][a-z0-9._+@-]{1,253}")
 _EMAIL = re.compile(r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}")
 _TAMANHO_MAX_FORM = 4096
+# Cadastro de cliente: vários telefones, e-mails, endereços e observações passam fácil de 4 KB.
+_TAMANHO_MAX_CADASTRO = 64 * 1024
 
 MENSAGEM_CADASTRO_OK = (
     "Se o e-mail informado for válido, você receberá o seu token em instantes. "
@@ -3560,11 +3562,57 @@ def _origem_djen_da_atividade(dados: dict, criando: bool) -> dict:
     return {"origem_djen_hash": origem}
 
 
+def _cpf_valido(d: str) -> bool:
+    if len(d) != 11 or d == d[0] * 11:
+        return False
+    for tamanho in (9, 10):
+        soma = sum(int(d[i]) * (tamanho + 1 - i) for i in range(tamanho))
+        if (soma * 10 % 11) % 10 != int(d[tamanho]):
+            return False
+    return True
+
+
+def _cnpj_valido(d: str) -> bool:
+    if len(d) != 14 or d == d[0] * 14:
+        return False
+    for tamanho in (12, 13):
+        pesos = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2][13 - tamanho:]
+        resto = sum(int(d[i]) * pesos[i] for i in range(tamanho)) % 11
+        if (0 if resto < 2 else 11 - resto) != int(d[tamanho]):
+            return False
+    return True
+
+
+def _erro_documento_cliente(gestao: RegistroClientesCasos, cpf_cnpj: str, exceto_id: str | None = None):
+    """Confere o CPF/CNPJ informado: dígitos verificadores e se já há outro cadastro com ele.
+    Devolve (status, erro) ou None. Vazio é aceito (o documento é opcional)."""
+    digitos = _so_digitos(cpf_cnpj)
+    if not digitos:
+        return None
+    if len(digitos) == 11:
+        if not _cpf_valido(digitos):
+            return 400, _erro("CPF inválido. Confira os números digitados.")
+    elif len(digitos) == 14:
+        if not _cnpj_valido(digitos):
+            return 400, _erro("CNPJ inválido. Confira os números digitados.")
+    else:
+        return 400, _erro("O CPF deve ter 11 dígitos e o CNPJ, 14.")
+    existente = gestao.buscar_cliente_por_documento(digitos, exceto_id)
+    if existente:
+        erro = _erro(f"Já existe um cadastro com este {'CPF' if len(digitos) == 11 else 'CNPJ'}: {existente['nome']}.")
+        erro["cliente_existente"] = existente
+        return 409, erro
+    return None
+
+
 def _criar_cliente_validado(gestao: RegistroClientesCasos, dados: dict) -> tuple[dict | None, dict | None]:
     """Valida o corpo de POST /clientes. Devolve (cliente, None) ou (None, erro)."""
     nome = (dados.get("nome") or "").strip()
     if not nome:
         return None, _erro("Informe o nome do cliente.")
+    problema = _erro_documento_cliente(gestao, dados.get("cpf_cnpj") or "")
+    if problema:
+        return None, problema[1]
     cliente = gestao.criar_cliente(
         nome=nome,
         cpf_cnpj=(dados.get("cpf_cnpj") or "").strip() or None,
@@ -4520,9 +4568,9 @@ class _AutenticacaoBearer:
             await _json(send, 200, {"clientes": self.gestao.listar_clientes()})
             return
         if metodo == "POST":
-            corpo = await _ler_corpo(receive)
+            corpo = await _ler_corpo(receive, limite=_TAMANHO_MAX_CADASTRO)
             if corpo is None:
-                await _json(send, 413, _erro("Corpo da requisição grande demais."))
+                await _json(send, 413, _erro("O cadastro ficou grande demais. Encurte as observações e tente de novo."))
                 return
             try:
                 dados = json.loads(corpo.decode("utf-8") or "{}")
@@ -4531,7 +4579,7 @@ class _AutenticacaoBearer:
                 return
             cliente, erro = _criar_cliente_validado(self.gestao, dados)
             if erro:
-                await _json(send, 400, erro)
+                await _json(send, 409 if erro.get("cliente_existente") else 400, erro)
                 return
             await _json(send, 201, cliente)
             return
@@ -4567,9 +4615,12 @@ class _AutenticacaoBearer:
                 return
             await _json(send, 200, {"excluido": True})
             return
-        corpo = await _ler_corpo(receive)
+        corpo = await _ler_corpo(receive, limite=_TAMANHO_MAX_CADASTRO)
+        if corpo is None:
+            await _json(send, 413, _erro("O cadastro ficou grande demais. Encurte as observações e tente de novo."))
+            return
         try:
-            dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+            dados = json.loads(corpo.decode("utf-8") or "{}")
         except (ValueError, UnicodeDecodeError):
             await _json(send, 400, _erro("JSON inválido."))
             return
@@ -4577,6 +4628,18 @@ class _AutenticacaoBearer:
         if not nome:
             await _json(send, 400, _erro("Informe o nome do cliente."))
             return
+        atual = self.gestao.obter_cliente(cliente_id)
+        if atual is None:
+            await _json(send, 404, _erro("Cliente não encontrado."))
+            return
+        # Só confere o documento quando ele muda: cadastros antigos com CPF fora do padrão
+        # continuam editáveis.
+        novo_documento = (dados.get("cpf_cnpj") or "").strip()
+        if _so_digitos(novo_documento) != _so_digitos(atual.get("cpf_cnpj") or ""):
+            problema = _erro_documento_cliente(self.gestao, novo_documento, exceto_id=cliente_id)
+            if problema:
+                await _json(send, *problema)
+                return
         cliente_atualizado = self.gestao.atualizar_cliente(
             cliente_id, nome=nome,
             cpf_cnpj=(dados.get("cpf_cnpj") or "").strip() or None,

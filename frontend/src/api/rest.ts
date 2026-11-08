@@ -15,7 +15,7 @@ export async function buscarJson<T>(cliente: ClienteMCP | null, url: string, sig
   const resposta = await pedir(url, { headers: { Authorization: `Bearer ${cliente.token}` }, signal })
   if (!resposta.ok) {
     const dados = await resposta.json().catch(() => ({}))
-    throw new ErroMCP(resposta.status, dados.mensagem || mensagemPorStatus(resposta.status))
+    throw new ErroMCP(resposta.status, dados.mensagem || mensagemPorStatus(resposta.status), dados)
   }
   return resposta.json()
 }
@@ -36,7 +36,7 @@ export async function enviarJson<T>(
   })
   const dados = await resposta.json().catch(() => ({}))
   if (!resposta.ok) {
-    throw new ErroMCP(resposta.status, dados.mensagem || mensagemPorStatus(resposta.status))
+    throw new ErroMCP(resposta.status, dados.mensagem || mensagemPorStatus(resposta.status), dados)
   }
   return dados
 }
