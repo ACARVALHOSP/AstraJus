@@ -519,6 +519,9 @@ def _migrar_colunas_clientes(conexao: sqlite3.Connection) -> None:
     if "drive_pasta_id" not in colunas:
         with conexao:
             conexao.execute("ALTER TABLE clientes ADD COLUMN drive_pasta_id TEXT")
+    if "nome_fantasia" not in colunas:
+        with conexao:
+            conexao.execute("ALTER TABLE clientes ADD COLUMN nome_fantasia TEXT")
     conexao.execute("CREATE TABLE IF NOT EXISTS drive_config (chave TEXT PRIMARY KEY, valor TEXT NOT NULL)")
     novas_colunas = {
         "tipo_pessoa": "TEXT NOT NULL DEFAULT 'fisica'",
@@ -880,8 +883,8 @@ class RegistroClientesCasos:
                 "site, endereco_rua, endereco_numero, endereco_bairro, endereco_complemento, "
                 "endereco_cidade, endereco_estado, endereco_pais, rg_numero, rg_emissao, rg_emissor, "
                 "ctps_numero, ctps_serie, ctps_emissao, ctps_uf, pis, estado_civil, nacionalidade, "
-                "profissao, emails_json, sites_json, enderecos_json"
-                ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "profissao, emails_json, sites_json, enderecos_json, nome_fantasia"
+                ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     novo_id, nome, cpf_cnpj, None, emails_limpos[0]["email"] if emails_limpos else None,
                     observacoes, criado_em,
@@ -895,6 +898,7 @@ class RegistroClientesCasos:
                     detalhes.get("ctps_emissao"), detalhes.get("ctps_uf"), detalhes.get("pis"),
                     detalhes.get("estado_civil"), detalhes.get("nacionalidade"), detalhes.get("profissao"),
                     json.dumps(emails_limpos), json.dumps(sites_limpos), json.dumps(enderecos_limpos),
+                    detalhes.get("nome_fantasia"),
                 ),
             )
             self._salvar_telefones(conexao, novo_id, telefones)
@@ -941,6 +945,7 @@ class RegistroClientesCasos:
             if not linha:
                 return None
             cliente = _linha_cliente(linha)
+            cliente["nome_fantasia"] = (conexao.execute("SELECT nome_fantasia FROM clientes WHERE id = ?", (cliente_id,)).fetchone() or [None])[0]
             cliente["telefones"] = self._telefones_do_cliente(conexao, cliente_id)
             cliente["etiquetas"] = self._etiquetas_clientes(conexao).get(cliente_id, [])
         return cliente
@@ -965,8 +970,8 @@ class RegistroClientesCasos:
                 "endereco_bairro = ?, endereco_complemento = ?, endereco_cidade = ?, endereco_estado = ?, "
                 "endereco_pais = ?, rg_numero = ?, rg_emissao = ?, rg_emissor = ?, ctps_numero = ?, "
                 "ctps_serie = ?, ctps_emissao = ?, ctps_uf = ?, pis = ?, estado_civil = ?, "
-                "nacionalidade = ?, profissao = ?, emails_json = ?, sites_json = ?, enderecos_json = ? "
-                "WHERE id = ?",
+                "nacionalidade = ?, profissao = ?, emails_json = ?, sites_json = ?, enderecos_json = ?, "
+                "nome_fantasia = ? WHERE id = ?",
                 (
                     nome, cpf_cnpj, emails_limpos[0]["email"] if emails_limpos else None, observacoes,
                     detalhes.get("tipo_pessoa") or "fisica", detalhes.get("perfil") or "cliente",
@@ -979,7 +984,7 @@ class RegistroClientesCasos:
                     detalhes.get("ctps_emissao"), detalhes.get("ctps_uf"), detalhes.get("pis"),
                     detalhes.get("estado_civil"), detalhes.get("nacionalidade"), detalhes.get("profissao"),
                     json.dumps(emails_limpos), json.dumps(sites_limpos), json.dumps(enderecos_limpos),
-                    cliente_id,
+                    detalhes.get("nome_fantasia"), cliente_id,
                 ),
             )
             self._salvar_telefones(conexao, cliente_id, telefones)

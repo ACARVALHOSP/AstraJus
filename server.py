@@ -3560,14 +3560,15 @@ def _pagina_autorizacao(params: dict, erro: str | None = None) -> str:
 
 _CAMPOS_DETALHES_CLIENTE = (
     "tipo_pessoa", "perfil", "rg_numero", "rg_emissao", "rg_emissor", "ctps_numero", "ctps_serie",
-    "ctps_emissao", "ctps_uf", "pis", "estado_civil", "nacionalidade", "profissao",
+    "ctps_emissao", "ctps_uf", "pis", "estado_civil", "nacionalidade", "profissao", "nome_fantasia",
 )
 
 
 def _detalhes_cliente_de(dados: dict) -> dict:
     """Extrai de `dados` os campos extras do cadastro completo (documentação, endereço,
     informações complementares) - usado tanto em POST /clientes quanto em PATCH /clientes/<id>."""
-    return {campo: (dados.get(campo) or "").strip() or None for campo in _CAMPOS_DETALHES_CLIENTE}
+    return {campo: ((dados.get(campo) or "").strip() or None) if campo != "nome_fantasia" else ((dados.get(campo) or "").strip()[:200] or None)
+            for campo in _CAMPOS_DETALHES_CLIENTE}
 
 
 def _itens_de(dados: dict, chave_lista: str, chave_unica: str, campos: tuple) -> list[dict]:

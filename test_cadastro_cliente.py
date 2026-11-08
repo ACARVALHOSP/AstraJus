@@ -53,6 +53,19 @@ class CadastroClienteTest(unittest.TestCase):
         self.assertEqual(self.criar({"nome": "X", "cpf_cnpj": "111"})[0], 400)
         self.assertEqual(self.criar({"nome": "Sem documento"})[0], 201)
 
+    def test_nome_fantasia(self):
+        status, empresa = self.criar({"nome": "Padaria Pão Quente Ltda", "nome_fantasia": "  Padaria Pão Quente  ",
+                                      "tipo_pessoa": "juridica", "cpf_cnpj": "11.222.333/0001-81"})
+        self.assertEqual((status, empresa["nome_fantasia"]), (201, "Padaria Pão Quente"))
+        status, lido = _chamar(self.mw, "GET", f"/clientes/{empresa['id']}", self.auth)
+        self.assertEqual(lido["nome_fantasia"], "Padaria Pão Quente")
+        corpo = json.dumps({"nome": "Padaria Pão Quente Ltda", "nome_fantasia": "Pão Quente", "tipo_pessoa": "juridica",
+                            "cpf_cnpj": "11.222.333/0001-81"}).encode()
+        status, resposta = _chamar(self.mw, "PATCH", f"/clientes/{empresa['id']}", self.auth, corpo)
+        self.assertEqual((status, resposta["nome_fantasia"]), (200, "Pão Quente"))
+        _, sem = self.criar({"nome": "Pessoa Física", "cpf_cnpj": "529.982.247-25"})
+        self.assertIsNone(sem["nome_fantasia"])
+
     def test_nao_duplica_documento(self):
         status, ana = self.criar({"nome": "Ana", "cpf_cnpj": "529.982.247-25"})
         self.assertEqual(status, 201)
