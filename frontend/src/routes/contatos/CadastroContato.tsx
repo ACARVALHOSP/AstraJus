@@ -2,12 +2,13 @@ import CampoData from '../../CampoData'
 import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
 import { AlertDialog, Button, Callout, Flex, Select, Tabs, Text, TextField } from '@radix-ui/themes'
-import { AlertTriangle, Check } from 'lucide-react'
+import { AlertTriangle, Building2, Check } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
-import { erroCpfCnpj, erroEmail, erroTelefone, mascaraCpfCnpj, mascaraTelefone } from '../../utils/mascaras'
+import { erroCpfCnpj, erroEmail, erroTelefone, mascaraCep, mascaraCpfCnpj, mascaraTelefone } from '../../utils/mascaras'
 import PastaDrive from '../../PastaDrive'
+import { formatarNomeExibicao } from '../../utils/formatadores'
 import { useAvisos } from '../../Avisos'
 import { useAlteracoesPendentes } from '../../AlteracoesPendentes'
 import CampoRepetivel from './CampoRepetivel'
@@ -23,6 +24,7 @@ type ClienteRegistro = {
   cpf_cnpj?: string
   observacoes?: string
   drive_pasta_id?: string | null
+  nome_fantasia?: string | null
   tipo_pessoa?: string
   perfil?: string
   telefones?: Telefone[]
@@ -52,9 +54,20 @@ type ClienteRegistro = {
   profissao?: string
 }
 
+type DadosCnpj = {
+  razao_social: string; nome_fantasia: string; situacao: string; data_situacao: string; abertura: string; atividade: string
+  telefones: string[]; email: string
+  endereco: { cep: string; rua: string; numero: string; complemento: string; bairro: string; cidade: string; estado: string }
+}
+// Dados da Receita vêm em maiúsculas: "RUA JOAQUIM FLORIANO" vira "Rua Joaquim Floriano". Preposições
+// ficam minúsculas, siglas societárias maiúsculas e numerais romanos de endereço (Torre II) preservados.
+const primeiraMaiuscula = (texto: string) =>
+  formatarNomeExibicao(texto).replace(/\b(Ii|Iii|Iv|Vi|Vii|Viii|Ix|Xi|Xii)\b/g, (m) => m.toUpperCase())
+const dataBr = (iso: string) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : '')
+
 const CAMPOS_EXTRA: Array<keyof ClienteRegistro> = [
   'rg_numero', 'rg_emissao', 'rg_emissor', 'ctps_numero', 'ctps_serie', 'ctps_emissao', 'ctps_uf',
-  'pis', 'estado_civil', 'nacionalidade', 'profissao',
+  'pis', 'estado_civil', 'nacionalidade', 'profissao', 'nome_fantasia',
 ]
 
 const vazio = (): ClienteRegistro => ({
@@ -83,6 +96,9 @@ export default function CadastroContato({
   const [aba, setAba] = useState('pessoais')
   const [erroDocumento, setErroDocumento] = useState('')
   const [existente, setExistente] = useState<{ id: string; nome: string } | null>(null)
+  const [consultandoCnpj, setConsultandoCnpj] = useState(false)
+  const [dadosCnpj, setDadosCnpj] = useState<DadosCnpj | null>(null)
+  const [erroCnpj, setErroCnpj] = useState('')
   const [registro, setRegistro] = useState<ClienteRegistro>(vazio())
   // Cópia do que está salvo, para saber se há alterações pendentes.
   const [original, setOriginal] = useState<string>(() => JSON.stringify(vazio()))
@@ -137,6 +153,33 @@ export default function CadastroContato({
 
   function atualizar<K extends keyof ClienteRegistro>(chave: K, valor: ClienteRegistro[K]) {
     setRegistro((r) => ({ ...r, [chave]: valor }))
+  }
+
+  /** Consulta o CNPJ na Receita Federal (BrasilAPI) e preenche o que ainda estiver vazio. */
+  async function consultarCnpj(documento: string) {
+    const digitos = documento.replace(/\D/g, '')
+    if (digitos.length !== 14 || erroCpfCnpj(documento)) return
+    setConsultandoCnpj(true); setErroCnpj(''); setDadosCnpj(null)
+    try {
+      const d = await buscarJson<DadosCnpj>(cliente, `/clientes/consulta-cnpj/${digitos}`)
+      setDadosCnpj(d)
+      setRegistro((r) => ({
+        ...r,
+        nome: r.nome?.trim() ? r.nome : primeiraMaiuscula(d.razao_social),
+        nome_fantasia: r.nome_fantasia?.trim() ? r.nome_fantasia : primeiraMaiuscula(d.nome_fantasia),
+        telefones: r.telefones?.length ? r.telefones : d.telefones.map(t => ({ tipo: '', telefone: mascaraTelefone(t), operadora: '' })),
+        emails: r.emails?.length ? r.emails : d.email ? [{ tipo: '', email: d.email }] : [],
+        enderecos: r.enderecos?.length || !d.endereco.rua ? r.enderecos : [{
+          tipo: '', cep: mascaraCep(d.endereco.cep), rua: primeiraMaiuscula(d.endereco.rua),
+          numero: /^s\/?n$/i.test(d.endereco.numero) ? 'S/N' : d.endereco.numero, bairro: primeiraMaiuscula(d.endereco.bairro),
+          complemento: primeiraMaiuscula(d.endereco.complemento), cidade: primeiraMaiuscula(d.endereco.cidade),
+          estado: d.endereco.estado.toUpperCase(), pais: 'Brasil',
+        }],
+      }))
+      avisar({ texto: 'Dados preenchidos pela Receita Federal. Confira antes de salvar.' })
+    } catch (e) {
+      setErroCnpj(e instanceof ErroMCP ? e.message : 'Não foi possível consultar o CNPJ agora. Preencha os dados manualmente.')
+    } finally { setConsultandoCnpj(false) }
   }
 
   useAlteracoesPendentes(!carregando && JSON.stringify(registro) !== original)
@@ -269,6 +312,19 @@ export default function CadastroContato({
                 onChange={(e) => atualizar('nome', e.target.value)}
               />
             </div>
+            {juridica && (
+              <div className="form-campo">
+                <label className="form-campo-label" htmlFor="contato-nome-fantasia">Nome fantasia</label>
+                <TextField.Root
+                  id="contato-nome-fantasia"
+                  placeholder="Ex.: Padaria Pão Quente"
+                  autoComplete="organization"
+                  maxLength={200}
+                  value={registro.nome_fantasia ?? ''}
+                  onChange={(e) => atualizar('nome_fantasia', e.target.value)}
+                />
+              </div>
+            )}
             <CampoRepetivel
               titulo="Telefone"
               itens={registro.telefones ?? []}
@@ -337,9 +393,19 @@ export default function CadastroContato({
                 color={erroDocumento ? 'red' : undefined}
                 aria-invalid={Boolean(erroDocumento)}
                 aria-describedby={erroDocumento ? 'contato-cpf-cnpj-erro' : undefined}
-                onChange={(e) => { atualizar('cpf_cnpj', mascaraCpfCnpj(e.target.value)); setErroDocumento(''); setExistente(null) }}
+                onChange={(e) => {
+                  const mascarado = mascaraCpfCnpj(e.target.value)
+                  atualizar('cpf_cnpj', mascarado); setErroDocumento(''); setExistente(null); setDadosCnpj(null); setErroCnpj('')
+                  // Ao completar um CNPJ válido de pessoa jurídica, busca os dados sozinho.
+                  if (juridica && mascarado.replace(/\D/g, '').length === 14) void consultarCnpj(mascarado)
+                }}
                 onBlur={() => setErroDocumento(erroCpfCnpj(registro.cpf_cnpj ?? ''))}
               />
+              {juridica && consultandoCnpj && <Text size="1" color="gray" role="status">Consultando a Receita Federal…</Text>}
+              {juridica && !consultandoCnpj && !dadosCnpj && !erroDocumento && erroCpfCnpj(registro.cpf_cnpj ?? '') === '' && (registro.cpf_cnpj ?? '').replace(/\D/g, '').length === 14 && (
+                <Button type="button" size="1" variant="soft" onClick={() => void consultarCnpj(registro.cpf_cnpj ?? '')}><Building2 size={13} aria-hidden="true" />Buscar dados na Receita</Button>
+              )}
+              {erroCnpj && <Text size="1" color="red" role="alert">{erroCnpj}</Text>}
               {erroDocumento && (
                 <Text id="contato-cpf-cnpj-erro" size="1" color="red">
                   {erroDocumento}{' '}
@@ -384,6 +450,20 @@ export default function CadastroContato({
             </div>
             </>}
           </div>
+          {juridica && dadosCnpj && (
+            <Callout.Root color={dadosCnpj.situacao && dadosCnpj.situacao !== 'ATIVA' ? 'amber' : 'green'} size="1" role="status" style={{ marginTop: 'var(--space-4)' }}>
+              <Callout.Icon><Building2 size={14} /></Callout.Icon>
+              <Callout.Text>
+                <strong>{primeiraMaiuscula(dadosCnpj.razao_social)}</strong>
+                {dadosCnpj.nome_fantasia ? ` (${primeiraMaiuscula(dadosCnpj.nome_fantasia)})` : ''}
+                {' — '}situação na Receita: <strong>{dadosCnpj.situacao || 'não informada'}</strong>
+                {dadosCnpj.data_situacao ? ` desde ${dataBr(dadosCnpj.data_situacao)}` : ''}.
+                {dadosCnpj.atividade ? ` Atividade: ${dadosCnpj.atividade}.` : ''}
+                {dadosCnpj.abertura ? ` Aberta em ${dataBr(dadosCnpj.abertura)}.` : ''}
+                {' '}Nome, nome fantasia, telefones, e-mail e endereço vazios foram preenchidos; o que você já tinha digitado não foi alterado.
+              </Callout.Text>
+            </Callout.Root>
+          )}
         </Tabs.Content>
         <Tabs.Content value="complementares">
           <Flex direction="column" gap="4" mt="4">
