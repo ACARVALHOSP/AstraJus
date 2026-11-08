@@ -1,6 +1,6 @@
 import { ChevronLeft } from 'lucide-react'
 import { useState } from 'react'
-import { Button, Flex, Heading, Tabs } from '@radix-ui/themes'
+import { Button, Flex, Heading, Skeleton, Tabs } from '@radix-ui/themes'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { formatarNomeExibicao } from '../utils/formatadores'
 import ListaContatos from './contatos/ListaContatos'
@@ -16,13 +16,13 @@ export default function Contatos() {
     const payload = consumirPayload<{ id: string }>('contatos')
     return payload?.id ? { tipo: 'detalhe', clienteId: payload.id } : { tipo: 'lista' }
   })
-  const [nomeDetalhe, setNomeDetalhe] = useState('Carregando…')
+  const [nomeDetalhe, setNomeDetalhe] = useState<string | null>(null)
 
   if (visao.tipo === 'lista') {
     return (
       <ListaContatos
         onAbrir={(id) => {
-          setNomeDetalhe('Carregando…')
+          setNomeDetalhe(null)
           setVisao({ tipo: 'detalhe', clienteId: id })
         }}
         onNovo={() => {
@@ -39,7 +39,7 @@ export default function Contatos() {
         <ChevronLeft size={16} />
         Voltar para clientes
       </Button>
-      <Heading as="h1" size="6">{nomeDetalhe}</Heading>
+      <Heading as="h1" size="6">{nomeDetalhe ?? <Skeleton width="16rem" height="1.75rem" aria-label="Carregando…" />}</Heading>
       <Tabs.Root key={visao.clienteId ?? 'novo'} defaultValue="cadastro">
         <Tabs.List aria-label="Detalhes do contato">
           <Tabs.Trigger value="cadastro">Cadastro</Tabs.Trigger>
