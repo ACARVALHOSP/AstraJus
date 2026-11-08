@@ -5,6 +5,7 @@ import { ariaSort, BotaoOrdenar, EscolherColunas, ordenarLista, useColunas, useO
 import { useAvisos } from '../Avisos'
 import CampoData from '../CampoData'
 import Carregamento from '../Carregamento'
+import BuscaProcesso from '../BuscaProcesso'
 import TabelaResponsiva from '../TabelaResponsiva'
 import AcoesTabela from '../AcoesTabela'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -453,11 +454,8 @@ export default function Atividades() {
           <Dialog.Title>Nova atividade: selecionar processo</Dialog.Title>
           {processos.length ? (
             <div className="form-campo">
-              <label className="form-campo-label" id="nova-processo-rotulo">Processo</label>
-              <Select.Root value={processoNovo || undefined} onValueChange={setProcessoNovo}>
-                <Select.Trigger aria-labelledby="nova-processo-rotulo" placeholder="Selecione um processo" />
-                <Select.Content>{processos.map(p => <Select.Item key={p.id} value={p.id}>{formatarNomeExibicao(p.titulo) || 'Processo sem título'}</Select.Item>)}</Select.Content>
-              </Select.Root>
+              <label className="form-campo-label" htmlFor="nova-processo">Processo</label>
+              <BuscaProcesso id="nova-processo" casos={processos} valor={processoNovo} onChange={setProcessoNovo} />
             </div>
           ) : <Carregamento tipo="texto" descricao="Carregando processos…" />}
           <Flex gap="3" mt="4" justify="end">

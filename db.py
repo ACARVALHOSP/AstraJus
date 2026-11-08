@@ -16,6 +16,7 @@ ficar com um handle do arquivo .db aberto indefinidamente, que no Windows impedi
 remover/renomear o arquivo enquanto o processo estivesse de pé.
 """
 
+import calendar
 import json
 import sqlite3
 import threading
@@ -568,6 +569,13 @@ def _migrar_colunas_lancamentos(conexao: sqlite3.Connection) -> None:
             conexao.execute("ALTER TABLE lancamentos_financeiros ADD COLUMN pago INTEGER NOT NULL DEFAULT 0")
         if "asaas_cobranca_id" not in colunas:
             conexao.execute("ALTER TABLE lancamentos_financeiros ADD COLUMN asaas_cobranca_id TEXT")
+        # Financeiro jurídico: data da baixa, grupo de parcelas, custas reembolsáveis e repasses.
+        for coluna, definicao in (
+            ("pago_em", "TEXT"), ("grupo_parcelas", "TEXT"), ("parcela_numero", "INTEGER"), ("parcela_total", "INTEGER"),
+            ("reembolsavel", "INTEGER NOT NULL DEFAULT 0"), ("favorecido", "TEXT"), ("origem_id", "TEXT"),
+        ):
+            if coluna not in colunas:
+                conexao.execute(f"ALTER TABLE lancamentos_financeiros ADD COLUMN {coluna} {definicao}")
 
 
 def _migrar_colunas_caso_atividades(conexao: sqlite3.Connection) -> None:
@@ -1769,27 +1777,58 @@ class RegistroClientesCasos:
 
     _COLUNAS_LANCAMENTO = (
         "id, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, "
-        "criado_em, direcao, pago, asaas_cobranca_id"
+        "criado_em, direcao, pago, asaas_cobranca_id, pago_em, grupo_parcelas, parcela_numero, parcela_total, "
+        "reembolsavel, favorecido, origem_id"
     )
+    TIPOS_LANCAMENTO = ("HONORARIO", "EXITO", "CUSTAS", "REPASSE", "OUTRO")
 
     def criar_lancamento(
         self, tipo: str, vencimento: str, valor: float, descricao: str, recorrente: bool,
         caso_id: str, cliente_id: str, responsavel: str, agora, direcao: str = "RECEITA",
+        *, parcelas: int = 1, reembolsavel: bool = False, favorecido: str | None = None,
+        origem_id: str | None = None,
     ) -> dict:
-        novo_id = uuid.uuid4().hex
+        """Cria um lançamento. Com `parcelas` > 1 cria o grupo inteiro numa transação (valor total
+        dividido em centavos, sobra na última; vencimentos mensais) e devolve a primeira parcela,
+        com a lista completa em "parcelas"."""
+        if tipo not in self.TIPOS_LANCAMENTO:
+            raise ValueError("Tipo de lançamento inválido.")
+        if not 1 <= parcelas <= 120:
+            raise ValueError("Informe de 1 a 120 parcelas.")
+        total_centavos = round(valor * 100)
+        base = total_centavos // parcelas
+        valores = [base] * parcelas
+        valores[-1] += total_centavos - base * parcelas
+        grupo = uuid.uuid4().hex if parcelas > 1 else None
         criado_em = agora().isoformat()
+        ids = []
         with self._trava, _abrir(self.caminho) as conexao, conexao:
-            conexao.execute(
-                "INSERT INTO lancamentos_financeiros "
-                "(id, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, criado_em, direcao) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (novo_id, tipo, vencimento, valor, descricao, int(recorrente), caso_id, cliente_id, responsavel, criado_em, direcao),
-            )
+            if origem_id and not conexao.execute("SELECT 1 FROM lancamentos_financeiros WHERE id = ?", (origem_id,)).fetchone():
+                raise ValueError("Lançamento de origem do repasse não encontrado.")
+            for i, centavos in enumerate(valores):
+                novo_id = uuid.uuid4().hex
+                ids.append(novo_id)
+                conexao.execute(
+                    "INSERT INTO lancamentos_financeiros "
+                    "(id, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, criado_em, direcao, "
+                    "grupo_parcelas, parcela_numero, parcela_total, reembolsavel, favorecido, origem_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (novo_id, tipo, _somar_meses_iso(vencimento, i), centavos / 100,
+                     descricao if parcelas == 1 else f"{descricao} (parcela {i + 1}/{parcelas})",
+                     int(recorrente), caso_id, cliente_id, responsavel, criado_em, direcao,
+                     grupo, i + 1 if grupo else None, parcelas if grupo else None,
+                     int(reembolsavel), favorecido, origem_id),
+                )
         with _abrir(self.caminho) as conexao:
-            linha = conexao.execute(
-                f"SELECT {self._COLUNAS_LANCAMENTO} FROM lancamentos_financeiros WHERE id = ?", (novo_id,)
-            ).fetchone()
-        return _linha_lancamento(linha)
+            linhas = conexao.execute(
+                f"SELECT {self._COLUNAS_LANCAMENTO} FROM lancamentos_financeiros WHERE id IN ({','.join('?' * len(ids))}) "
+                "ORDER BY vencimento, parcela_numero", ids,
+            ).fetchall()
+        criados = [_linha_lancamento(linha) for linha in linhas]
+        resultado = dict(criados[0])
+        if parcelas > 1:
+            resultado["parcelas"] = criados
+        return resultado
 
     def listar_lancamentos(self) -> list[dict]:
         with _abrir(self.caminho) as conexao:
@@ -1809,10 +1848,12 @@ class RegistroClientesCasos:
             return None
         return _linha_lancamento(linha)
 
-    def atualizar_lancamento_pago(self, lancamento_id: str, pago: bool) -> dict | None:
+    def atualizar_lancamento_pago(self, lancamento_id: str, pago: bool, pago_em: str | None = None) -> dict | None:
+        """Marca como pago/recebido (guardando a data da baixa; hoje, se não informada) ou volta para em aberto."""
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             cursor = conexao.execute(
-                "UPDATE lancamentos_financeiros SET pago = ? WHERE id = ?", (int(pago), lancamento_id),
+                "UPDATE lancamentos_financeiros SET pago = ?, pago_em = ? WHERE id = ?",
+                (int(pago), (pago_em or date.today().isoformat()) if pago else None, lancamento_id),
             )
             if cursor.rowcount == 0:
                 return None
@@ -2169,13 +2210,26 @@ def _limpar_lista_dicts(itens: list[dict] | None, campos: tuple, campo_obrigator
 
 
 def _linha_lancamento(linha) -> dict:
-    id_, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, criado_em, direcao, pago, asaas_cobranca_id = linha
+    (id_, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, criado_em, direcao, pago,
+     asaas_cobranca_id, pago_em, grupo_parcelas, parcela_numero, parcela_total, reembolsavel, favorecido, origem_id) = linha
     return {
         "id": id_, "tipo": tipo, "vencimento": vencimento, "valor": valor,
         "descricao": descricao, "recorrente": bool(recorrente), "caso_id": caso_id,
         "cliente_id": cliente_id, "responsavel": responsavel, "criado_em": criado_em,
         "direcao": direcao, "pago": bool(pago), "asaas_cobranca_id": asaas_cobranca_id,
+        "pago_em": pago_em, "grupo_parcelas": grupo_parcelas, "parcela_numero": parcela_numero,
+        "parcela_total": parcela_total, "reembolsavel": bool(reembolsavel), "favorecido": favorecido,
+        "origem_id": origem_id,
     }
+
+
+def _somar_meses_iso(data_iso: str, meses: int) -> str:
+    """Soma meses a AAAA-MM-DD, preso ao último dia do mês quando o dia não existe nele."""
+    ano, mes, dia = (int(p) for p in data_iso[:10].split("-"))
+    total = mes - 1 + meses
+    ano += total // 12
+    mes = total % 12 + 1
+    return f"{ano:04d}-{mes:02d}-{min(dia, calendar.monthrange(ano, mes)[1]):02d}"
 
 
 def _linha_caso(linha) -> dict:

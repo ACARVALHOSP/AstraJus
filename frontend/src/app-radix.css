@@ -482,3 +482,6 @@ html, body { margin: 0; padding: 0; }
 .aj-passo--atual { font-weight: 600; }
 .aj-passo--pendente { color: var(--gray-10); }
 .aj-passo--pendente .aj-passo-icone::before { content: ""; inline-size: 8px; block-size: 8px; border-radius: 50%; border: 1.5px solid var(--gray-8); }
+
+.busca-resultados { max-block-size: 14rem; overflow-y: auto; border: 1px solid var(--gray-a6); border-radius: var(--radius-3); padding: 0.25rem; }
+.aj-busca-escolhido { padding: 0.5rem 0.75rem; border: 1px solid var(--accent-a6); background: var(--accent-a3); border-radius: var(--radius-3); }

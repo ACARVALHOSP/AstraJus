@@ -7,7 +7,7 @@ import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, ChevronLeft, ChevronRight, Info } from 'lucide-react'
-import { AlertDialog, Badge, Button, Callout, Checkbox, Flex, IconButton, Select, Text, TextField } from '@radix-ui/themes'
+import { AlertDialog, Badge, Button, Callout, Checkbox, Flex, IconButton, Select, Tabs, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { ErroMCP } from '../api/mcpClient'
@@ -15,7 +15,9 @@ import { buscarJson, enviarJson } from '../api/rest'
 import { formatarMoeda, formatarNomeExibicao } from '../utils/formatadores'
 import { useEstreita } from '../utils/useEstreita'
 import { useAvisos } from '../Avisos'
-import NovoLancamentoModal from './financeiro/NovoLancamentoModal'
+import NovoLancamentoModal, { ROTULO_TIPO_LANCAMENTO, type Predefinido, type TipoLancamento } from './financeiro/NovoLancamentoModal'
+import PorProcesso from './financeiro/PorProcesso'
+import Inadimplencia from './financeiro/Inadimplencia'
 import './financeiro/financeiro.scss'
 
 type Lancamento = {
@@ -30,6 +32,13 @@ type Lancamento = {
   direcao: 'DESPESA' | 'RECEITA'
   pago: boolean
   asaas_cobranca_id?: string
+  tipo?: TipoLancamento
+  pago_em?: string | null
+  parcela_numero?: number | null
+  parcela_total?: number | null
+  reembolsavel?: boolean
+  favorecido?: string | null
+  origem_id?: string | null
 }
 type Cliente = { id: string; nome?: string }
 type Caso = { id: string; titulo?: string }
@@ -63,6 +72,7 @@ function situacaoDe(l: Lancamento, hoje: string): Situacao {
 function relativo(l: Lancamento, hoje: string) {
   if (!l.vencimento) return ''
   const dias = diasEntre(hoje, l.vencimento.slice(0, 10))
+  if (l.pago && l.pago_em) return `${l.direcao === 'RECEITA' ? 'recebido' : 'pago'} em ${dataCurta(l.pago_em)}`
   if (l.pago) return dias === -1 ? 'ontem' : dias < 0 ? `há ${-dias} dias` : dias === 0 ? 'hoje' : dias === 1 ? 'amanhã' : `em ${dias} dias`
   if (dias < -1) return `vencido há ${-dias} dias`
   if (dias === -1) return 'venceu ontem'
@@ -80,7 +90,24 @@ function partesDescricao(descricao: string) {
   return m ? { texto: descricao.replace(RE_PARCELA, ''), parcela: `${m[1]}/${m[2]}` } : { texto: descricao, parcela: '' }
 }
 
+// Lançamentos, situação por processo e inadimplência: três visões do mesmo financeiro.
 export default function Financeiro() {
+  const [aba, setAba] = useState<'lancamentos' | 'processos' | 'inadimplencia'>('lancamentos')
+  const abas = (
+    <Tabs.Root value={aba} onValueChange={(v) => setAba(v as typeof aba)}>
+      <Tabs.List aria-label="Financeiro">
+        <Tabs.Trigger value="lancamentos">Lançamentos</Tabs.Trigger>
+        <Tabs.Trigger value="processos">Por processo</Tabs.Trigger>
+        <Tabs.Trigger value="inadimplencia">Inadimplência</Tabs.Trigger>
+      </Tabs.List>
+    </Tabs.Root>
+  )
+  if (aba === 'processos') return <PorProcesso abas={abas} />
+  if (aba === 'inadimplencia') return <Inadimplencia abas={abas} />
+  return <ListaLancamentos abas={abas} />
+}
+
+function ListaLancamentos({ abas }: { abas: React.ReactNode }) {
   const { cliente } = useCliente()
   const { irPara } = useNavegacao()
   const estreita = useEstreita()
@@ -103,6 +130,8 @@ export default function Financeiro() {
   const [paraExcluir, setParaExcluir] = useState<Lancamento | null>(null)
   const [excluindo, setExcluindo] = useState(false)
   const [modalNovoAberto, setModalNovoAberto] = useState(false)
+  const [predefinido, setPredefinido] = useState<Predefinido | null>(null)
+  const [tipoFiltro, setTipoFiltro] = useState('')
 
   const carregar = useCallback(async () => {
     setCarregando(true)
@@ -140,10 +169,11 @@ export default function Financeiro() {
     const termo = busca.trim().toLocaleLowerCase('pt-BR')
     return doPeriodo.filter(l =>
       (!direcao || l.direcao === direcao) &&
+      (!tipoFiltro || (l.tipo ?? 'HONORARIO') === tipoFiltro) &&
       (!clienteFiltro || l.cliente_id === clienteFiltro) &&
       (!responsavelFiltro || l.responsavel === responsavelFiltro) &&
       (!termo || `${l.descricao} ${nomeCliente(l.cliente_id)} ${tituloCaso(l.caso_id)}`.toLocaleLowerCase('pt-BR').includes(termo)))
-  }, [doPeriodo, direcao, clienteFiltro, responsavelFiltro, busca, nomeCliente, tituloCaso])
+  }, [doPeriodo, direcao, tipoFiltro, clienteFiltro, responsavelFiltro, busca, nomeCliente, tituloCaso])
   const { ordem, alternar: alternarOrdem } = useOrdenacao('lancamentos', { campo: 'vencimento', direcao: 'asc' })
   const colunas = useColunas('lancamentos', [{ chave: 'cliente', rotulo: 'Cliente' }, { chave: 'situacao', rotulo: 'Situação' }])
   const ORDEM_SITUACAO: Record<Situacao, number> = { vencido: 0, aberto: 1, quitado: 2 }
@@ -176,15 +206,16 @@ export default function Financeiro() {
     return { receitas, despesas, saldo: receitas - despesas }
   }, [visiveis])
 
+  const reembolsadas = useMemo(() => new Set((lancamentos ?? []).filter(l => l.direcao === 'RECEITA' && l.origem_id).map(l => l.origem_id as string)), [lancamentos])
   const responsaveis = useMemo(() => [...new Set((lancamentos ?? []).map(l => l.responsavel).filter((r): r is string => Boolean(r)))].sort(), [lancamentos])
   const clientesComLancamento = useMemo(() => {
     const ids = new Set((lancamentos ?? []).map(l => l.cliente_id))
     return clientes.filter(c => ids.has(c.id)).sort((a, b) => (a.nome ?? '').localeCompare(b.nome ?? '', 'pt-BR'))
   }, [lancamentos, clientes])
-  const filtrosAtivos = Boolean(direcao || clienteFiltro || responsavelFiltro || busca)
+  const filtrosAtivos = Boolean(direcao || tipoFiltro || clienteFiltro || responsavelFiltro || busca)
   const lote = selecionados.size > 0
   // 20 por página; volta para a 1ª quando mês, atalho ou filtros mudam. Os totais somam a lista toda.
-  const chavePagina = [mes, todosMeses, atalho, direcao, clienteFiltro, responsavelFiltro, busca, ordem.campo, ordem.direcao].join('|')
+  const chavePagina = [mes, todosMeses, atalho, direcao, tipoFiltro, clienteFiltro, responsavelFiltro, busca, ordem.campo, ordem.direcao].join('|')
   const [estadoPagina, setEstadoPagina] = useState({ chave: chavePagina, pagina: 1 })
   const pagina = paginaPara(estadoPagina, chavePagina)
   const naPagina = useMemo(() => visiveis.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA), [visiveis, pagina])
@@ -222,6 +253,15 @@ export default function Financeiro() {
       avisar({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Falha ao gerar cobrança.' })
     }
   }
+  async function cobrarReembolso(l: Lancamento) {
+    try {
+      await enviarJson(cliente, `/lancamentos/${l.id}/reembolso`, {})
+      avisar({ texto: 'Reembolso lançado como receita a receber (vence em 7 dias).' })
+      await carregar()
+    } catch (e) {
+      avisar({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Falha ao cobrar o reembolso.' })
+    }
+  }
   async function confirmarExclusao() {
     if (!paraExcluir) return
     setExcluindo(true)
@@ -245,6 +285,10 @@ export default function Financeiro() {
   }
   function menu(l: Lancamento) {
     return <AcoesTabela rotulo={l.descricao} acoes={[
+      ...(l.tipo === 'CUSTAS' && l.direcao === 'DESPESA' && l.reembolsavel && !reembolsadas.has(l.id)
+        ? [{ texto: 'Cobrar reembolso do cliente', desabilitada: operando, executar: () => cobrarReembolso(l) }] : []),
+      ...(l.direcao === 'RECEITA' && l.pago && l.tipo !== 'CUSTAS' && l.cliente_id && l.caso_id
+        ? [{ texto: 'Registrar repasse', executar: () => { setPredefinido({ tipo: 'REPASSE', clienteId: l.cliente_id!, casoId: l.caso_id!, valor: l.valor, descricao: `Repasse: ${partesDescricao(l.descricao).texto}`, origemId: l.id }); setModalNovoAberto(true) } }] : []),
       ...(l.direcao === 'RECEITA' && !l.asaas_cobranca_id && !l.pago ? [{ texto: 'Gerar cobrança (boleto/Pix)', desabilitada: operando, executar: () => gerarCobranca(l) }] : []),
       ...(l.asaas_cobranca_id ? [{ texto: 'Ver cobrança em Pagamentos', executar: () => irPara('pagamentos') }] : []),
       ...(l.caso_id ? [{ texto: 'Abrir processo', executar: () => irPara('casos', { id: l.caso_id }) }] : []),
@@ -273,9 +317,12 @@ export default function Financeiro() {
       <>
         <Flex gap="2" align="center" wrap="wrap">
           <span className="fin-descricao">{texto}</span>
+          {l.tipo && l.tipo !== 'HONORARIO' && l.tipo !== 'OUTRO' && <Badge color={l.tipo === 'REPASSE' ? 'violet' : l.tipo === 'CUSTAS' ? 'amber' : 'blue'} variant="soft">{l.tipo === 'EXITO' ? 'Êxito' : l.tipo === 'CUSTAS' ? (l.direcao === 'RECEITA' ? 'Reembolso' : 'Custas') : 'Repasse'}</Badge>}
+          {l.reembolsavel && <Badge color="amber" variant="outline">{reembolsadas.has(l.id) ? 'Reembolso cobrado' : 'Reembolsável'}</Badge>}
           {parcela && <Badge color="gray" variant="soft">Parcela {parcela}</Badge>}
           {l.recorrente && <Badge color="gray" variant="soft">Mensal</Badge>}
         </Flex>
+        {l.favorecido && <div className="fin-secundario">Repasse a {l.favorecido}</div>}
         {processo
           ? <button type="button" className="fin-link" onClick={() => irPara('casos', { id: l.caso_id })}>{processo}</button>
           : <div className="fin-secundario">Sem processo vinculado</div>}
@@ -295,8 +342,9 @@ export default function Financeiro() {
   return (
     <Flex direction="column" gap="5">
       <CabecalhoPagina
-        titulo="Lançamentos"
-        descricao="Receitas e despesas do escritório vinculadas a clientes e processos."
+        titulo="Financeiro"
+        abas={abas}
+        descricao="Honorários, custas, repasses e demais valores do escritório, por cliente e processo."
         acoes={<>
           <Flex align="center" className="fin-mes" role="group" aria-label="Mês">
             <IconButton variant="ghost" color="gray" aria-label="Mês anterior" disabled={todosMeses} onClick={() => { setMes(m => mesSomado(m, -1)); setSelecionados(new Set()) }}><ChevronLeft size={16} /></IconButton>
@@ -305,7 +353,7 @@ export default function Financeiro() {
           </Flex>
           <Button size="2" variant={todosMeses ? 'soft' : 'outline'} color="gray" aria-pressed={todosMeses} onClick={() => { setTodosMeses(v => !v); setSelecionados(new Set()) }}>Todos os meses</Button>
           {!todosMeses && mes !== hoje.slice(0, 7) && <Button size="2" variant="soft" color="gray" onClick={() => setMes(hoje.slice(0, 7))}>Mês atual</Button>}
-          <Button size="2" onClick={() => setModalNovoAberto(true)}>Novo lançamento</Button>
+          <Button size="2" onClick={() => { setPredefinido(null); setModalNovoAberto(true) }}>Novo lançamento</Button>
         </>}
       />
 
@@ -329,7 +377,7 @@ export default function Financeiro() {
         })}
       </div>
 
-      <LinhaFiltros ativos={[direcao, clienteFiltro, responsavelFiltro].filter(Boolean).length}>
+      <LinhaFiltros ativos={[direcao, tipoFiltro, clienteFiltro, responsavelFiltro].filter(Boolean).length}>
         <div className="form-campo aj-filtros-busca">
           <label className="form-campo-label" htmlFor="fin-busca">Buscar</label>
           <TextField.Root id="fin-busca" type="search" placeholder="Descrição, cliente ou processo" autoComplete="off" value={busca} onChange={e => setBusca(e.target.value)} />
@@ -342,6 +390,16 @@ export default function Financeiro() {
               <Select.Item value="__todos__">Receitas e despesas</Select.Item>
               <Select.Item value="RECEITA">Só receitas</Select.Item>
               <Select.Item value="DESPESA">Só despesas</Select.Item>
+            </Select.Content>
+          </Select.Root>
+        </div>
+        <div className="form-campo">
+          <label className="form-campo-label" id="fin-categoria-rotulo">Categoria</label>
+          <Select.Root value={tipoFiltro || '__todos__'} onValueChange={v => setTipoFiltro(v === '__todos__' ? '' : v)}>
+            <Select.Trigger aria-labelledby="fin-categoria-rotulo" />
+            <Select.Content>
+              <Select.Item value="__todos__">Todas as categorias</Select.Item>
+              {(Object.keys(ROTULO_TIPO_LANCAMENTO) as TipoLancamento[]).map(t => <Select.Item key={t} value={t}>{ROTULO_TIPO_LANCAMENTO[t]}</Select.Item>)}
             </Select.Content>
           </Select.Root>
         </div>
@@ -365,7 +423,7 @@ export default function Financeiro() {
             </Select.Content>
           </Select.Root>
         </div>
-        {filtrosAtivos && <Button size="2" variant="soft" color="gray" onClick={() => { setDirecao(''); setClienteFiltro(''); setResponsavelFiltro(''); setBusca('') }}>Limpar filtros</Button>}
+        {filtrosAtivos && <Button size="2" variant="soft" color="gray" onClick={() => { setDirecao(''); setTipoFiltro(''); setClienteFiltro(''); setResponsavelFiltro(''); setBusca('') }}>Limpar filtros</Button>}
       </LinhaFiltros>
       {!estreita && <Flex justify="end" mt="-3"><EscolherColunas colunas={colunas} /></Flex>}
 
@@ -482,10 +540,12 @@ export default function Financeiro() {
       </AlertDialog.Root>
       <NovoLancamentoModal
         open={modalNovoAberto}
-        onClose={() => setModalNovoAberto(false)}
+        predefinido={predefinido}
+        onClose={() => { setModalNovoAberto(false); setPredefinido(null) }}
         onSalvo={() => {
           setModalNovoAberto(false)
-          avisar({ texto: 'Lançamento criado.' })
+          setPredefinido(null)
+          avisar({ texto: predefinido?.tipo === 'REPASSE' ? 'Repasse registrado.' : 'Lançamento criado.' })
           void carregar()
         }}
       />
