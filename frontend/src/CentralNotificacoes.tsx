@@ -34,7 +34,7 @@ function PainelNotificacoes({ cliente }: { cliente: ClienteMCP | null }) {
     if (destino.tipo === 'publicacoes_monitoradas') irPara('publicacoes-oab')
     else irPara('casos', {
       id: destino.caso_id,
-      aba: destino.tipo === 'atividade' ? 'atividades' : 'publicacoes',
+      aba: destino.tipo === 'atividade' ? 'atividades' : destino.tipo === 'movimentos_processo' ? 'movimentacoes' : 'publicacoes',
       atividadeId: destino.tipo === 'atividade' ? destino.atividade_id : undefined,
     })
   }
@@ -98,7 +98,7 @@ function PainelNotificacoes({ cliente }: { cliente: ClienteMCP | null }) {
                           <time dateTime={item.criado_em}>{new Date(item.criado_em).toLocaleString('pt-BR')}</time> · {item.lida_em ? 'Lida' : 'Não lida'}
                         </Text>
                         <Flex gap="2">
-                          <Button variant="ghost" size="1" disabled={ocupado} onClick={() => abrirDestino(item)}>{item.destino.tipo === 'atividade' ? 'Abrir atividade' : 'Abrir publicações'}</Button>
+                          <Button variant="ghost" size="1" disabled={ocupado} onClick={() => abrirDestino(item)}>{item.destino.tipo === 'atividade' ? 'Abrir atividade' : item.destino.tipo === 'movimentos_processo' ? 'Abrir movimentações' : 'Abrir publicações'}</Button>
                           {!item.lida_em && <Button variant="ghost" size="1" disabled={ocupado} onClick={() => marcarLida(item)}>Marcar como lida</Button>}
                         </Flex>
                       </Flex>
