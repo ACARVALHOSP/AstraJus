@@ -42,6 +42,7 @@ from zoneinfo import ZoneInfo
 
 import asaas_integracao
 import agenda_atividades
+import financeiro_juridico
 import notificacoes
 import monitoramento_runtime
 import db as _db
@@ -4329,6 +4330,12 @@ class _AutenticacaoBearer:
         if caminho == "/lancamentos" and self.gestao is not None:
             await self._lancamentos(scope, receive, send)
             return
+        if caminho == "/lancamentos/resumo" and self.gestao is not None:
+            await self._financeiro_resumo(scope, send)
+            return
+        if caminho.startswith("/lancamentos/") and caminho.endswith("/reembolso") and self.gestao is not None:
+            await self._lancamento_reembolso(scope, receive, send, caminho[len("/lancamentos/"):-len("/reembolso")])
+            return
         if caminho.startswith("/lancamentos/") and caminho.endswith("/cobranca") and self.gestao is not None:
             lancamento_id = caminho[len("/lancamentos/"):-len("/cobranca")].rstrip("/")
             await self._lancamento_cobranca(scope, receive, send, lancamento_id)
@@ -5176,16 +5183,89 @@ class _AutenticacaoBearer:
         if self.gestao.obter_cliente(cliente_id) is None:
             await _json(send, 400, _erro("Selecione um cliente válido."))
             return
-        direcao = (dados.get("direcao") or "RECEITA").strip().upper()
+        tipo = (dados.get("tipo") or "HONORARIO").strip().upper()
+        if tipo not in self.gestao.TIPOS_LANCAMENTO:
+            await _json(send, 400, _erro("Tipo inválido (use " + ", ".join(self.gestao.TIPOS_LANCAMENTO) + ")."))
+            return
+        # Custas e repasses são saídas; honorários, receitas. "Outro" aceita as duas direções.
+        padrao = {"CUSTAS": "DESPESA", "REPASSE": "DESPESA"}.get(tipo, "RECEITA")
+        direcao = (dados.get("direcao") or padrao).strip().upper()
         if direcao not in ("RECEITA", "DESPESA"):
             await _json(send, 400, _erro("Direção inválida (use RECEITA ou DESPESA)."))
             return
-        lancamento = self.gestao.criar_lancamento(
-            tipo="HONORARIO", vencimento=vencimento, valor=valor, descricao=descricao,
-            recorrente=bool(dados.get("recorrente")), caso_id=caso_id, cliente_id=cliente_id,
-            responsavel=responsavel, agora=lambda: datetime.now(timezone.utc), direcao=direcao,
-        )
+        if tipo in ("REPASSE",) and direcao != "DESPESA" or tipo in ("HONORARIO", "EXITO") and direcao != "RECEITA":
+            await _json(send, 400, _erro("Esse tipo de lançamento não aceita essa direção."))
+            return
+        try:
+            parcelas = int(dados.get("parcelas") or 1)
+        except (TypeError, ValueError):
+            await _json(send, 400, _erro("Informe o número de parcelas."))
+            return
+        favorecido = (dados.get("favorecido") or "").strip()[:200] or None
+        if tipo == "REPASSE" and not favorecido:
+            await _json(send, 400, _erro("Informe a quem o repasse será feito."))
+            return
+        try:
+            lancamento = self.gestao.criar_lancamento(
+                tipo=tipo, vencimento=vencimento, valor=valor, descricao=descricao,
+                recorrente=bool(dados.get("recorrente")), caso_id=caso_id, cliente_id=cliente_id,
+                responsavel=responsavel, agora=lambda: datetime.now(timezone.utc), direcao=direcao,
+                parcelas=parcelas, reembolsavel=bool(dados.get("reembolsavel")) and tipo == "CUSTAS",
+                favorecido=favorecido, origem_id=(dados.get("origem_id") or "").strip() or None,
+            )
+        except ValueError as e:
+            await _json(send, 400, _erro(str(e)))
+            return
         await _json(send, 201, lancamento)
+
+    async def _financeiro_resumo(self, scope, send) -> None:
+        """GET /lancamentos/resumo[?hoje=AAAA-MM-DD]: situação por processo (honorários, custas,
+        repasses, saldo) e inadimplência (por faixa de atraso e por cliente)."""
+        if scope.get("method") != "GET":
+            await _responder(send, 405, b"Metodo nao permitido")
+            return
+        hoje = (dict(_query(scope)).get("hoje") or "").strip() or datetime.now(timezone.utc).date().isoformat()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", hoje):
+            await _json(send, 400, _erro("Data inválida (AAAA-MM-DD)."))
+            return
+        lancamentos = self.gestao.listar_lancamentos()
+        await _json(send, 200, {
+            "hoje": hoje, "processos": financeiro_juridico.por_processo(lancamentos, hoje),
+            "inadimplencia": financeiro_juridico.inadimplencia(lancamentos, hoje),
+        })
+
+    async def _lancamento_reembolso(self, scope, receive, send, lancamento_id: str) -> None:
+        """POST /lancamentos/<id>/reembolso: cobra do cliente o reembolso de uma custa reembolsável
+        (cria a receita vinculada à custa; uma custa só gera um reembolso)."""
+        if scope.get("method") != "POST":
+            await _responder(send, 405, b"Metodo nao permitido")
+            return
+        custa = self.gestao.obter_lancamento(lancamento_id)
+        if custa is None:
+            await _json(send, 404, _erro("Lançamento não encontrado."))
+            return
+        if custa["tipo"] != "CUSTAS" or custa["direcao"] != "DESPESA" or not custa["reembolsavel"]:
+            await _json(send, 400, _erro("Só custas marcadas como reembolsáveis geram cobrança de reembolso."))
+            return
+        if any(l.get("origem_id") == custa["id"] and l["direcao"] == "RECEITA" for l in self.gestao.listar_lancamentos()):
+            await _json(send, 409, _erro("O reembolso desta custa já foi cobrado."))
+            return
+        corpo = await _ler_corpo(receive)
+        try:
+            dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            await _json(send, 400, _erro("JSON inválido."))
+            return
+        vencimento = (dados.get("vencimento") or (datetime.now(timezone.utc).date() + timedelta(days=7)).isoformat()).strip()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", vencimento):
+            await _json(send, 400, _erro("Informe o vencimento (AAAA-MM-DD)."))
+            return
+        reembolso = self.gestao.criar_lancamento(
+            tipo="CUSTAS", vencimento=vencimento, valor=custa["valor"], descricao=f"Reembolso de custas: {custa['descricao']}",
+            recorrente=False, caso_id=custa["caso_id"], cliente_id=custa["cliente_id"], responsavel=custa["responsavel"],
+            agora=lambda: datetime.now(timezone.utc), direcao="RECEITA", origem_id=custa["id"],
+        )
+        await _json(send, 201, reembolso)
 
     async def _lancamento_detalhe(self, scope, receive, send, lancamento_id: str) -> None:
         """DELETE /lancamentos/<id>: exclui um lançamento. PATCH /lancamentos/<id>: marca/
@@ -5207,7 +5287,11 @@ class _AutenticacaoBearer:
         except (ValueError, UnicodeDecodeError):
             await _json(send, 400, _erro("JSON inválido."))
             return
-        lancamento = self.gestao.atualizar_lancamento_pago(lancamento_id, bool(dados.get("pago")))
+        pago_em = (dados.get("pago_em") or "").strip() or None
+        if pago_em and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", pago_em):
+            await _json(send, 400, _erro("Data do pagamento inválida (AAAA-MM-DD)."))
+            return
+        lancamento = self.gestao.atualizar_lancamento_pago(lancamento_id, bool(dados.get("pago")), pago_em)
         if lancamento is None:
             await _json(send, 404, _erro("Lançamento não encontrado."))
             return
