@@ -1,0 +1,67 @@
+// Agenda: calendário em mês, semana e dia, com a lista do dia escolhido embaixo.
+.aj-agenda { min-inline-size: 0; display: flex; flex-direction: column; gap: var(--space-4); }
+.aj-ag-titulo::first-letter { text-transform: uppercase; }
+.aj-ag-titulo { flex: 1 1 12rem; margin: 0; }
+
+.aj-ag-grade { border: 1px solid var(--gray-a6); border-radius: var(--radius-3); overflow: hidden; background: var(--color-panel-solid); }
+.aj-ag-semana-cab, .aj-ag-dias { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.aj-ag-semana-cab {
+  background: var(--gray-2); border-bottom: 1px solid var(--gray-a6);
+  div { padding: 0.375rem; text-align: center; font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--gray-11); }
+}
+.aj-ag-dia {
+  min-block-size: 6.5rem; padding: 0.25rem; display: flex; flex-direction: column; gap: 2px; cursor: pointer;
+  border-inline-end: 1px solid var(--gray-a4); border-block-end: 1px solid var(--gray-a4);
+  &:nth-child(7n) { border-inline-end: 0; }
+  &:hover { background: var(--gray-a2); }
+  &:focus-visible { outline: 2px solid var(--accent-8); outline-offset: -2px; }
+}
+.aj-ag-grade--semana .aj-ag-dia { min-block-size: 14rem; }
+.aj-ag-dia--fora { background: var(--gray-a2); .aj-ag-num { color: var(--gray-9); } }
+.aj-ag-dia--sel { background: var(--accent-a3); }
+.aj-ag-num {
+  align-self: flex-start; min-inline-size: 1.5rem; text-align: center; font-size: 13px; font-weight: 600;
+  font-variant-numeric: tabular-nums; border-radius: 999px; padding: 1px 4px;
+}
+.aj-ag-dia--hoje .aj-ag-num { background: var(--accent-9); color: var(--accent-contrast); }
+
+.aj-ag-chip {
+  display: block; inline-size: 100%; text-align: start; font: inherit; font-size: 12px; line-height: 1.3; cursor: pointer;
+  padding: 2px 5px; border-radius: var(--radius-1); border: 0; border-inline-start: 3px solid var(--gray-9);
+  background: var(--gray-a3); color: var(--gray-12); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  b { font-variant-numeric: tabular-nums; }
+  &:hover { filter: brightness(0.95); }
+  &:focus-visible { outline: 2px solid var(--accent-8); }
+}
+.aj-ag-chip--red { border-inline-start-color: var(--red-9); background: var(--red-a3); }
+.aj-ag-chip--violet { border-inline-start-color: var(--violet-9); background: var(--violet-a3); }
+.aj-ag-chip--blue { border-inline-start-color: var(--blue-9); background: var(--blue-a3); }
+.aj-ag-chip--feita { opacity: 0.55; text-decoration: line-through; }
+.aj-ag-mais { font: inherit; font-size: 12px; color: var(--accent-11); background: none; border: 0; padding: 0 5px; text-align: start; cursor: pointer; }
+
+.aj-ag-pontos { display: flex; gap: 3px; flex-wrap: wrap; padding-inline: 2px; }
+.aj-ag-ponto { inline-size: 7px; block-size: 7px; border-radius: 50%; background: var(--gray-9); }
+.aj-ag-ponto--red { background: var(--red-9); }
+.aj-ag-ponto--violet { background: var(--violet-9); }
+.aj-ag-ponto--blue { background: var(--blue-9); }
+
+.aj-ag-lista {
+  border: 1px solid var(--gray-a6); border-radius: var(--radius-3); padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2);
+  ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+}
+.aj-ag-linha {
+  display: grid; grid-template-columns: 4.5rem minmax(0, 1fr) auto; gap: var(--space-3); align-items: start;
+  padding-block: var(--space-2); border-block-start: 1px solid var(--gray-a4);
+}
+.aj-ag-hora { font-weight: 600; font-variant-numeric: tabular-nums; font-size: 14px; }
+.aj-ag-conteudo { display: flex; flex-direction: column; gap: 4px; min-inline-size: 0; }
+.aj-ag-titulo-item {
+  font: inherit; font-weight: 500; color: var(--accent-11); background: none; border: 0; padding: 0; text-align: start; cursor: pointer; line-height: 1.4;
+  &:hover { text-decoration: underline; }
+}
+
+@media (max-width: 672px) {
+  .aj-ag-dia { min-block-size: 3.5rem; align-items: center; }
+  .aj-ag-grade--semana .aj-ag-dia { min-block-size: 4rem; }
+  .aj-ag-linha { grid-template-columns: 3.5rem minmax(0, 1fr); .aj-ag-linha > button { grid-column: 2; justify-self: start; } }
+}

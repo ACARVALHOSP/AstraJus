@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Callout, Flex, Popover, SegmentedControl, Text, Theme } from '@radix-ui/themes'
 import {
-  Scale, Users, CalendarCheck, Search, Gavel, Briefcase,
+  Scale, Users, CalendarCheck, CalendarDays, Search, Gavel, Briefcase,
   Newspaper, BarChart2, BookOpen, History, FileSearch, Receipt, KeyRound,
   Settings, Link, Wallet, CreditCard, ShieldCheck, Menu, X,
   Palette, ChevronDown, ChevronRight, Check, House,
@@ -27,6 +27,7 @@ import Administracao from './routes/Administracao'
 import Financeiro from './routes/Financeiro'
 import Pagamentos from './routes/Pagamentos'
 import Atividades from './routes/Atividades'
+import Agenda from './routes/Agenda'
 import PublicacoesOab from './routes/PublicacoesOab'
 import Contatos from './routes/Contatos'
 import Casos from './routes/Casos'
@@ -44,6 +45,7 @@ const GRUPOS_NAVEGACAO = [
     id: 'trabalho', label: 'Trabalho', icone: Briefcase,
     abas: [
       { id: 'casos', label: 'Processos', icone: Scale },
+      { id: 'agenda', label: 'Agenda', icone: CalendarDays },
       { id: 'atividades', label: 'Atividades', icone: CalendarCheck },
       { id: 'publicacoes-oab', label: 'Publicações recebidas', icone: Gavel },
       { id: 'contatos', label: 'Contatos', icone: Users },
@@ -128,6 +130,7 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
     case 'financeiro': return <Financeiro />
     case 'pagamentos': return <Pagamentos />
     case 'atividades': return <Atividades />
+    case 'agenda': return <Agenda />
     case 'publicacoes-oab': return <PublicacoesOab />
     case 'contatos': return <Contatos />
     case 'casos': return <Casos />
