@@ -1,5 +1,6 @@
 import CabecalhoPagina from '../CabecalhoPagina'
 import Carregamento from '../Carregamento'
+import BuscaProcesso from '../BuscaProcesso'
 import { useAvisos } from '../Avisos'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Badge, Button, Callout, Dialog, Flex, SegmentedControl, Select, Switch, Text } from '@radix-ui/themes'
@@ -22,7 +23,7 @@ type Item = {
   responsavel?: string | null; data?: string | null; hora?: string | null; observacoes?: string | null
   caso: { id: string; titulo?: string | null; responsavel?: string | null; processos?: string[] }
 }
-type CasoOpcao = { id: string; titulo?: string }
+type CasoOpcao = { id: string; titulo?: string; processos?: string[] }
 
 const hora = (a: Item) => (a.hora ? a.hora.slice(0, 5) : '')
 
@@ -289,13 +290,8 @@ function EscolherProcesso({ data, onCancelar, onEscolhido }: { data: string; onC
         <Dialog.Title>Nova atividade em {dataCurta(data)}</Dialog.Title>
         <Dialog.Description size="2" mb="3">Escolha o processo da atividade. Você define o tipo e a hora na próxima janela.</Dialog.Description>
         <div className="form-campo">
-          <label className="form-campo-label" id="agenda-processo-rotulo">Processo</label>
-          <Select.Root value={casoId} onValueChange={setCasoId}>
-            <Select.Trigger aria-labelledby="agenda-processo-rotulo" placeholder="Escolha o processo" style={{ width: '100%' }} />
-            <Select.Content>
-              {casos.map(c => <Select.Item key={c.id} value={c.id}>{formatarNomeExibicao(c.titulo || '(sem título)')}</Select.Item>)}
-            </Select.Content>
-          </Select.Root>
+          <label className="form-campo-label" htmlFor="agenda-processo">Processo</label>
+          <BuscaProcesso id="agenda-processo" casos={casos} valor={casoId} onChange={setCasoId} />
           {erro && <Text size="2" color="red" role="alert">{erro}</Text>}
         </div>
         <Flex gap="3" mt="4" justify="end">
