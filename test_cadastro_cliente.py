@@ -75,5 +75,25 @@ class CadastroClienteTest(unittest.TestCase):
         self.assertEqual(status, 200)
 
 
+    def test_textos_longos_nas_outras_rotas_nao_se_perdem(self):
+        _, cli = self.criar({"nome": "Cliente"})
+        status, caso = _chamar(self.mw, "POST", "/casos", self.auth,
+                               json.dumps({"cliente_id": cli["id"], "titulo": "Caso", "processos": []}).encode())
+        self.assertEqual(status, 201)
+        longo = "Observação longa. " * 400  # ~7 KB
+        status, ativ = _chamar(self.mw, "POST", f"/casos/{caso['id']}/atividades", self.auth,
+                               json.dumps({"tipo": "tarefa", "titulo": "Prazo", "observacoes": longo}).encode())
+        self.assertEqual(status, 201)
+        self.assertEqual(ativ["observacoes"].strip(), longo.strip())
+        # Antes, acima de 4 KB a edição respondia 200 e descartava o texto em silêncio.
+        status, ativ = _chamar(self.mw, "PATCH", f"/casos/{caso['id']}/atividades/{ativ['id']}", self.auth,
+                               json.dumps({"observacoes": longo + "fim"}).encode())
+        self.assertEqual((status, ativ["observacoes"].endswith("fim")), (200, True))
+        status, corpo = _chamar(self.mw, "PATCH", f"/casos/{caso['id']}/atividades/{ativ['id']}", self.auth,
+                                json.dumps({"observacoes": "x" * 70000}).encode())
+        self.assertEqual(status, 413)
+        self.assertIn("64 KB", corpo["mensagem"])
+
+
 if __name__ == "__main__":
     unittest.main()
