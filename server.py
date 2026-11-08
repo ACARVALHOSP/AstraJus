@@ -5271,8 +5271,15 @@ class _AutenticacaoBearer:
             await _json(send, 400, _erro("Tipo inválido."))
             return
         responsavel = (parametros.get("responsavel") or "").strip()[:120] or None
+        periodo = {}
+        for campo in ("de", "ate"):
+            valor = (parametros.get(campo) or "").strip()
+            if valor and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", valor):
+                await _json(send, 400, _erro(f"Data inválida em '{campo}': use AAAA-MM-DD."))
+                return
+            periodo[campo] = valor or None
         atividades = self.gestao.listar_atividades_globais(
-            situacao=situacao, tipo=tipo,
+            situacao=situacao, tipo=tipo, **periodo,
             responsavel=None if responsavel == "__sem__" else responsavel, sem_responsavel=responsavel == "__sem__",
             responsavel_processo=(parametros.get("responsavel_processo") or "").strip()[:120] or None,
             busca=(parametros.get("busca") or "").strip()[:120] or None,

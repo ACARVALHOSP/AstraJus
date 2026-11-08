@@ -10,7 +10,7 @@ export const AREAS: Record<string, string> = {
   pagamentos: 'Pagamentos', integracoes: 'Integrações',
 }
 const ABA_AREA: Record<string, string> = {
-  casos: 'casos', atividades: 'atividades', 'publicacoes-oab': 'publicacoes_oab', monitoramentos: 'publicacoes_oab',
+  casos: 'casos', atividades: 'atividades', agenda: 'atividades', 'publicacoes-oab': 'publicacoes_oab', monitoramentos: 'publicacoes_oab',
   contatos: 'contatos', processo: 'pesquisa', publicacoes: 'pesquisa', jurisprudencia: 'pesquisa',
   jurimetria: 'pesquisa', financeiro: 'financeiro', pagamentos: 'pagamentos', integracoes: 'integracoes',
 }

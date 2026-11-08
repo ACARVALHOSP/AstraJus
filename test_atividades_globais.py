@@ -39,6 +39,12 @@ class AtividadesGlobaisTest(unittest.TestCase):
                                             "responsavel": "ana", "processos": ["10012345620268260100"]})
         self.assertEqual(self.titulos(situacao="concluidas"), ["Tarefa antiga"])
 
+    def test_periodo_de_ate(self):
+        self.assertEqual(self.titulos(situacao="todas", de="2026-11-01", ate="2026-11-30"),
+                         ["Réplica à contestação", "Audiência de instrução"])
+        self.assertEqual(self.titulos(situacao="todas", de="2026-11-05"), ["Audiência de instrução", "Solicitar certidão"][:1])
+        self.assertEqual(self.titulos(situacao="todas", ate="2026-10-31"), ["Tarefa antiga"])
+
     def test_filtros(self):
         self.assertEqual(self.titulos(tipo="audiencia"), ["Audiência de instrução"])
         self.assertEqual(self.titulos(responsavel="ana"), ["Réplica à contestação"])

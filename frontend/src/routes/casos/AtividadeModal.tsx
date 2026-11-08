@@ -12,9 +12,11 @@ import { confirmarSaida, useAlteracoesPendentes } from '../../AlteracoesPendente
 const ROTULO_TIPO: Record<string, string> = { tarefa: 'Tarefa', prazo: 'Prazo', audiencia: 'Audiência', reuniao: 'Reunião', outro: 'Outro' }
 
 export default function AtividadeModal({
-  open, casoId, atividade, onClose, onSalva,
+  open, casoId, atividade, onClose, onSalva, dataInicial,
 }: {
   open: boolean; casoId: string; atividade: Atividade | null; onClose: () => void; onSalva: () => void
+  /** Data sugerida ao criar uma atividade nova (ex.: o dia escolhido na Agenda). */
+  dataInicial?: string
 }) {
   const { cliente } = useCliente()
   const [tipo, setTipo] = useState('tarefa')
@@ -31,7 +33,7 @@ export default function AtividadeModal({
     if (!open) return
     setTipo(atividade?.tipo ?? 'tarefa')
     setTitulo(atividade?.titulo ?? '')
-    setData(atividade?.data ?? '')
+    setData(atividade?.data ?? dataInicial ?? '')
     setHora(atividade?.hora ?? '')
     setResponsavel(atividade?.responsavel ?? '')
     setObservacoes(atividade?.observacoes ?? '')
@@ -39,9 +41,9 @@ export default function AtividadeModal({
     buscarJson<{ responsaveis: string[] }>(cliente, '/responsaveis')
       .then((r) => setResponsaveis(r.responsaveis ?? []))
       .catch(() => {})
-  }, [open, atividade, cliente])
+  }, [open, atividade, cliente, dataInicial])
 
-  const pendente = open && (titulo !== (atividade?.titulo ?? '') || tipo !== (atividade?.tipo ?? 'tarefa') || data !== (atividade?.data ?? '')
+  const pendente = open && (titulo !== (atividade?.titulo ?? '') || tipo !== (atividade?.tipo ?? 'tarefa') || data !== (atividade?.data ?? dataInicial ?? '')
     || hora !== (atividade?.hora ?? '') || responsavel !== (atividade?.responsavel ?? '') || observacoes !== (atividade?.observacoes ?? ''))
   useAlteracoesPendentes(pendente)
   const fechar = () => confirmarSaida(onClose)

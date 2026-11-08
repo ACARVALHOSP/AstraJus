@@ -1598,7 +1598,7 @@ class RegistroClientesCasos:
     def listar_atividades_globais(
         self, *, situacao: str = "abertas", tipo: str | None = None, responsavel: str | None = None,
         sem_responsavel: bool = False, responsavel_processo: str | None = None, busca: str | None = None,
-        limite: int = 1000,
+        limite: int = 1000, de: str | None = None, ate: str | None = None,
     ) -> list[dict]:
         """Atividades de todos os processos, com título, responsável e números do processo.
         `situacao`: "abertas" (pendente, em andamento, aguardando), "concluidas" ou "todas".
@@ -1616,6 +1616,12 @@ class RegistroClientesCasos:
         if tipo:
             filtros.append("a.tipo = ?")
             valores.append(tipo)
+        if de:  # período (datas AAAA-MM-DD, inclusive): só atividades com data dentro dele
+            filtros.append("substr(a.data, 1, 10) >= ?")
+            valores.append(de)
+        if ate:
+            filtros.append("substr(a.data, 1, 10) <= ?")
+            valores.append(ate)
         if sem_responsavel:
             filtros.append("coalesce(a.responsavel, '') = ''")
         elif responsavel:
