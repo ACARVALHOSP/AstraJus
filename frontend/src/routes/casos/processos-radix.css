@@ -40,7 +40,8 @@
 .capa-grade--2 { grid-template-columns: repeat(2, 1fr); }
 .capa-grade--alinhada { align-items: end; }
 .capa-campo dt { font-size: 12px; font-weight: 600; color: var(--gray-11); text-transform: uppercase; letter-spacing: 0.03em; margin: 0; }
-.capa-campo dd { font-size: 13px; margin: 0.3rem 0 0; color: var(--gray-12); line-height: 1.45; overflow-wrap: anywhere; }
+.capa-campo dd { font-size: 14px; margin: 0.3rem 0 0; color: var(--gray-12); line-height: 1.45; overflow-wrap: anywhere; }
+.capa-campo dd.capa-vazio { color: var(--gray-11); font-style: italic; }
 .capa-campo--span2 { grid-column: span 2; }
 .capa-campo--span3 { grid-column: 1 / -1; }
 .capa-movimentacoes-acao { text-align: end; }

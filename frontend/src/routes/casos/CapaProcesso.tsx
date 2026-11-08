@@ -167,7 +167,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
         <div className="capa-grade">
           {principais.map(([rotulo, valor, span]) => (
             <dl key={rotulo} className={span > 1 ? `capa-campo capa-campo--span${span}` : 'capa-campo'}>
-              <dt>{rotulo}</dt><dd>{valor || 'Não informado'}</dd>
+              <dt>{rotulo}</dt><dd className={valor ? undefined : 'capa-vazio'}>{valor || 'Não informado'}</dd>
             </dl>
           ))}
         </div>
@@ -181,7 +181,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
           {partes.some(p => poloDaParte(p) === 'outro') && (
             <dl className="capa-campo"><dt>Partes sem polo informado</dt><dd>{participantes('outro')}</dd></dl>
           )}
-          <dl className="capa-campo capa-campo--span2"><dt>Advogados</dt><dd>{advogados || 'Não informado pelo DJEN'}</dd></dl>
+          <dl className="capa-campo capa-campo--span2"><dt>Advogados</dt><dd className={advogados ? undefined : 'capa-vazio'}>{advogados || 'Não informado pelo DJEN'}</dd></dl>
         </div>
         {erroClientes && <p className="casos-ajuda">Não foi possível identificar os clientes vinculados. As tags de cliente estão indisponíveis.</p>}
       </div>

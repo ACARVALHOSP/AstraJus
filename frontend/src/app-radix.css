@@ -45,7 +45,9 @@ html, body { margin: 0; padding: 0; }
   letter-spacing: -0.3px;
   margin-right: 4px;
 }
-.aj-logo span { opacity: 0.55; font-weight: 400; }
+.aj-logo span { opacity: 0.85; font-weight: 400; }
+/* Branco sobre teal-9 não atinge 4,5:1; escurece a barra só nesse destaque. */
+.radix-themes[data-accent-color="teal"]:not(.dark):not(.dark-theme) .aj-topbar { background: var(--teal-11); }
 
 .aj-topbar-right {
   display: flex;
