@@ -515,6 +515,10 @@ def _migrar_colunas_clientes(conexao: sqlite3.Connection) -> None:
     if "asaas_customer_id" not in colunas:
         with conexao:
             conexao.execute("ALTER TABLE clientes ADD COLUMN asaas_customer_id TEXT")
+    if "drive_pasta_id" not in colunas:
+        with conexao:
+            conexao.execute("ALTER TABLE clientes ADD COLUMN drive_pasta_id TEXT")
+    conexao.execute("CREATE TABLE IF NOT EXISTS drive_config (chave TEXT PRIMARY KEY, valor TEXT NOT NULL)")
     novas_colunas = {
         "tipo_pessoa": "TEXT NOT NULL DEFAULT 'fisica'",
         "perfil": "TEXT NOT NULL DEFAULT 'cliente'",
@@ -2057,6 +2061,26 @@ class RegistroClientesCasos:
     def atualizar_drive_pasta(self, caso_id: str, drive_pasta_id: str) -> None:
         with self._trava, _abrir(self.caminho) as conexao, conexao:
             conexao.execute("UPDATE casos SET drive_pasta_id = ? WHERE id = ?", (drive_pasta_id, caso_id))
+
+
+    def obter_drive_pasta_cliente(self, cliente_id: str) -> str | None:
+        with _abrir(self.caminho) as conexao:
+            linha = conexao.execute("SELECT drive_pasta_id FROM clientes WHERE id = ?", (cliente_id,)).fetchone()
+        return linha[0] if linha and linha[0] else None
+
+    def atualizar_drive_pasta_cliente(self, cliente_id: str, drive_pasta_id: str | None) -> None:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute("UPDATE clientes SET drive_pasta_id = ? WHERE id = ?", (drive_pasta_id, cliente_id))
+
+    def obter_config_drive(self, chave: str) -> str | None:
+        with _abrir(self.caminho) as conexao:
+            linha = conexao.execute("SELECT valor FROM drive_config WHERE chave = ?", (chave,)).fetchone()
+        return linha[0] if linha else None
+
+    def salvar_config_drive(self, chave: str, valor: str) -> None:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute("INSERT INTO drive_config VALUES (?, ?) ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor",
+                            (chave, valor))
 
 
 class RegistroIntegracaoGoogle:

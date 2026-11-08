@@ -29,6 +29,8 @@ export type Caso = {
   foro?: string
   responsavel?: string
   pasta?: string
+  drive_pasta_id?: string | null
+  pasta_drive?: 'criada' | 'falhou' | 'nao_configurado'
   acesso?: string
   ultima_movimentacao?: string
   monitorado?: boolean

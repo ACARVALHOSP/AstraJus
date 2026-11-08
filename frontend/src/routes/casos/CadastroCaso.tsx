@@ -1,3 +1,4 @@
+import PastaDrive from '../../PastaDrive'
 import { useAvisos } from '../../Avisos'
 import { useAlteracoesPendentes } from '../../AlteracoesPendentes'
 import Carregamento from '../../Carregamento'
@@ -143,6 +144,7 @@ export default function CadastroCaso({
           <label className="form-campo-label" htmlFor="editar-caso-pasta">Pasta</label>
           <TextField.Root id="editar-caso-pasta" autoComplete="off" value={pasta} onChange={(e) => setPasta(e.target.value)} />
         </div>
+        {caso && <PastaDrive tipo="casos" id={caso.id} pastaId={caso.drive_pasta_id} onCriada={(pastaId) => setCaso({ ...caso, drive_pasta_id: pastaId })} />}
         <div className="form-campo">
           <label className="form-campo-label" htmlFor="editar-caso-acesso">Acesso</label>
           <Select.Root value={acesso} onValueChange={setAcesso}>
