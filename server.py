@@ -1472,8 +1472,8 @@ async def consultar_jurimetria_cjpg(
             "conversationId": "",
             "dadosConsulta.pesquisaLivre": termo_busca,
             "tipoNumero": "UNIFICADO",
-            "dadosConsulta.dtInicio": (data_inicio or "").strip(),
-            "dadosConsulta.dtFim": (data_fim or "").strip(),
+            "dadosConsulta.dtInicio": _data_tjsp(data_inicio),
+            "dadosConsulta.dtFim": _data_tjsp(data_fim),
             "dadosConsulta.ordenacao": "DESC",
         }
         if classe_codigo:
@@ -1563,8 +1563,15 @@ def _jurisprudencia_tjsp_contem_frases(texto: str | None, frases: list[str]) -> 
     return all(frase.lower() in alvo for frase in frases)
 
 
+def _data_tjsp(valor: str | None) -> str:
+    """Aceita dd/mm/aaaa ou AAAA-MM-DD e devolve dd/mm/aaaa (o formato das buscas do TJSP)."""
+    texto = (valor or "").strip()
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", texto)
+    return f"{m.group(3)}/{m.group(2)}/{m.group(1)}" if m else texto
+
+
 def _jurisprudencia_tjsp_epoch_ms(data_ddmmaaaa: str, fim_do_dia: bool = False) -> int | None:
-    m = re.match(r"^(\d{2})/(\d{2})/(\d{4})$", data_ddmmaaaa.strip())
+    m = re.match(r"^(\d{2})/(\d{2})/(\d{4})$", _data_tjsp(data_ddmmaaaa))
     if not m:
         return None
     dia, mes, ano = int(m.group(1)), int(m.group(2)), int(m.group(3))
@@ -1959,8 +1966,8 @@ async def perfil_decisorio_magistrado(
             "conversationId": "",
             "dadosConsulta.pesquisaLivre": termo_busca,
             "tipoNumero": "UNIFICADO",
-            "dadosConsulta.dtInicio": (data_inicio or "").strip(),
-            "dadosConsulta.dtFim": (data_fim or "").strip(),
+            "dadosConsulta.dtInicio": _data_tjsp(data_inicio),
+            "dadosConsulta.dtFim": _data_tjsp(data_fim),
             "dadosConsulta.ordenacao": "DESC",
         }
         if classe_codigo:

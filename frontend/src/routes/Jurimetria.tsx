@@ -6,7 +6,7 @@ import { AlertTriangle } from 'lucide-react'
 import { Badge, Button, Callout, Card, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
-import { formatarNumeroCNJ, formatarPercentual, formatarReais } from '../utils/formatadores'
+import { formatarNumeroCNJ, formatarPercentual, formatarReais, isoParaDdMmAaaa } from '../utils/formatadores'
 
 type Analise = 'benchmark_valor' | 'perfil_magistrado'
 
@@ -97,8 +97,8 @@ export default function Jurimetria() {
       termo: termo.trim() || null,
       magistrado_nome: magistrado.trim() || null,
       magistrado_codigo: null,
-      data_inicio: dataInicio || null,
-      data_fim: dataFim || null,
+      data_inicio: isoParaDdMmAaaa(dataInicio),
+      data_fim: isoParaDdMmAaaa(dataFim),
       paginas: paginas || 1,
       vara_codigo: null,
       classe_codigo: null,
