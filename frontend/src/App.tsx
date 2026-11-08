@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Flex, Popover, SegmentedControl, Text, Theme } from '@radix-ui/themes'
+import { Callout, Flex, Popover, SegmentedControl, Text, Theme } from '@radix-ui/themes'
 import {
   Scale, Users, CalendarCheck, Search, Gavel, Briefcase,
   Newspaper, BarChart2, BookOpen, History, FileSearch, Receipt, KeyRound,
@@ -7,6 +7,7 @@ import {
   Palette, ChevronDown, ChevronRight, Check, House,
 } from 'lucide-react'
 import { ClienteProvider, useCliente } from './api/ClienteContext'
+import { PerfilProvider, usePerfil } from './api/PerfilContext'
 import { AvisosProvider } from './Avisos'
 import { DialogoSaida } from './AlteracoesPendentes'
 import { sincronizarPreferencias } from './utils/listasRapidas'
@@ -104,6 +105,15 @@ function StatusConexao() {
 }
 
 function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
+  const { abaPermitida } = usePerfil()
+  if (!abaPermitida(abaAtiva)) {
+    return (
+      <Callout.Root color="gray" role="status">
+        <Callout.Icon><ShieldCheck size={14} /></Callout.Icon>
+        <Callout.Text>Seu perfil não tem acesso a esta área. Peça ao administrador para liberar.</Callout.Text>
+      </Callout.Root>
+    )
+  }
   switch (abaAtiva) {
     case 'inicio': return <Home />
     case 'administracao': return <Administracao />
@@ -129,6 +139,10 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
 
 function SidebarAstraJus({ aberta, fechar }: { aberta: boolean; fechar: () => void }) {
   const { abaAtiva, irPara } = useNavegacao()
+  const { abaPermitida } = usePerfil()
+  const gruposVisiveis = GRUPOS_NAVEGACAO
+    .map(g => ({ ...g, abas: g.abas.filter(a => abaPermitida(a.id)) }))
+    .filter(g => g.abas.length > 0)
   // Só guarda o que a pessoa abriu ou fechou; sem escolha, o grupo da página atual fica aberto.
   const [gruposAbertos, setGruposAbertos] = useState<Record<string, boolean>>({})
   // Monitoramentos é uma aba de Publicações recebidas: destaca esse item no menu.
@@ -164,7 +178,7 @@ function SidebarAstraJus({ aberta, fechar }: { aberta: boolean; fechar: () => vo
           <House size={15} />
           Início
         </a>
-        {GRUPOS_NAVEGACAO.map((grupo) => {
+        {gruposVisiveis.map((grupo) => {
           const GrupoIcon = grupo.icone
           const aberto = grupoAberto(grupo)
           return (
@@ -309,6 +323,7 @@ export default function App() {
     <Theme accentColor={accent} grayColor="slate" radius="medium" appearance={aparencia}>
       <AvisosProvider>
       <ClienteProvider>
+        <PerfilProvider>
         <SincronizarPreferencias />
         <DialogoSaida />
         <NavegacaoProvider abaInicial="inicio">
@@ -348,6 +363,7 @@ export default function App() {
             </div>
           </div>
         </NavegacaoProvider>
+        </PerfilProvider>
       </ClienteProvider>
       </AvisosProvider>
     </Theme>

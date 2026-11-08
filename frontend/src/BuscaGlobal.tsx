@@ -4,6 +4,7 @@ import { Button, Flex, IconButton, Popover, Text, TextField } from '@radix-ui/th
 import { Search } from 'lucide-react'
 import { useCliente } from './api/ClienteContext'
 import { useNavegacao } from './api/NavegacaoContext'
+import { usePerfil } from './api/PerfilContext'
 import { buscarJson } from './api/rest'
 import { formatarNomeExibicao, formatarNumeroCNJ } from './utils/formatadores'
 
@@ -18,6 +19,7 @@ function normalizar(valor: string): string {
 export default function BuscaGlobal({ paginas = [] }: { paginas?: Pagina[] }) {
   const { cliente } = useCliente()
   const { irPara } = useNavegacao()
+  const { abaPermitida } = usePerfil()
   const [aberta, setAberta] = useState(false)
   const [termo, setTermo] = useState('')
   const [clientes, setClientes] = useState<ClienteOpcao[]>([])
@@ -71,7 +73,7 @@ export default function BuscaGlobal({ paginas = [] }: { paginas?: Pagina[] }) {
       ).slice(0, 8)
     : []
   const paginasFiltradas = consulta && !digitos
-    ? paginas.filter(p => normalizar(`${p.label} ${p.grupo}`).includes(consulta)).slice(0, 4)
+    ? paginas.filter(p => abaPermitida(p.id) && normalizar(`${p.label} ${p.grupo}`).includes(consulta)).slice(0, 4)
     : []
   const casosFiltrados = consulta
     ? casos.filter(

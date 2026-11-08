@@ -14,9 +14,81 @@ from urllib.parse import unquote
 CAMPOS = ('usuario_id', 'nome_completo', 'email', 'email_verificado_em', 'criado_em',
           'atualizado_em', 'ultimo_acesso_em', 'nivel_acesso', 'status', 'criado_por',
           'revogado_em', 'revogado_por')
-EDITAVEIS = {'nome_completo', 'email', 'nivel_acesso', 'status'}
+EDITAVEIS = {'nome_completo', 'email', 'nivel_acesso', 'status', 'permissoes'}
 NIVEIS = {'administrador', 'operador', 'consulta'}
 STATUS = {'pendente', 'ativo', 'bloqueado', 'revogado'}
+# Áreas do sistema que o administrador pode liberar ou restringir por pessoa.
+MODULOS = {
+    'casos': 'Processos', 'atividades': 'Atividades', 'publicacoes_oab': 'Publicações recebidas',
+    'contatos': 'Contatos', 'pesquisa': 'Pesquisa (processo, DJEN, jurisprudência, jurimetria)',
+    'financeiro': 'Lançamentos', 'pagamentos': 'Pagamentos', 'integracoes': 'Integrações',
+}
+GRAUS = {'nenhum': 0, 'ver': 1, 'editar': 2}
+
+
+def permissoes_padrao(nivel):
+    """Administrador e operador editam tudo; consulta só vê. Administração é só do administrador."""
+    return dict.fromkeys(MODULOS, 'ver' if nivel == 'consulta' else 'editar')
+
+
+def permissoes_efetivas(perfil):
+    """Padrão do nível com as exceções da pessoa. Administrador não tem restrições; consulta
+    nunca passa de 'ver'."""
+    nivel = perfil.get('nivel_acesso') or 'operador'
+    efetivas = permissoes_padrao(nivel)
+    if nivel == 'administrador':
+        return efetivas
+    for modulo, grau in (perfil.get('permissoes') or {}).items():
+        if modulo in MODULOS and grau in GRAUS:
+            efetivas[modulo] = 'ver' if nivel == 'consulta' and grau == 'editar' else grau
+    return efetivas
+
+
+def exigencia_rota(caminho, metodo):
+    """Áreas que uma rota HTTP exige: (áreas alternativas, exige edição) ou None se for livre.
+    Na leitura basta uma das áreas; telas de uma área consultam dados de outras (a busca de
+    cliente em Processos, por exemplo), por isso a leitura aceita as áreas relacionadas."""
+    escrita = metodo not in ('GET', 'HEAD', 'OPTIONS')
+    todas_leitura = ('casos', 'atividades', 'publicacoes_oab', 'contatos', 'financeiro', 'pagamentos')
+
+    def rota(*areas, leitura=None):
+        return ((leitura or areas) if not escrita else areas), escrita
+
+    if caminho == '/clientes' or caminho.startswith('/clientes/'):
+        return rota('contatos', leitura=todas_leitura)
+    if caminho == '/atividades' or caminho.endswith('/evento-calendar') or '/atividades' in caminho:
+        return rota('atividades', leitura=('atividades', 'casos'))
+    if caminho == '/casos' or caminho.startswith('/casos/'):
+        return rota('casos', leitura=todas_leitura)
+    if caminho == '/lancamentos' or caminho.startswith('/lancamentos/'):
+        return rota('financeiro', leitura=('financeiro', 'pagamentos'))
+    if caminho == '/pagamentos' or caminho.startswith('/pagamentos/'):
+        return rota('pagamentos', leitura=('pagamentos', 'financeiro'))
+    if caminho in ('/pendentes', '/automacoes') or caminho.startswith(('/pendentes/', '/publicacoes-oab')):
+        return rota('publicacoes_oab')
+    if caminho == '/mcp':
+        return ('pesquisa', 'casos', 'publicacoes_oab'), False
+    if caminho.startswith(('/cjpg-arvore', '/certidoes/')):
+        return rota('pesquisa')
+    if caminho.startswith('/integracoes') and caminho != '/integracoes/status' \
+            and not caminho.startswith('/integracoes/calendar'):
+        return rota('integracoes')
+    return None
+
+
+def liberar_rota(perfil, caminho, metodo):
+    """None se liberada; senão a mensagem de recusa."""
+    exigencia = exigencia_rota(caminho, metodo)
+    if exigencia is None:
+        return None
+    areas, edicao = exigencia
+    efetivas = permissoes_efetivas(perfil)
+    exigido = GRAUS['editar' if edicao else 'ver']
+    if any(GRAUS[efetivas[a]] >= exigido for a in areas):
+        return None
+    if edicao and any(GRAUS[efetivas[a]] >= GRAUS['ver'] for a in areas):
+        return 'Seu perfil permite somente consulta nesta área.'
+    return 'Seu perfil não tem acesso a esta área. Peça ao administrador.'
 CATEGORIAS_LIMPEZA = {
     'publicacoes': ('publicacoes_capturadas', 'publicacao_revisoes', 'origem_djen_migracao_pendencias'),
     'monitoramento_tecnico': ('monitoramento_entregas', 'monitoramento_coletas', 'automacao_execucoes', 'automacao_leases'),
@@ -74,7 +146,8 @@ def migrar(c):
 
 
 def publico(nome, dados):
-    return {'login': nome, **{k: dados.get(k) for k in CAMPOS}}
+    return {'login': nome, **{k: dados.get(k) for k in CAMPOS},
+            'permissoes': dados.get('permissoes') or {}, 'permissoes_efetivas': permissoes_efetivas(dados)}
 
 
 def configurar_token_admin(registro, token, *, somente_se_ausente=False):
@@ -128,7 +201,11 @@ def validar(dados):
         raise ValueError('Nível de acesso inválido.')
     if 'status' in dados and dados['status'] not in STATUS:
         raise ValueError('Status inválido.')
-    return {k: v.strip() for k, v in dados.items()}
+    if 'permissoes' in dados:
+        permissoes = dados['permissoes']
+        if not isinstance(permissoes, dict) or any(m not in MODULOS or g not in GRAUS for m, g in permissoes.items()):
+            raise ValueError('Permissões inválidas.')
+    return {k: v.strip() if isinstance(v, str) else v for k, v in dados.items()}
 
 
 def alterar(registro, dados, ator, login=None):
