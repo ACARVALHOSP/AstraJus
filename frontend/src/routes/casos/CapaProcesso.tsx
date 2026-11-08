@@ -11,6 +11,14 @@ import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
 import { clienteDaParte, dataCapa, poloDaParte, type ClienteCapa, type ParteCapa } from './dadosCapa'
 import type { Caso } from './ListaCasos'
 
+// Níveis de sigilo da Tabela Processual Unificada do CNJ. 0 é processo público, não "sem informação".
+const SIGILO = ['Público', 'Segredo de justiça', 'Sigilo mínimo', 'Sigilo médio', 'Sigilo máximo', 'Sigilo absoluto']
+function rotuloSigilo(valor?: string | number | null) {
+  if (valor === null || valor === undefined || valor === '') return ''
+  const n = Number(valor)
+  return Number.isInteger(n) && SIGILO[n] ? SIGILO[n] : String(valor)
+}
+
 type Advogado = { nome?: string; numero_oab?: string; uf_oab?: string; advogado?: Omit<Advogado, 'advogado'> }
 type Movimento = { nome?: string; dataHora?: string }
 type Capa = {
@@ -139,7 +147,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
   ] as const
   const mais = [
     ['Assuntos', capa?.assuntos?.join('; ')], ['Município / UF', [capa?.cidade, capa?.uf].filter(Boolean).join(' / ')],
-    ['Grau', capa?.grau], ['Nível de sigilo', capa?.nivel_sigilo],
+    ['Grau', capa?.grau], ['Nível de sigilo', rotuloSigilo(capa?.nivel_sigilo)],
   ]
   return <section className="casos-resumo capa-processo" aria-label={`Capa do processo ${formatarNumeroCNJ(numero)}`} aria-busy={bloqueado}>
     <div className="casos-titulo-linha">
@@ -203,7 +211,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
         </div>
       </div>
 
-      <details className="capa-mais"><summary>Mais informações</summary><dl>{mais.map(([rotulo, valor]) => <Fragment key={rotulo}><dt>{rotulo}</dt><dd>{valor ?? 'Não informado'}</dd></Fragment>)}</dl></details>
+      <details className="capa-mais"><summary>Mais informações</summary><dl>{mais.map(([rotulo, valor]) => <Fragment key={rotulo}><dt>{rotulo}</dt><dd>{valor || 'Não informado'}</dd></Fragment>)}</dl></details>
 
       <div className="capa-secao">
         <p className="capa-secao-titulo">Dados do escritório</p>
