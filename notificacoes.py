@@ -45,6 +45,7 @@ _VISIVEL = """
        (e.caso_id IS NULL AND p.caso_id IS NULL)
        OR (c.id IS NOT NULL AND p.caso_id=e.caso_id)
    ))
+   OR (e.tipo='movimento_processual' AND c.id IS NOT NULL)
  )
 """
 
@@ -76,6 +77,22 @@ class Repositorio:
                 linha = c.execute("SELECT caso_id FROM publicacoes_capturadas WHERE hash=?", (h,)).fetchone()
                 registrar_evento(c, usuario, "publicacao_monitorada", h, publicacao_hash=h,
                                  caso_id=linha[0] if linha else None, agora=self.agora())
+
+    def registrar_movimento_processual(self, caso_id, chave):
+        """Avisa o responsável pelo processo (ou, sem responsável ativo, os administradores)
+        de um andamento novo. A chave (processo + último movimento) evita avisos repetidos."""
+        with self.transacao() as c:
+            caso = c.execute("SELECT responsavel FROM casos WHERE id=?", (caso_id,)).fetchone()
+            if not caso:
+                return
+            ativo = "json_extract(dados, '$.revogado') IS NULL OR json_extract(dados, '$.revogado')=0"
+            destinatarios = [r[0] for r in c.execute(
+                f"SELECT nome FROM usuarios WHERE nome=? AND ({ativo})", (caso[0],))] if caso[0] else []
+            if not destinatarios:
+                destinatarios = [r[0] for r in c.execute(
+                    f"SELECT nome FROM usuarios WHERE nivel_acesso='administrador' AND status='ativo' AND ({ativo})")]
+            for usuario in destinatarios:
+                registrar_evento(c, usuario, "movimento_processual", chave, caso_id=caso_id, agora=self.agora())
 
     def _processar(self, c, usuario, corte, agora):
         c.execute("UPDATE notificacao_eventos SET pendencia='destino_indisponivel' WHERE usuario=? AND criado_em>=? AND processado_em IS NULL AND pendencia IS NULL", (usuario, corte))
@@ -130,7 +147,7 @@ class Repositorio:
             if estado == "nao_lidas":
                 query += " AND n.lida_em IS NULL"
             linhas = c.execute(
-                "SELECT e.id, e.tipo, e.caso_id, e.atividade_id, e.criado_em, n.lida_em, a.titulo, a.responsavel" + query
+                "SELECT e.id, e.tipo, e.caso_id, e.atividade_id, e.criado_em, n.lida_em, a.titulo, a.responsavel, c.titulo AS caso_titulo" + query
                 + " ORDER BY e.criado_em DESC, e.id DESC LIMIT ?", [*argumentos, limite + 1],
             ).fetchall()
             mais = len(linhas) > limite
@@ -138,6 +155,12 @@ class Repositorio:
             itens = []
             for linha in linhas:
                 delegacao = linha["tipo"] == "atividade_delegada"
+                if linha["tipo"] == "movimento_processual":
+                    itens.append({"id": str(linha["id"]), "tipo": linha["tipo"], "titulo": "Novo andamento no processo",
+                                  "mensagem": f"{linha['caso_titulo'] or 'Processo'}: há movimentação nova. Confira a aba Movimentações.",
+                                  "criado_em": linha["criado_em"], "lida_em": linha["lida_em"],
+                                  "destino": {"tipo": "movimentos_processo", "caso_id": linha["caso_id"]}})
+                    continue
                 destino = {"tipo": "atividade", "caso_id": linha["caso_id"], "atividade_id": linha["atividade_id"]} if delegacao else (
                     {"tipo": "publicacoes_processo", "caso_id": linha["caso_id"]} if linha["caso_id"] else {"tipo": "publicacoes_monitoradas"})
                 mensagem = linha["titulo"] if delegacao else "Confira a publicação na área autorizada."
@@ -173,6 +196,8 @@ class Repositorio:
                               (usuario, identificador, corte)).fetchone()
             if not linha:
                 return None
+            if linha["tipo"] == "movimento_processual":
+                return {"tipo": "movimentos_processo", "caso_id": linha["caso_id"]}
             if linha["tipo"] == "atividade_delegada":
                 return {"tipo": "atividade", "caso_id": linha["caso_id"], "atividade_id": linha["atividade_id"]}
             return {"tipo": "publicacoes_processo", "caso_id": linha["caso_id"]} if linha["caso_id"] else {"tipo": "publicacoes_monitoradas"}

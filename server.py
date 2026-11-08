@@ -3896,6 +3896,11 @@ async def _atualizar_movimentos_processos(gestao: "RegistroClientesCasos", agora
                     caso_id, numero, "movimento_processual",
                     {"quantidade": len(novos), "ultimo": novos[-1]}, agora,
                 )
+                # Só avisa quando já havia um histórico: na primeira carga tudo seria "novo".
+                if capa_atual.get("movimentos"):
+                    ultimo = novos[-1]
+                    notificacoes.Repositorio(gestao.caminho, agora=agora).registrar_movimento_processual(
+                        caso_id, f"{numero}:{ultimo.get('codigo')}:{ultimo.get('dataHora')}")
         except Exception:
             falhou = True
             log.exception("Atualização de movimentos: falha ao processar processo %s", numero)
@@ -6701,7 +6706,7 @@ def _montar_agendador(
         ('monitoramentos', MONITORAMENTO_INTERVALO_HORAS, _verificar_monitoramentos_pendentes,
          [registro_monitoramentos, smtp], {'gestao': gestao}),
         ('captura_oab', 24, _capturar_publicacoes_oab, [registro_monitoramentos, publicacoes, gestao], {}),
-        ('movimentos', 24, _atualizar_movimentos_processos, [gestao], {}),
+        ('movimentos', 12, _atualizar_movimentos_processos, [gestao], {}),
     ):
         agendador.add_job(repo.executar, 'interval', minutes=5, id=nome,
             args=[nome, horas, funcao, args, kwargs], next_run_time=datetime.now(timezone.utc),

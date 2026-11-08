@@ -2748,6 +2748,38 @@ class AtualizarMovimentosProcessosTest(unittest.TestCase):
         self.assertEqual(eventos[0]["tipo"], "movimento_processual")
         self.assertEqual(eventos[0]["conteudo"]["quantidade"], 1)
 
+    def test_movimento_novo_avisa_responsavel_so_com_historico(self):
+        import notificacoes
+        registro = db.RegistroUsuarios(self.tmp)
+        _, _, _ = server._criar_usuario_core(registro, "resp@teste.com")
+        caso = self.gestao.criar_caso(self.gestao.criar_cliente("C2", None, None, self.agora)["id"], "Caso Aviso",
+                                      "resp@teste.com", ["20063142720238260006"], self.agora)
+        numero = "20063142720238260006"
+        mov1 = {"codigo": "1", "nome": "Distribuição", "dataHora": "2023-01-01T00:00:00Z"}
+        mov2 = {"codigo": "2", "nome": "Juntada", "dataHora": "2026-01-01T00:00:00Z"}
+        retorno = lambda movs: {"instancias": [{"tribunal": "TJSP", "movimentos": movs}], "partes": [], "advogados": []}
+        repo = notificacoes.Repositorio(self.tmp, agora=lambda: datetime(2026, 1, 2, tzinfo=__import__("datetime").timezone.utc))
+
+        sem_datajud = mock.patch.object(server, "consultar_processo_datajud", new=mock.AsyncMock(return_value={"encontrado": False}))
+        sem_datajud.start()
+        self.addCleanup(sem_datajud.stop)
+        # Primeira carga (sem histórico): registra na linha do tempo, mas não avisa ninguém.
+        self.gestao.salvar_capa_processo(caso["id"], numero, self.agora, tribunal="TJSP")
+        with mock.patch.object(server, "consultar_processo_unificado", return_value=retorno([mov1])):
+            asyncio.run(server._atualizar_movimentos_processos(self.gestao, self.agora))
+        self.assertEqual(repo.listar("resp@teste.com")["nao_lidas"], 0)
+
+        # Com histórico, o movimento novo avisa o responsável uma única vez.
+        for _ in range(2):
+            with mock.patch.object(server, "consultar_processo_unificado", return_value=retorno([mov1, mov2])):
+                asyncio.run(server._atualizar_movimentos_processos(self.gestao, self.agora))
+        feed = repo.listar("resp@teste.com")
+        self.assertEqual(feed["nao_lidas"], 1)
+        item = feed["notificacoes"][0]
+        self.assertEqual(item["titulo"], "Novo andamento no processo")
+        self.assertEqual(item["destino"], {"tipo": "movimentos_processo", "caso_id": caso["id"]})
+        self.assertEqual(repo.destino("resp@teste.com", item["id"]), item["destino"])
+
     def test_sem_movimento_novo_nao_registra_evento(self):
         movimentos = [{"codigo": "1", "nome": "Distribuição", "dataHora": "2023-01-01T00:00:00Z"}]
         self.gestao.salvar_capa_processo(self.caso["id"], self.numero, self.agora, tribunal="TJSP", movimentos=movimentos)

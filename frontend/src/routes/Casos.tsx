@@ -40,12 +40,12 @@ export default function Casos() {
   const faixaAbas = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const destino = consumirPayload<{ id: string; aba?: 'atividades' | 'publicacoes'; atividadeId?: string | number }>('casos')
+    const destino = consumirPayload<{ id: string; aba?: 'atividades' | 'publicacoes' | 'movimentacoes'; atividadeId?: string | number }>('casos')
     if (!destino) return
     setCasoId(destino.id)
     setResumo(null)
     setTitulo(null)
-    setAbaSelecionada(destino.aba === 'atividades' ? 'atividades' : destino.aba === 'publicacoes' ? 'publicacoes' : 'cadastro')
+    setAbaSelecionada(destino.aba === 'atividades' ? 'atividades' : destino.aba === 'publicacoes' ? 'publicacoes' : destino.aba === 'movimentacoes' ? 'movimentacoes' : 'cadastro')
     setDestinoAtividade({ id: destino.atividadeId, versao: versaoNavegacao })
   }, [consumirPayload, versaoNavegacao])
 
