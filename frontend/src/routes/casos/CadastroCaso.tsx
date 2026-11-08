@@ -157,7 +157,7 @@ export default function CadastroCaso({
         </div>
       </div>
       <div className="casos-acoes-cadastro">
-        <Button size="2" onClick={salvar} disabled={salvando}>
+        <Button size="2" onClick={salvar} loading={salvando}>
           Salvar alterações
         </Button>
         <Button variant="ghost" color="red" size="2" onClick={() => setParaExcluir(true)}>

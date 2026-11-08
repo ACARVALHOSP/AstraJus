@@ -195,7 +195,7 @@ export default function NovaCobrancaModal({
           )}
           <Flex gap="3" mt="2" justify="end">
             <Button variant="soft" color="gray" onClick={fechar}>Cancelar</Button>
-            <Button size="2" disabled={enviando} onClick={criar}>Criar cobrança</Button>
+            <Button size="2" loading={enviando} onClick={criar}>Criar cobrança</Button>
           </Flex>
         </Flex>
       </Dialog.Content>

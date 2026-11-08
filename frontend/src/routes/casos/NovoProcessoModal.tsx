@@ -8,7 +8,11 @@ import { enviarJson } from '../../api/rest'
 import { formatarNomeExibicao } from '../../utils/formatadores'
 import type { Caso } from './ListaCasos'
 
-type ClienteOpcao = { id: string; nome: string }
+type ClienteOpcao = { id: string; nome: string; cpf_cnpj?: string }
+
+function semAcento(texto: string) {
+  return texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
 
 export default function NovoProcessoModal({
   open, clientes, onClose, onCriado,
@@ -63,12 +67,17 @@ export default function NovoProcessoModal({
 
   function aoDigitarCliente(valor: string) {
     setTextoBusca(valor)
-    const encontrado = clientes.find((c) => formatarNomeExibicao(c.nome).toLowerCase() === valor.toLowerCase())
-    setClienteSelecionado(encontrado ?? null)
+    setClienteSelecionado(null)
   }
+  const termoCliente = semAcento(textoBusca.trim())
+  const digitosCliente = textoBusca.replace(/\D/g, '')
+  const resultadosCliente = !clienteSelecionado && termoCliente
+    ? clientes.filter(c => semAcento(c.nome ?? '').includes(termoCliente)
+        || (digitosCliente.length >= 3 && (c.cpf_cnpj ?? '').replace(/\D/g, '').includes(digitosCliente))).slice(0, 8)
+    : []
 
   async function cadastrar() {
-    if (!clienteSelecionado) { setErro('Selecione um cliente.'); return }
+    if (!clienteSelecionado) { setErro('Escolha o cliente na lista: busque pelo nome ou CPF/CNPJ.'); return }
     setEnviando(true)
     setErro(null)
     try {
@@ -93,7 +102,7 @@ export default function NovoProcessoModal({
   }
 
   return (
-    <Dialog.Root open={open} onOpenChange={(o) => { if (!o) fechar() }}>
+    <Dialog.Root open={open} onOpenChange={(o) => { if (!o && !enviando) fechar() }}>
       <Dialog.Content maxWidth="600px">
         <Dialog.Title>Novo processo</Dialog.Title>
         <Flex direction="column" gap="3">
@@ -103,15 +112,22 @@ export default function NovoProcessoModal({
             <label className="form-campo-label" htmlFor="caso-cliente-busca">Cliente *</label>
             <TextField.Root
               id="caso-cliente-busca"
-              list="caso-clientes-lista"
-              placeholder="Digite para buscar..."
+              placeholder="Busque por nome ou CPF/CNPJ"
               autoComplete="off"
-              value={textoBusca}
+              value={clienteSelecionado ? formatarNomeExibicao(clienteSelecionado.nome) : textoBusca}
               onChange={(e) => aoDigitarCliente(e.target.value)}
             />
-            <datalist id="caso-clientes-lista">
-              {clientes.map((c) => <option key={c.id} value={formatarNomeExibicao(c.nome)} />)}
-            </datalist>
+            {resultadosCliente.length > 0 && (
+              <Flex direction="column" gap="1" className="busca-resultados" role="listbox" aria-label="Clientes encontrados">
+                {resultadosCliente.map(c => (
+                  <button key={c.id} type="button" role="option" aria-selected={false} className="aj-busca-item"
+                    onClick={() => { setClienteSelecionado(c); setTextoBusca('') }}>
+                    {formatarNomeExibicao(c.nome)}{c.cpf_cnpj ? ` — ${c.cpf_cnpj}` : ''}
+                  </button>
+                ))}
+              </Flex>
+            )}
+            {textoBusca.trim() && !clienteSelecionado && !resultadosCliente.length && <Text size="1" color="gray">Nenhum cliente encontrado. Cadastre-o antes em Contatos.</Text>}
           </div>
           <div className="form-campo">
             <label className="form-campo-label" htmlFor="caso-titulo">Título</label>
@@ -161,8 +177,13 @@ export default function NovoProcessoModal({
           )}
         </Flex>
         <Flex gap="3" mt="4" justify="end">
-          <Button variant="soft" color="gray" onClick={fechar}>Cancelar</Button>
-          <Button onClick={cadastrar} disabled={enviando}>Cadastrar processo</Button>
+          {enviando && (
+            <Text size="2" color="gray" role="status" style={{ marginRight: 'auto', alignSelf: 'center' }}>
+              Criando o processo e a pasta no Google Drive…
+            </Text>
+          )}
+          <Button variant="soft" color="gray" onClick={fechar} disabled={enviando}>Cancelar</Button>
+          <Button onClick={cadastrar} loading={enviando}>Cadastrar processo</Button>
         </Flex>
       </Dialog.Content>
     </Dialog.Root>

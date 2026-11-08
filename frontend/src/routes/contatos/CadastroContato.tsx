@@ -418,7 +418,7 @@ export default function CadastroContato({
         </Tabs.Content>
       </Tabs.Root>
       <div className="aj-layout-28">
-        <Button onClick={salvar} disabled={salvando}>
+        <Button onClick={salvar} loading={salvando}>
           {salvando ? 'Salvando…' : criando ? `Cadastrar ${rotulo}` : 'Salvar alterações'}
         </Button>
         {!criando && (

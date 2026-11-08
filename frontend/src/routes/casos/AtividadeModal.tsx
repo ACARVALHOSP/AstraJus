@@ -123,7 +123,7 @@ export default function AtividadeModal({
         </Flex>
         <Flex gap="3" mt="4" justify="end">
           <Button variant="soft" color="gray" onClick={fechar}>Cancelar</Button>
-          <Button onClick={salvar} disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</Button>
+          <Button onClick={salvar} loading={salvando}>Salvar</Button>
         </Flex>
       </Dialog.Content>
     </Dialog.Root>
