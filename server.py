@@ -1283,6 +1283,67 @@ async def _cep_http(send, cep: str) -> None:
     await _json(send, 200, dados)
 
 
+_CACHE_CNPJ: dict[str, tuple[float, dict]] = {}
+CNPJ_CACHE_TTL_S = 3600.0
+
+
+def _dados_cnpj(brasilapi: dict) -> dict:
+    """Recorta a resposta da BrasilAPI no que o cadastro usa (sem a lista de sócios nem dados
+    que não vamos guardar)."""
+    def texto(chave: str) -> str:
+        valor = brasilapi.get(chave)
+        return str(valor).strip() if valor not in (None, "") else ""
+    logradouro = " ".join(p for p in (texto("descricao_tipo_de_logradouro"), texto("logradouro")) if p)
+    telefones = [t for t in (texto("ddd_telefone_1"), texto("ddd_telefone_2")) if t]
+    return {
+        "cnpj": texto("cnpj"), "razao_social": texto("razao_social"), "nome_fantasia": texto("nome_fantasia"),
+        "situacao": texto("descricao_situacao_cadastral"), "data_situacao": texto("data_situacao_cadastral"),
+        "abertura": texto("data_inicio_atividade"), "atividade": texto("cnae_fiscal_descricao"),
+        "natureza_juridica": texto("natureza_juridica"), "porte": texto("porte"),
+        "telefones": telefones, "email": texto("email").lower(),
+        "endereco": {
+            "cep": texto("cep"), "rua": logradouro, "numero": texto("numero"), "complemento": texto("complemento"),
+            "bairro": texto("bairro"), "cidade": texto("municipio"), "estado": texto("uf"),
+        },
+    }
+
+
+async def _consulta_cnpj_http(send, cnpj: str) -> None:
+    """GET /clientes/consulta-cnpj/<cnpj>: dados cadastrais da Receita Federal pela BrasilAPI, para o
+    autopreenchimento do cadastro de pessoa jurídica. Passa pelo servidor pelo mesmo motivo do CEP
+    (o navegador pode estar atrás de um CSP que bloqueia domínios de terceiros) e guarda a resposta
+    por uma hora para não repetir a consulta ao digitar de novo."""
+    digitos = re.sub(r"\D", "", cnpj or "")
+    if len(digitos) != 14 or not _cnpj_valido(digitos):
+        await _json(send, 400, _erro("CNPJ inválido. Confira os 14 números."))
+        return
+    em_cache = _CACHE_CNPJ.get(digitos)
+    if em_cache and time.monotonic() - em_cache[0] < CNPJ_CACHE_TTL_S:
+        await _json(send, 200, em_cache[1])
+        return
+    try:
+        async with _cliente(10.0) as cliente_http:
+            resp = await cliente_http.get(f"https://brasilapi.com.br/api/cnpj/v1/{digitos}")
+    except httpx.HTTPError:
+        await _json(send, 502, _erro("Não foi possível consultar a Receita Federal agora. Preencha os dados manualmente."))
+        return
+    if resp.status_code == 404:
+        await _json(send, 404, _erro("CNPJ não encontrado na Receita Federal."))
+        return
+    if resp.status_code != 200:
+        await _json(send, 502, _erro("A consulta de CNPJ está indisponível no momento. Preencha os dados manualmente."))
+        return
+    try:
+        dados = _dados_cnpj(resp.json())
+    except (ValueError, AttributeError):
+        await _json(send, 502, _erro("Resposta inesperada da consulta de CNPJ."))
+        return
+    if len(_CACHE_CNPJ) > 500:
+        _CACHE_CNPJ.clear()
+    _CACHE_CNPJ[digitos] = (time.monotonic(), dados)
+    await _json(send, 200, dados)
+
+
 # --- CJPG: busca e heurísticas de jurimetria ----------------------------------
 
 CJPG_MARCADORES_DISPOSITIVO = [
@@ -4251,6 +4312,9 @@ class _AutenticacaoBearer:
 
         if caminho == "/responsaveis" and scope.get("method") == "GET":
             await _json(send, 200, {"responsaveis": self.registro.ativos()})
+            return
+        if caminho.startswith("/clientes/consulta-cnpj/") and scope.get("method") == "GET":
+            await _consulta_cnpj_http(send, caminho[len("/clientes/consulta-cnpj/"):])
             return
         if caminho == "/clientes/acoes-em-massa" and self.gestao is not None:
             await self._clientes_em_massa(scope, receive, send)
