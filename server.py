@@ -4263,6 +4263,11 @@ class _AutenticacaoBearer:
         if caminho == "/casos" and self.gestao is not None:
             await self._casos(scope, receive, send)
             return
+        if caminho.endswith("/pasta-drive") and scope.get("method") == "POST" and self.gestao is not None \
+                and caminho.startswith(("/casos/", "/clientes/")):
+            alvo, _, resto = caminho[1:].partition("/")
+            await self._pasta_drive_sob_demanda(send, alvo, resto[:-len("/pasta-drive")])
+            return
         if caminho.startswith("/casos/") and caminho.endswith("/evento-calendar") and self.gestao is not None:
             caso_id = caminho[len("/casos/"):-len("/evento-calendar")].rstrip("/")
             await self._evento_calendar_do_caso(scope, receive, send, caso_id)
@@ -4627,6 +4632,7 @@ class _AutenticacaoBearer:
             if cliente_registro is None:
                 await _json(send, 404, _erro("Cliente não encontrado."))
                 return
+            cliente_registro["drive_pasta_id"] = self.gestao.obter_drive_pasta_cliente(cliente_id)
             await _json(send, 200, cliente_registro)
             return
         if metodo == "DELETE":
@@ -4968,36 +4974,88 @@ class _AutenticacaoBearer:
             if erro:
                 await _json(send, 400, erro)
                 return
-            if self._google_conectado():
-                # Fase 4: pasta no Drive criada na hora, best-effort - se falhar (rede, token
-                # revogado do lado do Google), o caso já foi criado mesmo assim; só não tem pasta.
-                try:
-                    pasta_id = await self._criar_pasta_drive_do_caso(caso)
-                    if pasta_id:
-                        caso["drive_pasta_id"] = pasta_id
-                except Exception:
-                    log.exception("Caso %s: falha ao criar pasta no Drive", caso["id"])
+            # Pasta no Drive criada na hora; se falhar, o processo já está salvo e a tela avisa.
+            await self._tentar_pasta_drive(caso)
             await _json(send, 201, caso)
             return
         await _responder(send, 404, b"Nao encontrado")
 
-    async def _criar_pasta_drive_do_caso(self, caso: dict) -> str | None:
-        conexao_google = self.registro_google.obter_conexao()
+    async def _pasta_existente_ou_nova(self, http, token: str, pasta_id: str | None, nome: str, pai: str | None) -> str:
+        """Reaproveita a pasta guardada se ainda existir no Drive; senão (apagada, lixeira) cria outra."""
+        if pasta_id and await google_integracao.pasta_drive_existe(http, token, pasta_id):
+            return pasta_id
+        resultado = await google_integracao.criar_pasta_drive(http, token, nome, pai)
+        if not resultado.get("id"):
+            raise google_integracao.ErroGoogle("O Google não devolveu o ID da pasta criada.")
+        return resultado["id"]
+
+    async def _pastas_drive(self, caso_ou_cliente_id: str, *, caso: dict | None) -> tuple[str, str | None]:
+        """Garante CLIENTES/<cliente>/ (e, para um processo, CLIENTES/<cliente>/<processo>).
+        Devolve (id da pasta do cliente, id da pasta do processo ou None)."""
+        conexao_google = self.registro_google.obter_conexao() if self.registro_google else None
         if not conexao_google:
-            return None
-        cliente_do_caso = self.gestao.obter_cliente(caso["cliente_id"])
-        nome_cliente = cliente_do_caso["nome"] if cliente_do_caso else caso["cliente_id"]
-        nome_pasta = f"{nome_cliente} - {caso.get('titulo') or ', '.join(caso.get('processos') or []) or caso['id']}"
-        pasta_raiz = _config_integracao("CNJ_GOOGLE_DRIVE_PASTA_RAIZ", "").strip() or None
-        async with _cliente(20) as http_cliente:
-            access_token = await google_integracao.obter_access_token(
-                http_cliente, self.google_client_id, self.google_client_secret, conexao_google["refresh_token"],
-            )
-            resultado = await google_integracao.criar_pasta_drive(http_cliente, access_token, nome_pasta, pasta_raiz)
-        pasta_id = resultado.get("id")
-        if pasta_id:
-            self.gestao.atualizar_drive_pasta(caso["id"], pasta_id)
-        return pasta_id
+            raise LookupError("O Google não está conectado. Conecte em Configurações → Integrações.")
+        cliente_id = caso["cliente_id"] if caso else caso_ou_cliente_id
+        cliente_do_caso = self.gestao.obter_cliente(cliente_id)
+        nome_cliente = cliente_do_caso["nome"] if cliente_do_caso else cliente_id
+        raiz = _config_integracao("CNJ_GOOGLE_DRIVE_PASTA_RAIZ", "").strip() or None
+        async with _cliente(20) as http:
+            token = await google_integracao.obter_access_token(
+                http, self.google_client_id, self.google_client_secret, conexao_google["refresh_token"])
+            # Pasta CLIENTES: a informada em CNJ_GOOGLE_DRIVE_PASTA_CLIENTES (uma pasta que já
+            # existe) ou a criada aqui dentro da raiz e lembrada no banco.
+            fixa = _config_integracao("CNJ_GOOGLE_DRIVE_PASTA_CLIENTES", "").strip() or None
+            if fixa:
+                clientes_id = fixa
+            else:
+                clientes_id = await self._pasta_existente_ou_nova(
+                    http, token, self.gestao.obter_config_drive("pasta_clientes"), "CLIENTES", raiz)
+                self.gestao.salvar_config_drive("pasta_clientes", clientes_id)
+            pasta_cliente = await self._pasta_existente_ou_nova(
+                http, token, self.gestao.obter_drive_pasta_cliente(cliente_id), nome_cliente, clientes_id)
+            self.gestao.atualizar_drive_pasta_cliente(cliente_id, pasta_cliente)
+            if not caso:
+                return pasta_cliente, None
+            nome_pasta = caso.get("titulo") or ", ".join(caso.get("processos") or []) or caso["id"]
+            pasta_caso = await self._pasta_existente_ou_nova(http, token, caso.get("drive_pasta_id"), nome_pasta, pasta_cliente)
+            self.gestao.atualizar_drive_pasta(caso["id"], pasta_caso)
+            return pasta_cliente, pasta_caso
+
+    async def _criar_pasta_drive_do_caso(self, caso: dict) -> str | None:
+        return (await self._pastas_drive(caso["id"], caso=caso))[1]
+
+    async def _tentar_pasta_drive(self, caso: dict) -> None:
+        """Pasta no Drive logo após criar o processo. Nunca derruba o cadastro: o resultado vai em
+        caso["pasta_drive"] ('criada', 'falhou' ou 'nao_configurado') para a tela avisar."""
+        if not self._google_conectado():
+            caso["pasta_drive"] = "nao_configurado"
+            return
+        try:
+            caso["drive_pasta_id"] = await self._criar_pasta_drive_do_caso(caso)
+            caso["pasta_drive"] = "criada"
+        except Exception:
+            log.exception("Caso %s: falha ao criar pasta no Drive", caso["id"])
+            caso["pasta_drive"] = "falhou"
+
+    async def _pasta_drive_sob_demanda(self, send, alvo: str, alvo_id: str) -> None:
+        """POST /casos/<id>/pasta-drive e /clientes/<id>/pasta-drive: cria (ou refaz) a pasta."""
+        caso = self.gestao.obter_caso(alvo_id) if alvo == "casos" else None
+        if alvo == "casos" and caso is None:
+            await _json(send, 404, _erro("Processo não encontrado."))
+            return
+        if alvo == "clientes" and self.gestao.obter_cliente(alvo_id) is None:
+            await _json(send, 404, _erro("Contato não encontrado."))
+            return
+        try:
+            pasta_cliente, pasta_caso = await self._pastas_drive(alvo_id, caso=caso)
+        except LookupError as e:
+            await _json(send, 409, _erro(str(e)))
+            return
+        except Exception:
+            log.exception("Falha ao criar pasta no Drive (%s %s)", alvo, alvo_id)
+            await _json(send, 502, _erro("Não foi possível criar a pasta no Google Drive agora. Tente de novo em instantes."))
+            return
+        await _json(send, 200, {"drive_pasta_id": pasta_caso or pasta_cliente, "drive_pasta_cliente_id": pasta_cliente})
 
     async def _caso_detalhe(self, scope, receive, send, caso_id: str):
         """GET /casos/<id>: o caso com sua linha do tempo.
@@ -5936,6 +5994,8 @@ class _AutenticacaoBearer:
         if erro:
             await _json(send, 400, erro)
             return
+        if caso.get("cliente_id"):
+            await self._tentar_pasta_drive(caso)
         await _json(send, 201, caso)
 
 

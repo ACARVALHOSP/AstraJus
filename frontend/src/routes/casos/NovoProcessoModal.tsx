@@ -2,6 +2,7 @@ import { confirmarSaida, useAlteracoesPendentes } from '../../AlteracoesPendente
 import React, { useEffect, useState } from 'react'
 import { Button, Callout, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle } from 'lucide-react'
+import { useAvisos } from '../../Avisos'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { enviarJson } from '../../api/rest'
@@ -21,6 +22,7 @@ export default function NovoProcessoModal({
   launcherButtonRef?: React.RefObject<HTMLButtonElement | null>
 }) {
   const { cliente } = useCliente()
+  const { avisar } = useAvisos()
   const [textoBusca, setTextoBusca] = useState('')
   const [clienteSelecionado, setClienteSelecionado] = useState<ClienteOpcao | null>(null)
   const [titulo, setTitulo] = useState('')
@@ -94,6 +96,7 @@ export default function NovoProcessoModal({
       })
       limpar()
       onCriado(novoCaso)
+      if (novoCaso.pasta_drive === 'falhou') avisar({ tipo: 'info', texto: 'Processo cadastrado, mas a pasta no Google Drive não foi criada. Abra o processo e use "Criar pasta no Drive".' })
     } catch (e) {
       setErro(e instanceof ErroMCP ? e.message : 'Falha ao cadastrar processo.')
     } finally {

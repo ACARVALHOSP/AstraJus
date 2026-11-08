@@ -7,6 +7,7 @@ import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { erroCpfCnpj, erroEmail, erroTelefone, mascaraCpfCnpj, mascaraTelefone } from '../../utils/mascaras'
+import PastaDrive from '../../PastaDrive'
 import { useAvisos } from '../../Avisos'
 import { useAlteracoesPendentes } from '../../AlteracoesPendentes'
 import CampoRepetivel from './CampoRepetivel'
@@ -21,6 +22,7 @@ type ClienteRegistro = {
   nome?: string
   cpf_cnpj?: string
   observacoes?: string
+  drive_pasta_id?: string | null
   tipo_pessoa?: string
   perfil?: string
   telefones?: Telefone[]
@@ -414,6 +416,11 @@ export default function CadastroContato({
               <label className="form-campo-label" htmlFor="contato-observacoes">Observações</label>
               <TextField.Root id="contato-observacoes" placeholder="Ex.: indicação de cliente antigo" value={registro.observacoes} onChange={(e) => atualizar('observacoes', e.target.value)} />
             </div>
+            {clienteId && <PastaDrive tipo="clientes" id={clienteId} pastaId={registro.drive_pasta_id} onCriada={(pastaId) => {
+              // A pasta é criada à parte: não conta como alteração pendente do cadastro.
+              setRegistro(r => ({ ...r, drive_pasta_id: pastaId }))
+              setOriginal(o => JSON.stringify({ ...JSON.parse(o), drive_pasta_id: pastaId }))
+            }} />}
           </Flex>
         </Tabs.Content>
       </Tabs.Root>

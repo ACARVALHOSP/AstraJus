@@ -167,6 +167,17 @@ async def criar_pasta_drive(
     return _json_ou_erro(resposta, "criar pasta no Drive")
 
 
+async def pasta_drive_existe(cliente: httpx.AsyncClient, access_token: str, pasta_id: str) -> bool:
+    """False se a pasta foi apagada (ou está na lixeira) no Drive; erros de rede propagam."""
+    resposta = await cliente.get(
+        f"{_URL_DRIVE_ARQUIVOS}/{pasta_id}?fields=id,trashed",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    if resposta.status_code == 404:
+        return False
+    return not _json_ou_erro(resposta, "consultar pasta no Drive").get("trashed")
+
+
 async def criar_evento_calendar(
     cliente: httpx.AsyncClient, access_token: str, titulo: str, data_iso: str, descricao: str, caso_id: str,
 ) -> dict:

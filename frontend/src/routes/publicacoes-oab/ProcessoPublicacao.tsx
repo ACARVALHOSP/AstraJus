@@ -92,7 +92,8 @@ export default function ProcessoPublicacao({ publicacao, onClose, onConcluido }:
         if (capa.aviso) throw new Error(`Processo criado e vinculado. A capa requer revisão: ${capa.aviso}. Use Tentar novamente para completar a consulta.`)
       }
       if (!escolhido && !tribunal) throw new Error('Processo criado e vinculado; tribunal não identificado. Complete a capa no cadastro do processo.')
-      onConcluido(escolhido ? 'Publicação vinculada. O estado de revisão foi preservado.' : 'Processo criado e capa preenchida. A publicação permanece disponível para revisão.')
+      const semPasta = !escolhido && caso.pasta_drive === 'falhou' ? ' A pasta no Google Drive não foi criada: abra o processo e use "Criar pasta no Drive".' : ''
+      onConcluido((escolhido ? 'Publicação vinculada. O estado de revisão foi preservado.' : 'Processo criado e capa preenchida. A publicação permanece disponível para revisão.') + semPasta)
     } catch (e) { setErro((e as Error).message) } finally { trava.current = false; setSalvando(false); setEtapaIndice(-1) }
   }
 
