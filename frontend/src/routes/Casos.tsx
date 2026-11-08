@@ -1,3 +1,4 @@
+import { confirmarSaida } from '../AlteracoesPendentes'
 import { ChevronLeft } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Badge, Button, Flex, Heading, Skeleton, Tabs, Text } from '@radix-ui/themes'
@@ -87,7 +88,7 @@ export default function Casos() {
     <div className="casos-detalhe">
       <Flex direction="column" gap="6">
         <div className="casos-detalhe-cabecalho">
-          <Button variant="ghost" size="1" onClick={() => setCasoId(null)}>
+          <Button variant="ghost" size="1" onClick={() => confirmarSaida(() => setCasoId(null))}>
             <ChevronLeft size={16} />
             Voltar para processos
           </Button>
@@ -98,7 +99,7 @@ export default function Casos() {
             </p>
           ))}
         </div>
-        <Tabs.Root key={casoId} value={abaSelecionada} onValueChange={(v) => setAbaSelecionada(v as AbaId)}>
+        <Tabs.Root key={casoId} value={abaSelecionada} onValueChange={(v) => confirmarSaida(() => setAbaSelecionada(v as AbaId))}>
           <div ref={faixaAbas}>
             <Tabs.List className="casos-abas" aria-label="Detalhes do processo">
               <Tabs.Trigger value="cadastro">Cadastro</Tabs.Trigger>

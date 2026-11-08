@@ -1,6 +1,7 @@
+import { useAvisos } from '../Avisos'
 import CabecalhoPagina from '../CabecalhoPagina'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Info, CheckCircle2 } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { AlertTriangle, Info } from 'lucide-react'
 import { Badge, Button, Callout, Dialog, Flex, Heading, Select, Tabs, Text, TextField } from '@radix-ui/themes'
 import Carregamento from '../Carregamento'
 import TabelaResponsiva from '../TabelaResponsiva'
@@ -118,17 +119,17 @@ function EstadoExecucao({ titulo, dados }: { titulo: string; dados?: Execucao })
   )
 }
 
-export default function Monitoramentos() {
+export default function Monitoramentos({ abas }: { abas?: ReactNode } = {}) {
   const { cliente } = useCliente()
-  return <Painel key={cliente?.token ?? 'sem-conexao'} />
+  return <Painel key={cliente?.token ?? 'sem-conexao'} abas={abas} />
 }
 
-function Painel() {
+function Painel({ abas }: { abas?: ReactNode }) {
   const { cliente } = useCliente()
   const [dados, setDados] = useState<Resposta | null>(null)
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState('')
-  const [mensagem, setMensagem] = useState('')
+  const { avisar } = useAvisos()
   const [modal, setModal] = useState<'criar' | Monitoramento | null>(null)
   const [tipo, setTipo] = useState('oab')
   const [numero, setNumero] = useState('')
@@ -181,7 +182,6 @@ function Painel() {
     setOperacao(true)
     setErroModal('')
     setErro('')
-    setMensagem('')
     try {
       if (acao === 'criar') {
         const r = await chamar('monitorar_publicacoes', {
@@ -189,19 +189,15 @@ function Painel() {
           nome: nome.trim() || undefined
         })
         if (vivo.current)
-          setMensagem(
-            r.existente
-              ? 'Este monitoramento já existe. Seu histórico foi preservado.'
-              : 'Monitoramento criado. A primeira coleta ocorrerá no próximo ciclo.'
-          )
+          avisar({ tipo: r.existente ? 'info' : 'sucesso', texto: r.existente
+            ? 'Este monitoramento já existe. Seu histórico foi preservado.'
+            : 'Monitoramento criado. A primeira coleta ocorre no próximo ciclo.' })
       } else {
         await chamar(acao === 'remover' ? 'remover_monitoramento' : 'renovar_monitoramento', { id: mon!.id })
         if (vivo.current)
-          setMensagem(
-            acao === 'remover'
-              ? 'Monitoramento removido. As publicações já capturadas foram preservadas.'
-              : 'Monitoramento renovado por 180 dias, preservando seu histórico.'
-          )
+          avisar({ texto: acao === 'remover'
+            ? 'Monitoramento removido. As publicações já capturadas foram preservadas.'
+            : 'Monitoramento renovado por 180 dias, preservando seu histórico.' })
       }
       if (!vivo.current) return
       setModal(null)
@@ -274,8 +270,9 @@ function Painel() {
     <>
       <Flex direction="column" gap="5">
         <CabecalhoPagina
-          titulo="Monitoramentos"
-          descricao={<>Acompanhe publicações de processos ou OAB. Você usa {lista.length} de {dados?.limite ?? 5} monitoramentos.</>}
+          titulo={abas ? 'Publicações recebidas' : 'Monitoramentos'}
+          descricao={<>OABs e processos acompanhados. Você usa {lista.length} de {dados?.limite ?? 5} monitoramentos.</>}
+          abas={abas}
           acoes={<>
             <Button variant="soft" color="gray" size="2" disabled={bloqueado} onClick={carregar}>Atualizar</Button>
             <Button
@@ -320,12 +317,6 @@ function Painel() {
                   <Callout.Root color="red" size="1">
                     <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
                     <Callout.Text>Não foi possível concluir: {erro}</Callout.Text>
-                  </Callout.Root>
-                )}
-                {mensagem && (
-                  <Callout.Root color="green" size="1">
-                    <Callout.Icon><CheckCircle2 size={14} /></Callout.Icon>
-                    <Callout.Text>{mensagem}</Callout.Text>
                   </Callout.Root>
                 )}
                 {carregando && <Carregamento tipo="tabela" descricao="Carregando monitoramentos…" />}

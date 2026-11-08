@@ -1,3 +1,5 @@
+import { formatarNumeroCNJ } from '../../utils/formatadores'
+import { useAvisos } from '../../Avisos'
 import TabelaResponsiva from '../../TabelaResponsiva'
 import TextoTabela from '../../TextoTabela'
 import AcoesTabela from '../../AcoesTabela'
@@ -36,8 +38,13 @@ const ROTULO_TIPO: Record<string, string> = {
 
 const soDigitos = (v: string) => v.replace(/\D/g, '')
 
+function semAcento(texto: string) {
+  return texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
 export default function VinculosCaso({ casoId, onAbrirCaso }: { casoId: string; onAbrirCaso: (id: string) => void }) {
   const { cliente } = useCliente()
+  const { avisar } = useAvisos()
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [vinculos, setVinculos] = useState<Vinculo[] | null>(null)
@@ -64,44 +71,44 @@ export default function VinculosCaso({ casoId, onAbrirCaso }: { casoId: string; 
 
   useEffect(carregar, [carregar])
 
+  // Busca por título, parte ou número (com ou sem pontuação), entre os processos do escritório.
   function aoDigitarNumero(valor: string) {
     setNumeroProcesso(valor)
     setErroForm(null)
-    const digitado = soDigitos(valor)
-    if (!digitado) {
-      setCasoSelecionado(null)
-      return
-    }
-    const encontrado = casosDisponiveis.find((c) => (c.processos ?? []).some((p) => soDigitos(p) === digitado))
-    setCasoSelecionado(encontrado ?? null)
+    setCasoSelecionado(null)
   }
+  const termoBusca = semAcento(numeroProcesso.trim())
+  const digitosBusca = soDigitos(numeroProcesso)
+  const jaVinculados = new Set((vinculos ?? []).map(v => v.caso_id))
+  const resultadosBusca = !casoSelecionado && termoBusca
+    ? casosDisponiveis.filter(c => !jaVinculados.has(c.id) && (
+        semAcento([c.titulo, c.autor, c.reu, c.acao].filter(Boolean).join(' ')).includes(termoBusca)
+        || (digitosBusca.length >= 4 && (c.processos ?? []).some(p => soDigitos(p).includes(digitosBusca))))).slice(0, 8)
+    : []
 
   function previewTexto(): string | null {
-    const digitado = soDigitos(numeroProcesso)
-    if (!digitado) return null
-    if (casoSelecionado) {
-      const parte = casoSelecionado.autor || casoSelecionado.reu || '(parte não informada)'
-      const acao = casoSelecionado.acao || '(ação não informada)'
-      return `Parte: ${parte} · Ação: ${acao}` + (casoSelecionado.titulo ? ` — ${casoSelecionado.titulo}` : '')
-    }
-    return 'Nenhum processo cadastrado com esse número de processo.'
+    if (!casoSelecionado) return termoBusca && !resultadosBusca.length ? 'Nenhum processo encontrado.' : null
+    const parte = casoSelecionado.autor || casoSelecionado.reu || '(parte não informada)'
+    const acao = casoSelecionado.acao || '(ação não informada)'
+    return `Parte: ${parte} · Ação: ${acao}`
   }
 
   async function adicionarVinculo() {
     if (!casoSelecionado) {
-      setErroForm('Selecione um processo.')
+      setErroForm('Busque e escolha o processo na lista.')
       return
     }
     setEnviando(true)
     setErroForm(null)
     try {
       await enviarJson(cliente, `/casos/${casoId}/vinculos`, { caso_vinculado_id: casoSelecionado.id, tipo })
+      avisar({ texto: `Vínculo com “${casoSelecionado.titulo || 'processo'}” adicionado.` })
       setNumeroProcesso('')
       setCasoSelecionado(null)
       setTipo('relacionado')
       carregar()
     } catch (e) {
-      setErroForm(e instanceof ErroMCP ? e.message : 'Falha ao vincular.')
+      setErroForm(e instanceof ErroMCP ? e.message : 'Não foi possível vincular. Tente de novo.')
     } finally {
       setEnviando(false)
     }
@@ -112,8 +119,15 @@ export default function VinculosCaso({ casoId, onAbrirCaso }: { casoId: string; 
     try {
       await enviarJson(cliente, `/casos/${casoId}/vinculos/${v.caso_id}`, {}, 'DELETE')
       carregar()
+      avisar({
+        texto: `Vínculo com “${v.titulo || 'processo'}” removido.`,
+        desfazer: async () => {
+          await enviarJson(cliente, `/casos/${casoId}/vinculos`, { caso_vinculado_id: v.caso_id, tipo: v.tipo })
+          carregar()
+        },
+      })
     } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Falha ao remover.')
+      avisar({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Não foi possível remover. Tente de novo.' })
     } finally {
       setRemovendo(null)
     }
@@ -174,14 +188,24 @@ export default function VinculosCaso({ casoId, onAbrirCaso }: { casoId: string; 
         <Flex direction="column" gap="4" mt="3">
           <div className="casos-formulario-grade">
             <div className="form-campo">
-              <label className="form-campo-label" htmlFor="vinculos-numero-processo">Número do processo</label>
+              <label className="form-campo-label" htmlFor="vinculos-numero-processo">Processo</label>
               <TextField.Root
                 id="vinculos-numero-processo"
-                placeholder="1006314-27.2023.8.26.0005"
+                placeholder="Título, parte ou número do processo"
                 autoComplete="off"
-                value={numeroProcesso}
+                value={casoSelecionado ? (casoSelecionado.titulo || (casoSelecionado.processos ?? [])[0] || '') : numeroProcesso}
                 onChange={(e) => aoDigitarNumero(e.target.value)}
               />
+              {resultadosBusca.length > 0 && (
+                <Flex direction="column" gap="1" className="busca-resultados" role="listbox" aria-label="Processos encontrados">
+                  {resultadosBusca.map(c => (
+                    <button key={c.id} type="button" role="option" aria-selected={false} className="aj-busca-item"
+                      onClick={() => { setCasoSelecionado(c); setNumeroProcesso('') }}>
+                      {c.titulo || '(sem título)'}{(c.processos ?? [])[0] ? ` — ${formatarNumeroCNJ((c.processos ?? [])[0])}` : ''}
+                    </button>
+                  ))}
+                </Flex>
+              )}
               {preview && <Text size="1" color="gray">{preview}</Text>}
             </div>
             <div className="form-campo">

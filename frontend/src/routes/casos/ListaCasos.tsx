@@ -1,3 +1,4 @@
+import { ariaSort, BotaoOrdenar, EscolherColunas, ordenarLista, useColunas, useOrdenacao } from '../../OrdenacaoColunas'
 import LinhaFiltros from '../../LinhaFiltros'
 import CabecalhoPagina from '../../CabecalhoPagina'
 import TabelaResponsiva from '../../TabelaResponsiva'
@@ -40,7 +41,6 @@ export type Caso = {
 
 type Cliente = { id: string; nome?: string }
 type Atalho = 'andamento' | 'revisar' | 'atrasado' | 'parado' | 'encerrados' | 'favoritos'
-type Ordem = 'proximo' | 'movimentacao' | 'titulo' | 'recente'
 
 const ROTULO_DESFECHO: Record<string, string> = {
   procedente: 'Procedente',
@@ -97,7 +97,11 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
   const [atalho, setAtalho] = useState<Atalho>('andamento')
   const [responsavel, setResponsavel] = useState('')
   const [tribunal, setTribunal] = useState('')
-  const [ordem, setOrdem] = useState<Ordem>('proximo')
+  const { ordem, alternar: alternarOrdem, definir: definirOrdem } = useOrdenacao('processos', { campo: 'proximo', direcao: 'asc' })
+  const colunas = useColunas('processos', [
+    { chave: 'cliente', rotulo: 'Cliente' }, { chave: 'responsavel', rotulo: 'Responsável' },
+    { chave: 'compromisso', rotulo: 'Próximo compromisso' }, { chave: 'movimentacao', rotulo: 'Última movimentação' },
+  ])
   const [pagina, setPagina] = useState(1)
   const [, setVersaoFavoritos] = useState(0)
   const [paraExcluir, setParaExcluir] = useState<Caso | null>(null)
@@ -177,21 +181,19 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
   }
   const contagem = (a: Atalho) => filtrados.filter(c => noAtalho(c, a)).length
 
-  const ordenados = useMemo(() => {
-    const lista = filtrados.filter(c => noAtalho(c, atalho))
-    const titulo = (c: Caso) => normalizar(c.titulo || '')
-    return lista.sort((a, b) => {
-      if (ordem === 'titulo') return titulo(a).localeCompare(titulo(b), 'pt-BR')
-      if (ordem === 'recente') return (b.ultima_movimentacao || '').localeCompare(a.ultima_movimentacao || '')
-      if (ordem === 'movimentacao') return (b.ultima_movimentacao_data || '').localeCompare(a.ultima_movimentacao_data || '')
-      // Próximo compromisso: com data primeiro (mais cedo antes); sem compromisso ao fim, por título.
-      const da = a.proximo_compromisso?.data ?? '', db = b.proximo_compromisso?.data ?? ''
-      if (da && db) return da.localeCompare(db)
-      if (da || db) return da ? -1 : 1
-      return titulo(a).localeCompare(titulo(b), 'pt-BR')
+  // Ordem pelo cabeçalho da tabela (ou pela lista "Ordenar por" no celular). Sem compromisso ou
+  // sem movimentação ficam sempre no fim; empates seguem pelo título.
+  const ordenados = ordenarLista(
+    [...filtrados.filter(c => noAtalho(c, atalho))].sort((a, b) => normalizar(a.titulo || '').localeCompare(normalizar(b.titulo || ''), 'pt-BR')),
+    ordem, {
+      titulo: c => normalizar(c.titulo || ''),
+      numero: c => c.processos?.[0] ?? '',
+      cliente: c => normalizar(nomeCliente(c.cliente_id)),
+      responsavel: c => normalizar(c.responsavel || ''),
+      proximo: c => c.proximo_compromisso?.data ?? null,
+      movimentacao: c => c.ultima_movimentacao_data ?? null,
+      recente: c => c.ultima_movimentacao ?? null,
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtrados, atalho, ordem, hoje])
 
   const totalPaginas = Math.max(1, Math.ceil(ordenados.length / POR_PAGINA))
   const paginaAtual = Math.min(pagina, totalPaginas)
@@ -361,7 +363,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
           </div>
           <div className="form-campo">
             <label className="form-campo-label" id="casos-ordem-rotulo">Ordenar por</label>
-            <Select.Root value={ordem} onValueChange={v => setOrdem(v as Ordem)}>
+            <Select.Root value={ordem.campo} onValueChange={v => definirOrdem({ campo: v, direcao: v === 'movimentacao' || v === 'recente' ? 'desc' : 'asc' })}>
               <Select.Trigger aria-labelledby="casos-ordem-rotulo" />
               <Select.Content>
                 <Select.Item value="proximo">Próximo compromisso</Select.Item>
@@ -373,6 +375,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
           </div>
           {filtrosAtivos && <Button size="2" variant="soft" color="gray" onClick={() => mudarFiltro(() => { setBusca(''); setResponsavel(''); setTribunal('') })}>Limpar filtros</Button>}
         </LinhaFiltros>
+        {!estreita && <Flex justify="end" mt="-3"><EscolherColunas colunas={colunas} /></Flex>}
 
         <div aria-live="polite">
           {carregando && <Carregamento colunas={6} />}
@@ -427,12 +430,12 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                   <thead>
                     <tr>
                       <th className="tabela-controle" aria-label="Favorito" />
-                      <th>Título</th>
-                      <th className="casos-col-numero">Nº do processo</th>
-                      <th className="casos-col-cliente">Cliente</th>
-                      <th className="casos-col-resp">Responsável</th>
-                      <th className="casos-col-comp">Próximo compromisso</th>
-                      <th className="casos-col-mov">Última movimentação</th>
+                      <th aria-sort={ariaSort('titulo', ordem)}><BotaoOrdenar campo="titulo" ordem={ordem} onOrdenar={alternarOrdem}>Título</BotaoOrdenar></th>
+                      <th className="casos-col-numero" aria-sort={ariaSort('numero', ordem)}><BotaoOrdenar campo="numero" ordem={ordem} onOrdenar={alternarOrdem}>Nº do processo</BotaoOrdenar></th>
+                      {colunas.visivel('cliente') && <th className="casos-col-cliente" aria-sort={ariaSort('cliente', ordem)}><BotaoOrdenar campo="cliente" ordem={ordem} onOrdenar={alternarOrdem}>Cliente</BotaoOrdenar></th>}
+                      {colunas.visivel('responsavel') && <th className="casos-col-resp" aria-sort={ariaSort('responsavel', ordem)}><BotaoOrdenar campo="responsavel" ordem={ordem} onOrdenar={alternarOrdem}>Responsável</BotaoOrdenar></th>}
+                      {colunas.visivel('compromisso') && <th className="casos-col-comp" aria-sort={ariaSort('proximo', ordem)}><BotaoOrdenar campo="proximo" ordem={ordem} onOrdenar={alternarOrdem}>Próximo compromisso</BotaoOrdenar></th>}
+                      {colunas.visivel('movimentacao') && <th className="casos-col-mov" aria-sort={ariaSort('movimentacao', ordem)}><BotaoOrdenar campo="movimentacao" ordem={ordem} onOrdenar={alternarOrdem}>Última movimentação</BotaoOrdenar></th>}
                       <th className="tabela-acoes casos-col-acoes">Ações</th>
                     </tr>
                   </thead>
@@ -442,14 +445,14 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                         <td className="tabela-controle">{estrela(c)}</td>
                         <td>{titulo(c)}</td>
                         <td>{numeros(c)}</td>
-                        <td>{clienteCelula(c)}</td>
-                        <td>
+                        {colunas.visivel('cliente') && <td>{clienteCelula(c)}</td>}
+                        {colunas.visivel('responsavel') && <td>
                           {c.responsavel ? (
                             <span>{formatarNomeExibicao(c.responsavel)}</span>
                           ) : <Text size="1" color="gray">Sem responsável</Text>}
-                        </td>
-                        <td>{compromisso(c)}</td>
-                        <td>{movimentacao(c)}</td>
+                        </td>}
+                        {colunas.visivel('compromisso') && <td>{compromisso(c)}</td>}
+                        {colunas.visivel('movimentacao') && <td>{movimentacao(c)}</td>}
                         <td className="tabela-acoes">{menu(c)}</td>
                       </tr>
                     ))}

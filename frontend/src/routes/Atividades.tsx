@@ -1,6 +1,7 @@
 import LinhaFiltros from '../LinhaFiltros'
 import CabecalhoPagina from '../CabecalhoPagina'
 import Paginacao, { paginaPara, POR_PAGINA } from '../Paginacao'
+import { ariaSort, BotaoOrdenar, EscolherColunas, ordenarLista, useColunas, useOrdenacao } from '../OrdenacaoColunas'
 import { useAvisos } from '../Avisos'
 import CampoData from '../CampoData'
 import Carregamento from '../Carregamento'
@@ -97,17 +98,28 @@ export default function Atividades() {
     for (const a of atividades) c[grupoDe(a, hoje)]++
     return c
   }, [atividades, hoje])
-  const visiveis = useMemo(() => situacao === 'concluidas' || !atalho ? atividades : atividades.filter(a => grupoDe(a, hoje) === atalho), [atividades, atalho, situacao, hoje])
+  // Padrão: por data, agrupado (Atrasadas, Hoje…). Ordenar por outra coluna mostra a lista corrida.
+  const { ordem, alternar: alternarOrdem } = useOrdenacao('atividades', { campo: 'quando', direcao: 'asc' })
+  const colunas = useColunas('atividades', [{ chave: 'processo', rotulo: 'Processo' }, { chave: 'responsavel', rotulo: 'Responsável' }, { chave: 'situacao', rotulo: 'Situação' }])
+  const porData = ordem.campo === 'quando' && ordem.direcao === 'asc'
+  const filtradasAtalho = situacao === 'concluidas' || !atalho ? atividades : atividades.filter(a => grupoDe(a, hoje) === atalho)
+  const visiveis = porData ? filtradasAtalho : ordenarLista(filtradasAtalho, ordem, {
+    quando: a => a.data ? `${a.data}${a.hora ?? ''}` : null,
+    atividade: a => a.titulo,
+    processo: a => a.caso?.titulo ?? '',
+    responsavel: a => a.responsavel ?? '',
+    situacao: a => a.status,
+  })
   // 20 por página; volta para a 1ª página quando os filtros mudam. Os grupos (Atrasadas, Hoje…)
   // são montados com os itens da página, que já vêm em ordem de data.
-  const chavePagina = [situacao, atalho, tipo, responsavel, responsavelProcesso, busca].join('|')
+  const chavePagina = [situacao, atalho, tipo, responsavel, responsavelProcesso, busca, ordem.campo, ordem.direcao].join('|')
   const [estadoPagina, setEstadoPagina] = useState({ chave: chavePagina, pagina: 1 })
   const pagina = paginaPara(estadoPagina, chavePagina)
   const naPagina = useMemo(() => visiveis.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA), [visiveis, pagina])
   const grupos = useMemo(() => {
-    if (situacao === 'concluidas') return [{ grupo: null as Grupo | null, itens: naPagina }]
+    if (situacao === 'concluidas' || !porData) return [{ grupo: null as Grupo | null, itens: naPagina }]
     return ORDEM_GRUPOS.map(g => ({ grupo: g as Grupo | null, itens: naPagina.filter(a => grupoDe(a, hoje) === g) })).filter(g => g.itens.length)
-  }, [naPagina, situacao, hoje])
+  }, [naPagina, situacao, hoje, porData])
   const responsaveisProcesso = useMemo(() => [...new Set(atividades.map(a => a.caso.responsavel).filter((r): r is string => Boolean(r)))].sort(), [atividades])
   const filtrosAtivos = Boolean(tipo || responsavel || responsavelProcesso || busca)
   const lote = selecionadas.size > 0
@@ -264,6 +276,10 @@ export default function Atividades() {
           </Button>
         )}
       </LinhaFiltros>
+      {!estreita && <Flex justify="end" mt="-3" gap="3" align="center">
+        {!porData && <Button size="2" variant="ghost" color="gray" onClick={() => alternarOrdem('quando')}>Voltar à ordem por data</Button>}
+        <EscolherColunas colunas={colunas} />
+      </Flex>}
 
       {lote && (
         <div className="atividades-lote" role="region" aria-label="Ações em lote">
@@ -320,11 +336,11 @@ export default function Atividades() {
                       checked={todasVisiveis ? true : selecionadas.size ? 'indeterminate' : false}
                       onCheckedChange={() => setSelecionadas(todasVisiveis ? new Set() : new Set(naPagina.map(chave)))} />
                   </th>
-                  <th className="atividades-col-quando">Quando</th>
-                  <th>Atividade</th>
-                  <th className="atividades-col-processo">Processo</th>
-                  <th className="atividades-col-resp">Responsável</th>
-                  <th className="atividades-col-situacao">Situação</th>
+                  <th className="atividades-col-quando" aria-sort={ariaSort('quando', ordem)}><BotaoOrdenar campo="quando" ordem={ordem} onOrdenar={alternarOrdem}>Quando</BotaoOrdenar></th>
+                  <th aria-sort={ariaSort('atividade', ordem)}><BotaoOrdenar campo="atividade" ordem={ordem} onOrdenar={alternarOrdem}>Atividade</BotaoOrdenar></th>
+                  {colunas.visivel('processo') && <th className="atividades-col-processo" aria-sort={ariaSort('processo', ordem)}><BotaoOrdenar campo="processo" ordem={ordem} onOrdenar={alternarOrdem}>Processo</BotaoOrdenar></th>}
+                  {colunas.visivel('responsavel') && <th className="atividades-col-resp" aria-sort={ariaSort('responsavel', ordem)}><BotaoOrdenar campo="responsavel" ordem={ordem} onOrdenar={alternarOrdem}>Responsável</BotaoOrdenar></th>}
+                  {colunas.visivel('situacao') && <th className="atividades-col-situacao" aria-sort={ariaSort('situacao', ordem)}><BotaoOrdenar campo="situacao" ordem={ordem} onOrdenar={alternarOrdem}>Situação</BotaoOrdenar></th>}
                   <th className="tabela-acoes atividades-col-acoes">Ações</th>
                 </tr>
               </thead>
@@ -333,7 +349,7 @@ export default function Atividades() {
                   <Fragment key={grupo ?? 'todas'}>
                     {grupo && (
                       <tr className="atividades-grupo">
-                        <td colSpan={7}>
+                        <td colSpan={4 + ['processo', 'responsavel', 'situacao'].filter(colunas.visivel).length}>
                           <span className={grupo === 'atrasadas' ? 'atividades-alerta' : undefined}>{TITULO_GRUPO[grupo]}</span>
                           <span className="atividades-grupo-qtd">{itens.length}</span>
                         </td>
@@ -355,16 +371,16 @@ export default function Atividades() {
                             {Boolean(a.agenda) && <Text size="1" color="gray">na agenda Google</Text>}
                           </Flex>
                         </td>
-                        <td>
+                        {colunas.visivel('processo') && <td>
                           <button type="button" className="atividades-link" onClick={() => abrirProcesso(a)}>{tituloProcesso(a)}</button>
                           {processoNumero(a) && <div className="atividades-secundario">{processoNumero(a)}</div>}
-                        </td>
-                        <td>
+                        </td>}
+                        {colunas.visivel('responsavel') && <td>
                           <span>
                             {a.responsavel ? formatarNomeExibicao(a.responsavel) : <Text color="gray">Sem responsável</Text>}
                           </span>
-                        </td>
-                        <td>{seloStatus(a)}</td>
+                        </td>}
+                        {colunas.visivel('situacao') && <td>{seloStatus(a)}</td>}
                         <td className="tabela-acoes">
                           <Flex gap="1" justify="end" align="center">{acaoPrincipal(a)}{menu(a)}</Flex>
                         </td>

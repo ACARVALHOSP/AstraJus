@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { confirmarSaida, temAlteracoesPendentes } from '../AlteracoesPendentes'
 
 type NavegacaoContextValor = {
   abaAtiva: string
@@ -19,9 +20,23 @@ export function NavegacaoProvider({ children, abaInicial }: { children: ReactNod
   const [versaoNavegacao, setVersaoNavegacao] = useState(0)
   const payloads = useRef(new Map<string, unknown>())
 
+  const abaAtual = useRef(abaAtiva)
+  useEffect(() => { abaAtual.current = abaAtiva }, [abaAtiva])
+  const restaurando = useRef(false)
+
   useEffect(() => {
     function aoMudarHash() {
-      setAbaAtiva(abaDaHash(abaInicial))
+      if (restaurando.current) { restaurando.current = false; return }
+      const destino = abaDaHash(abaInicial)
+      if (destino === abaAtual.current) return
+      if (temAlteracoesPendentes()) {
+        // Voltar do navegador ou link com alterações não salvas: desfaz a troca e pergunta.
+        restaurando.current = true
+        window.location.hash = `/${abaAtual.current}`
+        confirmarSaida(() => { window.location.hash = `/${destino}` })
+        return
+      }
+      setAbaAtiva(destino)
     }
     window.addEventListener('hashchange', aoMudarHash)
     return () => window.removeEventListener('hashchange', aoMudarHash)
@@ -31,12 +46,13 @@ export function NavegacaoProvider({ children, abaInicial }: { children: ReactNod
     () => ({
       abaAtiva,
       versaoNavegacao,
-      irPara: (abaId, payload) => {
+      irPara: (abaId, payload) => confirmarSaida(() => {
         if (payload !== undefined) payloads.current.set(abaId, payload)
         setAbaAtiva(abaId)
+        abaAtual.current = abaId
         setVersaoNavegacao(atual => atual + 1)
         if (window.location.hash.replace(/^#\/?/, '') !== abaId) window.location.hash = `/${abaId}`
-      },
+      }),
       consumirPayload: <T,>(abaId: string) => {
         const valor = payloads.current.get(abaId) as T | undefined
         payloads.current.delete(abaId)

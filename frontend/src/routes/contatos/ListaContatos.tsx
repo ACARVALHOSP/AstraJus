@@ -1,4 +1,5 @@
 import LinhaFiltros from '../../LinhaFiltros'
+import { ariaSort, BotaoOrdenar, EscolherColunas, ordenarLista, useColunas, useOrdenacao } from '../../OrdenacaoColunas'
 import CabecalhoPagina from '../../CabecalhoPagina'
 import TabelaResponsiva from '../../TabelaResponsiva'
 import AcoesTabela from '../../AcoesTabela'
@@ -97,6 +98,12 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
     return mapa
   }, [casos])
 
+  const { ordem, alternar: alternarOrdem } = useOrdenacao('contatos', { campo: 'nome', direcao: 'asc' })
+  const ordenarPor = (campo: string) => { alternarOrdem(campo); setPagina(1) }
+  const colunas = useColunas('contatos', [
+    { chave: 'contato', rotulo: 'Contato (telefone e e-mail)' }, { chave: 'etiquetas', rotulo: 'Etiquetas' }, { chave: 'processos', rotulo: 'Processos' },
+  ])
+
   // Busca, tipo e etiqueta valem para todos os atalhos (e para seus contadores).
   const filtrados = useMemo(() => {
     const consulta = normalizar(busca)
@@ -113,7 +120,11 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
     }).sort((a, b) => normalizar(a.nome || '').localeCompare(normalizar(b.nome || ''), 'pt-BR'))
   }, [clientes, busca, tipo, etiqueta])
   const doAtalho = (c: ClienteItem, a: Atalho) => !a || (a === 'contato' ? c.perfil === 'contato' : c.perfil !== 'contato')
-  const lista = filtrados.filter(c => doAtalho(c, atalho))
+  const lista = ordenarLista(filtrados.filter(c => doAtalho(c, atalho)), ordem, {
+    nome: c => normalizar(c.nome || ''),
+    tipo: c => c.tipo_pessoa === 'juridica' ? 'Pessoa jurídica' : 'Pessoa física',
+    processos: c => processosPorCliente.get(c.id) ?? 0,
+  })
   const totalPaginas = Math.max(1, Math.ceil(lista.length / POR_PAGINA))
   const paginaAtual = Math.min(pagina, totalPaginas)
   const visiveis = lista.slice((paginaAtual - 1) * POR_PAGINA, paginaAtual * POR_PAGINA)
@@ -230,6 +241,7 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
         </div>
         {filtrosAtivos && <Button size="2" variant="soft" color="gray" onClick={() => mudarFiltro(() => { setBusca(''); setTipo(''); setEtiqueta('') })}>Limpar filtros</Button>}
       </LinhaFiltros>
+      {!estreita && <Flex justify="end" mt="-3"><EscolherColunas colunas={colunas} /></Flex>}
 
       {idsLote.length > 0 && (
         <div className="contatos-lote" role="region" aria-label="Ações em lote">
@@ -287,11 +299,11 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
                   <Checkbox checked={todosSelecionados ? true : algunsSelecionados ? 'indeterminate' : false}
                     onCheckedChange={toggleTodos} aria-label="Selecionar todos os contatos desta página" />
                 </th>
-                <th>Nome</th>
-                <th className="contatos-col-tipo">Tipo</th>
-                <th className="contatos-col-contato">Contato</th>
-                <th className="contatos-col-etiquetas">Etiquetas</th>
-                <th className="contatos-col-processos">Processos</th>
+                <th aria-sort={ariaSort('nome', ordem)}><BotaoOrdenar campo="nome" ordem={ordem} onOrdenar={ordenarPor}>Nome</BotaoOrdenar></th>
+                <th className="contatos-col-tipo" aria-sort={ariaSort('tipo', ordem)}><BotaoOrdenar campo="tipo" ordem={ordem} onOrdenar={ordenarPor}>Tipo</BotaoOrdenar></th>
+                {colunas.visivel('contato') && <th className="contatos-col-contato">Contato</th>}
+                {colunas.visivel('etiquetas') && <th className="contatos-col-etiquetas">Etiquetas</th>}
+                {colunas.visivel('processos') && <th className="contatos-col-processos" aria-sort={ariaSort('processos', ordem)}><BotaoOrdenar campo="processos" ordem={ordem} onOrdenar={ordenarPor}>Processos</BotaoOrdenar></th>}
                 <th className="tabela-acoes contatos-col-acoes">Ações</th>
               </tr>
             </thead>
@@ -303,9 +315,9 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
                   </td>
                   <td><button type="button" className="contatos-link contatos-nome" onClick={() => onAbrir(c.id)}>{formatarNomeExibicao(c.nome)}</button></td>
                   <td><SeloTipoPessoa tipo={c.tipo_pessoa} /></td>
-                  <td>{contato(c)}</td>
-                  <td>{etiquetas(c)}</td>
-                  <td>{processos(c)}</td>
+                  {colunas.visivel('contato') && <td>{contato(c)}</td>}
+                  {colunas.visivel('etiquetas') && <td>{etiquetas(c)}</td>}
+                  {colunas.visivel('processos') && <td>{processos(c)}</td>}
                   <td className="tabela-acoes">{menu(c)}</td>
                 </tr>
               ))}

@@ -73,3 +73,10 @@ export function hojeIso(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+
+/** "2026-10-01" → "01/10/2026" (formato que as buscas do TJSP exigem); outros valores passam iguais. */
+export function isoParaDdMmAaaa(valor: string | null | undefined): string | null {
+  if (!valor) return null
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(valor.trim())
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : valor
+}

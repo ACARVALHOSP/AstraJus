@@ -1,3 +1,4 @@
+import { isoParaDdMmAaaa } from '../utils/formatadores'
 import CampoData from '../CampoData'
 import CabecalhoPagina from '../CabecalhoPagina'
 import { useRef, useState, type FormEvent } from 'react'
@@ -202,8 +203,8 @@ export default function Jurisprudencia() {
       const dados = (await cliente.chamarFerramenta('consultar_jurisprudencia_tjsp', {
         termo: termo.trim(),
         buscar_em: buscarEm,
-        data_julgamento_inicio: dataInicio || null,
-        data_julgamento_fim: dataFim || null,
+        data_julgamento_inicio: isoParaDdMmAaaa(dataInicio),
+        data_julgamento_fim: isoParaDdMmAaaa(dataFim),
         relatores: rels.length > 0 ? rels : null,
         classes: clas.length > 0 ? clas : null,
         comarcas: coms.length > 0 ? coms : null,

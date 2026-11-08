@@ -1,6 +1,7 @@
 import LinhaFiltros from '../LinhaFiltros'
 import CabecalhoPagina from '../CabecalhoPagina'
 import Paginacao, { paginaPara, POR_PAGINA } from '../Paginacao'
+import { ariaSort, BotaoOrdenar, EscolherColunas, ordenarLista, useColunas, useOrdenacao } from '../OrdenacaoColunas'
 import TabelaResponsiva from '../TabelaResponsiva'
 import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
@@ -143,8 +144,16 @@ export default function Financeiro() {
       (!responsavelFiltro || l.responsavel === responsavelFiltro) &&
       (!termo || `${l.descricao} ${nomeCliente(l.cliente_id)} ${tituloCaso(l.caso_id)}`.toLocaleLowerCase('pt-BR').includes(termo)))
   }, [doPeriodo, direcao, clienteFiltro, responsavelFiltro, busca, nomeCliente, tituloCaso])
-  const visiveis = useMemo(() => (atalho ? filtrados.filter(l => situacaoDe(l, hoje) === atalho) : filtrados)
-    .slice().sort((a, b) => (a.vencimento ?? '').localeCompare(b.vencimento ?? '')), [filtrados, atalho, hoje])
+  const { ordem, alternar: alternarOrdem } = useOrdenacao('lancamentos', { campo: 'vencimento', direcao: 'asc' })
+  const colunas = useColunas('lancamentos', [{ chave: 'cliente', rotulo: 'Cliente' }, { chave: 'situacao', rotulo: 'Situação' }])
+  const ORDEM_SITUACAO: Record<Situacao, number> = { vencido: 0, aberto: 1, quitado: 2 }
+  const visiveis = ordenarLista(atalho ? filtrados.filter(l => situacaoDe(l, hoje) === atalho) : filtrados, ordem, {
+    vencimento: l => l.vencimento?.slice(0, 10),
+    descricao: l => partesDescricao(l.descricao).texto,
+    cliente: l => nomeCliente(l.cliente_id),
+    valor: l => (l.direcao === 'DESPESA' ? -1 : 1) * (l.valor ?? 0),
+    situacao: l => ORDEM_SITUACAO[situacaoDe(l, hoje)],
+  })
   const contagem = useMemo(() => {
     const c: Record<Situacao, number> = { aberto: 0, vencido: 0, quitado: 0 }
     for (const l of filtrados) c[situacaoDe(l, hoje)]++
@@ -175,7 +184,7 @@ export default function Financeiro() {
   const filtrosAtivos = Boolean(direcao || clienteFiltro || responsavelFiltro || busca)
   const lote = selecionados.size > 0
   // 20 por página; volta para a 1ª quando mês, atalho ou filtros mudam. Os totais somam a lista toda.
-  const chavePagina = [mes, todosMeses, atalho, direcao, clienteFiltro, responsavelFiltro, busca].join('|')
+  const chavePagina = [mes, todosMeses, atalho, direcao, clienteFiltro, responsavelFiltro, busca, ordem.campo, ordem.direcao].join('|')
   const [estadoPagina, setEstadoPagina] = useState({ chave: chavePagina, pagina: 1 })
   const pagina = paginaPara(estadoPagina, chavePagina)
   const naPagina = useMemo(() => visiveis.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA), [visiveis, pagina])
@@ -358,6 +367,7 @@ export default function Financeiro() {
         </div>
         {filtrosAtivos && <Button size="2" variant="soft" color="gray" onClick={() => { setDirecao(''); setClienteFiltro(''); setResponsavelFiltro(''); setBusca('') }}>Limpar filtros</Button>}
       </LinhaFiltros>
+      {!estreita && <Flex justify="end" mt="-3"><EscolherColunas colunas={colunas} /></Flex>}
 
       {lote && (
         <div className="fin-lote" role="region" aria-label="Ações em lote">
@@ -406,11 +416,11 @@ export default function Financeiro() {
                   <Checkbox aria-label="Selecionar todos os lançamentos visíveis" checked={todosSelecionados ? true : lote ? 'indeterminate' : false}
                     onCheckedChange={() => setSelecionados(todosSelecionados ? new Set() : new Set(naPagina.map(l => l.id)))} />
                 </th>
-                <th className="fin-col-venc">Vencimento</th>
-                <th>Descrição</th>
-                <th className="fin-col-cliente">Cliente</th>
-                <th className="fin-col-valor">Valor</th>
-                <th className="fin-col-situacao">Situação</th>
+                <th className="fin-col-venc" aria-sort={ariaSort('vencimento', ordem)}><BotaoOrdenar campo="vencimento" ordem={ordem} onOrdenar={alternarOrdem}>Vencimento</BotaoOrdenar></th>
+                <th aria-sort={ariaSort('descricao', ordem)}><BotaoOrdenar campo="descricao" ordem={ordem} onOrdenar={alternarOrdem}>Descrição</BotaoOrdenar></th>
+                {colunas.visivel('cliente') && <th className="fin-col-cliente" aria-sort={ariaSort('cliente', ordem)}><BotaoOrdenar campo="cliente" ordem={ordem} onOrdenar={alternarOrdem}>Cliente</BotaoOrdenar></th>}
+                <th className="fin-col-valor" aria-sort={ariaSort('valor', ordem)}><BotaoOrdenar campo="valor" ordem={ordem} onOrdenar={alternarOrdem}>Valor</BotaoOrdenar></th>
+                {colunas.visivel('situacao') && <th className="fin-col-situacao" aria-sort={ariaSort('situacao', ordem)}><BotaoOrdenar campo="situacao" ordem={ordem} onOrdenar={alternarOrdem}>Situação</BotaoOrdenar></th>}
                 <th className="tabela-acoes fin-col-acoes">Ações</th>
               </tr>
             </thead>
@@ -426,12 +436,12 @@ export default function Financeiro() {
                     <div className={relativoClasse(l)}>{relativo(l, hoje)}</div>
                   </td>
                   <td>{descricao(l)}</td>
-                  <td>{nomeCliente(l.cliente_id)}</td>
+                  {colunas.visivel('cliente') && <td>{nomeCliente(l.cliente_id)}</td>}
                   <td className="fin-col-valor">{valor(l)}</td>
-                  <td>
+                  {colunas.visivel('situacao') && <td>
                     {seloSituacao(l)}
                     {l.asaas_cobranca_id && <div className="fin-secundario fin-cobranca">Cobrança gerada</div>}
-                  </td>
+                  </td>}
                   <td className="tabela-acoes"><Flex gap="1" justify="end" align="center">{acaoPrincipal(l)}{menu(l)}</Flex></td>
                 </tr>
               ))}

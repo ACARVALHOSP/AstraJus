@@ -1,3 +1,5 @@
+import { useAvisos } from '../../Avisos'
+import { useAlteracoesPendentes } from '../../AlteracoesPendentes'
 import Carregamento from '../../Carregamento'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { Badge, Button, Callout, Heading, Text, TextField } from '@radix-ui/themes'
@@ -32,6 +34,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
   caso: Caso; numero: string; onAtualizado: (caso: Caso) => void; onMovimentacoes: () => void
 }) {
   const { cliente } = useCliente()
+  const { avisar } = useAvisos()
   const [capa, setCapa] = useState<Capa | null>(null)
   const [edicao, setEdicao] = useState<Edicao>(() => editar({}))
   const [registros, setRegistros] = useState<ClienteCapa[]>([])
@@ -68,6 +71,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
   }, [cliente, url, tentativa])
 
   const pendente = Boolean(capa && campos.some(([chave]) => edicao[chave] !== String(capa[chave] ?? '')))
+  useAlteracoesPendentes(pendente)
   const bloqueado = carregando || operacao !== null
   const tribunal = capa?.tribunal?.toLowerCase() || siglaTribunalPorNumero(numero)
   const invalido = edicao.valor_causa !== '' && (!Number.isFinite(Number(edicao.valor_causa)) || Number(edicao.valor_causa) < 0)
@@ -95,7 +99,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
           const atualizado = await buscarJson<Caso>(cliente, `/casos/${encodeURIComponent(caso.id)}`)
           if (vivo.current) onAtualizado(atualizado)
         } catch {
-          if (vivo.current) setMensagem({ erro: true, texto: 'Capa atualizada. Não foi possível recarregar a identificação do processo.' })
+          if (vivo.current) avisar({ tipo: 'info', texto: 'Capa atualizada, mas não foi possível recarregar a identificação do processo. Atualize a página.' })
           return
         }
       } else {
@@ -103,9 +107,9 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
         if (!vivo.current) return
         setCapa(anterior => ({ ...anterior, monitorando: resultado.monitorando }))
       }
-      if (vivo.current) setMensagem({ erro: false, aviso: Boolean(avisoAtualizacao), texto: acao === 'salvar' ? 'Capa salva.' : acao === 'atualizar' ? avisoAtualizacao || 'Capa atualizada com DataJud e DJEN.' : 'Monitoramento atualizado.' })
+      if (vivo.current) avisar({ tipo: avisoAtualizacao ? 'info' : 'sucesso', texto: acao === 'salvar' ? 'Capa salva.' : acao === 'atualizar' ? (avisoAtualizacao ? `Atualização parcial: ${avisoAtualizacao}` : 'Capa atualizada com DataJud e DJEN.') : 'Monitoramento atualizado.' })
     } catch (erro) {
-      if (vivo.current) setMensagem({ erro: true, texto: erro instanceof Error ? erro.message : 'Não foi possível concluir a operação.' })
+      if (vivo.current) avisar({ tipo: 'erro', texto: erro instanceof Error ? erro.message : 'Não foi possível concluir a operação.' })
     } finally {
       if (vivo.current) setOperacao(null)
     }

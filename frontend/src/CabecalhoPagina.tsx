@@ -10,11 +10,14 @@ type Props = {
   acoes?: ReactNode
   /** Recebe foco programático ao trocar de tela. */
   focavel?: boolean
+  /** Abas de navegação entre telas irmãs, logo abaixo do cabeçalho. */
+  abas?: ReactNode
 }
 
 /** Cabeçalho único das telas: título 24 px, descrição cinza e ações à direita. */
-export default function CabecalhoPagina({ titulo, sobretitulo, descricao, acoes, focavel }: Props) {
+export default function CabecalhoPagina({ titulo, sobretitulo, descricao, acoes, focavel, abas }: Props) {
   return (
+    <>
     <header className="aj-cabecalho-pagina">
       <div className="aj-cabecalho-pagina-texto">
         {sobretitulo && <p className="aj-cabecalho-pagina-sobretitulo">{sobretitulo}</p>}
@@ -23,5 +26,7 @@ export default function CabecalhoPagina({ titulo, sobretitulo, descricao, acoes,
       </div>
       {acoes && <div className="aj-cabecalho-pagina-acoes">{acoes}</div>}
     </header>
+    {abas}
+    </>
   )
 }

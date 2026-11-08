@@ -1,15 +1,31 @@
 import CampoData from '../CampoData'
 import { useState, type FormEvent } from 'react'
-import { Button, Callout, Flex, Text, TextField } from '@radix-ui/themes'
+import { Button, Callout, Flex, Tabs, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, CheckCircle2, Info } from 'lucide-react'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 import { enviarJson } from '../api/rest'
 import PainelPublicacoes from './publicacoes-oab/PainelPublicacoes'
+import Monitoramentos from './Monitoramentos'
+import { useNavegacao } from '../api/NavegacaoContext'
 
+// Publicações recebidas e Monitoramentos são abas da mesma tela: o que chega e o que está sendo
+// acompanhado. A rota "monitoramentos" continua válida e abre a segunda aba.
 export default function PublicacoesOab() {
   const { cliente } = useCliente()
-  return <PainelPublicacoes key={cliente?.token ?? 'sem-conexao'} Captura={CapturaManual} />
+  const { abaAtiva, irPara } = useNavegacao()
+  const aba = abaAtiva === 'monitoramentos' ? 'monitoramentos' : 'publicacoes-oab'
+  const abas = (
+    <Tabs.Root value={aba} onValueChange={irPara}>
+      <Tabs.List aria-label="Publicações recebidas">
+        <Tabs.Trigger value="publicacoes-oab">Publicações</Tabs.Trigger>
+        <Tabs.Trigger value="monitoramentos">Monitoramentos</Tabs.Trigger>
+      </Tabs.List>
+    </Tabs.Root>
+  )
+  return aba === 'monitoramentos'
+    ? <Monitoramentos abas={abas} />
+    : <PainelPublicacoes key={cliente?.token ?? 'sem-conexao'} Captura={CapturaManual} abas={abas} />
 }
 
 function CapturaManual({ onCapturado }: { onCapturado: () => void }) {

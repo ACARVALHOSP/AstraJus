@@ -1,6 +1,6 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Plus, X } from 'lucide-react'
-import { Button, Select, TextField } from '@radix-ui/themes'
+import { Button, Select, Text, TextField } from '@radix-ui/themes'
 
 export type OpcaoTipo = { valor: string; rotulo: string }
 
@@ -10,6 +10,11 @@ type Campo = {
   rotulo: string
   opcoes?: OpcaoTipo[]
   tipoInput?: string
+  placeholder?: string
+  /** Formata enquanto a pessoa digita (ex.: telefone). */
+  mascara?: (valor: string) => string
+  /** Mensagem de erro do valor, ou '' se estiver certo; aparece ao sair do campo. */
+  validar?: (valor: string) => string
 }
 
 export default function CampoRepetivel<T extends Record<string, string>>({
@@ -27,6 +32,7 @@ export default function CampoRepetivel<T extends Record<string, string>>({
   onRemover: (indice: number) => void
   onAlterar: (indice: number, chave: string, valor: string) => void
 }) {
+  const [tocados, setTocados] = useState<Set<string>>(new Set())
   return (
     <div>
       <span className="form-campo-label">{titulo}</span>
@@ -50,15 +56,11 @@ export default function CampoRepetivel<T extends Record<string, string>>({
                   </Select.Root>
                 </div>
               ) : (
-                <div key={campo.chave} className="form-campo">
-                  <label className="form-campo-label" htmlFor={`${titulo}-${indice}-${campo.chave}`}>{campo.rotulo}</label>
-                  <TextField.Root
-                    id={`${titulo}-${indice}-${campo.chave}`}
-                    type={campo.tipoInput as React.ComponentProps<typeof TextField.Root>['type'] ?? 'text'}
-                    value={item[campo.chave] ?? ''}
-                    onChange={(e) => onAlterar(indice, campo.chave, e.target.value)}
-                  />
-                </div>
+                <CampoTexto key={campo.chave} id={`${titulo}-${indice}-${campo.chave}`} campo={campo}
+                  valor={item[campo.chave] ?? ''}
+                  tocado={tocados.has(`${indice}-${campo.chave}`)}
+                  onTocar={() => setTocados(t => new Set(t).add(`${indice}-${campo.chave}`))}
+                  onAlterar={(v) => onAlterar(indice, campo.chave, v)} />
               ),
             )}
             <div className="aj-layout-30">
@@ -73,6 +75,29 @@ export default function CampoRepetivel<T extends Record<string, string>>({
         <Plus size={16} />
         Adicionar {titulo.toLowerCase()}
       </Button>
+    </div>
+  )
+}
+
+function CampoTexto({ id, campo, valor, tocado, onTocar, onAlterar }: {
+  id: string; campo: Campo; valor: string; tocado: boolean; onTocar: () => void; onAlterar: (v: string) => void
+}) {
+  const erro = tocado && campo.validar ? campo.validar(valor) : ''
+  return (
+    <div className="form-campo">
+      <label className="form-campo-label" htmlFor={id}>{campo.rotulo}</label>
+      <TextField.Root
+        id={id}
+        type={campo.tipoInput as React.ComponentProps<typeof TextField.Root>['type'] ?? 'text'}
+        placeholder={campo.placeholder}
+        value={valor}
+        color={erro ? 'red' : undefined}
+        aria-invalid={Boolean(erro)}
+        aria-describedby={erro ? `${id}-erro` : undefined}
+        onChange={(e) => onAlterar(campo.mascara ? campo.mascara(e.target.value) : e.target.value)}
+        onBlur={onTocar}
+      />
+      {erro && <Text id={`${id}-erro`} size="1" color="red">{erro}</Text>}
     </div>
   )
 }

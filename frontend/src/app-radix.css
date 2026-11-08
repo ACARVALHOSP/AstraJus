@@ -453,3 +453,32 @@ html, body { margin: 0; padding: 0; }
 .aj-sobre-fonte { font-size: 14px; color: var(--gray-11); }
 .aj-sobre-fonte summary { cursor: pointer; font-weight: 500; margin-bottom: 0.5rem; }
 .aj-sobre-fonte summary:focus-visible { outline: 2px solid var(--accent-8); outline-offset: 2px; }
+
+.aj-obrigatorio { color: var(--red-11); font-weight: 600; }
+
+/* Notificações: não lidas com ponto e título em negrito. */
+.aj-notif-ponto { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent-9); margin-right: 6px; vertical-align: middle; }
+.aj-notif-lida { opacity: 0.85; }
+
+/* Cabeçalho que ordena a tabela. */
+.aj-th-ordenar {
+  display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none;
+  font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; text-align: start;
+  overflow-wrap: normal; word-break: keep-all;
+}
+.aj-th-ordenar svg { opacity: 0.45; flex: none; }
+.aj-th-ordenar--ativo { color: var(--gray-12); }
+.aj-th-ordenar--ativo svg { opacity: 1; color: var(--accent-11); }
+.aj-th-ordenar:hover svg { opacity: 1; }
+.aj-th-ordenar:focus-visible { outline: 2px solid var(--accent-8); outline-offset: 2px; border-radius: 2px; }
+
+/* Andamento de uma operação longa, passo a passo. */
+.aj-passos { list-style: none; margin: 0; padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.5rem;
+  border-radius: var(--radius-3); background: var(--accent-a2); font-size: 14px; }
+.aj-passos li { display: flex; align-items: center; gap: 0.5rem; }
+.aj-passo-icone { inline-size: 16px; display: inline-flex; justify-content: center; flex: none; }
+.aj-passo--feito { color: var(--gray-11); }
+.aj-passo--feito .aj-passo-icone { color: var(--green-11); }
+.aj-passo--atual { font-weight: 600; }
+.aj-passo--pendente { color: var(--gray-10); }
+.aj-passo--pendente .aj-passo-icone::before { content: ""; inline-size: 8px; block-size: 8px; border-radius: 50%; border: 1.5px solid var(--gray-8); }

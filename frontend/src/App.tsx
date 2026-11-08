@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react'
 import { Flex, Popover, SegmentedControl, Text, Theme } from '@radix-ui/themes'
 import {
   Scale, Users, CalendarCheck, Search, Gavel, Briefcase,
-  Newspaper, BarChart2, BookOpen, BellRing, History, FileSearch, Receipt, KeyRound,
+  Newspaper, BarChart2, BookOpen, History, FileSearch, Receipt, KeyRound,
   Settings, Link, Wallet, CreditCard, ShieldCheck, Menu, X,
   Palette, ChevronDown, ChevronRight, Check, House,
 } from 'lucide-react'
 import { ClienteProvider, useCliente } from './api/ClienteContext'
 import { AvisosProvider } from './Avisos'
+import { DialogoSaida } from './AlteracoesPendentes'
 import { sincronizarPreferencias } from './utils/listasRapidas'
 import { CHAVE_TEMA } from './api/mcpClient'
 import BuscaGlobal from './BuscaGlobal'
@@ -18,7 +19,6 @@ import Acesso from './routes/Acesso'
 import Processo from './routes/Processo'
 import Publicacoes from './routes/Publicacoes'
 import Historico from './routes/Historico'
-import Monitoramentos from './routes/Monitoramentos'
 import Jurimetria from './routes/Jurimetria'
 import Jurisprudencia from './routes/Jurisprudencia'
 import Integracoes from './routes/Integracoes'
@@ -45,7 +45,6 @@ const GRUPOS_NAVEGACAO = [
       { id: 'casos', label: 'Processos', icone: Scale },
       { id: 'atividades', label: 'Atividades', icone: CalendarCheck },
       { id: 'publicacoes-oab', label: 'Publicações recebidas', icone: Gavel },
-      { id: 'monitoramentos', label: 'Monitoramentos', icone: BellRing },
       { id: 'contatos', label: 'Contatos', icone: Users },
     ],
   },
@@ -112,7 +111,7 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
     case 'processo': return <Processo />
     case 'publicacoes': return <Publicacoes />
     case 'historico': return <Historico />
-    case 'monitoramentos': return <Monitoramentos />
+    case 'monitoramentos': return <PublicacoesOab />
     case 'jurimetria': return <Jurimetria />
     case 'jurisprudencia': return <Jurisprudencia />
     case 'integracoes': return <Integracoes />
@@ -132,7 +131,9 @@ function SidebarAstraJus({ aberta, fechar }: { aberta: boolean; fechar: () => vo
   const { abaAtiva, irPara } = useNavegacao()
   // Só guarda o que a pessoa abriu ou fechou; sem escolha, o grupo da página atual fica aberto.
   const [gruposAbertos, setGruposAbertos] = useState<Record<string, boolean>>({})
-  const grupoAberto = (g: typeof GRUPOS_NAVEGACAO[number]) => gruposAbertos[g.id] ?? g.abas.some((a) => a.id === abaAtiva)
+  // Monitoramentos é uma aba de Publicações recebidas: destaca esse item no menu.
+  const abaMenu = abaAtiva === 'monitoramentos' ? 'publicacoes-oab' : abaAtiva
+  const grupoAberto = (g: typeof GRUPOS_NAVEGACAO[number]) => gruposAbertos[g.id] ?? g.abas.some((a) => a.id === abaMenu)
 
   function toggleGrupo(id: string) {
     const grupo = GRUPOS_NAVEGACAO.find((g) => g.id === id)!
@@ -169,7 +170,7 @@ function SidebarAstraJus({ aberta, fechar }: { aberta: boolean; fechar: () => vo
           return (
             <div key={grupo.id} className="aj-nav-group">
               <button
-                className={`aj-nav-group-btn${grupo.abas.some((a) => a.id === abaAtiva) ? ' aj-nav-group-btn--ativo' : ''}`}
+                className={`aj-nav-group-btn${grupo.abas.some((a) => a.id === abaMenu) ? ' aj-nav-group-btn--ativo' : ''}`}
                 onClick={() => toggleGrupo(grupo.id)}
                 aria-expanded={aberto}
               >
@@ -185,8 +186,8 @@ function SidebarAstraJus({ aberta, fechar }: { aberta: boolean; fechar: () => vo
                       <a
                         key={aba.id}
                         href={`#/${aba.id}`}
-                        className={`aj-nav-item${aba.id === abaAtiva ? ' aj-nav-item--ativo' : ''}`}
-                        aria-current={aba.id === abaAtiva ? 'page' : undefined}
+                        className={`aj-nav-item${aba.id === abaMenu ? ' aj-nav-item--ativo' : ''}`}
+                        aria-current={aba.id === abaMenu ? 'page' : undefined}
                         onClick={(e) => {
                           if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return
                           e.preventDefault()
@@ -309,6 +310,7 @@ export default function App() {
       <AvisosProvider>
       <ClienteProvider>
         <SincronizarPreferencias />
+        <DialogoSaida />
         <NavegacaoProvider abaInicial="inicio">
           <div className="aj-shell">
             {/* Topbar */}
@@ -324,7 +326,7 @@ export default function App() {
 
               <div className="aj-topbar-right">
                 <StatusConexao />
-                <BuscaGlobal />
+                <BuscaGlobal paginas={[{ id: 'inicio', label: 'Início', grupo: '' }, ...GRUPOS_NAVEGACAO.flatMap(g => g.abas.map(a => ({ id: a.id, label: a.label, grupo: g.label })))]} />
                 <CentralNotificacoes />
 
                 <SeletorAparencia
