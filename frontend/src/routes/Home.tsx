@@ -1,9 +1,9 @@
 import { useAvisos } from '../Avisos'
 import CabecalhoPagina from '../CabecalhoPagina'
-import { useCallback, useEffect, useRef, useState, type PointerEvent as EventoPonteiro } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent as EventoPonteiro, type ReactNode } from 'react'
 import {
   Box, Button, Callout, Dialog, Flex, Heading,
-  Select, Skeleton, Text,
+  Select, Skeleton, Tabs, Text,
 } from '@radix-ui/themes'
 import { AlertTriangle, Info, Plus, RefreshCw } from 'lucide-react'
 import { useCliente } from '../api/ClienteContext'
@@ -16,16 +16,29 @@ import {
   COLUNAS, TIPOS, chaveItem, colunaAtividade, diaLocal, noPeriodo, ordenarItens,
   type AtividadeHome, type ItemHome, type Periodo, type ProcessoHome, type StatusAtividade,
 } from './home/dados'
+import Escritorio from './home/Escritorio'
 import './home/home-radix.css'
 
 const SEM_RESPONSAVEL = '__sem_responsavel__'
 
+// Início tem duas visões: o dia de quem está logado e o resumo do escritório inteiro.
 export default function Home() {
   const { cliente } = useCliente()
-  return <PainelHome key={cliente?.token ?? 'sem-conexao'} />
+  const [aba, setAba] = useState<'meu-dia' | 'escritorio'>('meu-dia')
+  const abas = (
+    <Tabs.Root value={aba} onValueChange={(v) => setAba(v as typeof aba)}>
+      <Tabs.List aria-label="Início">
+        <Tabs.Trigger value="meu-dia">Meu dia</Tabs.Trigger>
+        <Tabs.Trigger value="escritorio">Escritório</Tabs.Trigger>
+      </Tabs.List>
+    </Tabs.Root>
+  )
+  return aba === 'escritorio'
+    ? <Escritorio key={cliente?.token ?? 'sem-conexao'} abas={abas} />
+    : <PainelHome key={cliente?.token ?? 'sem-conexao'} abas={abas} />
 }
 
-function PainelHome() {
+function PainelHome({ abas }: { abas: ReactNode }) {
   const { cliente, status } = useCliente()
   const { irPara } = useNavegacao()
   const [itens, setItens] = useState<ItemHome[]>([])
@@ -217,6 +230,7 @@ function PainelHome() {
       <CabecalhoPagina
         sobretitulo={agora.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
         titulo="Meu dia"
+        abas={abas}
         descricao="Organize as atividades e acompanhe os próximos vencimentos."
         acoes={<Button
           size="2"
