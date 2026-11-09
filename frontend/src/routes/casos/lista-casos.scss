@@ -21,9 +21,10 @@ tr:hover .casos-agendar, tr:focus-within .casos-agendar, .casos-cartao .casos-ag
 .casos-alerta { color: var(--red-11); }
 .casos-secundario.casos-parado { color: var(--amber-11); font-weight: 500; }
 .tabela-adaptavel .tabela-fluida.casos-tabela-nova {
-  // Percentuais (sem contar o padding): o Título fica com o restante em qualquer largura.
-  // O CNJ não quebra linha: a coluna nunca fica menor que o número (25 caracteres + padding).
-  .casos-col-numero { inline-size: max(23%, 14rem); }
+  // Layout automático: o CNJ (nowrap) define a largura mínima da coluna, então nunca sobrepõe a vizinha.
+  // (max()/calc() com % é tratado como auto em tabela; em layout fixo o 15% sozinho cortava o número.)
+  table-layout: auto;
+  .casos-col-numero { inline-size: 15%; }
   .casos-col-cliente { inline-size: 12%; }
   .casos-col-resp { inline-size: 9%; }
   .casos-col-comp { inline-size: 12%; }
