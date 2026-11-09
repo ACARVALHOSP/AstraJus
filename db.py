@@ -103,6 +103,11 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 dados TEXT NOT NULL
             );
 
+            -- Sugestões da triagem de publicações (classificador simulado ou Jev). Só apoio à leitura.
+            CREATE TABLE IF NOT EXISTS publicacao_triagem (
+                triagem_hash TEXT PRIMARY KEY, triagem_modelo TEXT NOT NULL,
+                triagem_resultado TEXT NOT NULL, triagem_em TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS publicacao_revisoes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, hash TEXT NOT NULL,
                 usuario TEXT, status TEXT NOT NULL, acao TEXT NOT NULL, criado_em TEXT NOT NULL
@@ -2364,6 +2369,11 @@ class RegistroPublicacoesOAB:
                          "substr(criado_em, 1, 10)) ASC, criado_em ASC, hash ASC",
         "capturado_desc": "criado_em DESC, hash DESC",
         "capturado_asc": "criado_em ASC, hash ASC",
+        # Mais urgentes primeiro (sem triagem por último); empata pela data de divulgação.
+        "urgencia_desc": "coalesce((SELECT json_extract(triagem_resultado, '$.urgencia.nota') FROM publicacao_triagem "
+                         "WHERE triagem_hash = publicacoes_capturadas.hash), -1) DESC, "
+                         "coalesce(nullif(substr(json_extract(dados, '$.data_disponibilizacao'), 1, 10), ''), "
+                         "substr(criado_em, 1, 10)) DESC, hash DESC",
     }
 
     def listar(self, status: str | None = None, limite: int = 300, deslocamento: int = 0,
@@ -2384,9 +2394,32 @@ class RegistroPublicacoesOAB:
             if ids:
                 marcadores = ",".join("?" * len(ids))
                 titulos = dict(conexao.execute(f"SELECT id, titulo FROM casos WHERE id IN ({marcadores})", ids).fetchall())
+        triagens = self.obter_triagens([p["hash"] for p in linhas])
         for p in linhas:
             p["caso_titulo"] = titulos.get(p["caso_id"]) if p["caso_id"] else None
+            p["triagem"] = triagens.get(p["hash"])
         return linhas
+
+    def obter_triagens(self, hashes: list[str]) -> dict[str, dict]:
+        if not hashes:
+            return {}
+        with _abrir(self.caminho) as conexao:
+            return {h: json.loads(r) for h, r in conexao.execute(
+                f"SELECT triagem_hash, triagem_resultado FROM publicacao_triagem WHERE triagem_hash IN ({','.join('?' * len(hashes))})", hashes)}
+
+    def salvar_triagem(self, hash_publicacao: str, resultado: dict, agora) -> None:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute(
+                "INSERT INTO publicacao_triagem VALUES (?, ?, ?, ?) ON CONFLICT(triagem_hash) DO UPDATE SET "
+                "triagem_modelo=excluded.triagem_modelo, triagem_resultado=excluded.triagem_resultado, triagem_em=excluded.triagem_em",
+                (hash_publicacao, resultado.get("modelo") or "", json.dumps(resultado, ensure_ascii=False), agora().isoformat()))
+
+    def hashes_sem_triagem(self, limite: int = 100) -> list[str]:
+        """Publicações ainda não tratadas e sem triagem, as mais recentes primeiro."""
+        with _abrir(self.caminho) as conexao:
+            return [r[0] for r in conexao.execute(
+                "SELECT hash FROM publicacoes_capturadas WHERE status = 'nao_tratada' AND hash NOT IN "
+                "(SELECT triagem_hash FROM publicacao_triagem) ORDER BY criado_em DESC LIMIT ?", (limite,))]
 
     def contar_por_status(self, data: str | None = None, *, tipo: str | None = None, desde: str | None = None,
                           ate: str | None = None, busca: str | None = None) -> dict[str, int]:

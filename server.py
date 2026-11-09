@@ -43,6 +43,7 @@ from zoneinfo import ZoneInfo
 import asaas_integracao
 import agenda_atividades
 import financeiro_juridico
+import triagem
 import notificacoes
 import monitoramento_runtime
 import db as _db
@@ -3924,6 +3925,57 @@ async def _montar_capa_via_tribunal(numero: str, tribunal: str) -> tuple[dict | 
     return campos, None
 
 
+def _classificador_triagem():
+    """(classificador, modo). Configuração: CNJ_TRIAGEM_MODO = desligado (padrão) | simulado | jev;
+    no modo jev, a chave vem de TYPESAFE_API_KEY e o modelo de CNJ_TRIAGEM_MODELO (padrão jev-latest)."""
+    modo = (_config_integracao("CNJ_TRIAGEM_MODO", "desligado") or "desligado").strip().lower()
+    if modo not in triagem.MODOS:
+        modo = "desligado"
+    chave = (_config_integracao("TYPESAFE_API_KEY", "") or "").strip()
+    classificador = triagem.criar_classificador(modo, chave, (_config_integracao("CNJ_TRIAGEM_MODELO", "") or "jev-latest").strip())
+    if modo == "jev" and classificador is None:
+        modo = "sem_chave"
+    return classificador, modo
+
+
+async def _classificar_publicacoes(publicacoes: "RegistroPublicacoesOAB", hashes: list[str], refazer: bool = False,
+                                   agora=lambda: datetime.now(timezone.utc)) -> tuple[dict, dict]:
+    """Classifica (sem nomes) e grava a triagem. Devolve (resultados, falhas) por hash."""
+    classificador, _ = _classificador_triagem()
+    if classificador is None:
+        return {}, {h: "Triagem desligada." for h in hashes}
+    existentes = {} if refazer else publicacoes.obter_triagens(hashes)
+    resultados, falhas = dict(existentes), {}
+    trava = asyncio.Semaphore(4)
+
+    async def um(h: str) -> None:
+        publicacao = publicacoes.obter(h)
+        if publicacao is None:
+            falhas[h] = "Publicação não encontrada."
+            return
+        async with trava:
+            try:
+                resultado = await classificador.classificar(triagem.anonimizar(publicacao))
+            except triagem.ErroTriagem as e:
+                falhas[h] = str(e)
+                return
+        await asyncio.to_thread(publicacoes.salvar_triagem, h, resultado, agora)
+        resultados[h] = resultado
+    await asyncio.gather(*(um(h) for h in hashes if h not in existentes))
+    return resultados, falhas
+
+
+async def _triagem_automatica(publicacoes: "RegistroPublicacoesOAB", agora=lambda: datetime.now(timezone.utc)) -> bool:
+    """Rotina horária: classifica as publicações novas (até 100 por rodada). Falhas não interrompem."""
+    classificador, _ = _classificador_triagem()
+    if classificador is None:
+        return True
+    _, falhas = await _classificar_publicacoes(publicacoes, publicacoes.hashes_sem_triagem(100), agora=agora)
+    if falhas:
+        log.warning("Triagem automática: %d publicação(ões) sem classificar (%s)", len(falhas), next(iter(falhas.values())))
+    return not falhas
+
+
 ALERTAS_PRAZO_FAIXAS = (0, 1, 2, 5)  # dias que faltam: o aviso sai ao entrar em cada faixa
 
 
@@ -4520,6 +4572,9 @@ class _AutenticacaoBearer:
             return
         if caminho == "/publicacoes-oab" and self.publicacoes is not None:
             await self._publicacoes_oab(scope, send)
+            return
+        if caminho == "/publicacoes-oab/triagem" and self.publicacoes is not None:
+            await self._publicacoes_oab_triagem(scope, receive, send)
             return
         if caminho == "/publicacoes-oab/status" and self.publicacoes is not None:
             await self._publicacoes_oab_status(scope, receive, send)
@@ -6152,7 +6207,36 @@ class _AutenticacaoBearer:
                               "contagem_status": self.publicacoes.contar_por_status(data, **filtros),
                               "tipos_disponiveis": self.publicacoes.tipos_disponiveis(),
                               "datas_disponiveis": self.publicacoes.datas_disponiveis(status),
-                              "hashes_disponiveis": self.publicacoes.hashes_disponiveis(status, data, **filtros)})
+                              "hashes_disponiveis": self.publicacoes.hashes_disponiveis(status, data, **filtros),
+                              "triagem": {"modo": _classificador_triagem()[1], "limite_alto": triagem.LIMITE_ALTO, "limite_baixo": triagem.LIMITE_BAIXO}})
+
+    async def _publicacoes_oab_triagem(self, scope, receive, send):
+        """POST /publicacoes-oab/triagem: {hashes: [...até 50], refazer?: bool}. Classifica as publicações
+        (texto sem nomes) e devolve {resultados, falhas, modo}. É só apoio à leitura: nada é alterado."""
+        if scope.get("method") != "POST":
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        corpo = await _ler_corpo(receive)
+        if corpo is None:
+            await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB."))
+            return
+        try:
+            dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            await _json(send, 400, _erro("JSON inválido."))
+            return
+        hashes = dados.get("hashes")
+        if not isinstance(hashes, list) or not hashes or len(hashes) > 50 or not all(isinstance(h, str) for h in hashes):
+            await _json(send, 400, _erro("Informe de 1 a 50 publicações."))
+            return
+        classificador, modo = _classificador_triagem()
+        if classificador is None:
+            mensagem = ("A triagem usa o Jev, mas a chave (TYPESAFE_API_KEY) não está configurada."
+                        if modo == "sem_chave" else "A triagem de publicações está desligada.")
+            await _json(send, 409, _erro(mensagem))
+            return
+        resultados, falhas = await _classificar_publicacoes(self.publicacoes, list(dict.fromkeys(hashes)), bool(dados.get("refazer")))
+        await _json(send, 200, {"resultados": resultados, "falhas": falhas, "modo": modo})
 
     async def _publicacoes_oab_status(self, scope, receive, send):
         """POST /publicacoes-oab/status: atualização em lote - {hashes: [...], status: "..."}."""
@@ -7009,6 +7093,7 @@ def _montar_agendador(
         ('captura_oab', 24, _capturar_publicacoes_oab, [registro_monitoramentos, publicacoes, gestao], {}),
         ('movimentos', 12, _atualizar_movimentos_processos, [gestao], {}),
         ('alertas_prazo', 6, _alertar_prazos, [gestao], {}),
+        ('triagem_publicacoes', 1, _triagem_automatica, [publicacoes], {}),
     ):
         agendador.add_job(repo.executar, 'interval', minutes=5, id=nome,
             args=[nome, horas, funcao, args, kwargs], next_run_time=datetime.now(timezone.utc),

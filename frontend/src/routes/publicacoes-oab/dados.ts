@@ -1,5 +1,6 @@
 import { formatarDataSimples, formatarNomeExibicao } from '../../utils/formatadores'
 import { formatarData } from '../../utils/listasRapidas'
+import type { Triagem } from './triagem'
 
 export type DadosDjen = {
   data_disponibilizacao?: string; tipoComunicacao?: string; siglaTribunal?: string
@@ -12,6 +13,7 @@ export type PublicacaoOab = {
   hash: string; status: 'nao_tratada' | 'tratada' | 'arquivada'; caso_id?: string | null
   criado_em?: string; numero_processo?: string; nome_pesquisado?: string; dados?: DadosDjen
   caso_titulo?: string | null
+  triagem?: Triagem | null
 }
 export const ROTULO_STATUS = { nao_tratada: 'Não tratada', tratada: 'Tratada', arquivada: 'Arquivada' }
 export const numeroPublicacao = (p: PublicacaoOab) => String(p.numero_processo || p.dados?.numeroprocessocommascara || p.dados?.numero_processo || '').replace(/\D/g, '')
