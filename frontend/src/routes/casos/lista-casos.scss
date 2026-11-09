@@ -43,3 +43,16 @@ tr:hover .casos-agendar, tr:focus-within .casos-agendar, .casos-cartao .casos-ag
   padding-top: 0.5rem; border-top: 1px solid var(--gray-a3); font-size: 13px;
 }
 .casos-rotulo { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--gray-11); margin-bottom: 2px; }
+
+// Hover-card do título (opaco: sem transparência nem desfoque).
+.rt-HoverCardContent.casos-hovercard {
+  background-color: var(--color-panel-solid);
+  backdrop-filter: none;
+  opacity: 1;
+  width: 380px; max-width: calc(100vw - 2rem);
+}
+.casos-card-lista {
+  margin: 0; display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); gap: 0.5rem 0.75rem; font-size: 13px;
+  dt { color: var(--gray-11); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; padding-top: 2px; }
+  dd { margin: 0; line-height: 1.45; overflow-wrap: anywhere; }
+}
