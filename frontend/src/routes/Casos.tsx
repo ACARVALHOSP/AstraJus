@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Badge, Button, Flex, Heading, Skeleton, Tabs, Text } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
+import { usePerfil } from '../api/PerfilContext'
 import { buscarJson } from '../api/rest'
 import { formatarNomeExibicao, formatarNumeroCNJ } from '../utils/formatadores'
 import ListaCasos, { type Caso } from './casos/ListaCasos'
@@ -11,6 +12,7 @@ import CadastroCaso from './casos/CadastroCaso'
 import AtividadesCaso from './casos/AtividadesCaso'
 import PublicacoesCaso from './casos/PublicacoesCaso'
 import MovimentacoesCaso from './casos/MovimentacoesCaso'
+import PoloClientes from './casos/PoloClientes'
 import VinculosCaso from './casos/VinculosCaso'
 import './casos/processos-radix.css'
 
@@ -20,6 +22,7 @@ type AbaId = typeof ABAS[number]
 export default function Casos() {
   const { consumirPayload, versaoNavegacao } = useNavegacao()
   const { cliente } = useCliente()
+  const { podeEditar } = usePerfil()
   const [casoId, setCasoId] = useState<string | null>(null)
   const [contagensDe, setContagensDe] = useState<{ casoId: string; atividades_abertas: number; publicacoes_a_revisar: number } | null>(null)
 
@@ -98,6 +101,7 @@ export default function Casos() {
               {formatarNumeroCNJ(numero)}{i === 0 && resumo.foro ? ` · ${resumo.foro}` : ''}
             </p>
           ))}
+          {resumo && <PoloClientes key={casoId} casoId={casoId} polos={resumo.polos} podeEditar={podeEditar('casos')} />}
         </div>
         <Tabs.Root key={casoId} value={abaSelecionada} onValueChange={(v) => confirmarSaida(() => setAbaSelecionada(v as AbaId))}>
           <div ref={faixaAbas}>

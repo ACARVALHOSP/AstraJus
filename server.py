@@ -4471,6 +4471,9 @@ class _AutenticacaoBearer:
             alvo, _, resto = caminho[1:].partition("/")
             await self._pasta_drive_sob_demanda(send, alvo, resto[:-len("/pasta-drive")])
             return
+        if caminho.startswith("/casos/") and caminho.endswith("/polos") and self.gestao is not None:
+            await self._caso_polos(scope, receive, send, caminho[len("/casos/"):-len("/polos")].rstrip("/"))
+            return
         if caminho.startswith("/casos/") and caminho.endswith("/evento-calendar") and self.gestao is not None:
             caso_id = caminho[len("/casos/"):-len("/evento-calendar")].rstrip("/")
             await self._evento_calendar_do_caso(scope, receive, send, caso_id)
@@ -5268,6 +5271,30 @@ class _AutenticacaoBearer:
             await _json(send, 502, _erro("Não foi possível criar a pasta no Google Drive agora. Tente de novo em instantes."))
             return
         await _json(send, 200, {"drive_pasta_id": pasta_caso or pasta_cliente, "drive_pasta_cliente_id": pasta_cliente})
+
+    async def _caso_polos(self, scope, receive, send, caso_id: str) -> None:
+        """PUT /casos/<id>/polos: {cliente_id, polo}. Corrige o polo de um cliente no processo
+        (ativo, passivo ou terceiro); polo vazio volta ao polo deduzido da capa e das publicações."""
+        if scope.get("method") != "PUT":
+            await _responder(send, 405, b"Metodo nao permitido")
+            return
+        corpo = await _ler_corpo(receive)
+        try:
+            dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            await _json(send, 400, _erro("JSON inválido."))
+            return
+        cliente_id = str(dados.get("cliente_id") or "").strip()
+        polo = str(dados.get("polo") or "").strip().lower() or None
+        try:
+            ok = self.gestao.definir_polo(caso_id, cliente_id, polo, lambda: datetime.now(timezone.utc))
+        except ValueError as e:
+            await _json(send, 400, _erro(str(e)))
+            return
+        if not ok:
+            await _json(send, 404, _erro("Processo ou cliente do processo não encontrado."))
+            return
+        await _json(send, 200, {"polos": (self.gestao.obter_caso(caso_id) or {}).get("polos", [])})
 
     async def _caso_detalhe(self, scope, receive, send, caso_id: str):
         """GET /casos/<id>: o caso com sua linha do tempo.
@@ -6208,6 +6235,7 @@ class _AutenticacaoBearer:
                               "tipos_disponiveis": self.publicacoes.tipos_disponiveis(),
                               "datas_disponiveis": self.publicacoes.datas_disponiveis(status),
                               "hashes_disponiveis": self.publicacoes.hashes_disponiveis(status, data, **filtros),
+                              "destinadas_a_clientes": len(self.publicacoes.hashes_para_clientes(status, data, **filtros)),
                               "triagem": {"modo": _classificador_triagem()[1], "limite_alto": triagem.LIMITE_ALTO, "limite_baixo": triagem.LIMITE_BAIXO}})
 
     async def _publicacoes_oab_triagem(self, scope, receive, send):

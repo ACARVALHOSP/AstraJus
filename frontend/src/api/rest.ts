@@ -24,7 +24,7 @@ export async function enviarJson<T>(
   cliente: ClienteMCP | null,
   url: string,
   corpo: unknown,
-  metodo: 'POST' | 'PATCH' | 'DELETE' = 'POST',
+  metodo: 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'POST',
   signal?: AbortSignal,
 ): Promise<T> {
   if (!cliente) throw new ErroMCP(401, 'Conecte-se primeiro.')

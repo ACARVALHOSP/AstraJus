@@ -77,3 +77,8 @@
 .oab-triagem { max-inline-size: 16rem; }
 .oab-col-triagem { inline-size: 14rem; }
 .oab-ordenar--urgencia::after { content: ' ↓ urgência'; }
+
+// Publicação destinada a cliente: faixa vermelha à esquerda para não passar despercebida.
+tr.oab-linha-cliente > td:first-child, li.oab-linha-cliente { box-shadow: inset 4px 0 0 var(--red-9); }
+.oab-destino-linha { margin-top: 0.375rem; }
+.oab-destino { align-items: flex-start; }
