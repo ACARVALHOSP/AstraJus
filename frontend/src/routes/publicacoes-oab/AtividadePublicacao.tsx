@@ -7,20 +7,35 @@ import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarDataSimples, formatarNomeExibicao } from '../../utils/formatadores'
 import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
 import { numeroPublicacao, type PublicacaoOab } from './dados'
-import { calcularPrazo, dataValida, detectarDias, REGRAS_PRAZO, type CalendarioForense, type ProvedorCalendario, type RegraPrazo } from './prazos'
+import BuscaProcesso from '../../BuscaProcesso'
+import { calcularPrazo, cruzaRecesso, dataValida, detectarDias, PRAZOS_PADRAO, REGRAS_PRAZO, sugerirPrazoPadrao, type CalendarioForense, type Contagem, type ProvedorCalendario, type RegraPrazo } from './prazos'
 import { imprimirDemonstrativoPrazo } from './impressaoPrazo'
 
-export default function AtividadePublicacao({ publicacao, onClose, onConcluido, provedorCalendario }: {
-  publicacao: PublicacaoOab; onClose: () => void; onConcluido: (mensagem: string) => void; provedorCalendario?: ProvedorCalendario
+type CasoOpcao = { id: string; titulo?: string | null; processos?: string[] }
+
+/** Calcula um prazo processual e cria a atividade. Com `publicacao`, parte dos dados dela e marca a
+ *  publicação como tratada ao salvar; sem ela (calculadora avulsa da Agenda), pede o processo. */
+export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBaseInicial, onClose, onConcluido, provedorCalendario }: {
+  publicacao?: PublicacaoOab; casoIdInicial?: string; dataBaseInicial?: string
+  onClose: () => void; onConcluido: (mensagem: string) => void; provedorCalendario?: ProvedorCalendario
 }) {
   const { cliente } = useCliente()
-  const numero = numeroPublicacao(publicacao), casoId = publicacao.caso_id!
-  const [titulo, setTitulo] = useState(`Revisar ${publicacao.dados?.tipoComunicacao || 'publicação DJEN'}`)
-  const [dias, setDias] = useState(String(detectarDias(publicacao.dados?.texto || '') ?? ''))
-  const [base, setBase] = useState(publicacao.dados?.data_disponibilizacao?.slice(0, 10) || '')
-  const [regra, setRegra] = useState<RegraPrazo>('dje')
+  const [casoId, setCasoId] = useState(publicacao?.caso_id ?? casoIdInicial ?? '')
+  const [casos, setCasos] = useState<CasoOpcao[]>([])
+  const [numeroCaso, setNumeroCaso] = useState('')
+  const numero = publicacao ? numeroPublicacao(publicacao) : numeroCaso
+  const textoPublicacao = publicacao?.dados?.texto || ''
+  const sugestao = sugerirPrazoPadrao(textoPublicacao)
+  const diasExplicitos = detectarDias(textoPublicacao)
+  const [prazoPadrao, setPrazoPadrao] = useState<string>(diasExplicitos ? 'outro' : sugestao?.id ?? 'outro')
+  const [titulo, setTitulo] = useState(publicacao ? `Revisar ${publicacao.dados?.tipoComunicacao || 'publicação DJEN'}` : '')
+  const [dias, setDias] = useState(String(diasExplicitos ?? sugestao?.dias ?? ''))
+  const [contagem, setContagem] = useState<Contagem>('uteis')
+  const [emDobro, setEmDobro] = useState(false)
+  const [base, setBase] = useState(publicacao?.dados?.data_disponibilizacao?.slice(0, 10) || dataBaseInicial || '')
+  const [regra, setRegra] = useState<RegraPrazo>(publicacao || !dataBaseInicial ? 'dje' : 'dje')
   const [municipio, setMunicipio] = useState('')
-  const [tribunal, setTribunal] = useState(publicacao.dados?.siglaTribunal?.toLowerCase() || siglaTribunalPorNumero(numero) || '')
+  const [tribunal, setTribunal] = useState(publicacao?.dados?.siglaTribunal?.toLowerCase() || siglaTribunalPorNumero(numero) || '')
   const [suspensaoCpc, setSuspensaoCpc] = useState(false)
   const [responsavel, setResponsavel] = useState('')
   const [responsaveis, setResponsaveis] = useState<string[]>([])
@@ -37,11 +52,26 @@ export default function AtividadePublicacao({ publicacao, onClose, onConcluido, 
   const trava = useRef(false)
   const [carregandoContexto, setCarregandoContexto] = useState(true)
 
+  // Calculadora avulsa: lista de processos para escolher e, depois, o número do processo escolhido.
+  useEffect(() => {
+    if (publicacao || casoIdInicial) return
+    buscarJson<{ casos: CasoOpcao[] }>(cliente, '/casos').then(r => setCasos(r.casos ?? [])).catch(() => {})
+  }, [cliente, publicacao, casoIdInicial])
+  useEffect(() => {
+    if (publicacao || !casoId) return
+    let ativo = true
+    buscarJson<{ processos?: string[] }>(cliente, `/casos/${encodeURIComponent(casoId)}`)
+      .then(c => { if (ativo) { const n = (c.processos ?? [])[0] ?? ''; setNumeroCaso(n); if (n && !tribunal) setTribunal(siglaTribunalPorNumero(n) || '') } })
+      .catch(() => {})
+    return () => { ativo = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cliente, casoId, publicacao])
+
   useEffect(() => {
     let ativo = true
     Promise.allSettled([
       buscarJson<{ responsaveis: string[] }>(cliente, '/responsaveis'),
-      buscarJson<{ cidade?: string; tribunal?: string }>(cliente, `/casos/${encodeURIComponent(casoId)}/processos/${numero}/capa`),
+      casoId && numero ? buscarJson<{ cidade?: string; tribunal?: string }>(cliente, `/casos/${encodeURIComponent(casoId)}/processos/${numero}/capa`) : Promise.reject(new Error('sem processo')),
     ]).then(([equipe, capa]) => {
       if (!ativo) return
       if (equipe.status === 'fulfilled') setResponsaveis(equipe.value.responsaveis)
@@ -80,7 +110,7 @@ export default function AtividadePublicacao({ publicacao, onClose, onConcluido, 
         for (let passo = 0; ; passo++) {
           if (passo > 12) throw new Error('Intervalo de calendário não suportado.')
           calendarioAtual = await provedor({ municipio: municipio.trim(), tribunal: tribunal.trim().toLowerCase(), anos })
-          calculo = calcularPrazo(base, Number(dias), regra, calendarioAtual, suspensaoCpc)
+          calculo = calcularPrazo(base, Number(dias), regra, calendarioAtual, suspensaoCpc, { contagem, emDobro })
           const anoFinal = Number(calculo.dataFinal.slice(0, 4))
           if (anos.includes(anoFinal)) break
           anos = Array.from({ length: anoFinal - anoBase + 1 }, (_, i) => anoBase + i)
@@ -90,17 +120,19 @@ export default function AtividadePublicacao({ publicacao, onClose, onConcluido, 
       } catch (e) { if (ativo) setErroCalculo((e as Error).message) } finally { if (ativo) setCalculando(false) }
     }, 350)
     return () => { ativo = false; clearTimeout(temporizador) }
-  }, [cliente, base, dias, municipio, tribunal, regra, suspensaoCpc, carregandoContexto, provedorCalendario])
+  }, [cliente, base, dias, municipio, tribunal, regra, suspensaoCpc, contagem, emDobro, carregandoContexto, provedorCalendario])
 
   async function salvar() {
     if (trava.current || calculando || carregandoContexto) return
+    if (!casoId) { setErro('Escolha o processo do prazo.'); return }
     if (!titulo.trim()) { setErro('Informe o título.'); return }
     if (revisado && !dataValida(final)) { setErro('Informe uma data final válida para o prazo revisado.'); return }
     trava.current = true; setSalvando(true); setErro('')
     try {
       if (!atividadeCriada.current) {
         const memoria = {
-          publicacao: publicacao.hash, numero_processo: numero, link: publicacao.dados?.link || null,
+          ...(publicacao ? { publicacao: publicacao.hash, link: publicacao.dados?.link || null } : {}), numero_processo: numero || null,
+          prazo_padrao: prazoPadrao, contagem, em_dobro: emDobro,
           situacao_prazo: revisado ? 'revisado' : 'pendente_revisao', data_final: revisado ? final : null,
           sugestao_data_final: resultado?.dataFinal || null, quantidade_dias: Number(dias) || null,
           data_base: base || null, termo_inicial: resultado?.termoInicial || null, regra: REGRAS_PRAZO[regra],
@@ -112,13 +144,16 @@ export default function AtividadePublicacao({ publicacao, onClose, onConcluido, 
         }
         const a = await enviarJson<{ id: string | number }>(cliente, `/casos/${encodeURIComponent(casoId)}/atividades`, {
           tipo: 'prazo', titulo: titulo.trim(), data: revisado ? final : null, responsavel: responsavel || null,
-          observacoes: `${revisado ? 'Prazo revisado antes da confirmação.' : 'Pendente de revisão do prazo; sem vencimento confirmado.'}\nPublicação DJEN: ${publicacao.hash}\n${JSON.stringify(memoria)}`,
+          observacoes: `${revisado ? 'Prazo revisado antes da confirmação.' : 'Pendente de revisão do prazo; sem vencimento confirmado.'}${publicacao ? `\nPublicação DJEN: ${publicacao.hash}` : ''}\n${JSON.stringify(memoria)}`,
         })
         atividadeCriada.current = String(a.id); setJaCriada(true)
       }
-      const r = await enviarJson<{ hashes_falharam?: string[] }>(cliente, '/publicacoes-oab/status', { hashes: [publicacao.hash], status: 'tratada' })
-      if (r.hashes_falharam?.length) throw new Error('Não foi possível atualizar o status da publicação.')
-      onConcluido(revisado ? 'Atividade criada com prazo revisado. Publicação marcada como tratada.' : 'Atividade criada com prazo pendente de revisão, sem vencimento confirmado. Publicação marcada como tratada.')
+      if (publicacao) {
+        const r = await enviarJson<{ hashes_falharam?: string[] }>(cliente, '/publicacoes-oab/status', { hashes: [publicacao.hash], status: 'tratada' })
+        if (r.hashes_falharam?.length) throw new Error('Não foi possível atualizar o status da publicação.')
+      }
+      const sufixo = publicacao ? ' Publicação marcada como tratada.' : ''
+      onConcluido(revisado ? `Prazo criado e revisado.${sufixo}` : `Prazo criado pendente de revisão, sem vencimento confirmado.${sufixo}`)
     } catch (e) { setErro(`${atividadeCriada.current ? 'Atividade já criada. Tentar novamente repetirá somente a atualização de status. ' : ''}${(e as Error).message}`) }
     finally { trava.current = false; setSalvando(false) }
   }
@@ -127,15 +162,38 @@ export default function AtividadePublicacao({ publicacao, onClose, onConcluido, 
     if (!resultado || calculando || carregandoContexto) return
     setErro('')
     try {
-      imprimirDemonstrativoPrazo({ titulo, numero, tribunal, municipio, base, dias: Number(dias), regra, suspensaoCpc, calendario, resultado, dataFinal: final, revisado })
+      imprimirDemonstrativoPrazo({ titulo, numero, tribunal, municipio, base, dias: Number(dias), regra, suspensaoCpc, calendario, resultado, dataFinal: final, revisado, contagem, emDobro })
     } catch (e) { setErro((e as Error).message) }
   }
 
   return (
     <Dialog.Root open onOpenChange={(open) => { if (!open && !salvando) onClose() }}>
       <Dialog.Content maxWidth="640px">
-        <Dialog.Title>Criar atividade a partir da publicação</Dialog.Title>
+        <Dialog.Title>{publicacao ? 'Criar atividade a partir da publicação' : 'Calcular prazo processual'}</Dialog.Title>
         <Flex direction="column" gap="5">
+          {!publicacao && !casoIdInicial && (
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="oab-prazo-processo">Processo</label>
+              <BuscaProcesso id="oab-prazo-processo" casos={casos} valor={casoId} onChange={setCasoId} />
+            </div>
+          )}
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="oab-prazo-padrao">Tipo de prazo</label>
+            <Select.Root value={prazoPadrao} disabled={bloqueado} onValueChange={(v) => {
+              setPrazoPadrao(v)
+              const p = PRAZOS_PADRAO.find(x => x.id === v)
+              if (p) { setDias(String(p.dias)); setContagem('uteis'); if (!publicacao && !titulo.trim()) setTitulo(`Prazo: ${p.rotulo}`) }
+            }}>
+              <Select.Trigger id="oab-prazo-padrao" style={{ width: '100%' }} />
+              <Select.Content>
+                {PRAZOS_PADRAO.map(p => <Select.Item key={p.id} value={p.id}>{p.rotulo} — {p.dias} dias úteis ({p.base})</Select.Item>)}
+                <Select.Item value="outro">Outro (informar os dias)</Select.Item>
+              </Select.Content>
+            </Select.Root>
+            {publicacao && sugestao && prazoPadrao === sugestao.id && !diasExplicitos && (
+              <Text size="1" color="gray">Sugerido pelo texto da publicação ({sugestao.rotulo}, {sugestao.base}). Confira: o prazo pode ser outro.</Text>
+            )}
+          </div>
           <div className="form-campo">
             <label className="form-campo-label" htmlFor="oab-atividade-titulo">Título</label>
             <TextField.Root id="oab-atividade-titulo" maxLength={160} value={titulo} disabled={bloqueado} onChange={e => setTitulo(e.target.value)} />
@@ -147,8 +205,8 @@ export default function AtividadePublicacao({ publicacao, onClose, onConcluido, 
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="oab-prazo-dias">Quantidade de dias</label>
-              <TextField.Root id="oab-prazo-dias" type="number" min={1} max={999} value={dias} disabled={bloqueado} onChange={e => setDias(e.target.value)} />
-              <Text size="1" color="gray">Sugerida somente quando há um prazo numérico explícito e único no texto.</Text>
+              <TextField.Root id="oab-prazo-dias" type="number" min={1} max={999} value={dias} disabled={bloqueado} onChange={e => { setDias(e.target.value); setPrazoPadrao('outro') }} />
+              <Text size="1" color="gray">{publicacao ? 'Sugerida quando o texto traz um prazo numérico explícito e único ou um tipo de manifestação reconhecido.' : 'Preenchida pelo tipo de prazo; pode ser ajustada.'}</Text>
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="oab-prazo-municipio">Município / comarca</label>
@@ -168,6 +226,24 @@ export default function AtividadePublicacao({ publicacao, onClose, onConcluido, 
               </Select.Content>
             </Select.Root>
           </div>
+          <div className="aj-form-grade">
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="oab-prazo-contagem">Contagem</label>
+              <Select.Root value={contagem} disabled={bloqueado} onValueChange={(v) => setContagem(v as Contagem)}>
+                <Select.Trigger id="oab-prazo-contagem" style={{ width: '100%' }} />
+                <Select.Content>
+                  <Select.Item value="uteis">Dias úteis (CPC art. 219)</Select.Item>
+                  <Select.Item value="corridos">Dias corridos (prorroga para dia útil)</Select.Item>
+                </Select.Content>
+              </Select.Root>
+            </div>
+          </div>
+          <Text as="label" size="2">
+            <Flex gap="2" align="center">
+              <Checkbox checked={emDobro} disabled={bloqueado} onCheckedChange={(checked) => setEmDobro(Boolean(checked))} />
+              Prazo em dobro (Fazenda Pública, Ministério Público, Defensoria ou litisconsortes com advogados distintos: CPC arts. 180, 183, 186 e 229)
+            </Flex>
+          </Text>
           <Text as="label" size="2">
             <Flex gap="2" align="center">
               <Checkbox checked={suspensaoCpc} disabled={bloqueado} onCheckedChange={(checked) => setSuspensaoCpc(Boolean(checked))} />
@@ -180,7 +256,10 @@ export default function AtividadePublicacao({ publicacao, onClose, onConcluido, 
               <Callout.Icon>{revisado ? <Info size={14} /> : <AlertTriangle size={14} />}</Callout.Icon>
               <Callout.Text>{revisado ? 'A data final será salva conforme sua revisão. A cobertura automática de suspensões e provimentos permanece incompleta.' : erroCalculo || 'A cobertura de feriados municipais, suspensões e provimentos precisa ser revisada. Sem confirmação, a atividade será salva sem vencimento.'}</Callout.Text>
             </Callout.Root>
-            {resultado && <Text as="p" size="2" mt="2">Termo inicial: {formatarDataSimples(resultado.termoInicial)} · {dias} dias úteis · Data final sugerida: {formatarDataSimples(resultado.dataFinal)}</Text>}
+            {resultado && <Text as="p" size="2" mt="2">Termo inicial: {formatarDataSimples(resultado.termoInicial)} · {resultado.diasContados} dias {resultado.contagem === 'corridos' ? 'corridos' : 'úteis'}{resultado.emDobro ? ` (${dias} em dobro)` : ''} · Data final sugerida: {formatarDataSimples(resultado.dataFinal)}{resultado.prorrogado ? ' (prorrogada para o primeiro dia útil)' : ''}</Text>}
+            {resultado && !suspensaoCpc && cruzaRecesso(base, resultado.dataFinal) && (
+              <Text as="p" size="2" color="amber" role="alert">A contagem passa pelo período de 20/12 a 20/01. Se a suspensão do CPC (art. 220) se aplica a este processo, marque a opção acima: a data final muda.</Text>
+            )}
             {calendario && <Text as="p" size="2">Município consultado: {calendario.municipio}. Fonte: {calendario.fonte}.</Text>}
           </div>
           <div className="form-campo">
@@ -223,7 +302,7 @@ export default function AtividadePublicacao({ publicacao, onClose, onConcluido, 
           )}
           <Flex gap="3" mt="2" justify="end">
             <Button variant="soft" color="gray" disabled={salvando} onClick={onClose}>Cancelar</Button>
-            <Button disabled={salvando || calculando || carregandoContexto} onClick={salvar}>
+            <Button disabled={salvando || calculando || carregandoContexto || !casoId} onClick={salvar}>
               {jaCriada ? 'Concluir atualização de status' : revisado ? 'Confirmar atividade e prazo' : 'Criar com prazo pendente de revisão'}
             </Button>
           </Flex>

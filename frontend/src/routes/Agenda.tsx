@@ -4,7 +4,7 @@ import BuscaProcesso from '../BuscaProcesso'
 import { useAvisos } from '../Avisos'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Badge, Button, Callout, Dialog, Flex, SegmentedControl, Select, Switch, Text } from '@radix-ui/themes'
-import { AlertTriangle, ChevronLeft, ChevronRight, Download, Plus } from 'lucide-react'
+import { AlertTriangle, Calculator, ChevronLeft, ChevronRight, Download, Plus } from 'lucide-react'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { usePerfil } from '../api/PerfilContext'
@@ -13,6 +13,7 @@ import { buscarJson, enviarJson } from '../api/rest'
 import { formatarNomeExibicao } from '../utils/formatadores'
 import { useEstreita } from '../utils/useEstreita'
 import AtividadeModal from './casos/AtividadeModal'
+import CalculadoraPrazo from './publicacoes-oab/AtividadePublicacao'
 import type { Atividade as AtividadeCaso } from './casos/AtividadesCaso'
 import { COR_STATUS, COR_TIPO, dataCurta, isoLocal, ROTULO_STATUS, ROTULO_TIPO } from './atividades/dados'
 import { DIAS_SEMANA, deslocar, diasDaVisao, gerarIcs, paraData, tituloDaVisao, type Visao } from './atividades/agenda'
@@ -46,6 +47,7 @@ export default function Agenda() {
   const [erro, setErro] = useState('')
   const [editando, setEditando] = useState<{ casoId: string; atividade: AtividadeCaso | null; data?: string } | null>(null)
   const [escolhendo, setEscolhendo] = useState(false)
+  const [calculandoPrazo, setCalculandoPrazo] = useState(false)
   const sequencia = useRef(0)
   const [arrastando, setArrastando] = useState<Item | null>(null)
   const [sobre, setSobre] = useState<string | null>(null)
@@ -156,6 +158,7 @@ export default function Agenda() {
     <section className="aj-agenda">
       <CabecalhoPagina titulo="Agenda" focavel descricao="Prazos, audiências, reuniões e tarefas de todos os processos no calendário."
         acoes={<Flex gap="2" wrap="wrap">
+          {podeEditar('atividades') && <Button variant="soft" onClick={() => setCalculandoPrazo(true)}><Calculator size={14} aria-hidden="true" />Calcular prazo</Button>}
           <Button variant="soft" color="gray" onClick={exportar}><Download size={14} aria-hidden="true" />Exportar .ics</Button>
           {podeEditar('atividades') && <Button onClick={() => setEscolhendo(true)}><Plus size={14} aria-hidden="true" />Nova atividade</Button>}
         </Flex>} />
@@ -265,6 +268,8 @@ export default function Agenda() {
         </ul>
       </section>
 
+      {calculandoPrazo && <CalculadoraPrazo dataBaseInicial={selecionado} onClose={() => setCalculandoPrazo(false)}
+        onConcluido={(m) => { setCalculandoPrazo(false); avisar({ texto: m }); void carregar() }} />}
       {escolhendo && <EscolherProcesso data={selecionado} onCancelar={() => setEscolhendo(false)}
         onEscolhido={(casoId) => { setEscolhendo(false); setEditando({ casoId, atividade: null, data: selecionado }) }} />}
       {editando && <AtividadeModal open casoId={editando.casoId} atividade={editando.atividade} dataInicial={editando.data}

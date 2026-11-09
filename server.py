@@ -3924,6 +3924,68 @@ async def _montar_capa_via_tribunal(numero: str, tribunal: str) -> tuple[dict | 
     return campos, None
 
 
+ALERTAS_PRAZO_FAIXAS = (0, 1, 2, 5)  # dias que faltam: o aviso sai ao entrar em cada faixa
+
+
+def _faixa_alerta_prazo(dias_faltando: int) -> str:
+    """'atrasado' se já venceu; senão a menor faixa (0, 1, 2 ou 5 dias) que cobre o que falta."""
+    if dias_faltando < 0:
+        return "atrasado"
+    return str(next(f for f in ALERTAS_PRAZO_FAIXAS if dias_faltando <= f))
+
+
+def _enviar_email_simples(cfg: "ConfiguracaoSMTP", destino: str, assunto: str, corpo: str) -> None:
+    mensagem = EmailMessage()
+    mensagem["Subject"], mensagem["From"], mensagem["To"] = assunto, cfg.remetente, destino
+    mensagem.set_content(corpo)
+    contexto = ssl.create_default_context()
+    if cfg.porta == 465:
+        with smtplib.SMTP_SSL(cfg.host, cfg.porta, context=contexto, timeout=30) as servidor:
+            servidor.login(cfg.usuario, cfg.senha)
+            servidor.send_message(mensagem)
+    else:
+        with smtplib.SMTP(cfg.host, cfg.porta, timeout=30) as servidor:
+            servidor.starttls(context=contexto)
+            servidor.login(cfg.usuario, cfg.senha)
+            servidor.send_message(mensagem)
+
+
+async def _alertar_prazos(gestao: "RegistroClientesCasos", agora=lambda: datetime.now(timezone.utc), enviar=None) -> bool:
+    """Avisa quem é responsável por prazos e audiências que estão a 5, 2 ou 1 dia de vencer, vencem hoje
+    ou venceram há até 3 dias (só prazos). Cada pessoa recebe cada faixa uma vez, no sino e, havendo
+    SMTP e e-mail cadastrado, também por e-mail. O aviso some quando a atividade é concluída.
+    O destinatário é o responsável da atividade; sem ele, o do processo; sem ele, os administradores."""
+    hoje = agora().astimezone(timezone(timedelta(hours=-3))).date()  # data de Brasília
+    itens = gestao.atividades_para_alerta(hoje.isoformat(), (hoje + timedelta(days=5)).isoformat(), (hoje - timedelta(days=3)).isoformat())
+    if not itens:
+        return True
+    registro = RegistroUsuarios(gestao.caminho)
+    usuarios = registro.carregar()
+    ativos = {nome for nome, dados in usuarios.items() if not dados.get("revogado") and dados.get("status", "ativo") == "ativo"}
+    administradores = sorted(n for n in ativos if usuarios[n].get("nivel_acesso") == "administrador")
+    repo = notificacoes.Repositorio(gestao.caminho, agora=agora)
+    cfg = _smtp_do_ambiente()
+    base = (os.environ.get("CNJ_MCP_URL_PUBLICA") or "").rstrip("/")
+    falhou = False
+    for a in itens:
+        destinatarios = [u for u in (a["responsavel"], a["caso_responsavel"]) if u in ativos][:1] or administradores
+        faixa = _faixa_alerta_prazo((datetime.fromisoformat(a["data"][:10]).date() - hoje).days)
+        for usuario in repo.registrar_alerta_prazo(a["caso_id"], a["id"], faixa, destinatarios):
+            email = usuarios[usuario].get("email")
+            if not (cfg and email):
+                continue
+            quando = {"atrasado": "VENCEU", "0": "vence HOJE", "1": "vence amanhã"}.get(faixa, f"vence em até {faixa} dias")
+            tipo = "Audiência" if a["tipo"] == "audiencia" else "Prazo"
+            corpo = (f"{tipo} {quando}: {a['titulo']}\nData: {a['data'][:10]}{' às ' + a['hora'][:5] if a.get('hora') else ''}\n"
+                     f"Processo: {a['caso_titulo'] or '(sem título)'}\n" + (f"\nAbrir a agenda: {base}/radix/#/agenda\n" if base else ""))
+            try:
+                await asyncio.to_thread((enviar or _enviar_email_simples), cfg, email, f"{tipo} {quando}: {a['titulo']}", corpo)
+            except Exception:
+                falhou = True
+                log.exception("Alerta de prazo: falha ao enviar e-mail para %s", usuario)
+    return not falhou
+
+
 def _movimentos_novos(antigos: list[dict] | None, novos: list[dict] | None) -> list[dict]:
     """Movimentos presentes em `novos` que ainda não constavam em `antigos`, identificados por
     (codigo, dataHora) - usado pelo job periódico para saber se vale a pena avisar/registrar."""
@@ -6946,6 +7008,7 @@ def _montar_agendador(
          [registro_monitoramentos, smtp], {'gestao': gestao}),
         ('captura_oab', 24, _capturar_publicacoes_oab, [registro_monitoramentos, publicacoes, gestao], {}),
         ('movimentos', 12, _atualizar_movimentos_processos, [gestao], {}),
+        ('alertas_prazo', 6, _alertar_prazos, [gestao], {}),
     ):
         agendador.add_job(repo.executar, 'interval', minutes=5, id=nome,
             args=[nome, horas, funcao, args, kwargs], next_run_time=datetime.now(timezone.utc),

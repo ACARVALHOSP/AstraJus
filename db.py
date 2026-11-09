@@ -1608,6 +1608,23 @@ class RegistroClientesCasos:
 
     _STATUS_ATIVIDADE_ABERTOS = ("pendente", "em_andamento", "aguardando")
 
+    def atividades_para_alerta(self, hoje: str, ate: str, atrasadas_desde: str) -> list[dict]:
+        """Prazos e audiências em aberto que merecem aviso: de hoje até `ate` e, só para prazos, os
+        que venceram desde `atrasadas_desde` (para não avisar de tudo que já estava vencido há meses)."""
+        abertos = ",".join("?" * len(self._STATUS_ATIVIDADE_ABERTOS))
+        with _abrir(self.caminho) as conexao:
+            linhas = conexao.execute(
+                "SELECT a.id, a.caso_id, a.tipo, a.titulo, a.data, a.hora, a.responsavel, c.titulo, c.responsavel "
+                "FROM caso_atividades a JOIN casos c ON c.id = a.caso_id "
+                f"WHERE a.tipo IN ('prazo', 'audiencia') AND a.status IN ({abertos}) AND a.data IS NOT NULL "
+                "AND substr(a.data, 1, 10) <= ? "
+                "AND (substr(a.data, 1, 10) >= ? OR (a.tipo = 'prazo' AND substr(a.data, 1, 10) >= ?)) "
+                "ORDER BY a.data",
+                (*self._STATUS_ATIVIDADE_ABERTOS, ate, hoje, atrasadas_desde),
+            ).fetchall()
+        chaves = ("id", "caso_id", "tipo", "titulo", "data", "hora", "responsavel", "caso_titulo", "caso_responsavel")
+        return [dict(zip(chaves, linha)) for linha in linhas]
+
     def listar_atividades_globais(
         self, *, situacao: str = "abertas", tipo: str | None = None, responsavel: str | None = None,
         sem_responsavel: bool = False, responsavel_processo: str | None = None, busca: str | None = None,

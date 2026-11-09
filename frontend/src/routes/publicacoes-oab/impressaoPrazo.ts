@@ -6,6 +6,7 @@ type DadosImpressao = {
   titulo: string; numero: string; tribunal: string; municipio: string; base: string; dias: number
   regra: RegraPrazo; suspensaoCpc: boolean; calendario: CalendarioForense | null
   resultado: ReturnType<typeof calcularPrazo>; dataFinal: string; revisado: boolean
+  contagem?: 'uteis' | 'corridos'; emDobro?: boolean
 }
 
 /** Uses a local document and text nodes only; publication data never becomes HTML. */
@@ -33,7 +34,7 @@ export function imprimirDemonstrativoPrazo(dados: DadosImpressao): void {
   doc.body.append(header, elemento('h1', 'Demonstrativo do prazo'), elemento('p', `Atividade: ${dados.titulo}`), elemento('p', `Processo: ${formatarNumeroCNJ(dados.numero) || 'Não informado'} · ${dados.tribunal.toUpperCase()}`))
   const resumo = elemento('dl'); resumo.className = 'resumo'
   const itens = [
-    ['Data-base', formatarDataSimples(dados.base)], ['Quantidade', `${dados.dias} dias úteis`],
+    ['Data-base', formatarDataSimples(dados.base)], ['Quantidade', `${dados.emDobro ? `${dados.dias} em dobro = ${dados.dias * 2}` : dados.dias} dias ${dados.contagem === 'corridos' ? 'corridos' : 'úteis'}`],
     ['Termo inicial', formatarDataSimples(dados.resultado.termoInicial)], ['Data final calculada', formatarDataSimples(dados.resultado.dataFinal)],
     ['Município / comarca', dados.calendario?.municipio || dados.municipio], ['Regra aplicada', REGRAS_PRAZO[dados.regra]],
     ['Suspensão de 20/12 a 20/01', dados.suspensaoCpc ? 'Selecionada' : 'Não selecionada'],
