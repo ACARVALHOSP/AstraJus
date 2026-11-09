@@ -4576,6 +4576,9 @@ class _AutenticacaoBearer:
         if caminho == "/publicacoes-oab" and self.publicacoes is not None:
             await self._publicacoes_oab(scope, send)
             return
+        if caminho == "/publicacoes-oab/unificar-duplicadas" and self.publicacoes is not None:
+            await self._publicacoes_oab_unificar(scope, receive, send)
+            return
         if caminho == "/publicacoes-oab/triagem" and self.publicacoes is not None:
             await self._publicacoes_oab_triagem(scope, receive, send)
             return
@@ -6237,6 +6240,19 @@ class _AutenticacaoBearer:
                               "hashes_disponiveis": self.publicacoes.hashes_disponiveis(status, data, **filtros),
                               "destinadas_a_clientes": len(self.publicacoes.hashes_para_clientes(status, data, **filtros)),
                               "triagem": {"modo": _classificador_triagem()[1], "limite_alto": triagem.LIMITE_ALTO, "limite_baixo": triagem.LIMITE_BAIXO}})
+
+    async def _publicacoes_oab_unificar(self, scope, receive, send):
+        """POST /publicacoes-oab/unificar-duplicadas {aplicar: bool}: sem `aplicar` só conta as duplicadas."""
+        if scope.get("method") != "POST":
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        corpo = await _ler_corpo(receive)
+        try:
+            dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            await _json(send, 400, _erro("JSON inválido."))
+            return
+        await _json(send, 200, await asyncio.to_thread(self.publicacoes.unificar_duplicadas, bool(dados.get("aplicar"))))
 
     async def _publicacoes_oab_triagem(self, scope, receive, send):
         """POST /publicacoes-oab/triagem: {hashes: [...até 50], refazer?: bool}. Classifica as publicações

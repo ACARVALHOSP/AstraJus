@@ -2285,7 +2285,8 @@ class PublicacaoCadastroInlineTest(unittest.TestCase):
             self.assertEqual(server._criar_usuario(registro, "ana"), 0)
         token = saida.getvalue().strip().splitlines()[-1]
         numero_com_mascara = "1006314-27.2023.8.26.0005"
-        self.publicacoes.registrar("pub-mascarada", None, None, numero_com_mascara, self.dados,
+        # Conteúdo próprio: uma publicação igual a outra já guardada (mesmo texto, data e processo) não é registrada de novo.
+        self.publicacoes.registrar("pub-mascarada", None, None, numero_com_mascara, {**self.dados, "texto": "Publicação mascarada, texto próprio."},
                                   "nao_tratada", None, self.agora)
         mw = server._AutenticacaoBearer(None, registro, gestao=self.gestao, publicacoes=self.publicacoes)
         status, corpo, _ = _chamar_asgi(mw, "POST", "/publicacoes-oab/pub-mascarada/criar-caso",

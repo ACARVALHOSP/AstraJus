@@ -10,7 +10,7 @@ import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
 import './movimentacoes.scss'
 
 type Movimento = { numero: string; grau?: string; nome?: string; dataHora?: string }
-type Capa = { grau?: string | null; movimentos?: Array<{ nome?: string; dataHora?: string }> | null; atualizado_em?: string | null }
+type Capa = { grau?: string | null; movimentos?: Array<{ nome?: string; dataHora?: string; grau?: string }> | null; atualizado_em?: string | null }
 type RespostaDataJud = {
   erro?: boolean
   mensagem?: string
@@ -23,6 +23,16 @@ const LIMITE_INICIAL = 30
 // Atos do juízo recebem marcador em destaque na linha do tempo.
 const DESTAQUE = /decis|senten|despach|conclus|tutela|liminar|ac[óo]rd|julgament|homolog/i
 
+/** Mesmo andamento (processo, instância, data e texto) mostrado uma vez só. */
+function semRepetidos(lista: Movimento[]): Movimento[] {
+  const vistos = new Set<string>()
+  return lista.filter(m => {
+    const chave = [m.numero, m.grau, m.dataHora, m.nome].join('|')
+    if (vistos.has(chave)) return false
+    vistos.add(chave)
+    return true
+  })
+}
 function rotuloGrau(grau?: string | null) {
   const g = (grau || '').toUpperCase()
   if (g === 'G1') return '1º grau'
@@ -76,11 +86,12 @@ export default function MovimentacoesCaso({ casoId }: { casoId: string }) {
       for (const n of lista) {
         try {
           const capa = await buscarJson<Capa>(cliente, `/casos/${casoId}/processos/${n}/capa`)
-          for (const m of capa.movimentos ?? []) todasMovs.push({ numero: n, grau: rotuloGrau(capa.grau), nome: m.nome, dataHora: m.dataHora })
+          // Cada andamento guarda a própria instância; sem ela, vale a da capa.
+          for (const m of capa.movimentos ?? []) todasMovs.push({ numero: n, grau: rotuloGrau(m.grau || capa.grau), nome: m.nome, dataHora: m.dataHora })
           if (capa.atualizado_em && (!atualizado || capa.atualizado_em > atualizado)) atualizado = capa.atualizado_em
         } catch { /* número sem capa gravada: segue para o próximo */ }
       }
-      setMovimentos(todasMovs)
+      setMovimentos(semRepetidos(todasMovs))
       setFonte({ tipo: 'capa', quando: atualizado })
     } catch (e) {
       setErro(e instanceof ErroMCP ? e.message : 'Falha ao carregar as movimentações.')
@@ -112,7 +123,7 @@ export default function MovimentacoesCaso({ casoId }: { casoId: string }) {
     }
     setAvisos(erros)
     if (todasMovs.length || !erros.length) {
-      setMovimentos(todasMovs)
+      setMovimentos(semRepetidos(todasMovs))
       setFonte({ tipo: 'datajud', quando: new Date().toISOString() })
     }
     setConsultando(false)

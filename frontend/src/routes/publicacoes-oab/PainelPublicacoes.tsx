@@ -65,6 +65,8 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
   const [paraClientes, setParaClientes] = useState(0)
   const [infoTriagem, setInfoTriagem] = useState<InfoTriagem | null>(null)
   const [classificando, setClassificando] = useState(false)
+  const [duplicadas, setDuplicadas] = useState<{ grupos: number; removidas: number } | null>(null)
+  const [unificando, setUnificando] = useState(false)
   const [pagina, setPagina] = useState(1), [tamanho, setTamanho] = useState(20)
   useEffect(() => {
     const destino = consumirPayload<{ status?: string }>('publicacoes-oab')
@@ -281,6 +283,23 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
   const seloTipo = (p: PublicacaoOab) => p.dados?.tipoComunicacao
     ? <Badge color={corTipo(p.dados.tipoComunicacao)} variant="soft">{p.dados.tipoComunicacao}</Badge>
     : <Text size="1" color="gray">—</Text>
+  async function verificarDuplicadas() {
+    setUnificando(true)
+    try {
+      const r = await enviarJson<{ grupos: number; removidas: number }>(cliente, '/publicacoes-oab/unificar-duplicadas', { aplicar: false })
+      if (!r.removidas) avisar({ texto: 'Nenhuma publicação repetida encontrada.' })
+      else setDuplicadas(r)
+    } catch (e) { avisar({ tipo: 'erro', texto: (e as Error).message }) } finally { setUnificando(false) }
+  }
+  async function unificarDuplicadas() {
+    setUnificando(true)
+    try {
+      const r = await enviarJson<{ removidas: number }>(cliente, '/publicacoes-oab/unificar-duplicadas', { aplicar: true })
+      setDuplicadas(null)
+      avisar({ texto: `${r.removidas} publicação(ões) repetida(s) unificada(s).` })
+      await carregar()
+    } catch (e) { avisar({ tipo: 'erro', texto: (e as Error).message }) } finally { setUnificando(false) }
+  }
   const triagemAtiva = infoTriagem?.modo === 'simulado' || infoTriagem?.modo === 'jev'
   const rotuloPrazo = (id: string) => PRAZOS_PADRAO.find(x => x.id === id)?.rotulo ?? id
   async function classificarPagina() {
@@ -359,6 +378,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
           )}
           {triagemAtiva && <Button variant="soft" size="2" loading={classificando} disabled={ocupada} onClick={() => void classificarPagina()}>Classificar esta página</Button>}
           <Button variant="soft" size="2" disabled={ocupada || lote} onClick={() => setCapturaAberta(true)}>Capturar por OAB</Button>
+          <Button variant="soft" color="gray" size="2" loading={unificando} disabled={ocupada} title="Procura publicações repetidas (mesmo conteúdo) e junta numa só" onClick={() => void verificarDuplicadas()}>Duplicadas</Button>
           <Button variant="soft" color="gray" size="2" disabled={ocupada} onClick={carregar}>Atualizar</Button>
         </>}
       />
@@ -637,6 +657,19 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
           <Captura onCapturado={carregar} />
           <Flex justify="end" mt="4">
             <Dialog.Close><Button variant="soft" color="gray">Fechar</Button></Dialog.Close>
+          </Flex>
+        </Dialog.Content>
+      </Dialog.Root>
+      <Dialog.Root open={!!duplicadas} onOpenChange={(o) => { if (!o && !unificando) setDuplicadas(null) }}>
+        <Dialog.Content maxWidth="480px">
+          <Dialog.Title>Publicações repetidas</Dialog.Title>
+          <Dialog.Description size="2" mb="3">
+            Encontramos {duplicadas?.removidas} publicação(ões) repetida(s), em {duplicadas?.grupos} grupo(s): o mesmo conteúdo, no mesmo processo e dia, que chegou com identificações diferentes.
+            Fica a mais trabalhada de cada grupo (tratada, vinculada a processo ou com atividade); ela herda o vínculo e a situação das outras, e as atividades passam a apontar para ela. As outras são removidas da lista.
+          </Dialog.Description>
+          <Flex gap="3" justify="end">
+            <Button variant="soft" color="gray" disabled={unificando} onClick={() => setDuplicadas(null)}>Cancelar</Button>
+            <Button loading={unificando} onClick={() => void unificarDuplicadas()}>Unificar</Button>
           </Flex>
         </Dialog.Content>
       </Dialog.Root>

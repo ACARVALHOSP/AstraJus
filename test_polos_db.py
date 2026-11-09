@@ -32,7 +32,8 @@ class PolosBancoTest(unittest.TestCase):
         self.numero = "10063142720238260005"
 
     def registrar(self, h, partes, caso_id=None):
-        self.pub.registrar(h, None, "Ana", self.numero, dados("x", *partes), "nao_tratada", caso_id, self.agora)
+        # Texto próprio por publicação: duas iguais (mesmo texto, data e processo) seriam uma só.
+        self.pub.registrar(h, None, "Ana", self.numero, dados(f"texto da publicação {h}", *partes), "nao_tratada", caso_id, self.agora)
 
     def test_polo_vem_da_capa_e_pode_ser_corrigido(self):
         self.assertEqual(self.gestao.obter_caso(self.caso["id"])["polos"],
