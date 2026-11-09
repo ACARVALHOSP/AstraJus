@@ -46,8 +46,29 @@ _VISIVEL = """
        OR (c.id IS NOT NULL AND p.caso_id=e.caso_id)
    ))
    OR (e.tipo='movimento_processual' AND c.id IS NOT NULL)
+   OR (e.tipo='prazo_vencendo' AND a.id IS NOT NULL AND c.id IS NOT NULL AND a.status IN ('pendente', 'em_andamento', 'aguardando'))
  )
 """
+
+
+_BRASILIA = timezone(timedelta(hours=-3))
+
+
+def _quando(data, hora, agora_dt):
+    """'hoje às 14:30', 'amanhã', 'em 3 dias (12/11)' ou 'venceu há 2 dias', pela data de Brasília."""
+    try:
+        dia = datetime.fromisoformat(str(data)[:10]).date()
+    except (TypeError, ValueError):
+        return "sem data"
+    dias = (dia - agora_dt.astimezone(_BRASILIA).date()).days
+    h = f" às {str(hora)[:5]}" if hora else ""
+    if dias < 0:
+        return "venceu ontem" if dias == -1 else f"venceu há {-dias} dias"
+    if dias == 0:
+        return f"hoje{h}"
+    if dias == 1:
+        return f"amanhã{h}"
+    return f"em {dias} dias ({dia.strftime('%d/%m')}){h}"
 
 
 class Repositorio:
@@ -93,6 +114,21 @@ class Repositorio:
                     f"SELECT nome FROM usuarios WHERE nivel_acesso='administrador' AND status='ativo' AND ({ativo})")]
             for usuario in destinatarios:
                 registrar_evento(c, usuario, "movimento_processual", chave, caso_id=caso_id, agora=self.agora())
+
+    def registrar_alerta_prazo(self, caso_id, atividade_id, faixa, destinatarios):
+        """Um aviso por pessoa e faixa (5, 2, 1 dia, hoje, atrasado). Devolve os destinatários que
+        ainda não tinham recebido essa faixa, para o e-mail sair uma vez só."""
+        novos = []
+        chave = f"{atividade_id}:{faixa}"
+        with self.transacao() as c:
+            for usuario in destinatarios:
+                cursor = c.execute(
+                    "INSERT OR IGNORE INTO notificacao_eventos (usuario, tipo, chave, caso_id, atividade_id, criado_em) VALUES (?, ?, ?, ?, ?, ?)",
+                    (usuario, "prazo_vencendo", chave, caso_id, atividade_id, instante(self.agora())),
+                )
+                if cursor.rowcount:
+                    novos.append(usuario)
+        return novos
 
     def _processar(self, c, usuario, corte, agora):
         c.execute("UPDATE notificacao_eventos SET pendencia='destino_indisponivel' WHERE usuario=? AND criado_em>=? AND processado_em IS NULL AND pendencia IS NULL", (usuario, corte))
@@ -147,7 +183,7 @@ class Repositorio:
             if estado == "nao_lidas":
                 query += " AND n.lida_em IS NULL"
             linhas = c.execute(
-                "SELECT e.id, e.tipo, e.caso_id, e.atividade_id, e.criado_em, n.lida_em, a.titulo, a.responsavel, c.titulo AS caso_titulo" + query
+                "SELECT e.id, e.tipo, e.caso_id, e.atividade_id, e.criado_em, n.lida_em, a.titulo, a.responsavel, c.titulo AS caso_titulo, a.data AS ativ_data, a.hora AS ativ_hora, a.tipo AS ativ_tipo" + query
                 + " ORDER BY e.criado_em DESC, e.id DESC LIMIT ?", [*argumentos, limite + 1],
             ).fetchall()
             mais = len(linhas) > limite
@@ -155,6 +191,14 @@ class Repositorio:
             itens = []
             for linha in linhas:
                 delegacao = linha["tipo"] == "atividade_delegada"
+                if linha["tipo"] == "prazo_vencendo":
+                    itens.append({"id": str(linha["id"]), "tipo": linha["tipo"],
+                                  "titulo": "Audiência próxima" if linha["ativ_tipo"] == "audiencia" else "Prazo vencendo",
+                                  "mensagem": f"{linha['titulo']} — {_quando(linha['ativ_data'], linha['ativ_hora'], agora_dt)}"
+                                              + (f" ({linha['caso_titulo']})" if linha["caso_titulo"] else ""),
+                                  "criado_em": linha["criado_em"], "lida_em": linha["lida_em"],
+                                  "destino": {"tipo": "atividade", "caso_id": linha["caso_id"], "atividade_id": linha["atividade_id"]}})
+                    continue
                 if linha["tipo"] == "movimento_processual":
                     itens.append({"id": str(linha["id"]), "tipo": linha["tipo"], "titulo": "Novo andamento no processo",
                                   "mensagem": f"{linha['caso_titulo'] or 'Processo'}: há movimentação nova. Confira a aba Movimentações.",
@@ -198,6 +242,6 @@ class Repositorio:
                 return None
             if linha["tipo"] == "movimento_processual":
                 return {"tipo": "movimentos_processo", "caso_id": linha["caso_id"]}
-            if linha["tipo"] == "atividade_delegada":
+            if linha["tipo"] in ("atividade_delegada", "prazo_vencendo"):
                 return {"tipo": "atividade", "caso_id": linha["caso_id"], "atividade_id": linha["atividade_id"]}
             return {"tipo": "publicacoes_processo", "caso_id": linha["caso_id"]} if linha["caso_id"] else {"tipo": "publicacoes_monitoradas"}

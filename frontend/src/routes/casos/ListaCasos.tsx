@@ -4,10 +4,12 @@ import CabecalhoPagina from '../../CabecalhoPagina'
 import TabelaResponsiva from '../../TabelaResponsiva'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
-import { AlertTriangle, Info, Star } from 'lucide-react'
+import { AlertTriangle, Download, Info, Star } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertDialog, Badge, Button, Callout, Flex, IconButton, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
+import { baixarCsv } from '../../utils/csv'
+import { useAvisos } from '../../Avisos'
 import { ErroMCP } from '../../api/mcpClient'
 import { useNavegacao } from '../../api/NavegacaoContext'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -87,6 +89,7 @@ const atrasado = (c: Caso, hoje: string) => Boolean(c.proximo_compromisso?.data 
 const parado = (c: Caso, hoje: string) => !encerrado(c) && Boolean(c.ultima_movimentacao_data) && diasEntreDatas(c.ultima_movimentacao_data!, hoje) > DIAS_PARADO
 
 export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void }) {
+  const { avisar } = useAvisos()
   const { cliente } = useCliente()
   const { irPara } = useNavegacao()
   const estreita = useEstreita()
@@ -205,6 +208,24 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
   const filtrosAtivos = Boolean(busca || responsavel || tribunal)
 
   function mudarFiltro(acao: () => void) { acao(); setPagina(1) }
+  const dataBr = (iso?: string | null) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : '')
+  function exportar() {
+    if (!ordenados.length) { avisar({ tipo: 'info', texto: 'Não há processos nesta lista para exportar.' }); return }
+    baixarCsv('processos', [
+      { titulo: 'Processo', valor: c => c.titulo },
+      { titulo: 'Cliente', valor: c => nomeCliente(c.cliente_id) },
+      { titulo: 'Números', valor: c => (c.processos ?? []).map(formatarNumeroCNJ).join('; ') },
+      { titulo: 'Ação', valor: c => c.acao },
+      { titulo: 'Órgão / foro', valor: c => c.foro },
+      { titulo: 'Responsável', valor: c => c.responsavel },
+      { titulo: 'Situação', valor: c => (encerrado(c) ? 'Encerrado' : 'Em andamento') },
+      { titulo: 'Última movimentação', valor: c => dataBr(c.ultima_movimentacao_data) },
+      { titulo: 'Descrição da movimentação', valor: c => c.ultima_movimentacao_descricao },
+      { titulo: 'Próximo compromisso', valor: c => (c.proximo_compromisso ? `${dataBr(c.proximo_compromisso.data)} - ${c.proximo_compromisso.titulo}` : '') },
+      { titulo: 'Publicações a revisar', valor: c => c.publicacoes_a_revisar ?? 0 },
+    ], ordenados)
+    avisar({ texto: `${ordenados.length} processo(s) exportado(s).` })
+  }
 
   const atalhos: Array<{ valor: Atalho; rotulo: string; alerta?: boolean; icone?: boolean }> = [
     { valor: 'andamento', rotulo: 'Em andamento' },
@@ -310,7 +331,10 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
           titulo="Processos"
           focavel
           descricao="Cadastros, atividades e acompanhamento do escritório."
-          acoes={<Button ref={botaoNovo} size="2" onClick={() => setModalNovoAberto(true)}>Novo processo</Button>}
+          acoes={<>
+            <Button size="2" variant="soft" color="gray" onClick={exportar}><Download size={14} aria-hidden="true" />Exportar CSV</Button>
+            <Button ref={botaoNovo} size="2" onClick={() => setModalNovoAberto(true)}>Novo processo</Button>
+          </>}
         />
         {casoCriado && (
           <Callout.Root color="green" size="1">

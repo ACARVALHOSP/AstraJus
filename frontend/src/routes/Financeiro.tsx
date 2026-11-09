@@ -6,7 +6,7 @@ import TabelaResponsiva from '../TabelaResponsiva'
 import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, ChevronLeft, ChevronRight, Info } from 'lucide-react'
+import { AlertTriangle, ChevronLeft, ChevronRight, Download, Info } from 'lucide-react'
 import { AlertDialog, Badge, Button, Callout, Checkbox, Flex, IconButton, Select, Tabs, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
@@ -14,6 +14,7 @@ import { ErroMCP } from '../api/mcpClient'
 import { buscarJson, enviarJson } from '../api/rest'
 import { formatarMoeda, formatarNomeExibicao } from '../utils/formatadores'
 import { useEstreita } from '../utils/useEstreita'
+import { baixarCsv } from '../utils/csv'
 import { useAvisos } from '../Avisos'
 import NovoLancamentoModal, { ROTULO_TIPO_LANCAMENTO, type Predefinido, type TipoLancamento } from './financeiro/NovoLancamentoModal'
 import PorProcesso from './financeiro/PorProcesso'
@@ -92,7 +93,14 @@ function partesDescricao(descricao: string) {
 
 // Lançamentos, situação por processo e inadimplência: três visões do mesmo financeiro.
 export default function Financeiro() {
+  const { consumirPayload, versaoNavegacao } = useNavegacao()
   const [aba, setAba] = useState<'lancamentos' | 'processos' | 'inadimplencia'>('lancamentos')
+  useEffect(() => {
+    // Atalhos de outras telas (ex.: o resumo do escritório) abrem direto numa das abas.
+    const destino = consumirPayload<{ aba?: 'lancamentos' | 'processos' | 'inadimplencia' }>('financeiro')
+    // eslint-disable-next-line react/set-state-in-effect
+    if (destino?.aba) setAba(destino.aba)
+  }, [consumirPayload, versaoNavegacao])
   const abas = (
     <Tabs.Root value={aba} onValueChange={(v) => setAba(v as typeof aba)}>
       <Tabs.List aria-label="Financeiro">
@@ -253,6 +261,25 @@ function ListaLancamentos({ abas }: { abas: React.ReactNode }) {
       avisar({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Falha ao gerar cobrança.' })
     }
   }
+  function exportar() {
+    if (!visiveis.length) { avisar({ tipo: 'info', texto: 'Não há lançamentos neste período e filtros para exportar.' }); return }
+    const rotuloSituacao = { aberto: 'Em aberto', vencido: 'Vencido', quitado: 'Quitado' }
+    baixarCsv('lancamentos', [
+      { titulo: 'Vencimento', valor: l => dataCurta(l.vencimento) },
+      { titulo: 'Descrição', valor: l => partesDescricao(l.descricao).texto },
+      { titulo: 'Parcela', valor: l => partesDescricao(l.descricao).parcela },
+      { titulo: 'Categoria', valor: l => ROTULO_TIPO_LANCAMENTO[(l.tipo ?? 'HONORARIO') as TipoLancamento] },
+      { titulo: 'Sentido', valor: l => (l.direcao === 'RECEITA' ? 'Receita' : 'Despesa') },
+      { titulo: 'Valor', valor: l => l.valor },
+      { titulo: 'Situação', valor: l => rotuloSituacao[situacaoDe(l, hoje)] },
+      { titulo: 'Pago em', valor: l => (l.pago_em ? dataCurta(l.pago_em) : '') },
+      { titulo: 'Cliente', valor: l => nomeCliente(l.cliente_id) },
+      { titulo: 'Processo', valor: l => tituloCaso(l.caso_id) },
+      { titulo: 'Responsável', valor: l => l.responsavel },
+      { titulo: 'Repasse a', valor: l => l.favorecido },
+    ], visiveis)
+    avisar({ texto: `${visiveis.length} lançamento(s) exportado(s).` })
+  }
   async function cobrarReembolso(l: Lancamento) {
     try {
       await enviarJson(cliente, `/lancamentos/${l.id}/reembolso`, {})
@@ -353,6 +380,7 @@ function ListaLancamentos({ abas }: { abas: React.ReactNode }) {
           </Flex>
           <Button size="2" variant={todosMeses ? 'soft' : 'outline'} color="gray" aria-pressed={todosMeses} onClick={() => { setTodosMeses(v => !v); setSelecionados(new Set()) }}>Todos os meses</Button>
           {!todosMeses && mes !== hoje.slice(0, 7) && <Button size="2" variant="soft" color="gray" onClick={() => setMes(hoje.slice(0, 7))}>Mês atual</Button>}
+          <Button size="2" variant="soft" color="gray" onClick={exportar}><Download size={14} aria-hidden="true" />Exportar CSV</Button>
           <Button size="2" onClick={() => { setPredefinido(null); setModalNovoAberto(true) }}>Novo lançamento</Button>
         </>}
       />

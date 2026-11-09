@@ -249,3 +249,13 @@ body.home-arrastando-cursor, body.home-arrastando-cursor * { cursor: grabbing !i
 @media (prefers-reduced-motion: reduce) {
   .home-coluna, .home-cartao { transition: none; }
 }
+
+/* ── Escritório ── */
+.esc-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--gray-a6); border-radius: var(--radius-3); }
+.esc-lista li { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 0.75rem; padding: 0.625rem 0.875rem; border-block-start: 1px solid var(--gray-a4); }
+.esc-lista li:first-child { border-block-start: 0; }
+.esc-data { font-weight: 600; font-variant-numeric: tabular-nums; font-size: 14px; }
+.esc-alerta { color: var(--red-11); }
+.esc-link { font: inherit; font-weight: 500; color: var(--accent-11); background: none; border: 0; padding: 0; text-align: start; cursor: pointer; }
+.esc-link:hover { text-decoration: underline; }
+@media (max-width: 672px) { .esc-lista li { grid-template-columns: 5.5rem minmax(0, 1fr); } }

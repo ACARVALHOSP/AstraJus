@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { AlertTriangle, ChevronDown, ChevronRight, Copy } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronRight, Copy, Download } from 'lucide-react'
 import { Badge, Button, Callout, Flex, Text } from '@radix-ui/themes'
 import CabecalhoPagina from '../../CabecalhoPagina'
 import Carregamento from '../../Carregamento'
@@ -9,6 +9,7 @@ import { useNavegacao } from '../../api/NavegacaoContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { enviarJson } from '../../api/rest'
 import { formatarMoeda } from '../../utils/formatadores'
+import { baixarCsv } from '../../utils/csv'
 import { useResumoFinanceiro } from './useResumoFinanceiro'
 import type { ClienteInadimplente } from './dadosResumo'
 import './financeiro.scss'
@@ -37,6 +38,20 @@ export default function Inadimplencia({ abas }: { abas: ReactNode }) {
       avisar({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Falha ao gerar cobrança.' })
     } finally { setCobrando('') }
   }
+  function exportar() {
+    if (!inad?.clientes.length) { avisar({ tipo: 'info', texto: 'Não há valores vencidos para exportar.' }); return }
+    const linhas = inad.clientes.flatMap(c => c.itens.map(i => ({ ...i, cliente_id: c.cliente_id })))
+    baixarCsv('inadimplencia', [
+      { titulo: 'Cliente', valor: i => nomeCliente(i.cliente_id) },
+      { titulo: 'Processo', valor: i => tituloCaso(i.caso_id) },
+      { titulo: 'Descrição', valor: i => i.descricao },
+      { titulo: 'Vencimento', valor: i => dataCurta(i.vencimento) },
+      { titulo: 'Dias de atraso', valor: i => i.dias_atraso },
+      { titulo: 'Valor', valor: i => i.valor },
+      { titulo: 'Cobrança no Asaas', valor: i => (i.asaas_cobranca_id ? 'Sim' : 'Não') },
+    ], linhas)
+    avisar({ texto: `${linhas.length} lançamento(s) vencido(s) exportado(s).` })
+  }
   async function copiarLembrete(c: ClienteInadimplente) {
     const linhas = c.itens.map(i => `• ${i.descricao} — ${formatarMoeda(i.valor)}, vencido em ${dataCurta(i.vencimento)}`)
     const texto = `Olá, ${nomeCliente(c.cliente_id).split(' ')[0]}! Identificamos valores em aberto referentes aos seus honorários:\n${linhas.join('\n')}\nTotal: ${formatarMoeda(c.valor)}.\nPodemos ajudar com a regularização? Obrigado.`
@@ -46,7 +61,8 @@ export default function Inadimplencia({ abas }: { abas: ReactNode }) {
 
   return (
     <Flex direction="column" gap="5">
-      <CabecalhoPagina titulo="Financeiro" abas={abas} descricao="Valores a receber que já venceram, por tempo de atraso e por cliente." />
+      <CabecalhoPagina titulo="Financeiro" abas={abas} descricao="Valores a receber que já venceram, por tempo de atraso e por cliente."
+        acoes={<Button size="2" variant="soft" color="gray" onClick={exportar}><Download size={14} aria-hidden="true" />Exportar CSV</Button>} />
       {erro && <Callout.Root color="red" size="1" role="alert"><Callout.Icon><AlertTriangle size={14} /></Callout.Icon><Callout.Text>{erro}</Callout.Text></Callout.Root>}
       {carregando && !resumo && <Carregamento tipo="tabela" descricao="Carregando…" />}
       {inad && <>
