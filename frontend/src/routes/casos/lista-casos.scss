@@ -23,7 +23,7 @@ tr:hover .casos-agendar, tr:focus-within .casos-agendar, .casos-cartao .casos-ag
 .tabela-adaptavel .tabela-fluida.casos-tabela-nova {
   // Percentuais (sem contar o padding): o Título fica com o restante em qualquer largura.
   // O CNJ não quebra linha: a coluna nunca fica menor que o número (25 caracteres + padding).
-  .casos-col-numero { inline-size: max(19%, 14rem); }
+  .casos-col-numero { inline-size: max(23%, 14rem); }
   .casos-col-cliente { inline-size: 12%; }
   .casos-col-resp { inline-size: 9%; }
   .casos-col-comp { inline-size: 12%; }
