@@ -158,6 +158,19 @@ html, body { margin: 0; padding: 0; }
   transition: transform 0.2s ease;
 }
 
+/* Desktop: o botão da barra superior recolhe a navegação lateral. */
+@media (min-width: 1056px) {
+  .aj-sidebar { transition: width 0.2s ease, padding 0.2s ease, border-color 0.2s ease, visibility 0s linear 0s; }
+  .aj-sidebar:not(.aj-sidebar--open) {
+    width: 0;
+    padding-inline: 0;
+    border-right-color: transparent;
+    overflow: hidden;
+    visibility: hidden;
+    transition: width 0.2s ease, padding 0.2s ease, border-color 0.2s ease, visibility 0s linear 0.2s;
+  }
+}
+
 @media (max-width: 1055px) {
   .aj-sidebar {
     position: fixed;
