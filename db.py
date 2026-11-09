@@ -17,6 +17,7 @@ remover/renomear o arquivo enquanto o processo estivesse de pé.
 """
 
 import calendar
+import hashlib
 import polos as _polos
 import json
 import sqlite3
@@ -444,6 +445,7 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
         _migrar_remover_calendar_evento_id(conexao)
         _migrar_fk_publicacoes_capturadas(conexao)
         _migrar_processos_individuais(conexao)
+        _migrar_impressao_publicacoes(conexao)
         # Conservar último vínculo conhecido quando publicação é desvinculada.
         # Assim um evento antes ligado a processo não volta a expor destino global.
         conexao.execute("""CREATE TRIGGER IF NOT EXISTS notificacao_publicacao_vinculo
@@ -593,6 +595,24 @@ def _migrar_colunas_lancamentos(conexao: sqlite3.Connection) -> None:
         ):
             if coluna not in colunas:
                 conexao.execute(f"ALTER TABLE lancamentos_financeiros ADD COLUMN {coluna} {definicao}")
+
+
+def _migrar_impressao_publicacoes(conexao: sqlite3.Connection) -> None:
+    """Coluna `impressao` (identidade pelo conteúdo) e preenchimento das publicações já guardadas."""
+    colunas = {linha[1] for linha in conexao.execute("PRAGMA table_info(publicacoes_capturadas)")}
+    if "impressao" not in colunas:
+        with conexao:
+            conexao.execute("ALTER TABLE publicacoes_capturadas ADD COLUMN impressao TEXT")
+    with conexao:
+        conexao.execute("CREATE INDEX IF NOT EXISTS publicacoes_capturadas_impressao ON publicacoes_capturadas(impressao)")
+        for hash_, numero, dados in conexao.execute(
+                "SELECT hash, numero_processo, dados FROM publicacoes_capturadas WHERE impressao IS NULL").fetchall():
+            try:
+                impressao = impressao_publicacao(numero, json.loads(dados))
+            except ValueError:
+                continue
+            if impressao:
+                conexao.execute("UPDATE publicacoes_capturadas SET impressao = ? WHERE hash = ?", (impressao, hash_))
 
 
 def _migrar_colunas_caso_atividades(conexao: sqlite3.Connection) -> None:
@@ -1243,6 +1263,7 @@ class RegistroClientesCasos:
             capa = dict(zip((*self._CAMPOS_CAPA, "atualizado_em"), linha))
             for campo in ("assuntos", "movimentos", "partes", "advogados", "datajud"):
                 capa[campo] = json.loads(capa[campo]) if capa[campo] else []
+            capa["movimentos"] = _sem_movimentos_repetidos(capa["movimentos"])  # capas gravadas antes da limpeza
             if capa.get("tribunal") and not capa["datajud"]:
                 linha_datajud = conexao.execute(
                     "SELECT instancias FROM processos_datajud WHERE numero_processo=? AND tribunal=?",
@@ -1258,6 +1279,8 @@ class RegistroClientesCasos:
         invalidos = set(campos) - set(self._CAMPOS_CAPA)
         if invalidos:
             raise ValueError(f"Campos inválidos para capa de processo: {sorted(invalidos)}")
+        if campos.get("movimentos") is not None:
+            campos["movimentos"] = _sem_movimentos_repetidos(campos["movimentos"])
         for campo in ("assuntos", "movimentos", "partes", "advogados", "datajud"):
             if campos.get(campo) is not None:
                 campos[campo] = json.dumps(campos[campo])
@@ -2379,16 +2402,27 @@ class RegistroPublicacoesOAB:
         numero_processo: str | None, dados: dict, status: str, caso_id: str | None, agora,
         usuario_notificacao: str | None = None,
     ) -> bool:
-        """INSERT OR IGNORE pelo hash: uma publicação já vista (mesmo hash) não aparece de novo
-        nas capturas seguintes. Devolve True se inseriu (publicação nova), False se já existia."""
+        """Uma publicação já vista não aparece de novo, nem na captura manual nem na automática: vale o
+        mesmo hash do DJEN e também o mesmo conteúdo com hash diferente (ver `impressao_publicacao`).
+        Devolve True se inseriu (publicação nova), False se já existia."""
+        impressao = impressao_publicacao(numero_processo, dados)
         with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute("BEGIN IMMEDIATE")
+            if impressao and not conexao.execute("SELECT 1 FROM publicacoes_capturadas WHERE hash = ?", (hash_publicacao,)).fetchone():
+                igual = conexao.execute("SELECT hash, caso_id FROM publicacoes_capturadas WHERE impressao = ? LIMIT 1", (impressao,)).fetchone()
+                if igual:
+                    # A mesma publicação (mesmo conteúdo) já está guardada com outro hash: não duplica.
+                    # Se esta chegada traz um processo e a existente não tem vínculo, completa o vínculo.
+                    if caso_id and not igual[1]:
+                        conexao.execute("UPDATE publicacoes_capturadas SET caso_id = ? WHERE hash = ?", (caso_id, igual[0]))
+                    return False
             cursor = conexao.execute(
                 "INSERT OR IGNORE INTO publicacoes_capturadas "
-                "(hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, caso_id, criado_em) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "(hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, caso_id, criado_em, impressao) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     hash_publicacao, monitoramento_id, nome_pesquisado, numero_processo,
-                    json.dumps(dados, ensure_ascii=False), status, caso_id, agora().isoformat(),
+                    json.dumps(dados, ensure_ascii=False), status, caso_id, agora().isoformat(), impressao,
                 ),
             )
             inseriu = cursor.rowcount > 0
@@ -2522,6 +2556,46 @@ class RegistroPublicacoesOAB:
                 "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, caso_id, criado_em "
                 "FROM publicacoes_capturadas" + filtro + " LIMIT ?", (*valores, limite))]
         return [h for h, d in self.destinos(linhas).items() if d and d["tipo"] == "cliente"]
+
+    def unificar_duplicadas(self, aplicar: bool = False) -> dict:
+        """Junta publicações já guardadas em duplicidade (mesmo conteúdo, hashes diferentes). Fica a
+        mais "trabalhada" (tratada/arquivada, vinculada a processo, com atividade) ou, no empate, a mais
+        antiga; ela herda vínculo e situação das outras, e atividades e histórico passam a apontar para
+        ela. Sem `aplicar`, só informa o que seria feito."""
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute("BEGIN IMMEDIATE")
+            grupos = conexao.execute(
+                "SELECT impressao FROM publicacoes_capturadas WHERE impressao IS NOT NULL "
+                "GROUP BY impressao HAVING COUNT(*) > 1").fetchall()
+            removidas, exemplos = 0, []
+            for (impressao,) in grupos:
+                linhas = conexao.execute(
+                    "SELECT hash, status, caso_id, criado_em, numero_processo FROM publicacoes_capturadas WHERE impressao = ?", (impressao,)).fetchall()
+                def pontos(l):
+                    atividade = conexao.execute("SELECT 1 FROM caso_atividades WHERE origem_djen_hash = ?", (l[0],)).fetchone()
+                    return 2 * (l[1] != "nao_tratada") + 2 * bool(l[2]) + bool(atividade)
+                # Maior pontuação; no empate vence a mais antiga (data ISO maior = mais nova, por isso o sinal negativo).
+                sobrevivente = max(linhas, key=lambda l: (pontos(l), [-ord(c) for c in (l[3] or "")]))
+                outras = [l for l in linhas if l[0] != sobrevivente[0]]
+                exemplos.append({"numero_processo": sobrevivente[4], "mantida": sobrevivente[0], "removidas": [l[0] for l in outras]})
+                removidas += len(outras)
+                if not aplicar:
+                    continue
+                destino = sobrevivente[0]
+                caso = sobrevivente[2] or next((l[2] for l in outras if l[2]), None)
+                status = sobrevivente[1]
+                if status == "nao_tratada":
+                    status = next((l[1] for l in outras if l[1] == "tratada"), None) or next((l[1] for l in outras if l[1] == "arquivada"), "nao_tratada")
+                conexao.execute("UPDATE publicacoes_capturadas SET caso_id = ?, status = ? WHERE hash = ?", (caso, status, destino))
+                for (h,) in [(l[0],) for l in outras]:
+                    conexao.execute("UPDATE caso_atividades SET origem_djen_hash = ? WHERE origem_djen_hash = ?", (destino, h))
+                    conexao.execute("UPDATE publicacao_revisoes SET hash = ? WHERE hash = ?", (destino, h))
+                    conexao.execute("DELETE FROM publicacao_triagem WHERE triagem_hash = ?", (h,))
+                    conexao.execute("DELETE FROM notificacoes WHERE evento_id IN (SELECT id FROM notificacao_eventos WHERE publicacao_hash = ?)", (h,))
+                    conexao.execute("DELETE FROM notificacao_eventos WHERE publicacao_hash = ?", (h,))
+                    conexao.execute("DELETE FROM caso_eventos WHERE tipo = 'publicacao' AND json_extract(conteudo, '$.hash') = ?", (h,))
+                    conexao.execute("DELETE FROM publicacoes_capturadas WHERE hash = ?", (h,))
+        return {"grupos": len(grupos), "removidas": removidas, "aplicado": aplicar, "exemplos": exemplos[:20]}
 
     def obter_triagens(self, hashes: list[str]) -> dict[str, dict]:
         if not hashes:
@@ -2676,6 +2750,35 @@ class RegistroPublicacoesOAB:
                 (hash_publicacao, caso_id),
             )
             return cursor.rowcount > 0
+
+
+def impressao_publicacao(numero_processo: str | None, dados: dict) -> str | None:
+    """Identidade pelo CONTEÚDO de uma publicação (processo, data, tribunal, tipo e texto), independente
+    do `hash` do DJEN. Pega a mesma intimação que chega duas vezes com hashes diferentes (captura
+    manual e automática, busca avulsa, monitoramento por processo). A data de disponibilização entra
+    na conta: uma republicação em outro dia continua sendo outra publicação, com prazo próprio."""
+    texto = unicodedata.normalize("NFD", str(dados.get("texto") or "")).encode("ascii", "ignore").decode()
+    texto = " ".join(texto.lower().split())[:3000]
+    if not texto:
+        return None
+    numero = "".join(ch for ch in str(numero_processo or dados.get("numeroprocessocommascara") or "") if ch.isdigit())
+    base = "|".join([numero, str(dados.get("data_disponibilizacao") or "")[:10], str(dados.get("siglaTribunal") or "").upper(),
+                     str(dados.get("tipoComunicacao") or "").lower(), str(dados.get("tipoDocumento") or "").lower(), texto])
+    return hashlib.sha256(base.encode()).hexdigest()
+
+
+def _sem_movimentos_repetidos(movimentos):
+    """Remove movimentos idênticos (todos os campos iguais, inclusive grau e complementos) que o
+    DataJud ou a junção de instâncias repetem; a ordem original é preservada."""
+    if not isinstance(movimentos, list):
+        return movimentos
+    vistos, unicos = set(), []
+    for mov in movimentos:
+        chave = json.dumps(mov, sort_keys=True, ensure_ascii=False, default=str)
+        if chave not in vistos:
+            vistos.add(chave)
+            unicos.append(mov)
+    return unicos
 
 
 def _linha_publicacao(linha) -> dict:
