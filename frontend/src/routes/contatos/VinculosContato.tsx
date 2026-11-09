@@ -2,13 +2,14 @@ import TabelaResponsiva from '../../TabelaResponsiva'
 import TextoTabela from '../../TextoTabela'
 import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
-import { Button, Callout, Flex, Heading } from '@radix-ui/themes'
+import { Badge, Button, Callout, Flex, Heading } from '@radix-ui/themes'
 import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { useNavegacao } from '../../api/NavegacaoContext'
 import { buscarJson } from '../../api/rest'
 import { formatarDataSimples, formatarMoeda, formatarNomeExibicao, formatarNumeroCNJ } from '../../utils/formatadores'
 import type { Caso } from '../casos/ListaCasos'
+import { COR_POLO, ROTULO_POLO } from '../../utils/polos'
 
 type Lancamento = {
   id: string; cliente_id?: string; caso_id?: string; vencimento?: string
@@ -97,6 +98,7 @@ export default function VinculosContato({ clienteId, tipo }: { clienteId: string
                       <th scope="col">Título</th>
                       <th scope="col">Número CNJ</th>
                       <th scope="col">Vínculo</th>
+                      <th scope="col">Posição no processo</th>
                       <th scope="col">Situação</th>
                     </tr>
                   </thead>
@@ -106,6 +108,12 @@ export default function VinculosContato({ clienteId, tipo }: { clienteId: string
                         <td>{linkProcesso(caso)}</td>
                         <td>{caso.processos?.map(formatarNumeroCNJ).join(', ') || 'Não informado'}</td>
                         <td>{caso.cliente_id === clienteId ? 'Cliente principal' : 'Cliente adicional'}</td>
+                        <td>{(() => {
+                          const p = caso.polos?.find(x => x.cliente_id === clienteId)
+                          return p?.polo
+                            ? <Badge color={COR_POLO[p.polo]} variant="soft" title={p.origem === 'manual' ? 'Definido por você' : 'Deduzido da capa e das publicações do processo'}>{ROTULO_POLO[p.polo]}{p.origem === 'manual' ? '' : ' (automático)'}</Badge>
+                            : <span className="aj-texto-suave" title="Abra o processo para informar o polo">Não informada</span>
+                        })()}</td>
                         <td>{formatarNomeExibicao(caso.status) || 'Não informado'}</td>
                       </tr>
                     ))}

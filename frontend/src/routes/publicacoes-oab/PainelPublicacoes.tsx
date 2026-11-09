@@ -19,12 +19,15 @@ import {
 } from './dados'
 import ProcessoPublicacao from './ProcessoPublicacao'
 import AtividadePublicacao from './AtividadePublicacao'
+import { PRAZOS_PADRAO } from './prazos'
+import { pct, selosTriagem, type InfoTriagem } from './triagem'
+import { POLO_CURTO } from '../../utils/polos'
 import './publicacoes.scss'
 
 type Status = PublicacaoOab['status']
 type RespostaLista = {
   publicacoes: PublicacaoOab[]; total: number; pagina: number
-  hashes_disponiveis?: string[]; contagem_status?: ContagemStatus; tipos_disponiveis?: string[]
+  hashes_disponiveis?: string[]; contagem_status?: ContagemStatus; tipos_disponiveis?: string[]; triagem?: InfoTriagem; destinadas_a_clientes?: number
 }
 type ResultadoStatus = { hashes_atualizados: string[]; hashes_falharam: string[] }
 type Periodo = '' | 'hoje' | '7' | '30' | 'personalizado'
@@ -58,6 +61,10 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
   const [desde, setDesde] = useState(''), [ate, setAte] = useState('')
   const [textoBusca, setTextoBusca] = useState(''), [busca, setBusca] = useState('')
   const [ordemAsc, setOrdemAsc] = useState(false)
+  const [porPrioridade, setPorPrioridade] = useState(false)
+  const [paraClientes, setParaClientes] = useState(0)
+  const [infoTriagem, setInfoTriagem] = useState<InfoTriagem | null>(null)
+  const [classificando, setClassificando] = useState(false)
   const [pagina, setPagina] = useState(1), [tamanho, setTamanho] = useState(20)
   useEffect(() => {
     const destino = consumirPayload<{ status?: string }>('publicacoes-oab')
@@ -87,7 +94,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
     setCarregando(true); setErro('')
     try {
       const query = new URLSearchParams({
-        pagina: String(pagina), tamanho: String(tamanho), ordem: ordemAsc ? 'divulgado_asc' : 'divulgado_desc',
+        pagina: String(pagina), tamanho: String(tamanho), ordem: porPrioridade ? 'prioridade' : ordemAsc ? 'divulgado_asc' : 'divulgado_desc',
         ...(status ? { status } : {}), ...(tipo ? { tipo } : {}), ...(busca ? { busca } : {}),
         ...(filtroDesde ? { desde: filtroDesde } : {}), ...(filtroAte ? { ate: filtroAte } : {}),
       })
@@ -95,6 +102,8 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
       if (pedido !== sequencia.current) return
       setPublicacoes(dados.publicacoes ?? []); setTotal(dados.total ?? 0)
       if (dados.contagem_status) setContagem(dados.contagem_status)
+      if (dados.triagem) setInfoTriagem(dados.triagem)
+      setParaClientes(dados.destinadas_a_clientes ?? 0)
       if (dados.tipos_disponiveis) setTipos(dados.tipos_disponiveis)
       if (dados.pagina && dados.pagina !== pagina) setPagina(dados.pagina)
       if (dados.hashes_disponiveis) {
@@ -104,7 +113,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
       }
     } catch (e) { if (pedido === sequencia.current) setErro((e as Error).message) }
     finally { if (pedido === sequencia.current) setCarregando(false) }
-  }, [cliente, pagina, tamanho, status, tipo, busca, filtroDesde, filtroAte, ordemAsc])
+  }, [cliente, pagina, tamanho, status, tipo, busca, filtroDesde, filtroAte, ordemAsc, porPrioridade])
   useEffect(() => {
     // The request synchronizes the list with the server; invalidate it on cleanup.
     const controle = sequencia
@@ -272,6 +281,45 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
   const seloTipo = (p: PublicacaoOab) => p.dados?.tipoComunicacao
     ? <Badge color={corTipo(p.dados.tipoComunicacao)} variant="soft">{p.dados.tipoComunicacao}</Badge>
     : <Text size="1" color="gray">—</Text>
+  const triagemAtiva = infoTriagem?.modo === 'simulado' || infoTriagem?.modo === 'jev'
+  const rotuloPrazo = (id: string) => PRAZOS_PADRAO.find(x => x.id === id)?.rotulo ?? id
+  async function classificarPagina() {
+    const pendentes = publicacoes.filter(p => !p.triagem).map(p => p.hash)
+    if (!pendentes.length) { avisar({ tipo: 'info', texto: 'As publicações desta página já foram classificadas.' }); return }
+    setClassificando(true)
+    try {
+      const r = await enviarJson<{ resultados: Record<string, NonNullable<PublicacaoOab['triagem']>>; falhas: Record<string, string> }>(cliente, '/publicacoes-oab/triagem', { hashes: pendentes.slice(0, 50) })
+      setPublicacoes(lista => lista.map(p => r.resultados[p.hash] ? { ...p, triagem: r.resultados[p.hash] } : p))
+      const falhas = Object.keys(r.falhas ?? {}).length
+      avisar({ tipo: falhas ? 'info' : 'sucesso', texto: `${Object.keys(r.resultados).length} publicação(ões) classificada(s)${falhas ? `; ${falhas} falharam` : ''}. São sugestões: confira antes de agir.` })
+    } catch (e) { avisar({ tipo: 'erro', texto: (e as Error).message }) } finally { setClassificando(false) }
+  }
+  const seloTriagem = (p: PublicacaoOab) => {
+    const selos = selosTriagem(p.triagem, rotuloPrazo)
+    if (!p.triagem) return triagemAtiva ? <Text size="1" color="gray">Sem classificação</Text> : null
+    if (!selos.length) return <Text size="1" color="gray">Sem sugestão confiável</Text>
+    return (
+      <Flex gap="1" wrap="wrap" className="oab-triagem">
+        {selos.map(s => <Badge key={s.chave} color={s.cor} variant={s.revisar ? 'outline' : 'soft'} title={s.dica}>{s.texto}{s.revisar ? ' (revisar)' : ''}</Badge>)}
+      </Flex>
+    )
+  }
+  const seloDestino = (p: PublicacaoOab) => {
+    const d = p.destino
+    if (!d) return null
+    if (d.tipo === 'contraria') return <Badge color="gray" variant="outline" title="A publicação é para a outra parte do processo">Parte contrária</Badge>
+    return (
+      <Flex direction="column" gap="1" className="oab-destino">
+        {d.clientes.map(c => (
+          <Badge key={c.id} color="red" variant="solid" title="A publicação é destinada a um cliente do escritório: atenção ao prazo">
+            <span aria-hidden="true">❗</span><span className="aj-sr-only">Atenção: </span>
+            Cliente{c.polo ? ` (parte ${POLO_CURTO[c.polo]})` : ''}: {formatarNomeExibicao(c.nome)}
+          </Badge>
+        ))}
+      </Flex>
+    )
+  }
+  const paraCliente = (p: PublicacaoOab) => p.destino?.tipo === 'cliente'
   const seloStatus = (p: PublicacaoOab) => <Badge color={COR_STATUS[p.status]} variant="soft" radius="full">{ROTULO_STATUS[p.status]}</Badge>
 
   return (
@@ -309,11 +357,30 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
               </Popover.Content>
             </Popover.Root>
           )}
+          {triagemAtiva && <Button variant="soft" size="2" loading={classificando} disabled={ocupada} onClick={() => void classificarPagina()}>Classificar esta página</Button>}
           <Button variant="soft" size="2" disabled={ocupada || lote} onClick={() => setCapturaAberta(true)}>Capturar por OAB</Button>
           <Button variant="soft" color="gray" size="2" disabled={ocupada} onClick={carregar}>Atualizar</Button>
         </>}
       />
 
+      {infoTriagem?.modo === 'simulado' && (
+        <Callout.Root color="amber" size="1" role="status">
+          <Callout.Icon><Info size={14} /></Callout.Icon>
+          <Callout.Text>Triagem <strong>simulada</strong>: demonstração por palavras-chave, sem inteligência real. Os selos abaixo são só um exemplo de como a triagem aparecerá.</Callout.Text>
+        </Callout.Root>
+      )}
+      {infoTriagem?.modo === 'jev' && (
+        <Callout.Root color="gray" size="1" role="status">
+          <Callout.Icon><Info size={14} /></Callout.Icon>
+          <Callout.Text>Triagem automática ({pct(infoTriagem.limite_alto)}+ de confiança em destaque; entre {pct(infoTriagem.limite_baixo)} e {pct(infoTriagem.limite_alto)} marcada como "revisar"). O texto é enviado sem nomes das partes. São apenas sugestões: nada é criado, tratado ou arquivado sozinho.</Callout.Text>
+        </Callout.Root>
+      )}
+      {paraClientes > 0 && (
+        <Callout.Root color="red" size="1" role="status">
+          <Callout.Icon><span aria-hidden="true">❗</span></Callout.Icon>
+          <Callout.Text><strong>{paraClientes}</strong> {paraClientes === 1 ? 'publicação é destinada a um cliente' : 'publicações são destinadas a clientes'} do escritório (neste filtro). Confira os prazos.</Callout.Text>
+        </Callout.Root>
+      )}
       <div className="oab-atalhos" role="group" aria-label="Filtrar por situação">
         {ATALHOS.map(a => {
           const ativo = status === a.valor
@@ -330,6 +397,10 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
             </Button>
           )
         })}
+        <Button size="2" radius="full" variant={porPrioridade ? 'soft' : 'outline'} color={porPrioridade ? undefined : 'gray'} aria-pressed={porPrioridade}
+          disabled={ocupada} title="Publicações de clientes primeiro e, depois, as mais urgentes" onClick={() => { setPorPrioridade(v => !v); setPagina(1) }}>
+          Prioridade: clientes primeiro
+        </Button>
       </div>
 
       <LinhaFiltros ativos={[tipo, periodo].filter(Boolean).length}>
@@ -414,7 +485,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
             {publicacoes.map(p => {
               const aberta = expandidas.has(p.hash)
               return (
-                <li key={p.hash} className="oab-cartao">
+                <li key={p.hash} className={`oab-cartao${paraCliente(p) ? ' oab-linha-cliente' : ''}`}>
                   <Flex align="center" gap="2" wrap="wrap">
                     <Checkbox aria-label={`Selecionar publicação ${formatarNumeroCNJ(numeroPublicacao(p))}`} checked={selecionadas.has(p.hash)} disabled={ocupada} onCheckedChange={() => alternar(p.hash)} />
                     <Text size="2" weight="bold">{dataDivulgacao(p)}</Text>
@@ -426,6 +497,8 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
                     <div className="oab-secundario">{orgaoPublicacao(p)}</div>
                   </div>
                   <Text as="p" size="2">{nomePublicacao(p)}</Text>
+                  {seloDestino(p)}
+                  {triagemAtiva && seloTriagem(p)}
                   {vinculo(p)}
                   {aberta && detalhes(p)}
                   <Flex gap="2" align="center" className="oab-cartao-acoes">
@@ -438,7 +511,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
             })}
           </ul>
         ) : (
-          <TabelaResponsiva principais={['Processo', 'Situação']}>
+          <TabelaResponsiva principais={triagemAtiva ? ['Processo', 'Triagem', 'Situação'] : ['Processo', 'Situação']}>
             <table aria-label="Publicações recebidas" className="oab-tabela">
               <thead>
                 <tr>
@@ -460,6 +533,9 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
                   <th>Partes</th>
                   {opcionais.map(c => <th key={c.key}>{c.header}</th>)}
                   <th className="oab-col-tipo">Tipo</th>
+                  {triagemAtiva && (
+                    <th className="oab-col-triagem">Triagem</th>
+                  )}
                   <th className="oab-col-situacao">Situação</th>
                   <th className="tabela-acoes oab-col-acoes">Ações</th>
                 </tr>
@@ -470,7 +546,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
                   return (
                     <Fragment key={p.hash}>
                       <tr data-publicacao={p.hash} onClick={() => setFoco(p.hash)}
-                        className={[selecionadas.has(p.hash) ? 'oab-linha-selecionada' : '', foco === p.hash ? 'oab-linha-foco' : ''].filter(Boolean).join(' ') || undefined}>
+                        className={[selecionadas.has(p.hash) ? 'oab-linha-selecionada' : '', foco === p.hash ? 'oab-linha-foco' : '', paraCliente(p) ? 'oab-linha-cliente' : ''].filter(Boolean).join(' ') || undefined}>
                         <td>
                           <IconButton variant="ghost" size="1" aria-expanded={aberta} aria-controls={`oab-detalhes-${p.hash}`}
                             aria-label={`${aberta ? 'Recolher' : 'Expandir'} publicação ${formatarNumeroCNJ(numeroPublicacao(p))}`}
@@ -489,9 +565,10 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
                           <div className="oab-numero">{formatarNumeroCNJ(numeroPublicacao(p)) || 'Não informado'}</div>
                           <div className="oab-secundario">{orgaoPublicacao(p)}</div>
                         </td>
-                        <td>{nomePublicacao(p)}</td>
+                        <td>{nomePublicacao(p)}{p.destino && <div className="oab-destino-linha">{seloDestino(p)}</div>}</td>
                         {opcionais.map(c => <td key={c.key}>{c.valor(p)}</td>)}
                         <td>{seloTipo(p)}</td>
+                        {triagemAtiva && <td>{seloTriagem(p)}</td>}
                         <td>
                           {seloStatus(p)}
                           <div className="oab-vinculo-linha">{vinculo(p)}</div>
@@ -505,7 +582,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
                       </tr>
                       {aberta && (
                         <tr id={`oab-detalhes-${p.hash}`}>
-                          <td colSpan={8 + opcionais.length} className="oab-detalhes-celula">{detalhes(p)}</td>
+                          <td colSpan={8 + opcionais.length + (triagemAtiva ? 1 : 0)} className="oab-detalhes-celula">{detalhes(p)}</td>
                         </tr>
                       )}
                     </Fragment>

@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertDialog, Badge, Button, Callout, Flex, IconButton, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
 import { baixarCsv } from '../../utils/csv'
+import type { PoloCliente } from '../../utils/polos'
 import { useAvisos } from '../../Avisos'
 import { ErroMCP } from '../../api/mcpClient'
 import { useNavegacao } from '../../api/NavegacaoContext'
@@ -41,6 +42,7 @@ export type Caso = {
   publicacoes_a_revisar?: number
   ultima_movimentacao_data?: string | null
   ultima_movimentacao_descricao?: string | null
+  polos?: PoloCliente[]
 }
 
 type Cliente = { id: string; nome?: string }

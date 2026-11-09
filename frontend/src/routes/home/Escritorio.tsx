@@ -15,7 +15,7 @@ import './home-radix.css'
 
 type Item = { id: number | string; caso_id: string; titulo: string; tipo: string; data?: string | null; hora?: string | null; responsavel?: string | null; caso: { titulo?: string | null } }
 type Resumo = {
-  semana: Item[] | null; atrasadas: Item[] | null; publicacoes: number | null; inadimplencia: ResumoInadimplencia | null
+  semana: Item[] | null; atrasadas: Item[] | null; publicacoes: number | null; deClientes: number; inadimplencia: ResumoInadimplencia | null
   clientes: Record<string, string>
 }
 const dataCurta = (iso: string) => { const [, m, d] = iso.slice(0, 10).split('-'); return `${d}/${m}` }
@@ -40,14 +40,14 @@ export default function Escritorio({ abas }: { abas: ReactNode }) {
     const [semana, atrasadas, pubs, fin, clientes] = await Promise.allSettled([
       verAtividades ? buscarJson<{ atividades: Item[] }>(cliente, `/atividades?situacao=abertas&de=${hoje}&ate=${somarDias(hoje, 6)}`) : Promise.reject(new Error('sem acesso')),
       verAtividades ? buscarJson<{ atividades: Item[] }>(cliente, `/atividades?situacao=abertas&ate=${somarDias(hoje, -1)}`) : Promise.reject(new Error('sem acesso')),
-      verPublicacoes ? buscarJson<{ total: number }>(cliente, '/publicacoes-oab?status=nao_tratada&pagina=1&tamanho=1') : Promise.reject(new Error('sem acesso')),
+      verPublicacoes ? buscarJson<{ total: number; destinadas_a_clientes?: number }>(cliente, '/publicacoes-oab?status=nao_tratada&pagina=1&tamanho=1') : Promise.reject(new Error('sem acesso')),
       verFinanceiro ? buscarJson<{ inadimplencia: ResumoInadimplencia }>(cliente, `/lancamentos/resumo?hoje=${hoje}`) : Promise.reject(new Error('sem acesso')),
       verFinanceiro ? buscarJson<{ clientes: { id: string; nome?: string }[] }>(cliente, '/clientes') : Promise.reject(new Error('sem acesso')),
     ])
     const ok = <T,>(r: PromiseSettledResult<T>) => (r.status === 'fulfilled' ? r.value : null)
     const resultado = {
       semana: ok(semana)?.atividades ?? null, atrasadas: ok(atrasadas)?.atividades ?? null,
-      publicacoes: ok(pubs)?.total ?? null, inadimplencia: ok(fin)?.inadimplencia ?? null,
+      publicacoes: ok(pubs)?.total ?? null, deClientes: ok(pubs)?.destinadas_a_clientes ?? 0, inadimplencia: ok(fin)?.inadimplencia ?? null,
       clientes: Object.fromEntries((ok(clientes)?.clientes ?? []).map(c => [c.id, c.nome ?? ''])),
     }
     setDados(resultado)
@@ -76,7 +76,7 @@ export default function Escritorio({ abas }: { abas: ReactNode }) {
     { chave: 'atrasadas', titulo: 'Atividades atrasadas', valor: String(dados.atrasadas.length), legenda: dados.atrasadas.filter(a => a.tipo === 'prazo').length ? `${dados.atrasadas.filter(a => a.tipo === 'prazo').length} são prazos` : 'em aberto', alerta: dados.atrasadas.length > 0, vazio: !dados.atrasadas.length, ir: () => irPara('atividades') },
   )
   if (dados?.publicacoes !== null && dados?.publicacoes !== undefined) cartoes.push(
-    { chave: 'publicacoes', titulo: 'Publicações por revisar', valor: String(dados.publicacoes), legenda: 'recebidas e ainda não tratadas', alerta: dados.publicacoes > 0, vazio: !dados.publicacoes, ir: () => irPara('publicacoes-oab') },
+    { chave: 'publicacoes', titulo: 'Publicações por revisar', valor: String(dados.publicacoes), legenda: dados.deClientes ? `❗ ${dados.deClientes} de clientes` : 'recebidas e ainda não tratadas', alerta: dados.publicacoes > 0, vazio: !dados.publicacoes, ir: () => irPara('publicacoes-oab') },
   )
   if (inad) cartoes.push(
     { chave: 'vencidos', titulo: 'Vencidos a receber', valor: formatarMoeda(inad.total_vencido), legenda: inad.quantidade ? `${inad.quantidade} lançamento(s) de ${inad.clientes_inadimplentes} cliente(s)` : 'tudo em dia', alerta: inad.total_vencido > 0, vazio: !inad.total_vencido, ir: () => irPara('financeiro', { aba: 'inadimplencia' }) },

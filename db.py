@@ -17,6 +17,7 @@ remover/renomear o arquivo enquanto o processo estivesse de pé.
 """
 
 import calendar
+import polos as _polos
 import json
 import sqlite3
 import threading
@@ -103,6 +104,11 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 dados TEXT NOT NULL
             );
 
+            -- Sugestões da triagem de publicações (classificador simulado ou Jev). Só apoio à leitura.
+            CREATE TABLE IF NOT EXISTS publicacao_triagem (
+                triagem_hash TEXT PRIMARY KEY, triagem_modelo TEXT NOT NULL,
+                triagem_resultado TEXT NOT NULL, triagem_em TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS publicacao_revisoes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, hash TEXT NOT NULL,
                 usuario TEXT, status TEXT NOT NULL, acao TEXT NOT NULL, criado_em TEXT NOT NULL
@@ -197,6 +203,14 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
             CREATE TABLE IF NOT EXISTS caso_clientes (
                 caso_id TEXT NOT NULL REFERENCES casos(id),
                 cliente_id TEXT NOT NULL REFERENCES clientes(id),
+                PRIMARY KEY (caso_id, cliente_id)
+            );
+            -- Polo do cliente no processo (ativo, passivo ou terceiro) corrigido à mão. Sem linha aqui,
+            -- vale o polo deduzido da capa e das publicações (ver polos.py).
+            CREATE TABLE IF NOT EXISTS caso_polos (
+                caso_id TEXT NOT NULL REFERENCES casos(id),
+                cliente_id TEXT NOT NULL REFERENCES clientes(id),
+                polo TEXT NOT NULL, atualizado_em TEXT NOT NULL,
                 PRIMARY KEY (caso_id, cliente_id)
             );
 
@@ -1276,6 +1290,7 @@ class RegistroClientesCasos:
                 **_linha_caso(linha),
                 "processos": self._processos_do_caso(conexao, caso_id),
                 "clientes_adicionais": self._clientes_adicionais_do_caso(conexao, caso_id),
+                "polos": self._polos_dos_casos(conexao, {caso_id: linha[1]}).get(caso_id, []),
             }
 
     def atualizar_caso(
@@ -1393,11 +1408,13 @@ class RegistroClientesCasos:
                 _considerar(str(caso_id), disponibilizacao or criado_em,
                             f"Publicação: {tipo_comunicacao}" if tipo_comunicacao else "Publicação no DJEN")
 
+            polos_map = self._polos_dos_casos(conexao, {str(linha[0]): linha[1] for linha in linhas})
             return [
                 {
                     **_linha_caso(linha),
                     "processos": processos_map[str(linha[0])],
                     "clientes_adicionais": clientes_add_map[str(linha[0])],
+                    "polos": polos_map.get(str(linha[0]), []),
                     "ultima_movimentacao": ultima_mov_map.get(str(linha[0])) or linha[6],
                     "monitorado": str(linha[0]) in monitorado_set,
                     "proximo_compromisso": proximo_map.get(str(linha[0])),
@@ -1428,6 +1445,7 @@ class RegistroClientesCasos:
             conexao.execute("DELETE FROM caso_atividades WHERE caso_id = ?", (caso_id,))
             conexao.execute("DELETE FROM caso_eventos WHERE caso_id = ?", (caso_id,))
             conexao.execute("DELETE FROM caso_clientes WHERE caso_id = ?", (caso_id,))
+            conexao.execute("DELETE FROM caso_polos WHERE caso_id = ?", (caso_id,))
             conexao.execute("DELETE FROM caso_processos WHERE caso_id = ?", (caso_id,))
             # caso_vinculos usa ON DELETE CASCADE, mas SQLite não executa CASCADE por padrão
             # sem PRAGMA foreign_keys=ON (que não ativamos globalmente). Remove manualmente.
@@ -2007,6 +2025,68 @@ class RegistroClientesCasos:
         )
         return [linha[0] for linha in cursor.fetchall()]
 
+    POLOS_VALIDOS = _polos.POLOS
+
+    @staticmethod
+    def _polos_dos_casos(conexao: sqlite3.Connection, casos: dict[str, str]) -> dict[str, list[dict]]:
+        """Polo de cada cliente de cada processo: o corrigido à mão, senão o deduzido da capa e das
+        publicações vinculadas. `casos`: {caso_id: cliente principal}. Devolve, por processo,
+        [{cliente_id, nome, polo, origem}] com origem 'manual', 'automatico' ou None (sem informação)."""
+        if not casos:
+            return {}
+        ids = list(casos)
+        ph = ",".join("?" * len(ids))
+        extras: dict[str, list[str]] = {i: [] for i in ids}
+        for caso_id, cliente_id in conexao.execute(f"SELECT caso_id, cliente_id FROM caso_clientes WHERE caso_id IN ({ph})", ids):
+            extras[caso_id].append(cliente_id)
+        membros = {i: list(dict.fromkeys([casos[i], *extras[i]])) for i in ids}
+        todos = sorted({c for lista in membros.values() for c in lista})
+        clientes = {r[0]: {"id": r[0], "nome": r[1], "cpf_cnpj": r[2], "perfil": r[3]} for r in conexao.execute(
+            f"SELECT id, nome, cpf_cnpj, perfil FROM clientes WHERE id IN ({','.join('?' * len(todos))})", todos)} if todos else {}
+        manuais = {(c, cl): polo for c, cl, polo in conexao.execute(f"SELECT caso_id, cliente_id, polo FROM caso_polos WHERE caso_id IN ({ph})", ids)}
+        fontes: dict[str, list[list[dict]]] = {i: [] for i in ids}
+        for caso_id, partes in conexao.execute(f"SELECT caso_id, partes FROM caso_processo_capa WHERE caso_id IN ({ph}) AND partes IS NOT NULL", ids):
+            try:
+                fontes[caso_id].append(json.loads(partes) or [])
+            except ValueError:
+                pass
+        for caso_id, dados in conexao.execute(f"SELECT caso_id, dados FROM publicacoes_capturadas WHERE caso_id IN ({ph})", ids):
+            try:
+                fontes[caso_id].append(json.loads(dados).get("destinatarios") or [])
+            except ValueError:
+                pass
+        resultado = {}
+        for caso_id in ids:
+            doCaso = [clientes[c] for c in membros[caso_id] if c in clientes]
+            auto = _polos.polos_no_caso(doCaso, fontes[caso_id])
+            linhas = []
+            for c in doCaso:
+                manual = manuais.get((caso_id, c["id"]))
+                linhas.append({"cliente_id": c["id"], "nome": c["nome"], "polo": manual or auto.get(c["id"]),
+                               "origem": "manual" if manual else ("automatico" if auto.get(c["id"]) else None)})
+            resultado[caso_id] = linhas
+        return resultado
+
+    def definir_polo(self, caso_id: str, cliente_id: str, polo: str | None, agora) -> bool:
+        """Corrige o polo do cliente no processo; `polo=None` volta ao automático.
+        Devolve False se o cliente não pertence ao processo."""
+        if polo is not None and polo not in self.POLOS_VALIDOS:
+            raise ValueError(f"Polo inválido: use {', '.join(self.POLOS_VALIDOS)}.")
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            caso = conexao.execute("SELECT cliente_id FROM casos WHERE id = ?", (caso_id,)).fetchone()
+            if caso is None:
+                return False
+            membros = {caso[0], *self._clientes_adicionais_do_caso(conexao, caso_id)}
+            if cliente_id not in membros:
+                return False
+            if polo is None:
+                conexao.execute("DELETE FROM caso_polos WHERE caso_id = ? AND cliente_id = ?", (caso_id, cliente_id))
+            else:
+                conexao.execute(
+                    "INSERT INTO caso_polos VALUES (?, ?, ?, ?) ON CONFLICT(caso_id, cliente_id) DO UPDATE SET "
+                    "polo=excluded.polo, atualizado_em=excluded.atualizado_em", (caso_id, cliente_id, polo, agora().isoformat()))
+        return True
+
     @staticmethod
     def _clientes_adicionais_do_caso(conexao: sqlite3.Connection, caso_id: str) -> list[str]:
         cursor = conexao.execute(
@@ -2364,6 +2444,13 @@ class RegistroPublicacoesOAB:
                          "substr(criado_em, 1, 10)) ASC, criado_em ASC, hash ASC",
         "capturado_desc": "criado_em DESC, hash DESC",
         "capturado_asc": "criado_em ASC, hash ASC",
+        # Mais urgentes primeiro (sem triagem por último); empata pela data de divulgação.
+        # Montada em `listar`: publicações destinadas a clientes primeiro, depois urgência e data.
+        "prioridade": "",
+        "urgencia_desc": "coalesce((SELECT json_extract(triagem_resultado, '$.urgencia.nota') FROM publicacao_triagem "
+                         "WHERE triagem_hash = publicacoes_capturadas.hash), -1) DESC, "
+                         "coalesce(nullif(substr(json_extract(dados, '$.data_disponibilizacao'), 1, 10), ''), "
+                         "substr(criado_em, 1, 10)) DESC, hash DESC",
     }
 
     def listar(self, status: str | None = None, limite: int = 300, deslocamento: int = 0,
@@ -2371,12 +2458,18 @@ class RegistroPublicacoesOAB:
                ate: str | None = None, busca: str | None = None, ordem: str = "divulgado_desc") -> list[dict]:
         filtro, valores = self._filtro_data(status, data, tipo, desde, ate, busca)
         ordenacao = self._ORDENS.get(ordem, self._ORDENS["divulgado_desc"])
+        parametros_ordem: list[str] = []
+        if ordem == "prioridade":
+            de_clientes = list(self.hashes_para_clientes(status, data, tipo=tipo, desde=desde, ate=ate, busca=busca))
+            ordenacao = ((f"(CASE WHEN hash IN ({','.join('?' * len(de_clientes))}) THEN 1 ELSE 0 END) DESC, " if de_clientes else "")
+                         + self._ORDENS["urgencia_desc"])
+            parametros_ordem = de_clientes
         with _abrir(self.caminho) as conexao:
             cursor = conexao.execute(
                 "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, "
                 "caso_id, criado_em FROM publicacoes_capturadas" + filtro +
                 " ORDER BY " + ordenacao + " LIMIT ? OFFSET ?",
-                (*valores, limite, deslocamento),
+                (*valores, *parametros_ordem, limite, deslocamento),
             )
             linhas = [_linha_publicacao(linha) for linha in cursor.fetchall()]
             ids = sorted({p["caso_id"] for p in linhas if p["caso_id"]})
@@ -2384,9 +2477,72 @@ class RegistroPublicacoesOAB:
             if ids:
                 marcadores = ",".join("?" * len(ids))
                 titulos = dict(conexao.execute(f"SELECT id, titulo FROM casos WHERE id IN ({marcadores})", ids).fetchall())
+        triagens = self.obter_triagens([p["hash"] for p in linhas])
+        destinos = self.destinos(linhas)
         for p in linhas:
             p["caso_titulo"] = titulos.get(p["caso_id"]) if p["caso_id"] else None
+            p["triagem"] = triagens.get(p["hash"])
+            p["destino"] = destinos.get(p["hash"])
         return linhas
+
+    def destinos(self, publicacoes: list[dict]) -> dict[str, dict | None]:
+        """Para quem é cada publicação: {'tipo': 'cliente', 'clientes': [...]}, {'tipo': 'contraria'} ou None.
+        Em publicação vinculada a processo, só vale cliente desse processo; sem vínculo, qualquer cliente."""
+        if not publicacoes:
+            return {}
+        with _abrir(self.caminho) as conexao:
+            clientes = [{"id": r[0], "nome": r[1], "cpf_cnpj": r[2], "perfil": r[3]}
+                        for r in conexao.execute("SELECT id, nome, cpf_cnpj, perfil FROM clientes")]
+            geral = _polos.montar_indice(clientes)
+            casos = {c: p for c, p in conexao.execute(
+                f"SELECT id, cliente_id FROM casos WHERE id IN ({','.join('?' * len({q['caso_id'] for q in publicacoes if q['caso_id']}))})",
+                list({q["caso_id"] for q in publicacoes if q["caso_id"]}))} if any(q["caso_id"] for q in publicacoes) else {}
+            polos_por_caso = RegistroClientesCasos._polos_dos_casos(conexao, casos)
+        indices, resultado = {}, {}
+        for pub in publicacoes:
+            destinatarios = (pub.get("dados") or {}).get("destinatarios") or []
+            caso_id = pub.get("caso_id")
+            if caso_id and caso_id in polos_por_caso:
+                if caso_id not in indices:
+                    membros = {x["cliente_id"] for x in polos_por_caso[caso_id]}
+                    indices[caso_id] = (_polos.montar_indice(clientes, limitar_a=membros), {x["cliente_id"]: x["polo"] for x in polos_por_caso[caso_id]})
+                indice, polos_caso = indices[caso_id]
+            else:
+                indice, polos_caso = geral, None
+            resultado[pub["hash"]] = _polos.destino_da_publicacao(destinatarios, indice, polos_caso)
+        return resultado
+
+    def hashes_para_clientes(self, status: str | None = None, data: str | None = None, *, tipo: str | None = None,
+                             desde: str | None = None, ate: str | None = None, busca: str | None = None,
+                             limite: int = 5000) -> list[str]:
+        """Hashes das publicações (com os mesmos filtros da lista) destinadas a clientes."""
+        filtro, valores = self._filtro_data(status, data, tipo, desde, ate, busca)
+        with _abrir(self.caminho) as conexao:
+            linhas = [_linha_publicacao(r) for r in conexao.execute(
+                "SELECT hash, monitoramento_id, nome_pesquisado, numero_processo, dados, status, caso_id, criado_em "
+                "FROM publicacoes_capturadas" + filtro + " LIMIT ?", (*valores, limite))]
+        return [h for h, d in self.destinos(linhas).items() if d and d["tipo"] == "cliente"]
+
+    def obter_triagens(self, hashes: list[str]) -> dict[str, dict]:
+        if not hashes:
+            return {}
+        with _abrir(self.caminho) as conexao:
+            return {h: json.loads(r) for h, r in conexao.execute(
+                f"SELECT triagem_hash, triagem_resultado FROM publicacao_triagem WHERE triagem_hash IN ({','.join('?' * len(hashes))})", hashes)}
+
+    def salvar_triagem(self, hash_publicacao: str, resultado: dict, agora) -> None:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute(
+                "INSERT INTO publicacao_triagem VALUES (?, ?, ?, ?) ON CONFLICT(triagem_hash) DO UPDATE SET "
+                "triagem_modelo=excluded.triagem_modelo, triagem_resultado=excluded.triagem_resultado, triagem_em=excluded.triagem_em",
+                (hash_publicacao, resultado.get("modelo") or "", json.dumps(resultado, ensure_ascii=False), agora().isoformat()))
+
+    def hashes_sem_triagem(self, limite: int = 100) -> list[str]:
+        """Publicações ainda não tratadas e sem triagem, as mais recentes primeiro."""
+        with _abrir(self.caminho) as conexao:
+            return [r[0] for r in conexao.execute(
+                "SELECT hash FROM publicacoes_capturadas WHERE status = 'nao_tratada' AND hash NOT IN "
+                "(SELECT triagem_hash FROM publicacao_triagem) ORDER BY criado_em DESC LIMIT ?", (limite,))]
 
     def contar_por_status(self, data: str | None = None, *, tipo: str | None = None, desde: str | None = None,
                           ate: str | None = None, busca: str | None = None) -> dict[str, int]:
