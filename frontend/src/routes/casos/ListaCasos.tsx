@@ -241,7 +241,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
   function titulo(c: Caso) {
     return (
       <>
-        <button type="button" className="casos-link casos-titulo" onClick={() => onAbrir(c.id)}>
+        <button type="button" className="casos-link casos-titulo" title={c.titulo ? formatarNomeExibicao(c.titulo) : undefined} onClick={() => onAbrir(c.id)}>
           {c.titulo ? formatarNomeExibicao(c.titulo) : '(sem título)'}
         </button>
         <Flex gap="1" mt="1" wrap="wrap">
@@ -285,7 +285,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
   }
   function compromisso(c: Caso) {
     const p = c.proximo_compromisso
-    if (!p) return <><Text size="1" color="gray">Nenhum compromisso</Text><div><button type="button" className="casos-link casos-pequeno" onClick={() => onAbrir(c.id)}>Agendar</button></div></>
+    if (!p) return <><Text size="2" color="gray" aria-hidden="true">—</Text><span className="aj-sr-only">Nenhum compromisso</span><div><button type="button" className="casos-link casos-pequeno casos-agendar" onClick={() => onAbrir(c.id)}>Agendar</button></div></>
     const late = atrasado(c, hoje)
     return (
       <>
@@ -402,8 +402,8 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
             </Select.Root>
           </div>
           {filtrosAtivos && <Button size="2" variant="soft" color="gray" onClick={() => mudarFiltro(() => { setBusca(''); setResponsavel(''); setTribunal('') })}>Limpar filtros</Button>}
+          {!estreita && <div className="aj-filtros-botao"><EscolherColunas colunas={colunas} /></div>}
         </LinhaFiltros>
-        {!estreita && <Flex justify="end" mt="-3"><EscolherColunas colunas={colunas} /></Flex>}
 
         <div aria-live="polite">
           {carregando && <Carregamento colunas={6} />}
@@ -462,8 +462,8 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                       <th className="casos-col-numero" aria-sort={ariaSort('numero', ordem)}><BotaoOrdenar campo="numero" ordem={ordem} onOrdenar={alternarOrdem}>Nº do processo</BotaoOrdenar></th>
                       {colunas.visivel('cliente') && <th className="casos-col-cliente" aria-sort={ariaSort('cliente', ordem)}><BotaoOrdenar campo="cliente" ordem={ordem} onOrdenar={alternarOrdem}>Cliente</BotaoOrdenar></th>}
                       {colunas.visivel('responsavel') && <th className="casos-col-resp" aria-sort={ariaSort('responsavel', ordem)}><BotaoOrdenar campo="responsavel" ordem={ordem} onOrdenar={alternarOrdem}>Responsável</BotaoOrdenar></th>}
-                      {colunas.visivel('compromisso') && <th className="casos-col-comp" aria-sort={ariaSort('proximo', ordem)}><BotaoOrdenar campo="proximo" ordem={ordem} onOrdenar={alternarOrdem}>Próximo compromisso</BotaoOrdenar></th>}
-                      {colunas.visivel('movimentacao') && <th className="casos-col-mov" aria-sort={ariaSort('movimentacao', ordem)}><BotaoOrdenar campo="movimentacao" ordem={ordem} onOrdenar={alternarOrdem}>Última movimentação</BotaoOrdenar></th>}
+                      {colunas.visivel('compromisso') && <th className="casos-col-comp" aria-sort={ariaSort('proximo', ordem)}><BotaoOrdenar campo="proximo" ordem={ordem} onOrdenar={alternarOrdem}>Compromisso</BotaoOrdenar></th>}
+                      {colunas.visivel('movimentacao') && <th className="casos-col-mov" aria-sort={ariaSort('movimentacao', ordem)}><BotaoOrdenar campo="movimentacao" ordem={ordem} onOrdenar={alternarOrdem}>Movimentação</BotaoOrdenar></th>}
                       <th className="tabela-acoes casos-col-acoes">Ações</th>
                     </tr>
                   </thead>

@@ -5,7 +5,15 @@
   &:hover { text-decoration: underline; }
   &:focus-visible { outline: 2px solid var(--accent-8); outline-offset: 2px; border-radius: 2px; }
 }
-.casos-titulo { font-weight: 600; font-size: 14px; line-height: 1.4; }
+.casos-titulo {
+  font-weight: 600; font-size: 14px; line-height: 1.4;
+  // Títulos são listas de partes: mostra 2 linhas e deixa o texto completo no tooltip.
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+// Sem compromisso: o atalho "Agendar" só aparece ao passar o mouse ou focar a linha.
+.casos-agendar { opacity: 0; transition: opacity 0.12s; }
+tr:hover .casos-agendar, tr:focus-within .casos-agendar, .casos-cartao .casos-agendar, .casos-agendar:focus-visible { opacity: 1; }
+@media (hover: none) { .casos-agendar { opacity: 1; } }
 .casos-numero { font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .casos-pequeno { font-size: 13px; }
 .casos-secundario { margin-top: 2px; font-size: 13px; color: var(--gray-11); line-height: 1.4; }
