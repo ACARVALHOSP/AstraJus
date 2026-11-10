@@ -98,12 +98,17 @@ function LimpaCacheAoTrocarSessao() {
   const token = cliente?.token
   useEffect(() => () => queryClient.clear(), [queryClient, token])
   useEffect(() => {
+    let espera: number | undefined
     const aoGravar = () => {
-      queryClient.removeQueries({ type: 'inactive' })
-      void queryClient.invalidateQueries({ type: 'active' })
+      // Ações em lote disparam várias gravações seguidas: junta tudo numa atualização só.
+      window.clearTimeout(espera)
+      espera = window.setTimeout(() => {
+        queryClient.removeQueries({ type: 'inactive' })
+        void queryClient.invalidateQueries({ type: 'active' })
+      }, 150)
     }
     window.addEventListener(EVENTO_DADOS_ALTERADOS, aoGravar)
-    return () => window.removeEventListener(EVENTO_DADOS_ALTERADOS, aoGravar)
+    return () => { window.clearTimeout(espera); window.removeEventListener(EVENTO_DADOS_ALTERADOS, aoGravar) }
   }, [queryClient])
   return null
 }

@@ -8,7 +8,9 @@ import Carregamento from '../Carregamento'
 import BuscaProcesso from '../BuscaProcesso'
 import TabelaResponsiva from '../TabelaResponsiva'
 import AcoesTabela from '../AcoesTabela'
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useCasos } from '../api/consultas'
 import { Badge, Button, Callout, Checkbox, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, CalendarCheck, Info } from 'lucide-react'
 import { useCliente } from '../api/ClienteContext'
@@ -31,6 +33,9 @@ type Atividade = {
   caso: CasoResumo; agenda?: unknown
 }
 const chave = (a: Atividade) => `${a.caso_id}:${a.id}`
+const SEM_ATIVIDADES: Atividade[] = []
+const SEM_TEXTOS: string[] = []
+const SEM_PROCESSOS: CasoResumo[] = []
 
 export default function Atividades() {
   const { cliente } = useCliente()
@@ -43,18 +48,14 @@ export default function Atividades() {
   const [responsavel, setResponsavel] = useState('')
   const [responsavelProcesso, setResponsavelProcesso] = useState('')
   const [textoBusca, setTextoBusca] = useState(''), [busca, setBusca] = useState('')
-  const [atividades, setAtividades] = useState<Atividade[]>([])
-  const [responsaveis, setResponsaveis] = useState<string[]>([])
-  const [carregando, setCarregando] = useState(true), [operando, setOperando] = useState(false)
-  const [erro, setErro] = useState('')
+  const [operando, setOperando] = useState(false)
+  const [erroAcao, setErroAcao] = useState('')
   const { avisar } = useAvisos()
-  const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set())
+  const [selecionadasBrutas, setSelecionadas] = useState<Set<string>>(new Set())
   const [dialogo, setDialogo] = useState<'' | 'reatribuir' | 'data' | 'nova'>('')
   const [novoResponsavel, setNovoResponsavel] = useState(''), [novaData, setNovaData] = useState('')
-  const [processoNovo, setProcessoNovo] = useState(''), [processos, setProcessos] = useState<CasoResumo[]>([])
+  const [processoNovo, setProcessoNovo] = useState('')
   const [editando, setEditando] = useState<{ casoId: string; atividade: AtividadeCaso | null } | null>(null)
-  const sequencia = useRef(0)
-
   useEffect(() => {
     const espera = window.setTimeout(() => setBusca(textoBusca.trim()), 400)
     return () => window.clearTimeout(espera)
@@ -65,34 +66,39 @@ export default function Atividades() {
     return () => window.clearInterval(relogio)
   }, [])
 
-  const carregar = useCallback(async () => {
-    const pedido = ++sequencia.current
-    if (!cliente) { setCarregando(false); return }
-    setCarregando(true); setErro('')
-    try {
+  // A chave inclui os filtros: cada combinação tem o seu cache e a troca de filtro busca só o que falta.
+  const consulta = useQuery({
+    queryKey: ['atividades', cliente?.token, { situacao, tipo, responsavel, responsavelProcesso, busca }],
+    enabled: Boolean(cliente),
+    queryFn: ({ signal }) => {
       const query = new URLSearchParams({
         situacao, ...(tipo ? { tipo } : {}), ...(responsavel ? { responsavel } : {}),
         ...(responsavelProcesso ? { responsavel_processo: responsavelProcesso } : {}), ...(busca ? { busca } : {}),
       })
-      const dados = await buscarJson<{ atividades: Atividade[] }>(cliente, `/atividades?${query}`)
-      if (pedido !== sequencia.current) return
-      setAtividades(dados.atividades ?? [])
-      const visiveis = new Set((dados.atividades ?? []).map(chave))
-      setSelecionadas(s => new Set([...s].filter(k => visiveis.has(k))))
-    } catch (e) {
-      if (pedido === sequencia.current) setErro(e instanceof ErroMCP ? e.message : 'Não foi possível carregar as atividades. Tente de novo.')
-    } finally { if (pedido === sequencia.current) setCarregando(false) }
-  }, [cliente, situacao, tipo, responsavel, responsavelProcesso, busca])
-  useEffect(() => {
-    const controle = sequencia
-    // eslint-disable-next-line react/set-state-in-effect
-    void carregar()
-    return () => { controle.current++ }
-  }, [carregar])
-  useEffect(() => {
-    if (!cliente) return
-    buscarJson<{ responsaveis: string[] }>(cliente, '/responsaveis').then(r => setResponsaveis(r.responsaveis ?? [])).catch(() => {})
-  }, [cliente])
+      return buscarJson<{ atividades: Atividade[] }>(cliente, `/atividades?${query}`, signal).then(d => d.atividades ?? [])
+    },
+  })
+  const carregando = Boolean(cliente) && consulta.isPending
+  const atividades = consulta.data ?? SEM_ATIVIDADES
+  // O cadastro de responsáveis é complementar: se falhar, os filtros só ficam sem opções.
+  const consultaResponsaveis = useQuery({
+    queryKey: ['responsaveis', cliente?.token],
+    enabled: Boolean(cliente),
+    queryFn: ({ signal }) => buscarJson<{ responsaveis: string[] }>(cliente, '/responsaveis', signal).then(r => r.responsaveis ?? []),
+  })
+  const responsaveis = consultaResponsaveis.data ?? SEM_TEXTOS
+  // Os processos só são buscados quando a janela de nova atividade abre.
+  const consultaProcessos = useCasos<CasoResumo>({ enabled: dialogo === 'nova' })
+  const processos = consultaProcessos.data ?? SEM_PROCESSOS
+  const erro = erroAcao
+    || (consulta.error ? (consulta.error instanceof ErroMCP ? consulta.error.message : 'Não foi possível carregar as atividades. Tente de novo.') : '')
+    || (consultaProcessos.error ? (consultaProcessos.error instanceof ErroMCP ? consultaProcessos.error.message : 'Não foi possível carregar os processos.') : '')
+  const carregar = async () => { setErroAcao(''); await consulta.refetch() }
+  // A seleção só vale para o que continua na lista (ex.: depois de concluir ou trocar de filtro).
+  const selecionadas = useMemo(() => {
+    const visiveis = new Set(atividades.map(chave))
+    return new Set([...selecionadasBrutas].filter(k => visiveis.has(k)))
+  }, [selecionadasBrutas, atividades])
 
   const contagem = useMemo(() => {
     const c: Record<Grupo, number> = { atrasadas: 0, hoje: 0, semana: 0, depois: 0, sem_data: 0 }
@@ -124,7 +130,7 @@ export default function Atividades() {
   const responsaveisProcesso = useMemo(() => [...new Set(atividades.map(a => a.caso.responsavel).filter((r): r is string => Boolean(r)))].sort(), [atividades])
   const filtrosAtivos = Boolean(tipo || responsavel || responsavelProcesso || busca)
   const lote = selecionadas.size > 0
-  const ocupado = carregando || operando
+  const ocupado = carregando || consulta.isFetching || operando
   const todasVisiveis = naPagina.length > 0 && naPagina.every(a => selecionadas.has(chave(a)))
 
   function alternar(a: Atividade) {
@@ -165,12 +171,8 @@ export default function Atividades() {
   function editar(a: Atividade) {
     setEditando({ casoId: a.caso_id, atividade: { ...a, id: String(a.id) } as unknown as AtividadeCaso })
   }
-  async function abrirNova() {
+  function abrirNova() {
     setProcessoNovo(''); setDialogo('nova')
-    try {
-      const r = await buscarJson<{ casos: CasoResumo[] }>(cliente, '/casos')
-      setProcessos(r.casos ?? [])
-    } catch (e) { setErro(e instanceof ErroMCP ? e.message : 'Não foi possível carregar os processos.') }
   }
 
   function acaoPrincipal(a: Atividade, grande = false) {
