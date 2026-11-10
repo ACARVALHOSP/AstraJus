@@ -38,12 +38,11 @@ function normalizar(valor: string): string {
 function SeloTipoPessoa({ tipo }: { tipo?: string }) {
   if (tipo !== 'juridica' && tipo !== 'fisica') return <Text size="1" color="gray">Não informado</Text>
   const juridica = tipo === 'juridica'
+  const rotulo = juridica ? 'Pessoa jurídica' : 'Pessoa física'
+  // Só o ícone: o rótulo fica no tooltip e para leitores de tela.
   return (
-    <Flex gap="2" align="center">
-      <Avatar size="1" radius="full" variant="soft" color={juridica ? 'orange' : 'blue'} aria-hidden="true"
-        fallback={juridica ? <Building2 size={14} /> : <User size={14} />} />
-      <Text size="2">{juridica ? 'Pessoa jurídica' : 'Pessoa física'}</Text>
-    </Flex>
+    <Avatar size="1" radius="full" variant="soft" color={juridica ? 'orange' : 'blue'} role="img" aria-label={rotulo} title={rotulo}
+      fallback={juridica ? <Building2 size={14} aria-hidden="true" /> : <User size={14} aria-hidden="true" />} />
   )
 }
 
