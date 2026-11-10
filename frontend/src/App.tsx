@@ -6,6 +6,7 @@ import {
   Settings, Link, Wallet, CreditCard, ShieldCheck, Menu, X,
   Palette, ChevronDown, ChevronRight, Check, House,
 } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { ClienteProvider, useCliente } from './api/ClienteContext'
 import { PerfilProvider, usePerfil } from './api/PerfilContext'
 import { AvisosProvider } from './Avisos'
@@ -81,6 +82,15 @@ const GRUPOS_NAVEGACAO = [
 function SincronizarPreferencias() {
   const { cliente } = useCliente()
   useEffect(() => { void sincronizarPreferencias(cliente?.token ?? null) }, [cliente])
+  return null
+}
+
+// Descarta o cache de dados ao trocar ou encerrar a sessão, para não manter dados de outro usuário.
+function LimpaCacheAoTrocarSessao() {
+  const { cliente } = useCliente()
+  const queryClient = useQueryClient()
+  const token = cliente?.token
+  useEffect(() => () => queryClient.clear(), [queryClient, token])
   return null
 }
 
@@ -326,6 +336,7 @@ export default function App() {
     <Theme accentColor={accent} grayColor="slate" radius="medium" appearance={aparencia}>
       <AvisosProvider>
       <ClienteProvider>
+        <LimpaCacheAoTrocarSessao />
         <PerfilProvider>
         <SincronizarPreferencias />
         <DialogoSaida />

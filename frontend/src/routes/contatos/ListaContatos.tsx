@@ -4,7 +4,8 @@ import CabecalhoPagina from '../../CabecalhoPagina'
 import TabelaResponsiva from '../../TabelaResponsiva'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertDialog, Badge, Button, Callout, Checkbox, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Building2, Download, Info, Mail, Pencil, Phone, Tag, User } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
@@ -25,6 +26,7 @@ export type ClienteItem = {
   etiquetas?: string[]
 }
 type CasoResumo = { id: string; cliente_id?: string; clientes_adicionais?: string[] }
+const SEM_CASOS: CasoResumo[] = []
 type Atalho = 'cliente' | 'contato' | ''
 
 const POR_PAGINA = 20
@@ -47,10 +49,24 @@ function csvCampo(valor: unknown) {
 export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: string) => void; onNovo: () => void }) {
   const { cliente } = useCliente()
   const estreita = useEstreita()
-  const [carregando, setCarregando] = useState(true)
-  const [erro, setErro] = useState<string | null>(null)
-  const [clientes, setClientes] = useState<ClienteItem[] | null>(null)
-  const [casos, setCasos] = useState<CasoResumo[]>([])
+  const queryClient = useQueryClient()
+  const chaveContatos = ['contatos', cliente?.token] as const
+  const consulta = useQuery({
+    queryKey: chaveContatos,
+    queryFn: async ({ signal }) => {
+      const [r, rc] = await Promise.all([
+        buscarJson<{ clientes: ClienteItem[] }>(cliente, '/clientes', signal),
+        // A contagem de processos é complementar: se falhar, a lista de contatos continua.
+        buscarJson<{ casos: CasoResumo[] }>(cliente, '/casos', signal).catch(() => ({ casos: [] as CasoResumo[] })),
+      ])
+      return { clientes: r.clientes ?? [], casos: rc.casos ?? [] }
+    },
+  })
+  const carregando = consulta.isPending
+  const clientes: ClienteItem[] | null = consulta.data?.clientes ?? null
+  const casos = consulta.data?.casos ?? SEM_CASOS
+  const [erroAcao, setErroAcao] = useState<string | null>(null)
+  const erro = erroAcao ?? (consulta.error ? (consulta.error instanceof ErroMCP ? consulta.error.message : 'Falha ao carregar.') : null)
   const [busca, setBusca] = useState('')
   const [atalho, setAtalho] = useState<Atalho>('cliente')
   const [tipo, setTipo] = useState('')
@@ -61,30 +77,17 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
   const [loteAberto, setLoteAberto] = useState<'etiquetas' | 'perfil' | null>(null)
 
-  const carregar = () => {
-    setCarregando(true)
-    setErro(null)
-    Promise.all([
-      buscarJson<{ clientes: ClienteItem[] }>(cliente, '/clientes'),
-      // A contagem de processos é complementar: se falhar, a lista de contatos continua.
-      buscarJson<{ casos: CasoResumo[] }>(cliente, '/casos').catch(() => ({ casos: [] as CasoResumo[] })),
-    ])
-      .then(([r, rc]) => { setClientes(r.clientes ?? []); setCasos(rc.casos ?? []) })
-      .catch((e) => setErro(e instanceof ErroMCP ? e.message : 'Falha ao carregar.'))
-      .finally(() => setCarregando(false))
-  }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(carregar, [cliente])
-
   async function confirmarExclusao() {
     if (!paraExcluir) return
     setExcluindo(true)
     try {
       await enviarJson(cliente, `/clientes/${paraExcluir.id}`, {}, 'DELETE')
-      setClientes((atual) => atual?.filter((c) => c.id !== paraExcluir.id) ?? null)
+      queryClient.setQueryData(chaveContatos, (atual: typeof consulta.data) => atual && { ...atual, clientes: atual.clientes.filter((c) => c.id !== paraExcluir.id) })
+      void queryClient.invalidateQueries({ queryKey: ['contatos'] })
+      setErroAcao(null)
       setParaExcluir(null)
     } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Falha ao excluir.')
+      setErroAcao(e instanceof ErroMCP ? e.message : 'Falha ao excluir.')
     } finally {
       setExcluindo(false)
     }
@@ -362,7 +365,7 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
           onConcluido={() => {
             setLoteAberto(null)
             setSelecionados(new Set())
-            carregar()
+            void consulta.refetch()
           }}
         />
       )}
