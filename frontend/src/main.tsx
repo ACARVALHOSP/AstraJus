@@ -7,9 +7,10 @@ import './routes/casos/processos-radix.css'
 import App from './App.tsx'
 
 // Sem nova tentativa automática: erros de API aparecem na hora, como antes. Dados em cache são
-// mostrados de imediato e atualizados em segundo plano (staleTime 0).
+// mostrados de imediato; ficam "frescos" por 20 s (sem nova busca ao trocar de tela) e depois são
+// atualizados em segundo plano. Qualquer gravação (EVENTO_DADOS_ALTERADOS) atualiza antes disso.
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
+  defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, staleTime: 20_000 } },
 })
 
 createRoot(document.getElementById('root')!).render(
