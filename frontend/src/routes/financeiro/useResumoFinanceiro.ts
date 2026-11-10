@@ -1,39 +1,34 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useCliente } from '../../api/ClienteContext'
+import { useCasos, useClientes } from '../../api/consultas'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson } from '../../api/rest'
 import { formatarNomeExibicao } from '../../utils/formatadores'
 import type { ResumoFinanceiro } from './dadosResumo'
 
 type Nome = { id: string; nome?: string; titulo?: string }
+const SEM_NOMES: Nome[] = []
 const hojeLocal = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 
 /** Carrega o resumo financeiro e os nomes de clientes e processos usados nas duas visões. */
 export function useResumoFinanceiro() {
   const { cliente } = useCliente()
-  const [resumo, setResumo] = useState<ResumoFinanceiro | null>(null)
-  const [clientes, setClientes] = useState<Nome[]>([])
-  const [casos, setCasos] = useState<Nome[]>([])
-  const [carregando, setCarregando] = useState(true)
-  const [erro, setErro] = useState('')
+  const hoje = hojeLocal()
+  const consultaResumo = useQuery({
+    queryKey: ['lancamentos', 'resumo', cliente?.token, hoje],
+    queryFn: ({ signal }) => buscarJson<ResumoFinanceiro>(cliente, `/lancamentos/resumo?hoje=${hoje}`, signal),
+  })
+  const consultaClientes = useClientes<Nome>()
+  const consultaCasos = useCasos<Nome>()
+  const consultas = [consultaResumo, consultaClientes, consultaCasos]
 
-  const carregar = useCallback(async () => {
-    setCarregando(true); setErro('')
-    try {
-      const [r, c, p] = await Promise.all([
-        buscarJson<ResumoFinanceiro>(cliente, `/lancamentos/resumo?hoje=${hojeLocal()}`),
-        buscarJson<{ clientes: Nome[] }>(cliente, '/clientes'),
-        buscarJson<{ casos: Nome[] }>(cliente, '/casos'),
-      ])
-      setResumo(r); setClientes(c.clientes ?? []); setCasos(p.casos ?? [])
-    } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Não foi possível carregar o financeiro. Tente de novo.')
-    } finally { setCarregando(false) }
-  }, [cliente])
-  useEffect(() => {
-    // eslint-disable-next-line react/set-state-in-effect
-    void carregar()
-  }, [carregar])
+  const carregando = consultas.some(c => c.isPending)
+  const resumo = consultaResumo.data ?? null
+  const clientes = consultaClientes.data ?? SEM_NOMES
+  const casos = consultaCasos.data ?? SEM_NOMES
+  const falha = consultas.find(c => c.error)?.error
+  const erro = falha ? (falha instanceof ErroMCP ? falha.message : 'Não foi possível carregar o financeiro. Tente de novo.') : ''
+  const carregar = async () => { await Promise.all(consultas.map(c => c.refetch())) }
 
   const nomeCliente = (id?: string) => formatarNomeExibicao(clientes.find(c => c.id === id)?.nome ?? '') || '—'
   const tituloCaso = (id?: string) => formatarNomeExibicao(casos.find(c => c.id === id)?.titulo ?? '') || 'Processo sem título'

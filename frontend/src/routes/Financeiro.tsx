@@ -6,12 +6,14 @@ import TabelaResponsiva from '../TabelaResponsiva'
 import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useCasos, useClientes, useLancamentos } from '../api/consultas'
 import { AlertTriangle, ChevronLeft, ChevronRight, Download, Info } from 'lucide-react'
 import { AlertDialog, Badge, Button, Callout, Checkbox, Flex, IconButton, Select, Tabs, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { ErroMCP } from '../api/mcpClient'
-import { buscarJson, enviarJson } from '../api/rest'
+import { enviarJson } from '../api/rest'
 import { formatarMoeda, formatarNomeExibicao } from '../utils/formatadores'
 import { useEstreita } from '../utils/useEstreita'
 import { baixarCsv } from '../utils/csv'
@@ -43,6 +45,8 @@ type Lancamento = {
 }
 type Cliente = { id: string; nome?: string }
 type Caso = { id: string; titulo?: string }
+const SEM_CLIENTES: Cliente[] = []
+const SEM_CASOS: Caso[] = []
 type Situacao = 'aberto' | 'vencido' | 'quitado'
 type Atalho = '' | Situacao
 
@@ -127,13 +131,19 @@ function ListaLancamentos({ abas }: { abas: React.ReactNode }) {
   const [clienteFiltro, setClienteFiltro] = useState('')
   const [responsavelFiltro, setResponsavelFiltro] = useState('')
   const [busca, setBusca] = useState('')
-  const [carregando, setCarregando] = useState(false)
   const [operando, setOperando] = useState(false)
-  const [erro, setErro] = useState<string | null>(null)
   const { avisar } = useAvisos()
-  const [lancamentos, setLancamentos] = useState<Lancamento[] | null>(null)
-  const [clientes, setClientes] = useState<Cliente[]>([])
-  const [casos, setCasos] = useState<Caso[]>([])
+  const queryClient = useQueryClient()
+  const consultaLancamentos = useLancamentos<Lancamento>()
+  const consultaClientes = useClientes<Cliente>()
+  const consultaCasos = useCasos<Caso>()
+  const consultas = [consultaLancamentos, consultaClientes, consultaCasos]
+  const carregando = consultas.some(c => c.isPending)
+  const lancamentos: Lancamento[] | null = consultaLancamentos.data ?? null
+  const clientes = consultaClientes.data ?? SEM_CLIENTES
+  const casos = consultaCasos.data ?? SEM_CASOS
+  const falha = consultas.find(c => c.error)?.error
+  const erro = falha ? (falha instanceof ErroMCP ? falha.message : 'Não foi possível carregar os dados. Tente de novo.') : null
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
   const [paraExcluir, setParaExcluir] = useState<Lancamento | null>(null)
   const [excluindo, setExcluindo] = useState(false)
@@ -141,28 +151,7 @@ function ListaLancamentos({ abas }: { abas: React.ReactNode }) {
   const [predefinido, setPredefinido] = useState<Predefinido | null>(null)
   const [tipoFiltro, setTipoFiltro] = useState('')
 
-  const carregar = useCallback(async () => {
-    setCarregando(true)
-    setErro(null)
-    try {
-      const [respLancamentos, respClientes, respCasos] = await Promise.all([
-        buscarJson<{ lancamentos: Lancamento[] }>(cliente, '/lancamentos'),
-        buscarJson<{ clientes: Cliente[] }>(cliente, '/clientes'),
-        buscarJson<{ casos: Caso[] }>(cliente, '/casos'),
-      ])
-      setLancamentos(respLancamentos.lancamentos ?? [])
-      setClientes(respClientes.clientes ?? [])
-      setCasos(respCasos.casos ?? [])
-    } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Não foi possível carregar os dados. Tente de novo.')
-    } finally {
-      setCarregando(false)
-    }
-  }, [cliente])
-  useEffect(() => {
-    // eslint-disable-next-line react/set-state-in-effect
-    void carregar()
-  }, [carregar])
+  const carregar = async () => { await Promise.all(consultas.map(c => c.refetch())) }
 
   const nomeCliente = useCallback((id?: string) => formatarNomeExibicao(clientes.find(c => c.id === id)?.nome ?? '') || '—', [clientes])
   const tituloCaso = useCallback((id?: string) => formatarNomeExibicao(casos.find(c => c.id === id)?.titulo ?? ''), [casos])
@@ -240,7 +229,7 @@ function ListaLancamentos({ abas }: { abas: React.ReactNode }) {
         feitos.add(l.id)
       } catch (e) { falha = e instanceof ErroMCP ? e.message : 'Falha ao atualizar.' }
     }
-    setLancamentos(atual => atual?.map(l => (feitos.has(l.id) ? { ...l, pago } : l)) ?? null)
+    queryClient.setQueryData(['lancamentos', cliente?.token], (atual: Lancamento[] | undefined) => atual?.map(l => (feitos.has(l.id) ? { ...l, pago } : l)))
     setSelecionados(s => new Set([...s].filter(id => !feitos.has(id))))
     setOperando(false)
     if (falha) avisar({ tipo: 'erro', texto: falha })

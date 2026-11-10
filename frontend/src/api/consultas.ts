@@ -13,6 +13,14 @@ export function useClientes<T = { id: string; nome?: string }>({ enabled = true 
   })
 }
 
+export function useLancamentos<T = { id: string }>() {
+  const { cliente } = useCliente()
+  return useQuery({
+    queryKey: ['lancamentos', cliente?.token],
+    queryFn: ({ signal }) => buscarJson<{ lancamentos: T[] }>(cliente, '/lancamentos', signal).then(r => r.lancamentos ?? []),
+  })
+}
+
 // Cadastro de responsáveis: complementar (só alimenta filtros), por isso erros ficam sem opções.
 export function useResponsaveis() {
   const { cliente } = useCliente()
