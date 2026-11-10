@@ -6,7 +6,7 @@ import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertDialog, Badge, Button, Callout, Checkbox, Flex, Select, Text, TextField } from '@radix-ui/themes'
+import { AlertDialog, Avatar, Badge, Button, Callout, Checkbox, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Building2, Download, Info, Mail, Pencil, Phone, Tag, User } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
@@ -36,9 +36,15 @@ function normalizar(valor: string): string {
 }
 
 function SeloTipoPessoa({ tipo }: { tipo?: string }) {
-  if (tipo === 'juridica') return <Badge color="orange" variant="soft" radius="full"><Building2 size={12} aria-hidden="true" /> Pessoa jurídica</Badge>
-  if (tipo === 'fisica') return <Badge color="blue" variant="soft" radius="full"><User size={12} aria-hidden="true" /> Pessoa física</Badge>
-  return <Text size="1" color="gray">Não informado</Text>
+  if (tipo !== 'juridica' && tipo !== 'fisica') return <Text size="1" color="gray">Não informado</Text>
+  const juridica = tipo === 'juridica'
+  return (
+    <Flex gap="2" align="center">
+      <Avatar size="1" radius="full" variant="soft" color={juridica ? 'orange' : 'blue'} aria-hidden="true"
+        fallback={juridica ? <Building2 size={14} /> : <User size={14} />} />
+      <Text size="2">{juridica ? 'Pessoa jurídica' : 'Pessoa física'}</Text>
+    </Flex>
+  )
 }
 
 function csvCampo(valor: unknown) {
