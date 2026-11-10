@@ -25,10 +25,10 @@ tr:hover .casos-agendar, tr:focus-within .casos-agendar, .casos-cartao .casos-ag
   // (max()/calc() com % é tratado como auto em tabela; em layout fixo o 15% sozinho cortava o número.)
   table-layout: auto;
   .casos-col-numero { inline-size: 15%; }
-  .casos-col-cliente { inline-size: 12%; }
+  .casos-col-cliente { inline-size: 15%; }
   .casos-col-resp { inline-size: 9%; }
   .casos-col-comp { inline-size: 12%; }
-  .casos-col-mov { inline-size: 12%; }
+  .casos-col-mov { inline-size: 18%; }
   .casos-col-acoes { inline-size: 3.5rem; }
   :is(th, td).tabela-controle { inline-size: 2.5rem; padding-inline: 0.25rem; }
 }
