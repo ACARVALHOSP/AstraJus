@@ -13,7 +13,9 @@ import type { PoloCliente } from '../../utils/polos'
 import { useAvisos } from '../../Avisos'
 import { ErroMCP } from '../../api/mcpClient'
 import { useNavegacao } from '../../api/NavegacaoContext'
-import { buscarJson, enviarJson } from '../../api/rest'
+import { enviarJson } from '../../api/rest'
+import { useQueryClient } from '@tanstack/react-query'
+import { useCasos, useClientes } from '../../api/consultas'
 import { diasEntreDatas, formatarNomeExibicao, formatarNumeroCNJ, hojeIso } from '../../utils/formatadores'
 import { alternarCasoFavorito, ehCasoFavorito, EVENTO_PREFERENCIAS } from '../../utils/listasRapidas'
 import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
@@ -90,16 +92,23 @@ const encerrado = (c: Caso) => Boolean(c.desfecho)
 const atrasado = (c: Caso, hoje: string) => Boolean(c.proximo_compromisso?.data && c.proximo_compromisso.data.slice(0, 10) < hoje)
 const parado = (c: Caso, hoje: string) => !encerrado(c) && Boolean(c.ultima_movimentacao_data) && diasEntreDatas(c.ultima_movimentacao_data!, hoje) > DIAS_PARADO
 
+const SEM_CLIENTES: Cliente[] = []
+
 export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void }) {
   const { avisar } = useAvisos()
   const { cliente } = useCliente()
   const { irPara } = useNavegacao()
   const estreita = useEstreita()
   const [hoje] = useState(hojeIso)
-  const [carregando, setCarregando] = useState(true)
-  const [erro, setErro] = useState<string | null>(null)
-  const [casos, setCasos] = useState<Caso[] | null>(null)
-  const [clientes, setClientes] = useState<Cliente[]>([])
+  const queryClient = useQueryClient()
+  const consultaCasos = useCasos<Caso>()
+  const consultaClientes = useClientes<Cliente>()
+  const carregando = consultaCasos.isPending || consultaClientes.isPending
+  const casos: Caso[] | null = consultaCasos.data ?? null
+  const clientes = consultaClientes.data ?? SEM_CLIENTES
+  const [erroAcao, setErroAcao] = useState<string | null>(null)
+  const erroConsulta = consultaCasos.error ?? consultaClientes.error
+  const erro = erroAcao ?? (erroConsulta ? (erroConsulta instanceof ErroMCP ? erroConsulta.message : 'Falha ao carregar.') : null)
   const [busca, setBusca] = useState('')
   const [atalho, setAtalho] = useState<Atalho>('andamento')
   const [responsavel, setResponsavel] = useState('')
@@ -117,22 +126,8 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
   const [casoCriado, setCasoCriado] = useState<Caso | null>(null)
   const botaoNovo = useRef<HTMLButtonElement>(null)
 
-  const carregar = () => {
-    setCarregando(true)
-    setErro(null)
-    Promise.all([
-      buscarJson<{ casos: Caso[] }>(cliente, '/casos'),
-      buscarJson<{ clientes: Cliente[] }>(cliente, '/clientes'),
-    ])
-      .then(([respCasos, respClientes]) => {
-        setCasos(respCasos.casos ?? [])
-        setClientes(respClientes.clientes ?? [])
-      })
-      .catch((e) => setErro(e instanceof ErroMCP ? e.message : 'Falha ao carregar.'))
-      .finally(() => setCarregando(false))
-  }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(carregar, [cliente])
+  const recarregando = consultaCasos.isFetching || consultaClientes.isFetching
+  const carregar = () => { setErroAcao(null); void consultaCasos.refetch(); void consultaClientes.refetch() }
 
   useEffect(() => {
     const reler = () => setVersaoFavoritos(v => v + 1)
@@ -152,10 +147,11 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
     setExcluindo(true)
     try {
       await enviarJson(cliente, `/casos/${paraExcluir.id}`, {}, 'DELETE')
-      setCasos((atual) => atual?.filter((c) => c.id !== paraExcluir.id) ?? null)
+      queryClient.setQueryData(['casos', cliente?.token], (atual: Caso[] | undefined) => atual?.filter((c) => c.id !== paraExcluir.id))
+      setErroAcao(null)
       setParaExcluir(null)
     } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Falha ao excluir.')
+      setErroAcao(e instanceof ErroMCP ? e.message : 'Falha ao excluir.')
     } finally {
       setExcluindo(false)
     }
@@ -463,7 +459,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                 <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
                 <Callout.Text>{erro}</Callout.Text>
               </Callout.Root>
-              <Button variant="soft" size="1" onClick={carregar} disabled={carregando} style={{ alignSelf: 'flex-start' }}>Tentar novamente</Button>
+              <Button variant="soft" size="1" onClick={carregar} disabled={recarregando} style={{ alignSelf: 'flex-start' }}>Tentar novamente</Button>
             </Flex>
           )}
           {!carregando && casos && casos.length === 0 && (
@@ -575,7 +571,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
           clientes={clientes.map((c) => ({ id: c.id, nome: c.nome ?? '' }))}
           onClose={() => setModalNovoAberto(false)}
           onCriado={(novoCaso) => {
-            setCasos((atual) => [...(atual ?? []), novoCaso])
+            queryClient.setQueryData(['casos', cliente?.token], (atual: Caso[] | undefined) => [...(atual ?? []), novoCaso])
             setModalNovoAberto(false)
             setCasoCriado(novoCaso)
           }}

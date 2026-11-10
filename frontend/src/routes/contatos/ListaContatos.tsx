@@ -5,12 +5,13 @@ import TabelaResponsiva from '../../TabelaResponsiva'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { useMemo, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
+import { useCasos, useClientes } from '../../api/consultas'
 import { AlertDialog, Avatar, Badge, Button, Callout, Checkbox, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Building2, Download, Info, Mail, Pencil, Phone, Tag, User } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
-import { buscarJson, enviarJson } from '../../api/rest'
+import { enviarJson } from '../../api/rest'
 import { formatarNomeExibicao } from '../../utils/formatadores'
 import { useEstreita } from '../../utils/useEstreita'
 import ClientesLoteModal from './ClientesLoteModal'
@@ -55,21 +56,12 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
   const { cliente } = useCliente()
   const estreita = useEstreita()
   const queryClient = useQueryClient()
-  const chaveContatos = ['contatos', cliente?.token] as const
-  const consulta = useQuery({
-    queryKey: chaveContatos,
-    queryFn: async ({ signal }) => {
-      const [r, rc] = await Promise.all([
-        buscarJson<{ clientes: ClienteItem[] }>(cliente, '/clientes', signal),
-        // A contagem de processos é complementar: se falhar, a lista de contatos continua.
-        buscarJson<{ casos: CasoResumo[] }>(cliente, '/casos', signal).catch(() => ({ casos: [] as CasoResumo[] })),
-      ])
-      return { clientes: r.clientes ?? [], casos: rc.casos ?? [] }
-    },
-  })
+  const consulta = useClientes<ClienteItem>()
+  // A contagem de processos é complementar: se falhar, a lista de contatos continua.
+  const consultaCasos = useCasos<CasoResumo>()
   const carregando = consulta.isPending
-  const clientes: ClienteItem[] | null = consulta.data?.clientes ?? null
-  const casos = consulta.data?.casos ?? SEM_CASOS
+  const clientes: ClienteItem[] | null = consulta.data ?? null
+  const casos = consultaCasos.data ?? SEM_CASOS
   const [erroAcao, setErroAcao] = useState<string | null>(null)
   const erro = erroAcao ?? (consulta.error ? (consulta.error instanceof ErroMCP ? consulta.error.message : 'Falha ao carregar.') : null)
   const [busca, setBusca] = useState('')
@@ -87,8 +79,7 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
     setExcluindo(true)
     try {
       await enviarJson(cliente, `/clientes/${paraExcluir.id}`, {}, 'DELETE')
-      queryClient.setQueryData(chaveContatos, (atual: typeof consulta.data) => atual && { ...atual, clientes: atual.clientes.filter((c) => c.id !== paraExcluir.id) })
-      void queryClient.invalidateQueries({ queryKey: ['contatos'] })
+      queryClient.setQueryData(['clientes', cliente?.token], (atual: ClienteItem[] | undefined) => atual?.filter((c) => c.id !== paraExcluir.id))
       setErroAcao(null)
       setParaExcluir(null)
     } catch (e) {
