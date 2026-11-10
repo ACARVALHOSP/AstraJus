@@ -503,7 +503,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                 ))}
               </ul>
             ) : (
-              <TabelaResponsiva principais={['Título', 'Nº do processo']} larguraCompacta={960}>
+              <TabelaResponsiva principais={['Título', 'Nº do processo']} larguraCompacta={1000}>
                 <table aria-label="Processos" className="casos-tabela-nova">
                   <thead>
                     <tr>
