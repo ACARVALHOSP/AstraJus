@@ -2,7 +2,9 @@ import CabecalhoPagina from '../CabecalhoPagina'
 import Carregamento from '../Carregamento'
 import BuscaProcesso from '../BuscaProcesso'
 import { useAvisos } from '../Avisos'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCasos, useResponsaveis } from '../api/consultas'
 import { Badge, Button, Callout, Dialog, Flex, SegmentedControl, Select, Switch, Text } from '@radix-ui/themes'
 import { AlertTriangle, Calculator, ChevronLeft, ChevronRight, Download, Plus } from 'lucide-react'
 import { useCliente } from '../api/ClienteContext'
@@ -26,6 +28,8 @@ type Item = {
 }
 type CasoOpcao = { id: string; titulo?: string; processos?: string[] }
 
+const SEM_ITENS: Item[] = []
+const SEM_TEXTOS: string[] = []
 const hora = (a: Item) => (a.hora ? a.hora.slice(0, 5) : '')
 
 export default function Agenda() {
@@ -41,14 +45,9 @@ export default function Agenda() {
   const [tipo, setTipo] = useState('')
   const [responsavel, setResponsavel] = useState('')
   const [concluidas, setConcluidas] = useState(false)
-  const [itens, setItens] = useState<Item[]>([])
-  const [responsaveis, setResponsaveis] = useState<string[]>([])
-  const [carregando, setCarregando] = useState(true)
-  const [erro, setErro] = useState('')
   const [editando, setEditando] = useState<{ casoId: string; atividade: AtividadeCaso | null; data?: string } | null>(null)
   const [escolhendo, setEscolhendo] = useState(false)
   const [calculandoPrazo, setCalculandoPrazo] = useState(false)
-  const sequencia = useRef(0)
   const [arrastando, setArrastando] = useState<Item | null>(null)
   const [sobre, setSobre] = useState<string | null>(null)
 
@@ -60,31 +59,25 @@ export default function Agenda() {
   const dias = useMemo(() => diasDaVisao(visao, ref), [visao, ref])
   const de = dias[0], ate = dias[dias.length - 1]
 
-  const carregar = useCallback(async () => {
-    const pedido = ++sequencia.current
-    if (!cliente) { setCarregando(false); return }
-    setCarregando(true); setErro('')
-    try {
+  // A chave inclui o período e os filtros: navegar para um mês já visto é instantâneo.
+  const queryClient = useQueryClient()
+  const chaveItens = ['atividades', cliente?.token, 'agenda', { concluidas, de, ate, tipo, responsavel }] as const
+  const consulta = useQuery({
+    queryKey: chaveItens,
+    enabled: Boolean(cliente),
+    queryFn: ({ signal }) => {
       const q = new URLSearchParams({
         situacao: concluidas ? 'todas' : 'abertas', de, ate,
         ...(tipo ? { tipo } : {}), ...(responsavel ? { responsavel } : {}),
       })
-      const dados = await buscarJson<{ atividades: Item[] }>(cliente, `/atividades?${q}`)
-      if (pedido === sequencia.current) setItens(dados.atividades ?? [])
-    } catch (e) {
-      if (pedido === sequencia.current) setErro(e instanceof ErroMCP ? e.message : 'Não foi possível carregar a agenda. Tente de novo.')
-    } finally { if (pedido === sequencia.current) setCarregando(false) }
-  }, [cliente, concluidas, de, ate, tipo, responsavel])
-  useEffect(() => {
-    const controle = sequencia
-    // eslint-disable-next-line react/set-state-in-effect
-    void carregar()
-    return () => { controle.current++ }
-  }, [carregar])
-  useEffect(() => {
-    if (!cliente) return
-    buscarJson<{ responsaveis: string[] }>(cliente, '/responsaveis').then(r => setResponsaveis(r.responsaveis ?? [])).catch(() => {})
-  }, [cliente])
+      return buscarJson<{ atividades: Item[] }>(cliente, `/atividades?${q}`, signal).then(d => d.atividades ?? [])
+    },
+  })
+  const carregando = Boolean(cliente) && consulta.isPending
+  const itens = consulta.data ?? SEM_ITENS
+  const erro = consulta.error ? (consulta.error instanceof ErroMCP ? consulta.error.message : 'Não foi possível carregar a agenda. Tente de novo.') : ''
+  const carregar = async () => { await consulta.refetch() }
+  const responsaveis = useResponsaveis().data ?? SEM_TEXTOS
 
   const porDia = useMemo(() => {
     const mapa = new Map<string, Item[]>()
@@ -128,7 +121,7 @@ export default function Agenda() {
   async function mover(a: Item, novaData: string, desfazendo = false) {
     const antiga = a.data?.slice(0, 10)
     if (!antiga || antiga === novaData) return
-    const alterar = (data: string) => setItens(lista => lista.map(x => (x.caso_id === a.caso_id && x.id === a.id ? { ...x, data } : x)))
+    const alterar = (data: string) => queryClient.setQueryData(chaveItens, (lista: Item[] | undefined) => lista?.map(x => (x.caso_id === a.caso_id && x.id === a.id ? { ...x, data } : x)))
     alterar(novaData)
     try {
       await enviarJson(cliente, `/casos/${a.caso_id}/atividades/${a.id}`, { data: novaData }, 'PATCH')
@@ -280,15 +273,10 @@ export default function Agenda() {
 }
 
 function EscolherProcesso({ data, onCancelar, onEscolhido }: { data: string; onCancelar: () => void; onEscolhido: (casoId: string) => void }) {
-  const { cliente } = useCliente()
-  const [casos, setCasos] = useState<CasoOpcao[]>([])
+  const consultaCasos = useCasos<CasoOpcao>()
+  const casos = useMemo(() => [...(consultaCasos.data ?? [])].sort((a, b) => (a.titulo ?? '').localeCompare(b.titulo ?? '', 'pt-BR')), [consultaCasos.data])
   const [casoId, setCasoId] = useState('')
-  const [erro, setErro] = useState('')
-  useEffect(() => {
-    buscarJson<{ casos: CasoOpcao[] }>(cliente, '/casos')
-      .then(r => setCasos((r.casos ?? []).sort((a, b) => (a.titulo ?? '').localeCompare(b.titulo ?? '', 'pt-BR'))))
-      .catch(() => setErro('Não foi possível carregar os processos.'))
-  }, [cliente])
+  const erro = consultaCasos.error ? 'Não foi possível carregar os processos.' : ''
   return (
     <Dialog.Root open onOpenChange={(o) => { if (!o) onCancelar() }}>
       <Dialog.Content maxWidth="480px">

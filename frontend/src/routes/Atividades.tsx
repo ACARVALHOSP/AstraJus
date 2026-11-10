@@ -10,7 +10,7 @@ import TabelaResponsiva from '../TabelaResponsiva'
 import AcoesTabela from '../AcoesTabela'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useCasos } from '../api/consultas'
+import { useCasos, useResponsaveis } from '../api/consultas'
 import { Badge, Button, Callout, Checkbox, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, CalendarCheck, Info } from 'lucide-react'
 import { useCliente } from '../api/ClienteContext'
@@ -81,12 +81,7 @@ export default function Atividades() {
   const carregando = Boolean(cliente) && consulta.isPending
   const atividades = consulta.data ?? SEM_ATIVIDADES
   // O cadastro de responsáveis é complementar: se falhar, os filtros só ficam sem opções.
-  const consultaResponsaveis = useQuery({
-    queryKey: ['responsaveis', cliente?.token],
-    enabled: Boolean(cliente),
-    queryFn: ({ signal }) => buscarJson<{ responsaveis: string[] }>(cliente, '/responsaveis', signal).then(r => r.responsaveis ?? []),
-  })
-  const responsaveis = consultaResponsaveis.data ?? SEM_TEXTOS
+  const responsaveis = useResponsaveis().data ?? SEM_TEXTOS
   // Os processos só são buscados quando a janela de nova atividade abre.
   const consultaProcessos = useCasos<CasoResumo>({ enabled: dialogo === 'nova' })
   const processos = consultaProcessos.data ?? SEM_PROCESSOS
