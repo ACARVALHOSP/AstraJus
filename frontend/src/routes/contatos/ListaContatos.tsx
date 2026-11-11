@@ -4,12 +4,14 @@ import CabecalhoPagina from '../../CabecalhoPagina'
 import TabelaResponsiva from '../../TabelaResponsiva'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
-import { useEffect, useMemo, useState } from 'react'
-import { AlertDialog, Badge, Button, Callout, Checkbox, Flex, Select, Text, TextField } from '@radix-ui/themes'
+import { useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useCasos, useClientes } from '../../api/consultas'
+import { AlertDialog, Avatar, Badge, Button, Callout, Checkbox, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Building2, Download, Info, Mail, Pencil, Phone, Tag, User } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
-import { buscarJson, enviarJson } from '../../api/rest'
+import { enviarJson } from '../../api/rest'
 import { formatarNomeExibicao } from '../../utils/formatadores'
 import { useEstreita } from '../../utils/useEstreita'
 import ClientesLoteModal from './ClientesLoteModal'
@@ -25,6 +27,7 @@ export type ClienteItem = {
   etiquetas?: string[]
 }
 type CasoResumo = { id: string; cliente_id?: string; clientes_adicionais?: string[] }
+const SEM_CASOS: CasoResumo[] = []
 type Atalho = 'cliente' | 'contato' | ''
 
 const POR_PAGINA = 20
@@ -34,9 +37,14 @@ function normalizar(valor: string): string {
 }
 
 function SeloTipoPessoa({ tipo }: { tipo?: string }) {
-  if (tipo === 'juridica') return <Badge color="orange" variant="soft" radius="full"><Building2 size={12} aria-hidden="true" /> Pessoa jurídica</Badge>
-  if (tipo === 'fisica') return <Badge color="blue" variant="soft" radius="full"><User size={12} aria-hidden="true" /> Pessoa física</Badge>
-  return <Text size="1" color="gray">Não informado</Text>
+  if (tipo !== 'juridica' && tipo !== 'fisica') return <Text size="1" color="gray">Não informado</Text>
+  const juridica = tipo === 'juridica'
+  const rotulo = juridica ? 'Pessoa jurídica' : 'Pessoa física'
+  // Só o ícone: o rótulo fica no tooltip e para leitores de tela.
+  return (
+    <Avatar size="1" radius="full" variant="soft" color={juridica ? 'orange' : 'blue'} role="img" aria-label={rotulo} title={rotulo}
+      fallback={juridica ? <Building2 size={14} aria-hidden="true" /> : <User size={14} aria-hidden="true" />} />
+  )
 }
 
 function csvCampo(valor: unknown) {
@@ -47,10 +55,15 @@ function csvCampo(valor: unknown) {
 export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: string) => void; onNovo: () => void }) {
   const { cliente } = useCliente()
   const estreita = useEstreita()
-  const [carregando, setCarregando] = useState(true)
-  const [erro, setErro] = useState<string | null>(null)
-  const [clientes, setClientes] = useState<ClienteItem[] | null>(null)
-  const [casos, setCasos] = useState<CasoResumo[]>([])
+  const queryClient = useQueryClient()
+  const consulta = useClientes<ClienteItem>()
+  // A contagem de processos é complementar: se falhar, a lista de contatos continua.
+  const consultaCasos = useCasos<CasoResumo>()
+  const carregando = consulta.isPending
+  const clientes: ClienteItem[] | null = consulta.data ?? null
+  const casos = consultaCasos.data ?? SEM_CASOS
+  const [erroAcao, setErroAcao] = useState<string | null>(null)
+  const erro = erroAcao ?? (consulta.error ? (consulta.error instanceof ErroMCP ? consulta.error.message : 'Falha ao carregar.') : null)
   const [busca, setBusca] = useState('')
   const [atalho, setAtalho] = useState<Atalho>('cliente')
   const [tipo, setTipo] = useState('')
@@ -61,30 +74,16 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
   const [loteAberto, setLoteAberto] = useState<'etiquetas' | 'perfil' | null>(null)
 
-  const carregar = () => {
-    setCarregando(true)
-    setErro(null)
-    Promise.all([
-      buscarJson<{ clientes: ClienteItem[] }>(cliente, '/clientes'),
-      // A contagem de processos é complementar: se falhar, a lista de contatos continua.
-      buscarJson<{ casos: CasoResumo[] }>(cliente, '/casos').catch(() => ({ casos: [] as CasoResumo[] })),
-    ])
-      .then(([r, rc]) => { setClientes(r.clientes ?? []); setCasos(rc.casos ?? []) })
-      .catch((e) => setErro(e instanceof ErroMCP ? e.message : 'Falha ao carregar.'))
-      .finally(() => setCarregando(false))
-  }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(carregar, [cliente])
-
   async function confirmarExclusao() {
     if (!paraExcluir) return
     setExcluindo(true)
     try {
       await enviarJson(cliente, `/clientes/${paraExcluir.id}`, {}, 'DELETE')
-      setClientes((atual) => atual?.filter((c) => c.id !== paraExcluir.id) ?? null)
+      queryClient.setQueryData(['clientes', cliente?.token], (atual: ClienteItem[] | undefined) => atual?.filter((c) => c.id !== paraExcluir.id))
+      setErroAcao(null)
       setParaExcluir(null)
     } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Falha ao excluir.')
+      setErroAcao(e instanceof ErroMCP ? e.message : 'Falha ao excluir.')
     } finally {
       setExcluindo(false)
     }
@@ -362,7 +361,7 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
           onConcluido={() => {
             setLoteAberto(null)
             setSelecionados(new Set())
-            carregar()
+            void consulta.refetch()
           }}
         />
       )}

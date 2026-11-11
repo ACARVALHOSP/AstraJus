@@ -6,14 +6,16 @@ import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { AlertTriangle, Download, Info, Star } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertDialog, Badge, Button, Callout, Flex, IconButton, Select, Text, TextField } from '@radix-ui/themes'
+import { AlertDialog, Badge, Button, Callout, Flex, HoverCard, IconButton, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
 import { baixarCsv } from '../../utils/csv'
 import type { PoloCliente } from '../../utils/polos'
 import { useAvisos } from '../../Avisos'
 import { ErroMCP } from '../../api/mcpClient'
 import { useNavegacao } from '../../api/NavegacaoContext'
-import { buscarJson, enviarJson } from '../../api/rest'
+import { enviarJson } from '../../api/rest'
+import { useQueryClient } from '@tanstack/react-query'
+import { useCasos, useClientes } from '../../api/consultas'
 import { diasEntreDatas, formatarNomeExibicao, formatarNumeroCNJ, hojeIso } from '../../utils/formatadores'
 import { alternarCasoFavorito, ehCasoFavorito, EVENTO_PREFERENCIAS } from '../../utils/listasRapidas'
 import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
@@ -90,16 +92,23 @@ const encerrado = (c: Caso) => Boolean(c.desfecho)
 const atrasado = (c: Caso, hoje: string) => Boolean(c.proximo_compromisso?.data && c.proximo_compromisso.data.slice(0, 10) < hoje)
 const parado = (c: Caso, hoje: string) => !encerrado(c) && Boolean(c.ultima_movimentacao_data) && diasEntreDatas(c.ultima_movimentacao_data!, hoje) > DIAS_PARADO
 
+const SEM_CLIENTES: Cliente[] = []
+
 export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void }) {
   const { avisar } = useAvisos()
   const { cliente } = useCliente()
   const { irPara } = useNavegacao()
   const estreita = useEstreita()
   const [hoje] = useState(hojeIso)
-  const [carregando, setCarregando] = useState(true)
-  const [erro, setErro] = useState<string | null>(null)
-  const [casos, setCasos] = useState<Caso[] | null>(null)
-  const [clientes, setClientes] = useState<Cliente[]>([])
+  const queryClient = useQueryClient()
+  const consultaCasos = useCasos<Caso>()
+  const consultaClientes = useClientes<Cliente>()
+  const carregando = consultaCasos.isPending || consultaClientes.isPending
+  const casos: Caso[] | null = consultaCasos.data ?? null
+  const clientes = consultaClientes.data ?? SEM_CLIENTES
+  const [erroAcao, setErroAcao] = useState<string | null>(null)
+  const erroConsulta = consultaCasos.error ?? consultaClientes.error
+  const erro = erroAcao ?? (erroConsulta ? (erroConsulta instanceof ErroMCP ? erroConsulta.message : 'Falha ao carregar.') : null)
   const [busca, setBusca] = useState('')
   const [atalho, setAtalho] = useState<Atalho>('andamento')
   const [responsavel, setResponsavel] = useState('')
@@ -108,7 +117,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
   const colunas = useColunas('processos', [
     { chave: 'cliente', rotulo: 'Cliente' }, { chave: 'responsavel', rotulo: 'Responsável' },
     { chave: 'compromisso', rotulo: 'Próximo compromisso' }, { chave: 'movimentacao', rotulo: 'Última movimentação' },
-  ])
+  ], ['responsavel', 'compromisso'])
   const [pagina, setPagina] = useState(1)
   const [, setVersaoFavoritos] = useState(0)
   const [paraExcluir, setParaExcluir] = useState<Caso | null>(null)
@@ -117,22 +126,8 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
   const [casoCriado, setCasoCriado] = useState<Caso | null>(null)
   const botaoNovo = useRef<HTMLButtonElement>(null)
 
-  const carregar = () => {
-    setCarregando(true)
-    setErro(null)
-    Promise.all([
-      buscarJson<{ casos: Caso[] }>(cliente, '/casos'),
-      buscarJson<{ clientes: Cliente[] }>(cliente, '/clientes'),
-    ])
-      .then(([respCasos, respClientes]) => {
-        setCasos(respCasos.casos ?? [])
-        setClientes(respClientes.clientes ?? [])
-      })
-      .catch((e) => setErro(e instanceof ErroMCP ? e.message : 'Falha ao carregar.'))
-      .finally(() => setCarregando(false))
-  }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(carregar, [cliente])
+  const recarregando = consultaCasos.isFetching || consultaClientes.isFetching
+  const carregar = () => { setErroAcao(null); void consultaCasos.refetch(); void consultaClientes.refetch() }
 
   useEffect(() => {
     const reler = () => setVersaoFavoritos(v => v + 1)
@@ -152,10 +147,11 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
     setExcluindo(true)
     try {
       await enviarJson(cliente, `/casos/${paraExcluir.id}`, {}, 'DELETE')
-      setCasos((atual) => atual?.filter((c) => c.id !== paraExcluir.id) ?? null)
+      queryClient.setQueryData(['casos', cliente?.token], (atual: Caso[] | undefined) => atual?.filter((c) => c.id !== paraExcluir.id))
+      setErroAcao(null)
       setParaExcluir(null)
     } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Falha ao excluir.')
+      setErroAcao(e instanceof ErroMCP ? e.message : 'Falha ao excluir.')
     } finally {
       setExcluindo(false)
     }
@@ -238,24 +234,74 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
     { valor: 'favoritos', rotulo: 'Favoritos', icone: true },
   ]
 
-  function titulo(c: Caso) {
+  function selosDe(c: Caso) {
     return (
       <>
-        <button type="button" className="casos-link casos-titulo" onClick={() => onAbrir(c.id)}>
-          {c.titulo ? formatarNomeExibicao(c.titulo) : '(sem título)'}
-        </button>
+        {c.monitorado && <Badge color="blue" variant="soft">Monitorado</Badge>}
+        {c.acesso === 'privado' && <Badge color="gray" variant="soft">Privado</Badge>}
+        {c.desfecho && ROTULO_DESFECHO[c.desfecho] && <Badge color="purple" variant="soft">{ROTULO_DESFECHO[c.desfecho]}</Badge>}
+      </>
+    )
+  }
+  function revisarBadge(c: Caso) {
+    return (c.publicacoes_a_revisar ?? 0) > 0
+      ? <Badge color="red" variant="soft">{c.publicacoes_a_revisar} publicaç{c.publicacoes_a_revisar === 1 ? 'ão' : 'ões'} a revisar</Badge>
+      : null
+  }
+  // Na tabela os detalhes secundários ficam no hover-card (desktop); alertas ficam sempre na linha.
+  function detalhesCard(c: Caso) {
+    const p = c.proximo_compromisso
+    const adicionais = (c.clientes_adicionais ?? []).map(id => formatarNomeExibicao(nomeCliente(id))).filter(Boolean)
+    return (
+      <Flex direction="column" gap="3">
+        <Text as="p" size="2" weight="bold">{c.titulo ? formatarNomeExibicao(c.titulo) : '(sem título)'}</Text>
+        <dl className="casos-card-lista">
+          <dt>Ação</dt><dd>{c.acao ? formatarClasse(c.acao) : 'Não informada'}</dd>
+          <dt>Órgão</dt><dd>{c.foro || 'Não informado'}</dd>
+          <dt>Responsável</dt><dd>{c.responsavel ? formatarNomeExibicao(c.responsavel) : 'Sem responsável'}</dd>
+          <dt>Próximo</dt>
+          <dd>
+            {p ? <>
+              <span className={atrasado(c, hoje) ? 'casos-alerta' : undefined}>{dataCurta(p.data)}{atrasado(c, hoje) ? ' · atrasado' : p.hora ? ` · ${p.hora.slice(0, 5)}` : ''}</span>
+              <div>{ROTULO_TIPO[p.tipo] ?? p.tipo}: {p.titulo}</div>
+            </> : <>Nenhum compromisso <button type="button" className="casos-link casos-pequeno" onClick={() => onAbrir(c.id)}>Agendar</button></>}
+          </dd>
+          {adicionais.length > 0 && <><dt>Outros clientes</dt><dd>{adicionais.join('; ')}</dd></>}
+          {c.pasta && <><dt>Pasta</dt><dd>{c.pasta}</dd></>}
+        </dl>
+        <Flex gap="2" align="center" wrap="wrap">
+          <Button size="1" onClick={() => onAbrir(c.id)}>Abrir processo</Button>
+          {selosDe(c)}
+        </Flex>
+      </Flex>
+    )
+  }
+  function titulo(c: Caso, naTabela = false) {
+    const botao = (
+      <button type="button" className="casos-link casos-titulo" title={naTabela ? undefined : (c.titulo ? formatarNomeExibicao(c.titulo) : undefined)} onClick={() => onAbrir(c.id)}>
+        {c.titulo ? formatarNomeExibicao(c.titulo) : '(sem título)'}
+      </button>
+    )
+    return (
+      <>
+        {naTabela ? (
+          <HoverCard.Root openDelay={500} closeDelay={100}>
+            <HoverCard.Trigger>{botao}</HoverCard.Trigger>
+            <HoverCard.Content className="casos-hovercard" side="bottom" align="start" sideOffset={6} maxWidth="400px">
+              {detalhesCard(c)}
+            </HoverCard.Content>
+          </HoverCard.Root>
+        ) : botao}
         <Flex gap="1" mt="1" wrap="wrap">
-          {(c.publicacoes_a_revisar ?? 0) > 0 && (
-            <Badge color="red" variant="soft">{c.publicacoes_a_revisar} publicaç{c.publicacoes_a_revisar === 1 ? 'ão' : 'ões'} a revisar</Badge>
-          )}
-          {c.monitorado && <Badge color="blue" variant="soft">Monitorado</Badge>}
-          {c.acesso === 'privado' && <Badge color="gray" variant="soft">Privado</Badge>}
-          {c.desfecho && ROTULO_DESFECHO[c.desfecho] && <Badge color="purple" variant="soft">{ROTULO_DESFECHO[c.desfecho]}</Badge>}
+          {revisarBadge(c)}
+          {naTabela
+            ? (atrasado(c, hoje) && <Badge color="red" variant="soft">Prazo atrasado</Badge>)
+            : selosDe(c)}
         </Flex>
       </>
     )
   }
-  function numeros(c: Caso) {
+  function numeros(c: Caso, naTabela = false) {
     const lista = c.processos ?? []
     return (
       <>
@@ -267,8 +313,8 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
             </button>
           </div>
         )) : <Text size="2" color="gray">Sem número</Text>}
-        {c.acao && <div className="casos-secundario">{formatarClasse(c.acao)}</div>}
-        {c.foro && <div className="casos-secundario">{c.foro}</div>}
+        {!naTabela && c.acao && <div className="casos-secundario">{formatarClasse(c.acao)}</div>}
+        {!naTabela && c.foro && <div className="casos-secundario">{c.foro}</div>}
       </>
     )
   }
@@ -285,7 +331,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
   }
   function compromisso(c: Caso) {
     const p = c.proximo_compromisso
-    if (!p) return <><Text size="1" color="gray">Nenhum compromisso</Text><div><button type="button" className="casos-link casos-pequeno" onClick={() => onAbrir(c.id)}>Agendar</button></div></>
+    if (!p) return <><Text size="2" color="gray" aria-hidden="true">—</Text><span className="aj-sr-only">Nenhum compromisso</span><div><button type="button" className="casos-link casos-pequeno casos-agendar" onClick={() => onAbrir(c.id)}>Agendar</button></div></>
     const late = atrasado(c, hoje)
     return (
       <>
@@ -402,8 +448,8 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
             </Select.Root>
           </div>
           {filtrosAtivos && <Button size="2" variant="soft" color="gray" onClick={() => mudarFiltro(() => { setBusca(''); setResponsavel(''); setTribunal('') })}>Limpar filtros</Button>}
+          {!estreita && <div className="aj-filtros-botao"><EscolherColunas colunas={colunas} /></div>}
         </LinhaFiltros>
-        {!estreita && <Flex justify="end" mt="-3"><EscolherColunas colunas={colunas} /></Flex>}
 
         <div aria-live="polite">
           {carregando && <Carregamento colunas={6} />}
@@ -413,7 +459,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                 <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
                 <Callout.Text>{erro}</Callout.Text>
               </Callout.Root>
-              <Button variant="soft" size="1" onClick={carregar} disabled={carregando} style={{ alignSelf: 'flex-start' }}>Tentar novamente</Button>
+              <Button variant="soft" size="1" onClick={carregar} disabled={recarregando} style={{ alignSelf: 'flex-start' }}>Tentar novamente</Button>
             </Flex>
           )}
           {!carregando && casos && casos.length === 0 && (
@@ -453,7 +499,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                 ))}
               </ul>
             ) : (
-              <TabelaResponsiva principais={['Título', 'Nº do processo']}>
+              <TabelaResponsiva principais={['Título', 'Nº do processo']} larguraCompacta={1000}>
                 <table aria-label="Processos" className="casos-tabela-nova">
                   <thead>
                     <tr>
@@ -462,8 +508,8 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                       <th className="casos-col-numero" aria-sort={ariaSort('numero', ordem)}><BotaoOrdenar campo="numero" ordem={ordem} onOrdenar={alternarOrdem}>Nº do processo</BotaoOrdenar></th>
                       {colunas.visivel('cliente') && <th className="casos-col-cliente" aria-sort={ariaSort('cliente', ordem)}><BotaoOrdenar campo="cliente" ordem={ordem} onOrdenar={alternarOrdem}>Cliente</BotaoOrdenar></th>}
                       {colunas.visivel('responsavel') && <th className="casos-col-resp" aria-sort={ariaSort('responsavel', ordem)}><BotaoOrdenar campo="responsavel" ordem={ordem} onOrdenar={alternarOrdem}>Responsável</BotaoOrdenar></th>}
-                      {colunas.visivel('compromisso') && <th className="casos-col-comp" aria-sort={ariaSort('proximo', ordem)}><BotaoOrdenar campo="proximo" ordem={ordem} onOrdenar={alternarOrdem}>Próximo compromisso</BotaoOrdenar></th>}
-                      {colunas.visivel('movimentacao') && <th className="casos-col-mov" aria-sort={ariaSort('movimentacao', ordem)}><BotaoOrdenar campo="movimentacao" ordem={ordem} onOrdenar={alternarOrdem}>Última movimentação</BotaoOrdenar></th>}
+                      {colunas.visivel('compromisso') && <th className="casos-col-comp" aria-sort={ariaSort('proximo', ordem)}><BotaoOrdenar campo="proximo" ordem={ordem} onOrdenar={alternarOrdem}>Compromisso</BotaoOrdenar></th>}
+                      {colunas.visivel('movimentacao') && <th className="casos-col-mov" aria-sort={ariaSort('movimentacao', ordem)}><BotaoOrdenar campo="movimentacao" ordem={ordem} onOrdenar={alternarOrdem}>Movimentação</BotaoOrdenar></th>}
                       <th className="tabela-acoes casos-col-acoes">Ações</th>
                     </tr>
                   </thead>
@@ -471,8 +517,8 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                     {visiveis.map(c => (
                       <tr key={c.id}>
                         <td className="tabela-controle">{estrela(c)}</td>
-                        <td>{titulo(c)}</td>
-                        <td>{numeros(c)}</td>
+                        <td>{titulo(c, true)}</td>
+                        <td>{numeros(c, true)}</td>
                         {colunas.visivel('cliente') && <td>{clienteCelula(c)}</td>}
                         {colunas.visivel('responsavel') && <td>
                           {c.responsavel ? (
@@ -480,7 +526,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                           ) : <Text size="1" color="gray">Sem responsável</Text>}
                         </td>}
                         {colunas.visivel('compromisso') && <td>{compromisso(c)}</td>}
-                        {colunas.visivel('movimentacao') && <td>{movimentacao(c)}</td>}
+                        {colunas.visivel('movimentacao') && <td>{movimentacao(c)}{!colunas.visivel('compromisso') && c.proximo_compromisso && atrasado(c, hoje) && <div className="casos-secundario casos-alerta">Prazo {dataCurta(c.proximo_compromisso.data)} · atrasado</div>}</td>}
                         <td className="tabela-acoes">{menu(c)}</td>
                       </tr>
                     ))}
@@ -525,7 +571,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
           clientes={clientes.map((c) => ({ id: c.id, nome: c.nome ?? '' }))}
           onClose={() => setModalNovoAberto(false)}
           onCriado={(novoCaso) => {
-            setCasos((atual) => [...(atual ?? []), novoCaso])
+            queryClient.setQueryData(['casos', cliente?.token], (atual: Caso[] | undefined) => [...(atual ?? []), novoCaso])
             setModalNovoAberto(false)
             setCasoCriado(novoCaso)
           }}

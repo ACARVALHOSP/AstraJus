@@ -42,7 +42,7 @@ function ajustarExpansao(linha: Elemento, quantidade: number): Elemento {
 const LARGURA_MINIMA_TEXTO = 112
 
 /** Adapta tabelas nativas à largura do contêiner, inclusive dentro de modais. */
-export default function TabelaResponsiva({ children, principais = [] }: { children: Elemento; principais?: string[] }) {
+export default function TabelaResponsiva({ children, principais = [], larguraCompacta }: { children: Elemento; principais?: string[]; larguraCompacta?: number }) {
   const raiz = useRef<HTMLDivElement>(null)
   const [largura, setLargura] = useState(0)
   useEffect(() => {
@@ -67,7 +67,7 @@ export default function TabelaResponsiva({ children, principais = [] }: { childr
   // ficou estreita demais (medida no navegador). Evita espremer a descrição ou o nome.
   const [apertos, setApertos] = useState<Record<number, number>>({})
   const apertada = (n: number) => largura < (apertos[n] ?? 0)
-  const compacto = largura > 0 && (largura < Math.max(600, colunas.length * 128) || apertada(colunas.length))
+  const compacto = largura > 0 && (largura < Math.max(600, larguraCompacta ?? colunas.length * 128) || apertada(colunas.length))
   const prioritarias = colunas.map((c, i) => principais.includes(c.rotulo) ? i : -1).filter(i => i >= 0)
   // Se uma coluna configurável foi removida pelo usuário, mantém a primeira coluna de dados disponível.
   if (!prioritarias.length) {

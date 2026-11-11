@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Component, Suspense, lazy, useEffect, useState, type ReactNode } from 'react'
 import { Callout, Flex, Popover, SegmentedControl, Text, Theme } from '@radix-ui/themes'
 import {
   Scale, Users, CalendarCheck, CalendarDays, Search, Gavel, Briefcase,
@@ -6,32 +6,37 @@ import {
   Settings, Link, Wallet, CreditCard, ShieldCheck, Menu, X,
   Palette, ChevronDown, ChevronRight, Check, House,
 } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { ClienteProvider, useCliente } from './api/ClienteContext'
 import { PerfilProvider, usePerfil } from './api/PerfilContext'
 import { AvisosProvider } from './Avisos'
 import { DialogoSaida } from './AlteracoesPendentes'
 import { sincronizarPreferencias } from './utils/listasRapidas'
 import { CHAVE_TEMA } from './api/mcpClient'
+import { EVENTO_DADOS_ALTERADOS } from './api/rest'
+import Carregamento from './Carregamento'
 import BuscaGlobal from './BuscaGlobal'
 import ContaUsuario from './ContaUsuario'
 import CentralNotificacoes from './CentralNotificacoes'
 import { NavegacaoProvider, useNavegacao } from './api/NavegacaoContext'
 import Acesso from './routes/Acesso'
-import Processo from './routes/Processo'
-import Publicacoes from './routes/Publicacoes'
-import Historico from './routes/Historico'
-import Jurimetria from './routes/Jurimetria'
-import Jurisprudencia from './routes/Jurisprudencia'
-import Integracoes from './routes/Integracoes'
-import Administracao from './routes/Administracao'
-import Financeiro from './routes/Financeiro'
-import Pagamentos from './routes/Pagamentos'
-import Atividades from './routes/Atividades'
-import Agenda from './routes/Agenda'
-import PublicacoesOab from './routes/PublicacoesOab'
-import Contatos from './routes/Contatos'
-import Casos from './routes/Casos'
 import Home from './routes/Home'
+
+// Telas carregadas sob demanda: o primeiro acesso baixa só o shell, Início e Acesso.
+const Processo = lazy(() => import('./routes/Processo'))
+const Publicacoes = lazy(() => import('./routes/Publicacoes'))
+const Historico = lazy(() => import('./routes/Historico'))
+const Jurimetria = lazy(() => import('./routes/Jurimetria'))
+const Jurisprudencia = lazy(() => import('./routes/Jurisprudencia'))
+const Integracoes = lazy(() => import('./routes/Integracoes'))
+const Administracao = lazy(() => import('./routes/Administracao'))
+const Financeiro = lazy(() => import('./routes/Financeiro'))
+const Pagamentos = lazy(() => import('./routes/Pagamentos'))
+const Atividades = lazy(() => import('./routes/Atividades'))
+const Agenda = lazy(() => import('./routes/Agenda'))
+const PublicacoesOab = lazy(() => import('./routes/PublicacoesOab'))
+const Contatos = lazy(() => import('./routes/Contatos'))
+const Casos = lazy(() => import('./routes/Casos'))
 import './app-radix.css'
 
 export type AccentColor = 'indigo' | 'violet' | 'teal' | 'crimson'
@@ -81,6 +86,30 @@ const GRUPOS_NAVEGACAO = [
 function SincronizarPreferencias() {
   const { cliente } = useCliente()
   useEffect(() => { void sincronizarPreferencias(cliente?.token ?? null) }, [cliente])
+  return null
+}
+
+// Descarta o cache de dados ao trocar ou encerrar a sessão, para não manter dados de outro usuário.
+// Após uma gravação, descarta o cache das telas fechadas (voltar a elas mostra o carregamento e os
+// dados novos) e atualiza as consultas das telas abertas.
+function LimpaCacheAoTrocarSessao() {
+  const { cliente } = useCliente()
+  const queryClient = useQueryClient()
+  const token = cliente?.token
+  useEffect(() => () => queryClient.clear(), [queryClient, token])
+  useEffect(() => {
+    let espera: number | undefined
+    const aoGravar = () => {
+      // Ações em lote disparam várias gravações seguidas: junta tudo numa atualização só.
+      window.clearTimeout(espera)
+      espera = window.setTimeout(() => {
+        queryClient.removeQueries({ type: 'inactive' })
+        void queryClient.invalidateQueries({ type: 'active' })
+      }, 150)
+    }
+    window.addEventListener(EVENTO_DADOS_ALTERADOS, aoGravar)
+    return () => { window.clearTimeout(espera); window.removeEventListener(EVENTO_DADOS_ALTERADOS, aoGravar) }
+  }, [queryClient])
   return null
 }
 
@@ -326,6 +355,7 @@ export default function App() {
     <Theme accentColor={accent} grayColor="slate" radius="medium" appearance={aparencia}>
       <AvisosProvider>
       <ClienteProvider>
+        <LimpaCacheAoTrocarSessao />
         <PerfilProvider>
         <SincronizarPreferencias />
         <DialogoSaida />
@@ -373,7 +403,32 @@ export default function App() {
   )
 }
 
+// Se um arquivo da tela não carregar (ex.: nova versão publicada com a página antiga aberta),
+// avisa e oferece recarregar em vez de deixar a área em branco.
+class FalhaAoCarregarTela extends Component<{ children: ReactNode }, { falhou: boolean }> {
+  state = { falhou: false }
+  static getDerivedStateFromError() { return { falhou: true } }
+  render() {
+    if (!this.state.falhou) return this.props.children
+    return (
+      <Callout.Root color="red" role="alert">
+        <Callout.Icon><ShieldCheck size={14} /></Callout.Icon>
+        <Callout.Text>
+          Não foi possível carregar esta tela. O sistema pode ter sido atualizado.{' '}
+          <button type="button" className="casos-link" onClick={() => window.location.reload()}>Recarregar a página</button>
+        </Callout.Text>
+      </Callout.Root>
+    )
+  }
+}
+
 function NavConteudo() {
   const { abaAtiva } = useNavegacao()
-  return <ConteudoAba abaAtiva={abaAtiva} />
+  return (
+    <FalhaAoCarregarTela key={abaAtiva}>
+      <Suspense fallback={<Carregamento tipo="detalhe" descricao="Carregando tela…" />}>
+        <ConteudoAba abaAtiva={abaAtiva} />
+      </Suspense>
+    </FalhaAoCarregarTela>
+  )
 }

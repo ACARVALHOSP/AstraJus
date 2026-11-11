@@ -5,7 +5,15 @@
   &:hover { text-decoration: underline; }
   &:focus-visible { outline: 2px solid var(--accent-8); outline-offset: 2px; border-radius: 2px; }
 }
-.casos-titulo { font-weight: 600; font-size: 14px; line-height: 1.4; }
+.casos-titulo {
+  font-weight: 600; font-size: 14px; line-height: 1.4;
+  // Títulos são listas de partes: mostra 2 linhas e deixa o texto completo no tooltip.
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+// Sem compromisso: o atalho "Agendar" só aparece ao passar o mouse ou focar a linha.
+.casos-agendar { opacity: 0; transition: opacity 0.12s; }
+tr:hover .casos-agendar, tr:focus-within .casos-agendar, .casos-cartao .casos-agendar, .casos-agendar:focus-visible { opacity: 1; }
+@media (hover: none) { .casos-agendar { opacity: 1; } }
 .casos-numero { font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .casos-pequeno { font-size: 13px; }
 .casos-secundario { margin-top: 2px; font-size: 13px; color: var(--gray-11); line-height: 1.4; }
@@ -13,12 +21,14 @@
 .casos-alerta { color: var(--red-11); }
 .casos-secundario.casos-parado { color: var(--amber-11); font-weight: 500; }
 .tabela-adaptavel .tabela-fluida.casos-tabela-nova {
-  // Percentuais (sem contar o padding): o Título fica com o restante em qualquer largura.
+  // Layout automático: o CNJ (nowrap) define a largura mínima da coluna, então nunca sobrepõe a vizinha.
+  // (max()/calc() com % é tratado como auto em tabela; em layout fixo o 15% sozinho cortava o número.)
+  table-layout: auto;
   .casos-col-numero { inline-size: 15%; }
-  .casos-col-cliente { inline-size: 12%; }
+  .casos-col-cliente { inline-size: 15%; }
   .casos-col-resp { inline-size: 9%; }
   .casos-col-comp { inline-size: 12%; }
-  .casos-col-mov { inline-size: 12%; }
+  .casos-col-mov { inline-size: 18%; }
   .casos-col-acoes { inline-size: 3.5rem; }
   :is(th, td).tabela-controle { inline-size: 2.5rem; padding-inline: 0.25rem; }
 }
@@ -33,3 +43,16 @@
   padding-top: 0.5rem; border-top: 1px solid var(--gray-a3); font-size: 13px;
 }
 .casos-rotulo { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--gray-11); margin-bottom: 2px; }
+
+// Hover-card do título (opaco: sem transparência nem desfoque).
+.rt-HoverCardContent.casos-hovercard {
+  background-color: var(--color-panel-solid);
+  backdrop-filter: none;
+  opacity: 1;
+  width: 380px; max-width: calc(100vw - 2rem);
+}
+.casos-card-lista {
+  margin: 0; display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); gap: 0.5rem 0.75rem; font-size: 13px;
+  dt { color: var(--gray-11); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; padding-top: 2px; }
+  dd { margin: 0; line-height: 1.45; overflow-wrap: anywhere; }
+}

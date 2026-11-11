@@ -1,5 +1,6 @@
 import { useAvisos } from '../Avisos'
 import { mensagemPorStatus } from '../api/mcpClient'
+import { avisarDadosAlterados } from '../api/rest'
 import CabecalhoPagina from '../CabecalhoPagina'
 import TabelaResponsiva from '../TabelaResponsiva'
 import { useState } from 'react'
@@ -67,6 +68,7 @@ export default function Administracao() {
       const e = await r.json().catch(() => ({}))
       throw new Error(e.mensagem || e.erro || mensagemPorStatus(r.status))
     }
+    if (metodo !== 'GET') avisarDadosAlterados()
     return r
   }
   async function carregar(token: string) {
