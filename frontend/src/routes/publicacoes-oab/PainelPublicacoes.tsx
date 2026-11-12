@@ -6,7 +6,7 @@ import TabelaResponsiva from '../../TabelaResponsiva'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { Fragment, useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
-import { AlertTriangle, Archive, Check, ChevronDown, ChevronRight, Info, Keyboard, Link2, Unlink } from 'lucide-react'
+import { AlertTriangle, Archive, Check, ChevronDown, ChevronRight, FilePlus, Info, Keyboard, Link2, Unlink } from 'lucide-react'
 import { Badge, Button, Callout, Checkbox, Dialog, Flex, IconButton, Popover, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
 import { buscarJson, enviarJson } from '../../api/rest'
@@ -82,6 +82,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set()), [expandidas, setExpandidas] = useState<Set<string>>(new Set())
   const [todasFiltro, setTodasFiltro] = useState(false)
   const [hashesLote, setHashesLote] = useState<string[] | null>(null)
+  const [criarLote, setCriarLote] = useState<PublicacaoOab[] | null>(null)
   const [carregando, setCarregando] = useState(true), [operacao, setOperacao] = useState(false)
   const [erro, setErro] = useState('')
   const { avisar } = useAvisos()
@@ -138,15 +139,34 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
     acao(); setPagina(1); setSelecionadas(new Set()); setTodasFiltro(false)
   }
 
+  // O servidor aceita no máximo 300 por página: percorre todas as páginas do filtro.
+  async function publicacoesTodasFiltro(): Promise<PublicacaoOab[]> {
+    const todas: PublicacaoOab[] = []
+    for (let pag = 1; ; pag++) {
+      const query = new URLSearchParams({
+        pagina: String(pag), tamanho: '300',
+        ordem: porPrioridade ? 'prioridade' : ordemAsc ? 'divulgado_asc' : 'divulgado_desc',
+        ...(status ? { status } : {}), ...(tipo ? { tipo } : {}), ...(busca ? { busca } : {}),
+        ...(filtroDesde ? { desde: filtroDesde } : {}), ...(filtroAte ? { ate: filtroAte } : {}),
+      })
+      const dados = await buscarJson<RespostaLista>(cliente, `/publicacoes-oab?${query}`)
+      const lote = dados.publicacoes ?? []
+      todas.push(...lote)
+      if (!lote.length || todas.length >= (dados.total ?? 0)) return todas
+    }
+  }
   async function hashesTodasFiltro(): Promise<string[]> {
-    const query = new URLSearchParams({
-      pagina: '1', tamanho: '9999',
-      ordem: porPrioridade ? 'prioridade' : ordemAsc ? 'divulgado_asc' : 'divulgado_desc',
-      ...(status ? { status } : {}), ...(tipo ? { tipo } : {}), ...(busca ? { busca } : {}),
-      ...(filtroDesde ? { desde: filtroDesde } : {}), ...(filtroAte ? { ate: filtroAte } : {}),
-    })
-    const dados = await buscarJson<RespostaLista>(cliente, `/publicacoes-oab?${query}`)
-    return (dados.publicacoes ?? []).map(p => p.hash)
+    return (await publicacoesTodasFiltro()).map(p => p.hash)
+  }
+
+  async function abrirCriarLote() {
+    if (ocupada) return
+    setOperacao(true)
+    try {
+      const todas = todasFiltro ? await publicacoesTodasFiltro() : publicacoes.filter(p => selecionadas.has(p.hash))
+      setCriarLote(todas)
+    } catch (e) { avisar({ tipo: 'erro', texto: (e as Error).message }) }
+    finally { setOperacao(false) }
   }
 
   async function abrirVincularLote() {
@@ -517,6 +537,9 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
           <Button size="1" variant="soft" color="gray" disabled={ocupada} onClick={() => void abrirVincularLote()}>
             <Link2 size={14} /> Vincular processo
           </Button>
+          <Button size="1" variant="soft" color="gray" disabled={ocupada} onClick={() => void abrirCriarLote()}>
+            <FilePlus size={14} /> Criar processos
+          </Button>
           <Button size="1" variant="ghost" disabled={operacao} onClick={() => { setSelecionadas(new Set()); setTodasFiltro(false) }}>Cancelar</Button>
         </div>
       )}
@@ -685,7 +708,105 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
       {modal?.tipo === 'processo' && <ProcessoPublicacao publicacao={modal.p} onClose={() => { setModal(null); void carregar() }} onConcluido={m => { avisar({ texto: m }); setModal(null); void carregar() }} />}
       {modal?.tipo === 'atividade' && <AtividadePublicacao publicacao={modal.p} onClose={() => setModal(null)} onConcluido={m => { avisar({ texto: m }); setModal(null); void carregar() }} />}
       {hashesLote && <VincularProcessoLote hashes={hashesLote} onClose={() => setHashesLote(null)} onConcluido={m => { avisar({ texto: m }); setHashesLote(null); setSelecionadas(new Set()); setTodasFiltro(false); void carregar() }} />}
+      {criarLote && <CriarProcessosLote publicacoes={criarLote} onClose={() => setCriarLote(null)} onConcluido={m => { avisar({ texto: m }); setCriarLote(null); setSelecionadas(new Set()); setTodasFiltro(false); void carregar() }} />}
     </Flex>
+  )
+}
+
+const CLIENTE_PENDENTE = 'Pendente'
+
+function CriarProcessosLote({ publicacoes, onClose, onConcluido }: { publicacoes: PublicacaoOab[]; onClose: () => void; onConcluido: (msg: string) => void }) {
+  const { cliente } = useCliente()
+  const [responsaveis, setResponsaveis] = useState<string[]>([])
+  const [responsavel, setResponsavel] = useState('')
+  const [salvando, setSalvando] = useState(false)
+  const [progresso, setProgresso] = useState(0)
+  const [erro, setErro] = useState('')
+  const trava = useRef(false)
+
+  // Só publicações sem processo; agrupadas por CNJ. Sem CNJ de 20 dígitos são puladas.
+  const pendentes = publicacoes.filter(p => !p.caso_id)
+  const grupos = new Map<string, PublicacaoOab[]>()
+  let semCnj = 0
+  for (const p of pendentes) {
+    const n = numeroPublicacao(p)
+    if (n.length !== 20) { semCnj++; continue }
+    grupos.set(n, [...(grupos.get(n) ?? []), p])
+  }
+  const numeros = [...grupos.keys()]
+
+  useEffect(() => {
+    buscarJson<{ responsaveis: string[] }>(cliente, '/responsaveis').then(r => setResponsaveis(r.responsaveis)).catch(e => setErro((e as Error).message))
+  }, [cliente])
+
+  async function confirmar() {
+    if (trava.current || !responsavel) return
+    trava.current = true; setSalvando(true); setErro(''); setProgresso(0)
+    let criados = 0, vinculados = 0, falhas = 0
+    try {
+      const achar = async () => (await buscarJson<{ clientes: Array<{ id: string; nome: string }> }>(cliente, '/clientes'))
+        .clientes.find(c => c.nome.trim().toLowerCase() === CLIENTE_PENDENTE.toLowerCase())?.id
+      let clienteId = await achar()
+      for (const numero of numeros) {
+        const hashes = grupos.get(numero)!.map(p => p.hash)
+        try {
+          const r = await buscarJson<{ casos: Caso[] }>(cliente, `/casos?q=${encodeURIComponent(numero)}`)
+          let caso = r.casos.find(c => c.processos?.some(n => n.replace(/\D/g, '') === numero))
+          let restantes = hashes
+          if (caso) vinculados++
+          else {
+            caso = await enviarJson<Caso>(cliente, `/publicacoes-oab/${encodeURIComponent(hashes[0])}/criar-caso`, {
+              ...(clienteId ? { cliente_id: clienteId } : { nome_cliente: CLIENTE_PENDENTE }), responsavel,
+            })
+            criados++; restantes = hashes.slice(1)
+            clienteId ??= await achar() // o primeiro lote cria o "Pendente"; os demais o reutilizam
+          }
+          for (const hash of restantes) await enviarJson(cliente, `/casos/${encodeURIComponent(caso.id)}/publicacoes`, { hash })
+        } catch { falhas++ }
+        setProgresso(p => p + 1)
+      }
+    } catch (e) { setErro((e as Error).message); trava.current = false; setSalvando(false); return }
+    trava.current = false; setSalvando(false)
+    const resumo = `${criados} processo(s) criado(s), ${vinculados} vinculado(s) a processo existente${semCnj ? `, ${semCnj} publicação(ões) sem CNJ ignorada(s)` : ''}.`
+    if (falhas) setErro(`${resumo} ${falhas} processo(s) falharam; tente novamente para completar.`)
+    else onConcluido(`${resumo} Cliente "${CLIENTE_PENDENTE}": ajuste em cada processo.`)
+  }
+
+  return (
+    <Dialog.Root open onOpenChange={(open) => { if (!open && !salvando) onClose() }}>
+      <Dialog.Content maxWidth="480px">
+        <Dialog.Title>Criar processos em lote</Dialog.Title>
+        <Flex direction="column" gap="4">
+          <Text as="p" size="2">
+            {numeros.length} processo(s) serão criados ou vinculados (por número CNJ distinto), a partir de {pendentes.length - semCnj} publicação(ões) sem processo.
+            {semCnj > 0 && ` ${semCnj} sem CNJ válido serão ignoradas.`}
+            {publicacoes.length - pendentes.length > 0 && ` ${publicacoes.length - pendentes.length} já vinculadas serão ignoradas.`}
+          </Text>
+          <Text as="p" size="2" color="gray">O cliente será "{CLIENTE_PENDENTE}"; altere-o em cada processo depois.</Text>
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="clote-responsavel">Responsável <span className="aj-obrigatorio" aria-hidden="true">*</span></label>
+            <Select.Root value={responsavel || '__none__'} disabled={salvando} onValueChange={v => setResponsavel(v === '__none__' ? '' : v)}>
+              <Select.Trigger id="clote-responsavel" style={{ width: '100%' }} />
+              <Select.Content>
+                <Select.Item value="__none__">Selecione</Select.Item>
+                {responsaveis.map(r => <Select.Item key={r} value={r}>{formatarNomeExibicao(r)}</Select.Item>)}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          {salvando && <Text size="2" role="status" color="gray">Processando… {progresso} de {numeros.length}</Text>}
+          {erro && (
+            <Callout.Root color="red" size="1">
+              <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+              <Callout.Text>{erro}</Callout.Text>
+            </Callout.Root>
+          )}
+          <Flex gap="3" justify="end">
+            <Button variant="soft" color="gray" disabled={salvando} onClick={onClose}>Cancelar</Button>
+            <Button disabled={!responsavel || !numeros.length || salvando} loading={salvando} onClick={() => void confirmar()}>Criar processos</Button>
+          </Flex>
+        </Flex>
+      </Dialog.Content>
+    </Dialog.Root>
   )
 }
 
