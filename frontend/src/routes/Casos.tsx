@@ -44,7 +44,7 @@ export default function Casos() {
 
   useEffect(() => {
     const destino = consumirPayload<{ id: string; aba?: 'atividades' | 'publicacoes' | 'movimentacoes'; atividadeId?: string | number }>('casos')
-    if (!destino) return
+    if (!destino?.id) return
     setCasoId(destino.id)
     setResumo(null)
     setTitulo(null)

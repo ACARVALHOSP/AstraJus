@@ -79,10 +79,12 @@ export default function Processo() {
 
   useEffect(() => {
     const payload = consumirPayload<PayloadProcesso>('processo')
-    if (!payload) return
-    setTribunal(payload.tribunal)
+    if (!payload?.numero_processo) return
+    // Vindo de um link, o tribunal pode faltar (valor vazio não vai para o endereço).
+    const siglaTribunal = payload.tribunal ?? ''
+    setTribunal(siglaTribunal)
     setNumero(payload.numero_processo)
-    consultar(payload.tribunal, payload.numero_processo)
+    consultar(siglaTribunal, payload.numero_processo)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
