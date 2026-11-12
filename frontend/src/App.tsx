@@ -1,4 +1,4 @@
-import { Component, Suspense, lazy, useEffect, useState, type ReactNode } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { Callout, Flex, Popover, SegmentedControl, Text, Theme } from '@radix-ui/themes'
 import {
   Scale, Users, CalendarCheck, CalendarDays, Search, Gavel, Briefcase,
@@ -15,6 +15,7 @@ import { sincronizarPreferencias } from './utils/listasRapidas'
 import { CHAVE_TEMA } from './api/mcpClient'
 import { EVENTO_DADOS_ALTERADOS } from './api/rest'
 import Carregamento from './Carregamento'
+import LimiteDeErro from './LimiteDeErro'
 import BuscaGlobal from './BuscaGlobal'
 import ContaUsuario from './ContaUsuario'
 import CentralNotificacoes from './CentralNotificacoes'
@@ -403,32 +404,13 @@ export default function App() {
   )
 }
 
-// Se um arquivo da tela não carregar (ex.: nova versão publicada com a página antiga aberta),
-// avisa e oferece recarregar em vez de deixar a área em branco.
-class FalhaAoCarregarTela extends Component<{ children: ReactNode }, { falhou: boolean }> {
-  state = { falhou: false }
-  static getDerivedStateFromError() { return { falhou: true } }
-  render() {
-    if (!this.state.falhou) return this.props.children
-    return (
-      <Callout.Root color="red" role="alert">
-        <Callout.Icon><ShieldCheck size={14} /></Callout.Icon>
-        <Callout.Text>
-          Não foi possível carregar esta tela. O sistema pode ter sido atualizado.{' '}
-          <button type="button" className="casos-link" onClick={() => window.location.reload()}>Recarregar a página</button>
-        </Callout.Text>
-      </Callout.Root>
-    )
-  }
-}
-
 function NavConteudo() {
   const { abaAtiva } = useNavegacao()
   return (
-    <FalhaAoCarregarTela key={abaAtiva}>
+    <LimiteDeErro key={abaAtiva}>
       <Suspense fallback={<Carregamento tipo="detalhe" descricao="Carregando tela…" />}>
         <ConteudoAba abaAtiva={abaAtiva} />
       </Suspense>
-    </FalhaAoCarregarTela>
+    </LimiteDeErro>
   )
 }
