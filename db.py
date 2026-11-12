@@ -292,6 +292,13 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 evento_id INTEGER PRIMARY KEY REFERENCES notificacao_eventos(id), lida_em TEXT
             );
 
+            -- Ciência de prazo: quem confirmou estar ciente e para qual data. Se a data do prazo muda,
+            -- a confirmação antiga deixa de valer (o escalonamento volta a olhar o prazo).
+            CREATE TABLE IF NOT EXISTS atividade_ciencia (
+                atividade_id INTEGER PRIMARY KEY, caso_id TEXT NOT NULL,
+                usuario TEXT NOT NULL, data_prazo TEXT, confirmado_em TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS atividade_agenda (
                 id TEXT PRIMARY KEY, caso_id TEXT NOT NULL, atividade_id INTEGER NOT NULL,
                 calendario_id TEXT NOT NULL, evento_id TEXT NOT NULL,
@@ -1655,16 +1662,42 @@ class RegistroClientesCasos:
         abertos = ",".join("?" * len(self._STATUS_ATIVIDADE_ABERTOS))
         with _abrir(self.caminho) as conexao:
             linhas = conexao.execute(
-                "SELECT a.id, a.caso_id, a.tipo, a.titulo, a.data, a.hora, a.responsavel, c.titulo, c.responsavel "
+                "SELECT a.id, a.caso_id, a.tipo, a.titulo, a.data, a.hora, a.responsavel, c.titulo, c.responsavel, "
+                "ci.usuario, ci.confirmado_em "
                 "FROM caso_atividades a JOIN casos c ON c.id = a.caso_id "
+                "LEFT JOIN atividade_ciencia ci ON ci.atividade_id = a.id AND ci.data_prazo = substr(a.data, 1, 10) "
                 f"WHERE a.tipo IN ('prazo', 'audiencia') AND a.status IN ({abertos}) AND a.data IS NOT NULL "
                 "AND substr(a.data, 1, 10) <= ? "
                 "AND (substr(a.data, 1, 10) >= ? OR (a.tipo = 'prazo' AND substr(a.data, 1, 10) >= ?)) "
                 "ORDER BY a.data",
                 (*self._STATUS_ATIVIDADE_ABERTOS, ate, hoje, atrasadas_desde),
             ).fetchall()
-        chaves = ("id", "caso_id", "tipo", "titulo", "data", "hora", "responsavel", "caso_titulo", "caso_responsavel")
+        chaves = ("id", "caso_id", "tipo", "titulo", "data", "hora", "responsavel", "caso_titulo", "caso_responsavel",
+                  "ciencia_por", "ciencia_em")
         return [dict(zip(chaves, linha)) for linha in linhas]
+
+    def confirmar_ciencia(self, caso_id: str, atividade_id: int, usuario: str, agora) -> dict | None:
+        """Registra que `usuario` está ciente do prazo, para a data que ele tem agora. Só prazos
+        pedem ciência. A primeira confirmação de uma data vale; repetir devolve a mesma. Devolve
+        None se a atividade não existe nesse processo ou não é um prazo."""
+        confirmado_em = agora().astimezone(timezone.utc).isoformat(timespec="seconds")
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute("BEGIN IMMEDIATE")
+            linha = conexao.execute("SELECT tipo, data FROM caso_atividades WHERE id = ? AND caso_id = ?",
+                                    (atividade_id, caso_id)).fetchone()
+            if not linha or linha[0] != "prazo":
+                return None
+            data_prazo = (linha[1] or "")[:10] or None
+            conexao.execute(
+                "INSERT INTO atividade_ciencia (atividade_id, caso_id, usuario, data_prazo, confirmado_em) VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(atividade_id) DO UPDATE SET caso_id = excluded.caso_id, usuario = excluded.usuario, "
+                "data_prazo = excluded.data_prazo, confirmado_em = excluded.confirmado_em "
+                "WHERE atividade_ciencia.data_prazo IS NOT excluded.data_prazo",
+                (atividade_id, caso_id, usuario, data_prazo, confirmado_em),
+            )
+            atual = conexao.execute("SELECT usuario, confirmado_em FROM atividade_ciencia WHERE atividade_id = ?",
+                                    (atividade_id,)).fetchone()
+        return {"usuario": atual[0], "confirmado_em": atual[1]}
 
     def listar_atividades_globais(
         self, *, situacao: str = "abertas", tipo: str | None = None, responsavel: str | None = None,

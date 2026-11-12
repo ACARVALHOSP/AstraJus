@@ -4006,7 +4006,11 @@ async def _alertar_prazos(gestao: "RegistroClientesCasos", agora=lambda: datetim
     """Avisa quem é responsável por prazos e audiências que estão a 5, 2 ou 1 dia de vencer, vencem hoje
     ou venceram há até 3 dias (só prazos). Cada pessoa recebe cada faixa uma vez, no sino e, havendo
     SMTP e e-mail cadastrado, também por e-mail. O aviso some quando a atividade é concluída.
-    O destinatário é o responsável da atividade; sem ele, o do processo; sem ele, os administradores."""
+    O destinatário é o responsável da atividade; sem ele, o do processo; sem ele, os administradores.
+
+    Escalonamento (só prazos): se faltando 1 dia, no dia ou já vencido ninguém confirmou ciência até a
+    execução seguinte ao primeiro aviso daquela faixa, os administradores que ainda não foram avisados
+    recebem um aviso de "prazo sem confirmação de ciência", uma vez por prazo."""
     hoje = agora().astimezone(timezone(timedelta(hours=-3))).date()  # data de Brasília
     itens = gestao.atividades_para_alerta(hoje.isoformat(), (hoje + timedelta(days=5)).isoformat(), (hoje - timedelta(days=3)).isoformat())
     if not itens:
@@ -4019,22 +4023,42 @@ async def _alertar_prazos(gestao: "RegistroClientesCasos", agora=lambda: datetim
     cfg = _smtp_do_ambiente()
     base = (os.environ.get("CNJ_MCP_URL_PUBLICA") or "").rstrip("/")
     falhou = False
+
+    async def mandar_email(usuario, assunto, corpo):
+        nonlocal falhou
+        email = usuarios[usuario].get("email")
+        if not (cfg and email):
+            return
+        try:
+            await asyncio.to_thread((enviar or _enviar_email_simples), cfg, email, assunto, corpo)
+        except Exception:
+            falhou = True
+            log.exception("Alerta de prazo: falha ao enviar e-mail para %s", usuario)
+
     for a in itens:
         destinatarios = [u for u in (a["responsavel"], a["caso_responsavel"]) if u in ativos][:1] or administradores
         faixa = _faixa_alerta_prazo((datetime.fromisoformat(a["data"][:10]).date() - hoje).days)
-        for usuario in repo.registrar_alerta_prazo(a["caso_id"], a["id"], faixa, destinatarios):
-            email = usuarios[usuario].get("email")
-            if not (cfg and email):
-                continue
-            quando = {"atrasado": "VENCEU", "0": "vence HOJE", "1": "vence amanhã"}.get(faixa, f"vence em até {faixa} dias")
-            tipo = "Audiência" if a["tipo"] == "audiencia" else "Prazo"
-            corpo = (f"{tipo} {quando}: {a['titulo']}\nData: {a['data'][:10]}{' às ' + a['hora'][:5] if a.get('hora') else ''}\n"
-                     f"Processo: {a['caso_titulo'] or '(sem título)'}\n" + (f"\nAbrir a agenda: {base}/radix/#/agenda\n" if base else ""))
-            try:
-                await asyncio.to_thread((enviar or _enviar_email_simples), cfg, email, f"{tipo} {quando}: {a['titulo']}", corpo)
-            except Exception:
-                falhou = True
-                log.exception("Alerta de prazo: falha ao enviar e-mail para %s", usuario)
+        tipo = "Audiência" if a["tipo"] == "audiencia" else "Prazo"
+        quando = {"atrasado": "VENCEU", "0": "vence HOJE", "1": "vence amanhã"}.get(faixa, f"vence em até {faixa} dias")
+        detalhe = (f"Data: {a['data'][:10]}{' às ' + a['hora'][:5] if a.get('hora') else ''}\n"
+                   f"Processo: {a['caso_titulo'] or '(sem título)'}\n")
+        link = f"{base}/radix/#/casos?id={a['caso_id']}&aba=atividades&atividadeId={a['id']}" if base else ""
+        novos = repo.registrar_alerta_prazo(a["caso_id"], a["id"], faixa, destinatarios)
+        for usuario in novos:
+            corpo = (f"{tipo} {quando}: {a['titulo']}\n{detalhe}"
+                     + (f"\nAbrir o {tipo.lower()}"
+                        f"{' e confirmar a ciência' if a['tipo'] == 'prazo' else ''}: {link}\n" if link else "")
+                     + (f"Abrir a agenda: {base}/radix/#/agenda\n" if base else ""))
+            await mandar_email(usuario, f"{tipo} {quando}: {a['titulo']}", corpo)
+        # Escalonamento: o primeiro aviso da faixa já saiu numa execução anterior e ninguém confirmou ciência.
+        if a["tipo"] == "prazo" and faixa in ("1", "0", "atrasado") and not a.get("ciencia_em") and not novos:
+            reserva = [u for u in administradores if u not in destinatarios]
+            for usuario in repo.registrar_escalonamento(a["caso_id"], a["id"], reserva):
+                corpo = (f"Prazo sem confirmação de ciência: {a['titulo']} ({quando})\n{detalhe}"
+                         f"Responsável: {a['responsavel'] or a['caso_responsavel'] or 'não definido'}\n"
+                         "Ninguém confirmou ciência deste prazo desde o primeiro aviso.\n"
+                         + (f"\nAbrir o prazo: {link}\n" if link else ""))
+                await mandar_email(usuario, f"Prazo sem confirmação de ciência: {a['titulo']}", corpo)
     return not falhou
 
 
@@ -4482,6 +4506,10 @@ class _AutenticacaoBearer:
             rota_agenda = re.fullmatch(r"/casos/([^/]+)/atividades/([0-9]+)/agenda", caminho)
             if rota_agenda:
                 await self._agenda_da_atividade(scope, receive, send, rota_agenda[1], int(rota_agenda[2]))
+                return
+            rota_ciencia = re.fullmatch(r"/casos/([^/]+)/atividades/([0-9]+)/ciencia", caminho)
+            if rota_ciencia:
+                await self._ciencia_da_atividade(scope, send, rota_ciencia[1], int(rota_ciencia[2]))
                 return
             partes = caminho[len("/casos/"):].split("/atividades")
             caso_id = partes[0].rstrip("/")
@@ -5780,6 +5808,18 @@ class _AutenticacaoBearer:
                         _erro("Operação de notificação indisponível."))
         except ValueError as erro:
             await _json(send, 400, _erro(str(erro)))
+
+    async def _ciencia_da_atividade(self, scope, send, caso_id, aid):
+        """POST /casos/<id>/atividades/<aid>/ciencia: a pessoa confirma que está ciente do prazo.
+        Idempotente: repetir devolve a primeira confirmação daquela data."""
+        if scope.get("method") != "POST":
+            await _responder(send, 405, b"Metodo nao permitido")
+            return
+        ciencia = self.gestao.confirmar_ciencia(caso_id, aid, scope["usuario"], lambda: datetime.now(timezone.utc))
+        if ciencia is None:
+            await _json(send, 404, _erro("Prazo não encontrado."))
+            return
+        await _json(send, 200, {"ciencia": ciencia})
 
     async def _agenda_da_atividade(self, scope, receive, send, caso_id, aid):
         """Agenda individual autenticada, com propriedade verificada em cada vínculo."""

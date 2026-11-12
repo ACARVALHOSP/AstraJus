@@ -65,6 +65,7 @@ O frontend Radix (`/radix/`) é servido diretamente pelo Caddy a partir de `/srv
 | GET, POST | `/casos/<id>/atividades/<aid>/checklist` | Itens do checklist |
 | PATCH, DELETE | `/casos/<id>/atividades/<aid>/checklist/<item>` | Atualiza / exclui item |
 | GET, POST, PATCH, DELETE | `/casos/<id>/atividades/<aid>/agenda` | Sincronização da atividade com a agenda Google do usuário |
+| POST | `/casos/<id>/atividades/<aid>/ciencia` | Confirma ciência de um prazo (só `tipo=prazo`; vale a primeira confirmação da data atual do prazo; 404 se não for prazo) |
 | POST | `/casos/<id>/evento-calendar` | Cria evento de dia inteiro no Google Calendar |
 | GET, POST | `/casos/<id>/publicacoes` | Publicações vinculadas ao caso / vincular |
 | DELETE | `/casos/<id>/publicacoes/<hash>` | Desvincula publicação |

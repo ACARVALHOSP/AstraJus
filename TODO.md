@@ -47,7 +47,7 @@ Restam ~26 arquivos com `buscarJson` direto. Ordem sugerida:
 - [ ] **B** Caçador de alvarás: varrer o DJEN por alvará/levantamento e avisar (e-mail e sino)
 - [ ] **B+F** Consulta de partes e conflito de interesses: CNPJ na Receita, sanções CEIS/CNEP e cruzamento com os clientes do escritório (`polos.py` já reconhece clientes)
 - [ ] **B+F** **Modelos de prazos por assunto ou classe processual**: ao cadastrar um processo cujo assunto/classe bate com um modelo, sugerir os prazos e tarefas padrão do escritório (sempre como sugestão a validar). Estende o cálculo do CPC que já existe em `prazos.ts`
-- [ ] **B+F** **Alertas de prazo crítico com escalonamento**: além dos avisos de 5, 2 e 1 dia, pedir confirmação de ciência e avisar contatos de reserva se ninguém confirmar
+- [x] **B+F** **Alertas de prazo com escalonamento**: confirmação de ciência nas notificações e aviso aos administradores (sino e e-mail) se ninguém confirmar. Reserva = administradores; sem WhatsApp. Pendências: mostrar "Ciente" na lista de atividades e na Central de risco; ciência também por e-mail (link); opção de ligar/desligar o escalonamento
 - [ ] **B+F** Importação de outros sistemas (Astrea, ProJuris, Advbox) por planilha ou lista de números CNJ
 
 ### Prioridade média

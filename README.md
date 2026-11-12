@@ -36,7 +36,7 @@ O AstraJus reúne num só lugar o que o advogado costuma espalhar entre planilha
 - **Publicações do DJEN capturadas sozinhas** por OAB, com aviso quando a publicação é destinada a um cliente do escritório.
 - **Capa do processo preenchida automaticamente** (DataJud + DJEN): classe, assuntos, órgão julgador, município, sigilo, partes, advogados e movimentações.
 - **Prazos processuais calculados** em dias úteis ou corridos, com feriados, suspensão de 20/12 a 20/01 e prazo em dobro, sempre como sugestão a ser revisada pelo advogado.
-- **Alertas de vencimento** de prazos e audiências no sino do sistema e por e-mail.
+- **Alertas de vencimento** de prazos e audiências no sino do sistema e por e-mail, com confirmação de ciência e aviso aos administradores quando ninguém confirma.
 - **Agenda** em mês, semana e dia, com sincronização opcional com o Google Agenda.
 - **Financeiro jurídico:** honorários, êxito, custas reembolsáveis, repasses, parcelamento, inadimplência por faixa de atraso e saldo por processo.
 - **Cobranças por boleto e Pix** via Asaas.
@@ -86,6 +86,7 @@ Duas visões:
   - feriados nacionais e estaduais, e municipais do TJSP;
   - demonstrativo dia a dia com impressão/PDF e **revisão obrigatória** antes de confirmar a data.
 - **Alertas de vencimento:** prazos e audiências a 5, 2 e 1 dia, no dia e, para prazos, até 3 dias depois de vencer, no sino e por e-mail (com SMTP configurado). Cada aviso sai uma vez por pessoa e some quando a atividade é concluída.
+- **Confirmação de ciência e escalonamento (só prazos):** nas notificações de prazo há o botão "Confirmar ciência". Se, com 1 dia para vencer, no dia ou já vencido, ninguém confirmou até a execução seguinte ao primeiro aviso, os administradores que ainda não foram avisados recebem "Prazo sem confirmação de ciência" (sino e e-mail), uma vez por prazo. A confirmação vale para a data do prazo: se a data mudar, ela deixa de valer.
 - **Agenda** em visão de mês, semana e dia, com filtros por tipo e responsável, **arrastar para remarcar** (com desfazer), criação a partir do dia escolhido e **exportação .ics**.
 - **Google Agenda:** vínculo opcional de uma atividade com evento de dia inteiro, com reconciliação persistida e tratamento de conflitos.
 
