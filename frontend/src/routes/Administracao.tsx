@@ -2,11 +2,13 @@ import { useAvisos } from '../Avisos'
 import { mensagemPorStatus } from '../api/mcpClient'
 import { avisarDadosAlterados } from '../api/rest'
 import CabecalhoPagina from '../CabecalhoPagina'
+import Carregamento from '../Carregamento'
 import TabelaResponsiva from '../TabelaResponsiva'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import {
   AlertDialog,
+  Badge,
   Button,
   Callout,
   Checkbox,
@@ -19,7 +21,10 @@ import {
   TextField,
 } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
-import { AREAS, type Grau } from '../api/PerfilContext'
+import { AREAS, usePerfil } from '../api/PerfilContext'
+import { formatarMoeda } from '../utils/formatadores'
+import { NIVEIS, PERFIS, aplicarPerfil, grauPadrao, perfilDe, type Grau } from './administracao/perfis'
+import { descreverCampos, haQuanto, lerValorHora, rotuloAcao } from './administracao/formatos'
 import './administracao.scss'
 
 type Usuario = {
@@ -33,27 +38,37 @@ type Historico = { ocorrido_em: string; ator: string; usuario: string; acao: str
 type Banco = { tipo: string; tamanho_bytes: number; tabelas: number }
 const VAZIO = { login: '', nome_completo: '', email: '', nivel_acesso: 'operador', status: 'ativo', permissoes: {} as Record<string, Grau> }
 const GRAUS: [Grau, string][] = [['editar', 'Ver e alterar'], ['ver', 'Somente ver'], ['nenhum', 'Sem acesso']]
-// O que cada nível permite quando nada foi personalizado (igual ao servidor).
-const grauPadrao = (nivel: string): Grau => nivel === 'consulta' ? 'ver' : 'editar'
+const STATUS: Record<string, { rotulo: string; cor: 'green' | 'amber' | 'orange' | 'gray' }> = {
+  ativo: { rotulo: 'Ativo', cor: 'green' }, pendente: { rotulo: 'Pendente', cor: 'amber' },
+  bloqueado: { rotulo: 'Bloqueado', cor: 'orange' }, revogado: { rotulo: 'Revogado', cor: 'gray' },
+}
 const data = (valor: string | null) => valor ? new Date(valor).toLocaleString('pt-BR') : 'Não registrado'
+type Carga = 'carregando' | 'ok' | 'erro'
+type Editor = { login: string | null; campos: typeof VAZIO; valorHora: string }
 
 export default function Administracao() {
   const { cliente } = useCliente()
+  const { nivel, login: eu } = usePerfil()
   const [credencial, setCredencial] = useState('')
   const [sessao, setSessao] = useState<string | null>(null)
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [historico, setHistorico] = useState<Historico[]>([])
   const [acessos, setAcessos] = useState<{ ocorrido_em: string; usuario: string }[]>([])
   const [banco, setBanco] = useState<Banco | null>(null)
+  const [tarifas, setTarifas] = useState<Record<string, number> | null>(null)
+  const [carga, setCarga] = useState<Record<'banco' | 'historico' | 'acessos', Carga>>({ banco: 'carregando', historico: 'carregando', acessos: 'carregando' })
   const [erro, setErro] = useState('')
   const { avisar } = useAvisos()
   const setMensagem = (texto: string) => { if (texto) avisar({ texto }) }
   const [ocupado, setOcupado] = useState(false)
   const [filtro, setFiltro] = useState('')
-  const [editor, setEditor] = useState<{ login: string | null; campos: typeof VAZIO } | null>(null)
+  const [editor, setEditor] = useState<Editor | null>(null)
   const [tokenNovo, setTokenNovo] = useState('')
   const [confirmarBackup, setConfirmarBackup] = useState(false)
   const [limpeza, setLimpeza] = useState<{ categorias: string[]; texto: string; resultado: Record<string, number> | null } | null>(null)
+  const [autoCarregando, setAutoCarregando] = useState(false)
+  const [esperouPerfil, setEsperouPerfil] = useState(false)
+  const tentouAuto = useRef(false)
   const CATEGORIAS_LIMPEZA: [string, string][] = [
     ['publicacoes', 'Publicações capturadas'],
     ['monitoramento_tecnico', 'Dados técnicos de monitoramento'],
@@ -78,27 +93,90 @@ export default function Administracao() {
     setSessao(token)
     setCredencial('')
   }
+  // As abas secundárias carregam sozinhas ao abrir; "Atualizar" refaz. Cada uma falha sem derrubar as outras.
+  const marcar = (aba: keyof typeof carga, estado: Carga) => setCarga(c => ({ ...c, [aba]: estado }))
+  async function carregarBanco(token: string) {
+    marcar('banco', 'carregando')
+    try { setBanco(await (await requisicao('/admin/banco/api', token)).json()); marcar('banco', 'ok') } catch (e) { marcar('banco', 'erro'); throw e }
+  }
+  async function carregarHistorico(token: string) {
+    marcar('historico', 'carregando')
+    try { setHistorico((await (await requisicao('/admin/usuarios/historico', token)).json()).historico); marcar('historico', 'ok') } catch (e) { marcar('historico', 'erro'); throw e }
+  }
+  async function carregarAcessos(token: string) {
+    marcar('acessos', 'carregando')
+    try { setAcessos((await (await requisicao('/admin/usuarios/acessos', token)).json()).acessos); marcar('acessos', 'ok') } catch (e) { marcar('acessos', 'erro'); throw e }
+  }
+  // O valor por hora vive em /horas/tarifas e exige a conexão de uma pessoa administradora (não o token do servidor).
+  async function carregarTarifas() {
+    if (!cliente) { setTarifas(null); return }
+    try { setTarifas((await (await requisicao('/horas/tarifas', cliente.token)).json()).tarifas ?? {}) } catch { setTarifas(null) }
+  }
   async function executar(acao: () => Promise<void>) {
     setOcupado(true); setErro(''); setMensagem('')
     try { await acao() } catch (e) { setErro(e instanceof Error ? e.message : 'Falha na operação.') }
     finally { setOcupado(false) }
   }
   function sair() {
-    setSessao(null); setCredencial(''); setUsuarios([]); setHistorico([]); setAcessos([]); setBanco(null)
+    setSessao(null); setCredencial(''); setUsuarios([]); setHistorico([]); setAcessos([]); setBanco(null); setTarifas(null)
     setEditor(null); setTokenNovo(''); setErro(''); setMensagem(''); setConfirmarBackup(false); setLimpeza(null)
+  }
+
+  // Conectada como administradora: abre já carregada, sem pedir o token administrativo.
+  useEffect(() => {
+    const espera = window.setTimeout(() => setEsperouPerfil(true), 4000)
+    return () => window.clearTimeout(espera)
+  }, [])
+  useEffect(() => {
+    if (sessao || tentouAuto.current || !cliente || nivel !== 'administrador') return
+    tentouAuto.current = true
+    setAutoCarregando(true)
+    void executar(() => carregar(cliente.token)).finally(() => setAutoCarregando(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cliente, nivel, sessao])
+  useEffect(() => {
+    if (!sessao) return
+    void Promise.allSettled([carregarBanco(sessao), carregarHistorico(sessao), carregarAcessos(sessao), carregarTarifas()])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessao])
+  const abrindo = !sessao && (autoCarregando || (Boolean(cliente) && nivel === null && !esperouPerfil))
+  const sessaoDaConexao = sessao !== null && sessao === cliente?.token
+
+  function abrirEditor(u: Usuario | null) {
+    setErro('')
+    const valor = u && tarifas ? tarifas[u.login] : undefined
+    setEditor(u === null
+      ? { login: null, campos: { ...VAZIO }, valorHora: '' }
+      : { login: u.login, campos: { login: u.login, nome_completo: u.nome_completo, email: u.email || '', nivel_acesso: u.nivel_acesso, status: u.status, permissoes: u.permissoes ?? {} }, valorHora: valor !== undefined ? String(valor).replace('.', ',') : '' })
   }
   async function salvar() {
     if (!editor || !sessao) return
-    const { login, campos } = editor
+    const { login, campos, valorHora } = editor
     const corpo = login === null ? campos : { nome_completo: campos.nome_completo, email: campos.email, nivel_acesso: campos.nivel_acesso, status: campos.status, permissoes: campos.permissoes }
     const r = await requisicao(login === null ? '/admin/usuarios/api' : `/admin/usuarios/api/${encodeURIComponent(login)}`, sessao, login === null ? 'POST' : 'PATCH', corpo)
     const resultado = await r.json() as { token?: string }
     setEditor(null)
     if (resultado.token) setTokenNovo(resultado.token)
     await carregar(sessao)
+    // Valor por hora: só se mudou, e depois do cadastro (o servidor exige que a pessoa já exista).
+    const novo = lerValorHora(valorHora)
+    const alvo = (login ?? campos.login).toLowerCase()
+    if (tarifas !== null && cliente && novo !== undefined && novo !== (tarifas[alvo] ?? null)) {
+      try {
+        await requisicao(`/horas/tarifas/${encodeURIComponent(alvo)}`, cliente.token, 'PUT', { valor_hora: novo })
+        await carregarTarifas()
+      } catch (e) {
+        avisar({ tipo: 'erro', texto: `Cadastro salvo, mas o valor por hora não foi salvo: ${e instanceof Error ? e.message : 'tente de novo.'}` })
+        return
+      }
+    }
     setMensagem('Cadastro salvo.')
   }
   const lista = usuarios.filter(u => `${u.login} ${u.nome_completo} ${u.email || ''}`.toLocaleLowerCase('pt-BR').includes(filtro.toLocaleLowerCase('pt-BR')))
+  const falhaCarga = (aba: keyof typeof carga, vazio: string) => carga[aba] === 'carregando' ? 'Carregando…' : carga[aba] === 'erro' ? 'Não foi possível carregar. Use Atualizar.' : vazio
+
+  const perfilAtual = editor ? perfilDe(editor.campos.nivel_acesso, editor.campos.permissoes) : null
+  const valorHoraInvalido = editor !== null && lerValorHora(editor.valorHora) === undefined
 
   return <section className="administracao" aria-busy={ocupado}>
     <CabecalhoPagina titulo="Administração" descricao="Gerencie os usuários e acompanhe o banco de dados do sistema." />
@@ -108,7 +186,7 @@ export default function Administracao() {
         <Callout.Text>{erro}</Callout.Text>
       </Callout.Root>
     )}
-    {!sessao ? <form className="administracao__acesso" onSubmit={e => { e.preventDefault(); void executar(() => carregar(credencial || cliente?.token || '')) }}>
+    {abrindo ? <Carregamento tipo="detalhe" descricao="Abrindo a administração…" /> : !sessao ? <form className="administracao__acesso" onSubmit={e => { e.preventDefault(); void executar(() => carregar(credencial || cliente?.token || '')) }}>
       <Heading as="h2" size="4">Acesso administrativo</Heading>
       <Text as="p" size="2" color="gray">Use sua conexão de administrador ou informe o token administrativo do servidor.</Text>
       <div className="form-campo">
@@ -119,8 +197,11 @@ export default function Administracao() {
       <Button size="2" type="submit" disabled={ocupado || !(credencial || cliente?.token)}>{ocupado ? 'Verificando…' : 'Acessar administração'}</Button>
     </form> : <>
       <div className="administracao__acoes">
-        <Button variant="soft" size="2" disabled={ocupado} onClick={() => void executar(() => carregar(sessao))}>Atualizar usuários</Button>
-        <Button variant="ghost" size="2" disabled={ocupado} onClick={sair}>Encerrar administração</Button>
+        <Button variant="soft" size="2" disabled={ocupado} onClick={() => void executar(async () => {
+          await carregar(sessao)
+          await Promise.allSettled([carregarBanco(sessao), carregarHistorico(sessao), carregarAcessos(sessao), carregarTarifas()])
+        })}>Atualizar tudo</Button>
+        {!sessaoDaConexao && <Button variant="ghost" size="2" disabled={ocupado} onClick={sair}>Encerrar administração</Button>}
       </div>
       <Tabs.Root defaultValue="usuarios">
         <Tabs.List aria-label="Administração">
@@ -130,43 +211,69 @@ export default function Administracao() {
         </Tabs.List>
         <Tabs.Content value="usuarios">
           <dl className="administracao__resumo"><div><dt>Usuários cadastrados</dt><dd>{usuarios.length}</dd></div><div><dt>Ativos</dt><dd>{usuarios.filter(u => u.status === 'ativo').length}</dd></div><div><dt>Bloqueados ou revogados</dt><dd>{usuarios.filter(u => ['bloqueado', 'revogado'].includes(u.status)).length}</dd></div></dl>
+          <section className="administracao__niveis" aria-label="Níveis de acesso">
+            <Text size="2" weight="bold">Níveis de acesso</Text>
+            <div className="administracao__niveis-lista">
+              {Object.entries(NIVEIS).map(([id, n]) => (
+                <div key={id}><Badge color={n.cor} variant="soft">{n.rotulo}</Badge><Text size="2" color="gray">{n.descricao}</Text></div>
+              ))}
+            </div>
+            <Text size="1" color="gray">Ao criar ou editar uma pessoa, os perfis prontos (Advogado, Secretaria, Financeiro e Somente consulta) ajustam o acesso por área de uma vez; depois dá para refinar cada área.</Text>
+          </section>
           <div className="administracao__acoes">
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="admin-filtro">Filtrar usuários</label>
               <TextField.Root id="admin-filtro" value={filtro} onChange={e => setFiltro(e.target.value)} />
             </div>
-            <Button size="2" disabled={ocupado} onClick={() => { setErro(''); setEditor({ login: null, campos: { ...VAZIO } }) }}>Criar usuário</Button>
+            <Button size="2" disabled={ocupado} onClick={() => abrirEditor(null)}>Criar usuário</Button>
           </div>
-          <div className="administracao__tabela" role="region" aria-label="Usuários cadastrados" tabIndex={0}><TabelaResponsiva principais={['Nome e login', 'Status', 'Data', 'Usuário']}><table><caption>Usuários do sistema — {lista.length} resultado(s)</caption><thead><tr>{['Nome e login', 'E-mail', 'Nível de acesso', 'Status', 'Cadastro', 'Último acesso', 'Ações'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>
-            {lista.map(u => <tr key={u.usuario_id}><td>{u.nome_completo}<small>{u.login}</small></td><td>{u.email || 'Não informado'}</td><td>{u.nivel_acesso}</td><td>{u.status}</td><td>{data(u.criado_em)}</td><td>{data(u.ultimo_acesso_em)}</td><td><Button size="1" variant="ghost" disabled={ocupado} onClick={() => { setErro(''); setEditor({ login: u.login, campos: { login: u.login, nome_completo: u.nome_completo, email: u.email || '', nivel_acesso: u.nivel_acesso, status: u.status, permissoes: u.permissoes ?? {} } }) }}>Editar<Text className="aj-sr-only"> {u.nome_completo}</Text></Button></td></tr>)}
-            {!lista.length && <tr><td colSpan={7}>Nenhum usuário encontrado.</td></tr>}
+          <div className="administracao__tabela" role="region" aria-label="Usuários cadastrados" tabIndex={0}><TabelaResponsiva principais={['Usuário', 'Nível de acesso', 'Status', 'Último acesso']}><table><caption>Usuários do sistema — {lista.length} resultado(s)</caption><thead><tr>{['Usuário', 'E-mail', 'Nível de acesso', 'Status', ...(tarifas ? ['Valor por hora'] : []), 'Último acesso', 'Ações'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>
+            {lista.map(u => {
+              const n = NIVEIS[u.nivel_acesso as keyof typeof NIVEIS]
+              const st = STATUS[u.status]
+              const pronto = n && u.nivel_acesso !== 'administrador' ? perfilDe(u.nivel_acesso, u.permissoes) : null
+              const personalizado = n && u.nivel_acesso !== 'administrador' && !pronto && Object.keys(u.permissoes ?? {}).length > 0
+              return (
+                <tr key={u.usuario_id}>
+                  <td>{u.nome_completo}{u.login === eu && <> <Badge color="blue" variant="soft">Você</Badge></>}<small>{u.login}</small></td>
+                  <td>{u.email || 'Não informado'}</td>
+                  <td><Badge color={n?.cor ?? 'gray'} variant="soft">{n?.rotulo ?? u.nivel_acesso}</Badge>{(pronto || personalizado) && <small>{pronto ? pronto.rotulo : 'Acesso personalizado'}</small>}</td>
+                  <td><Badge color={st?.cor ?? 'gray'} variant="soft">{st?.rotulo ?? u.status}</Badge></td>
+                  {tarifas && <td>{tarifas[u.login] !== undefined ? `${formatarMoeda(tarifas[u.login])}/h` : '—'}</td>}
+                  <td title={data(u.ultimo_acesso_em)}>{haQuanto(u.ultimo_acesso_em)}</td>
+                  <td><Button size="1" variant="ghost" disabled={ocupado} onClick={() => abrirEditor(u)}>Editar<Text className="aj-sr-only"> {u.nome_completo}</Text></Button></td>
+                </tr>
+              )
+            })}
+            {!lista.length && <tr><td colSpan={tarifas ? 7 : 6}>Nenhum usuário encontrado.</td></tr>}
           </tbody></table></TabelaResponsiva></div>
         </Tabs.Content>
         <Tabs.Content value="banco">
           <Heading as="h2" size="4" mt="4">Banco de dados</Heading>
           <Text as="p" size="2" color="gray">Consulte o estado do SQLite e gere uma cópia consistente dos dados.</Text>
           <div className="administracao__acoes">
-            <Button size="2" disabled={ocupado} onClick={() => void executar(async () => { setBanco(await (await requisicao('/admin/banco/api', sessao)).json()) })}>Carregar informações</Button>
+            <Button size="2" disabled={ocupado} onClick={() => void executar(() => carregarBanco(sessao))}>Atualizar informações</Button>
             <Button variant="soft" size="2" disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/banco/integridade', sessao, 'POST')).json(); if (!r.integro) throw new Error('A verificação identificou inconsistências no banco.'); setMensagem(`Integridade verificada em ${data(r.verificado_em)}.`) })}>Verificar integridade</Button>
             <Button variant="soft" size="2" disabled={ocupado} onClick={() => setConfirmarBackup(true)}>Baixar backup</Button>
             <Button variant="ghost" color="red" size="2" disabled={ocupado} onClick={() => setLimpeza({ categorias: [], texto: '', resultado: null })}>Limpar dados</Button>
           </div>
-          {banco && <dl className="administracao__resumo"><div><dt>Banco</dt><dd>{banco.tipo}</dd></div><div><dt>Tamanho</dt><dd>{(banco.tamanho_bytes / 1024 / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} MB</dd></div><div><dt>Tabelas</dt><dd>{banco.tabelas}</dd></div></dl>}
+          {banco ? <dl className="administracao__resumo"><div><dt>Banco</dt><dd>{banco.tipo}</dd></div><div><dt>Tamanho</dt><dd>{(banco.tamanho_bytes / 1024 / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} MB</dd></div><div><dt>Tabelas</dt><dd>{banco.tabelas}</dd></div></dl>
+            : <Text as="p" size="2" color="gray" role="status">{falhaCarga('banco', '')}</Text>}
         </Tabs.Content>
         <Tabs.Content value="historico">
           <Heading as="h2" size="4" mt="4">Histórico administrativo</Heading>
           <Text as="p" size="2" color="gray">Até 100 alterações de cadastro, com data e responsável.</Text>
-          <Button size="2" disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/usuarios/historico', sessao)).json(); setHistorico(r.historico) })}>Carregar histórico</Button>
-          <div className="administracao__tabela" role="region" aria-label="Histórico administrativo" tabIndex={0}><TabelaResponsiva principais={['Nome e login', 'Status', 'Data', 'Usuário']}><table><thead><tr>{['Data', 'Responsável', 'Usuário', 'Ação', 'Campos alterados'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>{historico.map((h, i) => <tr key={i}><td>{data(h.ocorrido_em)}</td><td>{h.ator}</td><td>{h.usuario}</td><td>{h.acao}</td><td>{JSON.parse(h.campos).join(', ')}</td></tr>)}{!historico.length && <tr><td colSpan={5}>Carregue o histórico para consultar os registros disponíveis.</td></tr>}</tbody></table></TabelaResponsiva></div>
+          <Button size="2" disabled={ocupado} onClick={() => void executar(() => carregarHistorico(sessao))}>Atualizar histórico</Button>
+          <div className="administracao__tabela" role="region" aria-label="Histórico administrativo" tabIndex={0}><TabelaResponsiva principais={['Data', 'Usuário', 'Ação']}><table><thead><tr>{['Data', 'Responsável', 'Usuário', 'Ação', 'Campos alterados'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>{historico.map((h, i) => <tr key={i}><td>{data(h.ocorrido_em)}</td><td>{h.ator}</td><td>{h.usuario}</td><td>{rotuloAcao(h.acao)}</td><td>{descreverCampos(h.campos)}</td></tr>)}{!historico.length && <tr><td colSpan={5}>{falhaCarga('historico', 'Nenhuma alteração registrada.')}</td></tr>}</tbody></table></TabelaResponsiva></div>
         </Tabs.Content>
       </Tabs.Root>
       <section aria-label="Histórico de acessos">
         <Heading as="h2" size="4" mt="5">Histórico de acessos</Heading>
         <Text as="p" size="2" color="gray">Últimos 100 registros de atividade autenticada. Até um registro por usuário por minuto, com retenção de 180 dias.</Text>
-        <Button size="2" disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/usuarios/acessos', sessao)).json(); setAcessos(r.acessos) })}>Carregar acessos</Button>
+        <Button size="2" disabled={ocupado} onClick={() => void executar(() => carregarAcessos(sessao))}>Atualizar acessos</Button>
         <div className="administracao__tabela" role="region" aria-label="Acessos registrados" tabIndex={0}>
-          <TabelaResponsiva principais={['Nome e login', 'Status', 'Data', 'Usuário']}><table><thead><tr><th scope="col">Data e hora</th><th scope="col">Usuário</th></tr></thead>
-            <tbody>{acessos.map((a, i) => <tr key={i}><td>{data(a.ocorrido_em)}</td><td>{a.usuario}</td></tr>)}{!acessos.length && <tr><td colSpan={2}>Carregue os acessos para consultar os registros disponíveis.</td></tr>}</tbody>
+          <TabelaResponsiva principais={['Data e hora', 'Usuário']}><table><thead><tr><th scope="col">Data e hora</th><th scope="col">Usuário</th></tr></thead>
+            <tbody>{acessos.map((a, i) => <tr key={i}><td>{data(a.ocorrido_em)}</td><td>{a.usuario}</td></tr>)}{!acessos.length && <tr><td colSpan={2}>{falhaCarga('acessos', 'Nenhum acesso registrado.')}</td></tr>}</tbody>
           </table></TabelaResponsiva>
         </div>
       </section>
@@ -195,23 +302,46 @@ export default function Administracao() {
             <TextField.Root id="usuario-email" type="email" maxLength={254} value={editor.campos.email} disabled={ocupado} onChange={e => setEditor({ ...editor, campos: { ...editor.campos, email: e.target.value } })} />
           </div>
           <div className="form-campo">
+            <label className="form-campo-label" htmlFor="usuario-perfil">Perfil pronto</label>
+            <Select.Root value={perfilAtual?.id ?? 'personalizado'} disabled={ocupado} onValueChange={id => {
+              const perfil = PERFIS.find(x => x.id === id)
+              if (perfil) setEditor({ ...editor, campos: { ...editor.campos, ...aplicarPerfil(perfil) } })
+            }}>
+              <Select.Trigger id="usuario-perfil" style={{ width: '100%' }} />
+              <Select.Content>
+                {PERFIS.map(x => <Select.Item key={x.id} value={x.id}>{x.rotulo}</Select.Item>)}
+                <Select.Item value="personalizado" disabled>Personalizado</Select.Item>
+              </Select.Content>
+            </Select.Root>
+            <Text size="1" color="gray">{perfilAtual ? perfilAtual.descricao : 'Acesso personalizado: escolha um perfil pronto para recomeçar ou ajuste cada área abaixo.'}</Text>
+          </div>
+          <div className="form-campo">
             <label className="form-campo-label" htmlFor="usuario-nivel">Nível de acesso</label>
             <Select.Root value={editor.campos.nivel_acesso} disabled={ocupado} onValueChange={v => setEditor({ ...editor, campos: { ...editor.campos, nivel_acesso: v } })}>
               <Select.Trigger id="usuario-nivel" style={{ width: '100%' }} />
               <Select.Content>
-                {[['administrador', 'Administrador'], ['operador', 'Operador'], ['consulta', 'Consulta']].map(([v, t]) => <Select.Item key={v} value={v}>{t}</Select.Item>)}
+                {Object.entries(NIVEIS).map(([v, n]) => <Select.Item key={v} value={v}>{n.rotulo}</Select.Item>)}
               </Select.Content>
             </Select.Root>
+            <Text size="1" color="gray">{NIVEIS[editor.campos.nivel_acesso as keyof typeof NIVEIS]?.descricao}</Text>
           </div>
           <div className="form-campo">
             <label className="form-campo-label" htmlFor="usuario-status">Status</label>
             <Select.Root value={editor.campos.status} disabled={ocupado} onValueChange={v => setEditor({ ...editor, campos: { ...editor.campos, status: v } })}>
               <Select.Trigger id="usuario-status" style={{ width: '100%' }} />
               <Select.Content>
-                {[['ativo', 'Ativo'], ['pendente', 'Pendente'], ['bloqueado', 'Bloqueado'], ['revogado', 'Revogado']].map(([v, t]) => <Select.Item key={v} value={v}>{t}</Select.Item>)}
+                {Object.entries(STATUS).map(([v, t]) => <Select.Item key={v} value={v}>{t.rotulo}</Select.Item>)}
               </Select.Content>
             </Select.Root>
           </div>
+          {tarifas !== null && (
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="usuario-valor-hora">Valor por hora (R$), opcional</label>
+              <TextField.Root id="usuario-valor-hora" inputMode="decimal" value={editor.valorHora} disabled={ocupado} placeholder="Sem valor definido"
+                color={valorHoraInvalido ? 'red' : undefined} onChange={e => setEditor({ ...editor, valorHora: e.target.value })} />
+              <Text size="1" color={valorHoraInvalido ? 'red' : 'gray'}>{valorHoraInvalido ? 'Informe um valor maior que zero, como 300 ou 300,50.' : 'Usado nas horas que esta pessoa lançar daqui em diante; horas antigas não mudam.'}</Text>
+            </div>
+          )}
           {editor.campos.nivel_acesso !== 'administrador' && (
             <fieldset className="administracao__permissoes">
               <legend>Acesso por área</legend>
@@ -240,10 +370,10 @@ export default function Administracao() {
             </fieldset>
           )}
           <Text as="p" size="2" color="gray">Administrador gerencia o sistema; operador altera dados; consulta permite leitura. Revogar encerra o acesso permanentemente.</Text>
-          {editor.login && (() => { const u = usuarios.find(u => u.login === editor.login); return u && <dl><dt>ID</dt><dd>{u.usuario_id}</dd><dt>Atualizado em</dt><dd>{data(u.atualizado_em)}</dd><dt>E-mail verificado em</dt><dd>{data(u.email_verificado_em)}</dd><dt>Criado por</dt><dd>{u.criado_por || 'Não registrado'}</dd><dt>Revogado em</dt><dd>{data(u.revogado_em)}</dd><dt>Revogado por</dt><dd>{u.revogado_por || 'Não registrado'}</dd></dl> })()}
+          {editor.login && (() => { const u = usuarios.find(u => u.login === editor.login); return u && <dl><dt>ID</dt><dd>{u.usuario_id}</dd><dt>Cadastrado em</dt><dd>{data(u.criado_em)}</dd><dt>Atualizado em</dt><dd>{data(u.atualizado_em)}</dd><dt>E-mail verificado em</dt><dd>{data(u.email_verificado_em)}</dd><dt>Criado por</dt><dd>{u.criado_por || 'Não registrado'}</dd><dt>Revogado em</dt><dd>{data(u.revogado_em)}</dd><dt>Revogado por</dt><dd>{u.revogado_por || 'Não registrado'}</dd></dl> })()}
           <Flex gap="3" mt="4" justify="end">
             <Button variant="soft" color="gray" disabled={ocupado} onClick={() => { setEditor(null); setErro('') }}>Cancelar</Button>
-            <Button disabled={ocupado || !editor.campos.nome_completo.trim() || (editor.login === null && (!editor.campos.email || !editor.campos.login))} onClick={() => void executar(salvar)}>
+            <Button disabled={ocupado || valorHoraInvalido || !editor.campos.nome_completo.trim() || (editor.login === null && (!editor.campos.email || !editor.campos.login))} onClick={() => void executar(salvar)}>
               {ocupado ? 'Salvando…' : 'Salvar cadastro'}
             </Button>
           </Flex>
