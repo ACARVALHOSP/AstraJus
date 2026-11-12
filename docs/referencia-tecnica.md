@@ -65,6 +65,10 @@ O frontend Radix (`/radix/`) é servido diretamente pelo Caddy a partir de `/srv
 | GET, POST | `/casos/<id>/atividades/<aid>/checklist` | Itens do checklist |
 | PATCH, DELETE | `/casos/<id>/atividades/<aid>/checklist/<item>` | Atualiza / exclui item |
 | GET, POST, PATCH, DELETE | `/casos/<id>/atividades/<aid>/agenda` | Sincronização da atividade com a agenda Google do usuário |
+| GET, POST, PATCH, DELETE | `/modelos-prazo[/<id>]` | Modelos de prazos e tarefas por assunto ou classe processual (leitura: atividades ou processos; escrita: atividades) |
+| GET | `/casos/<id>/modelos-prazo` | Modelos ativos que combinam com a ação, a classe ou os assuntos do processo e ainda não foram aplicados nem dispensados nele |
+| POST | `/casos/<id>/modelos-prazo/<modelo>/aplicar` | Cria as atividades já revisadas (`itens: [{tipo, titulo, data}]`); 409 se o modelo já foi decidido no processo; desfaz tudo se a criação falhar no meio |
+| POST | `/casos/<id>/modelos-prazo/<modelo>/dispensar` | Não sugerir mais este modelo neste processo |
 | POST | `/casos/<id>/atividades/<aid>/ciencia` | Confirma ciência de um prazo (só `tipo=prazo`; vale a primeira confirmação da data atual do prazo; 404 se não for prazo) |
 | POST | `/casos/<id>/evento-calendar` | Cria evento de dia inteiro no Google Calendar |
 | GET, POST | `/casos/<id>/publicacoes` | Publicações vinculadas ao caso / vincular |

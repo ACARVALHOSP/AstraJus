@@ -14,6 +14,7 @@ import PublicacoesCaso from './casos/PublicacoesCaso'
 import MovimentacoesCaso from './casos/MovimentacoesCaso'
 import PoloClientes from './casos/PoloClientes'
 import VinculosCaso from './casos/VinculosCaso'
+import SugestaoModelos from './casos/SugestaoModelos'
 import './casos/processos-radix.css'
 
 const ABAS = ['cadastro', 'atividades', 'publicacoes', 'movimentacoes', 'vinculos'] as const
@@ -37,6 +38,7 @@ export default function Casos() {
   useEffect(atualizarContagens, [atualizarContagens])
   const contagens = contagensDe && contagensDe.casoId === casoId ? contagensDe : null
   const [destinoAtividade, setDestinoAtividade] = useState<{ id?: string | number; versao: number }>({ versao: 0 })
+  const [versaoAtividades, setVersaoAtividades] = useState(0) // muda quando um modelo cria atividades: recarrega a aba
   const [resumo, setResumo] = useState<Caso | null>(null)
   const [abaSelecionada, setAbaSelecionada] = useState<AbaId>('cadastro')
   const [titulo, setTitulo] = useState<string | null>(null)
@@ -103,6 +105,7 @@ export default function Casos() {
           ))}
           {resumo && <PoloClientes key={casoId} casoId={casoId} polos={resumo.polos} podeEditar={podeEditar('casos')} />}
         </div>
+        <SugestaoModelos key={casoId} casoId={casoId} onAplicado={() => { atualizarContagens(); setVersaoAtividades(v => v + 1) }} />
         <Tabs.Root key={casoId} value={abaSelecionada} onValueChange={(v) => confirmarSaida(() => setAbaSelecionada(v as AbaId))}>
           <div ref={faixaAbas}>
             <Tabs.List className="casos-abas" aria-label="Detalhes do processo">
@@ -129,7 +132,7 @@ export default function Casos() {
             />
           </Tabs.Content>
           <Tabs.Content value="atividades">
-            <AtividadesCaso key={`${casoId}:${destinoAtividade.versao}`} casoId={casoId} atividadeInicialId={destinoAtividade.id} onAlterado={atualizarContagens} />
+            <AtividadesCaso key={`${casoId}:${destinoAtividade.versao}:${versaoAtividades}`} casoId={casoId} atividadeInicialId={destinoAtividade.id} onAlterado={atualizarContagens} />
           </Tabs.Content>
           <Tabs.Content value="publicacoes">
             <PublicacoesCaso casoId={casoId} onAlterado={atualizarContagens} />

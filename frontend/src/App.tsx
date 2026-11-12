@@ -4,7 +4,7 @@ import {
   Scale, Users, CalendarCheck, CalendarDays, Search, Gavel, Briefcase,
   Newspaper, BarChart2, BookOpen, History, FileSearch, Receipt, KeyRound,
   Settings, Link, Wallet, CreditCard, ShieldCheck, Menu, X,
-  Palette, ChevronDown, ChevronRight, Check, House,
+  Palette, ChevronDown, ChevronRight, Check, House, ListChecks,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ClienteProvider, useCliente } from './api/ClienteContext'
@@ -38,6 +38,7 @@ const Agenda = lazy(() => import('./routes/Agenda'))
 const PublicacoesOab = lazy(() => import('./routes/PublicacoesOab'))
 const Contatos = lazy(() => import('./routes/Contatos'))
 const Casos = lazy(() => import('./routes/Casos'))
+const ModelosPrazo = lazy(() => import('./routes/ModelosPrazo'))
 import './app-radix.css'
 
 export type AccentColor = 'indigo' | 'violet' | 'teal' | 'crimson'
@@ -78,6 +79,7 @@ const GRUPOS_NAVEGACAO = [
     id: 'configuracoes', label: 'Configurações', icone: Settings,
     abas: [
       { id: 'acesso', label: 'Acesso', icone: KeyRound },
+      { id: 'modelos-prazo', label: 'Modelos de prazos', icone: ListChecks },
       { id: 'integracoes', label: 'Integrações', icone: Link },
       { id: 'administracao', label: 'Administração', icone: ShieldCheck },
     ],
@@ -149,6 +151,7 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
   switch (abaAtiva) {
     case 'inicio': return <Home />
     case 'administracao': return <Administracao />
+    case 'modelos-prazo': return <ModelosPrazo />
     case 'acesso': return <Acesso />
     case 'processo': return <Processo />
     case 'publicacoes': return <Publicacoes />
