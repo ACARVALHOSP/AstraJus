@@ -64,3 +64,24 @@ test('lê o valor por hora digitado', () => {
   assert.equal(lerValorHora('99.99'), 99.99)
   for (const ruim of ['0', '-5', 'abc', '1,234', '100001', '1.2.3', '3,0,0']) assert.equal(lerValorHora(ruim), undefined, ruim)
 })
+
+import { descreverCampos, rotuloAcao } from '../src/routes/administracao/formatos.ts'
+
+test('campos do histórico: lista de cadastro, objeto da limpeza e dados estranhos nunca quebram', () => {
+  assert.equal(descreverCampos('["nome_completo","permissoes"]'), 'Nome, Acesso por área')
+  assert.equal(descreverCampos('[]'), '')
+  // "Limpar dados" grava um objeto, e não uma lista (era o que derrubava a tela)
+  assert.equal(descreverCampos('{"publicacoes": 12, "notificacoes": 0}'), 'Publicações capturadas: 12 registro(s) apagado(s); Notificações: 0 registro(s) apagado(s)')
+  assert.equal(descreverCampos('{"outra": 3}'), 'outra: 3')
+  assert.equal(descreverCampos('texto solto'), 'texto solto')   // não é JSON
+  assert.equal(descreverCampos('"permissoes"'), 'permissoes')   // JSON de uma string
+  assert.equal(descreverCampos('42'), '42')
+  assert.equal(descreverCampos('null'), '')
+  assert.equal(descreverCampos(null), '')
+  assert.equal(descreverCampos(undefined), '')
+  assert.equal(descreverCampos(['status']), 'Status')            // já veio como lista
+})
+
+test('rótulos das ações do histórico', () => {
+  assert.deepEqual(['criar', 'atualizar', 'limpar_banco', 'outra'].map(rotuloAcao), ['Cadastro criado', 'Cadastro alterado', 'Limpeza de dados', 'outra'])
+})

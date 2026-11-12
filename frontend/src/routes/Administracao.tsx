@@ -24,7 +24,7 @@ import { useCliente } from '../api/ClienteContext'
 import { AREAS, usePerfil } from '../api/PerfilContext'
 import { formatarMoeda } from '../utils/formatadores'
 import { NIVEIS, PERFIS, aplicarPerfil, grauPadrao, perfilDe, type Grau } from './administracao/perfis'
-import { haQuanto, lerValorHora } from './administracao/formatos'
+import { descreverCampos, haQuanto, lerValorHora, rotuloAcao } from './administracao/formatos'
 import './administracao.scss'
 
 type Usuario = {
@@ -264,7 +264,7 @@ export default function Administracao() {
           <Heading as="h2" size="4" mt="4">Histórico administrativo</Heading>
           <Text as="p" size="2" color="gray">Até 100 alterações de cadastro, com data e responsável.</Text>
           <Button size="2" disabled={ocupado} onClick={() => void executar(() => carregarHistorico(sessao))}>Atualizar histórico</Button>
-          <div className="administracao__tabela" role="region" aria-label="Histórico administrativo" tabIndex={0}><TabelaResponsiva principais={['Data', 'Usuário', 'Ação']}><table><thead><tr>{['Data', 'Responsável', 'Usuário', 'Ação', 'Campos alterados'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>{historico.map((h, i) => <tr key={i}><td>{data(h.ocorrido_em)}</td><td>{h.ator}</td><td>{h.usuario}</td><td>{h.acao}</td><td>{JSON.parse(h.campos).join(', ')}</td></tr>)}{!historico.length && <tr><td colSpan={5}>{falhaCarga('historico', 'Nenhuma alteração registrada.')}</td></tr>}</tbody></table></TabelaResponsiva></div>
+          <div className="administracao__tabela" role="region" aria-label="Histórico administrativo" tabIndex={0}><TabelaResponsiva principais={['Data', 'Usuário', 'Ação']}><table><thead><tr>{['Data', 'Responsável', 'Usuário', 'Ação', 'Campos alterados'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>{historico.map((h, i) => <tr key={i}><td>{data(h.ocorrido_em)}</td><td>{h.ator}</td><td>{h.usuario}</td><td>{rotuloAcao(h.acao)}</td><td>{descreverCampos(h.campos)}</td></tr>)}{!historico.length && <tr><td colSpan={5}>{falhaCarga('historico', 'Nenhuma alteração registrada.')}</td></tr>}</tbody></table></TabelaResponsiva></div>
         </Tabs.Content>
       </Tabs.Root>
       <section aria-label="Histórico de acessos">
