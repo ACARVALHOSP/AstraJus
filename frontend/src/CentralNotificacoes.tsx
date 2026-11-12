@@ -17,7 +17,7 @@ function PainelNotificacoes({ cliente }: { cliente: ClienteMCP | null }) {
   const { irPara } = useNavegacao()
   const [aberta, setAberta] = useState(false)
   const [somenteNaoLidas, setSomenteNaoLidas] = useState(false)
-  const { itens, naoLidas, cursor, carregando, carregou, erro, acaoPendente, carregar, marcarLida, buscarDestino } = useNotificacoes(cliente, aberta, somenteNaoLidas)
+  const { itens, naoLidas, cursor, carregando, carregou, erro, acaoPendente, carregar, marcarLida, confirmarCiencia, buscarDestino } = useNotificacoes(cliente, aberta, somenteNaoLidas)
   const ocupado = carregando || acaoPendente !== null
   const naoLidasVisiveis = itens.filter(n => !n.lida_em)
   async function marcarTodas() {
@@ -101,6 +101,9 @@ function PainelNotificacoes({ cliente }: { cliente: ClienteMCP | null }) {
                           <Button variant="ghost" size="1" disabled={ocupado} onClick={() => abrirDestino(item)}>{item.destino.tipo === 'atividade' ? 'Abrir atividade' : item.destino.tipo === 'movimentos_processo' ? 'Abrir movimentações' : 'Abrir publicações'}</Button>
                           {!item.lida_em && <Button variant="ghost" size="1" disabled={ocupado} onClick={() => marcarLida(item)}>Marcar como lida</Button>}
                         </Flex>
+                        {item.exige_ciencia && (item.ciente
+                          ? <Badge color="green" variant="soft" style={{ alignSelf: 'flex-start' }}>Ciente</Badge>
+                          : <Button size="1" variant="soft" color="amber" disabled={ocupado} onClick={() => confirmarCiencia(item)} style={{ alignSelf: 'flex-start' }}>Confirmar ciência</Button>)}
                       </Flex>
                     </li>
                   ))}

@@ -11,12 +11,16 @@ import { formatarMoeda, formatarNomeExibicao } from '../../utils/formatadores'
 import { COR_TIPO, isoLocal, ROTULO_TIPO } from '../atividades/dados'
 import { somarDias } from '../atividades/agenda'
 import type { ResumoInadimplencia } from '../financeiro/dadosResumo'
+import CentralRisco from './CentralRisco'
+import { montarRiscos, type Destino } from './risco'
 import './home-radix.css'
 
 type Item = { id: number | string; caso_id: string; titulo: string; tipo: string; data?: string | null; hora?: string | null; responsavel?: string | null; caso: { titulo?: string | null } }
 type Resumo = {
   semana: Item[] | null; atrasadas: Item[] | null; publicacoes: number | null; deClientes: number; inadimplencia: ResumoInadimplencia | null
   clientes: Record<string, string>
+  rotinas: Record<string, { estado: string; erro?: string | null }[]> | null
+  integracoes: { google: boolean; asaas: boolean; agendaPessoal: boolean | null } | null
 }
 const dataCurta = (iso: string) => { const [, m, d] = iso.slice(0, 10).split('-'); return `${d}/${m}` }
 
@@ -26,7 +30,7 @@ export default function Escritorio({ abas }: { abas: ReactNode }) {
   const { cliente } = useCliente()
   const { irPara } = useNavegacao()
   const { abaPermitida } = usePerfil()
-  const verAtividades = abaPermitida('atividades'), verPublicacoes = abaPermitida('publicacoes-oab'), verFinanceiro = abaPermitida('financeiro')
+  const verAtividades = abaPermitida('atividades'), verPublicacoes = abaPermitida('publicacoes-oab'), verFinanceiro = abaPermitida('financeiro'), verIntegracoes = abaPermitida('integracoes')
   const [agora] = useState(() => new Date())
   const hoje = isoLocal(agora)
   const [dados, setDados] = useState<Resumo | null>(null)
@@ -37,25 +41,32 @@ export default function Escritorio({ abas }: { abas: ReactNode }) {
     if (!cliente) { setCarregando(false); return }
     setCarregando(true); setErro('')
     // Cada fonte é independente: se uma falhar (ou o acesso for negado), as outras continuam.
-    const [semana, atrasadas, pubs, fin, clientes] = await Promise.allSettled([
+    const [semana, atrasadas, pubs, fin, clientes, automacoes, statusIntegracoes, agenda] = await Promise.allSettled([
       verAtividades ? buscarJson<{ atividades: Item[] }>(cliente, `/atividades?situacao=abertas&de=${hoje}&ate=${somarDias(hoje, 6)}`) : Promise.reject(new Error('sem acesso')),
       verAtividades ? buscarJson<{ atividades: Item[] }>(cliente, `/atividades?situacao=abertas&ate=${somarDias(hoje, -1)}`) : Promise.reject(new Error('sem acesso')),
       verPublicacoes ? buscarJson<{ total: number; destinadas_a_clientes?: number }>(cliente, '/publicacoes-oab?status=nao_tratada&pagina=1&tamanho=1') : Promise.reject(new Error('sem acesso')),
       verFinanceiro ? buscarJson<{ inadimplencia: ResumoInadimplencia }>(cliente, `/lancamentos/resumo?hoje=${hoje}`) : Promise.reject(new Error('sem acesso')),
       verFinanceiro ? buscarJson<{ clientes: { id: string; nome?: string }[] }>(cliente, '/clientes') : Promise.reject(new Error('sem acesso')),
+      verPublicacoes ? buscarJson<{ rotinas: NonNullable<Resumo['rotinas']> }>(cliente, '/automacoes') : Promise.reject(new Error('sem acesso')),
+      verIntegracoes ? buscarJson<{ google: boolean; asaas: boolean }>(cliente, '/integracoes/status') : Promise.reject(new Error('sem acesso')),
+      verIntegracoes ? buscarJson<{ conectado: boolean }>(cliente, '/integracoes/calendar/status') : Promise.reject(new Error('sem acesso')),
     ])
     const ok = <T,>(r: PromiseSettledResult<T>) => (r.status === 'fulfilled' ? r.value : null)
     const resultado = {
       semana: ok(semana)?.atividades ?? null, atrasadas: ok(atrasadas)?.atividades ?? null,
       publicacoes: ok(pubs)?.total ?? null, deClientes: ok(pubs)?.destinadas_a_clientes ?? 0, inadimplencia: ok(fin)?.inadimplencia ?? null,
       clientes: Object.fromEntries((ok(clientes)?.clientes ?? []).map(c => [c.id, c.nome ?? ''])),
+      rotinas: ok(automacoes)?.rotinas ?? null,
+      integracoes: ok(statusIntegracoes) && typeof ok(statusIntegracoes)?.google === 'boolean'
+        ? { google: ok(statusIntegracoes)!.google, asaas: ok(statusIntegracoes)!.asaas === true, agendaPessoal: ok(statusIntegracoes)!.google && ok(agenda) ? ok(agenda)!.conectado === true : null }
+        : null,
     }
     setDados(resultado)
     const quiseram = [verAtividades, verAtividades, verPublicacoes, verFinanceiro].filter(Boolean).length
     const vieram = [resultado.semana, resultado.atrasadas, resultado.publicacoes, resultado.inadimplencia].filter(x => x !== null).length
     if (vieram < quiseram) setErro('Parte do resumo não pôde ser carregada. Os números abaixo podem estar incompletos.')
     setCarregando(false)
-  }, [cliente, hoje, verAtividades, verPublicacoes, verFinanceiro])
+  }, [cliente, hoje, verAtividades, verPublicacoes, verFinanceiro, verIntegracoes])
   useEffect(() => {
     // eslint-disable-next-line react/set-state-in-effect
     void carregar()
@@ -66,6 +77,13 @@ export default function Escritorio({ abas }: { abas: ReactNode }) {
   const proximos = [...(dados?.semana ?? [])].filter(a => a.tipo === 'prazo' || a.tipo === 'audiencia')
     .sort((a, b) => `${a.data}${a.hora ?? '99'}`.localeCompare(`${b.data}${b.hora ?? '99'}`)).slice(0, 8)
   const inad = dados?.inadimplencia
+  const riscos = dados ? montarRiscos({
+    hoje, semana: dados.semana, atrasadas: dados.atrasadas, publicacoes: dados.publicacoes, deClientes: dados.deClientes,
+    rotinas: dados.rotinas, integracoes: dados.integracoes,
+  }) : []
+  // Fonte pedida e que não veio: não dá para afirmar "nada exige atenção".
+  const incompleto = Boolean(erro) || (dados !== null && ((verPublicacoes && dados.rotinas === null) || (verIntegracoes && dados.integracoes === null)))
+  const irDestino = (d: Destino) => irPara(d.aba, d.payload)
 
   type Cartao = { chave: string; titulo: string; valor: string; legenda: string; alerta?: boolean; vazio: boolean; ir: () => void }
   const cartoes: Cartao[] = []
@@ -94,6 +112,7 @@ export default function Escritorio({ abas }: { abas: ReactNode }) {
       {erro && <Callout.Root color="amber" size="1" role="status"><Callout.Icon><AlertTriangle size={14} /></Callout.Icon><Callout.Text>{erro}</Callout.Text></Callout.Root>}
       {carregando && !dados && <Carregamento tipo="detalhe" descricao="Carregando o resumo…" />}
       {dados && !cartoes.length && !carregando && <Text as="p" size="2" color="gray">Seu perfil não tem acesso às áreas que compõem este resumo.</Text>}
+      {dados && !carregando && (cartoes.length > 0 || riscos.length > 0) && <CentralRisco riscos={riscos} incompleto={incompleto} onIr={irDestino} />}
       {cartoes.length > 0 && (
         <div className="home-resumo" role="list" aria-label="Resumo do escritório" aria-busy={carregando}>
           {cartoes.map(c => (

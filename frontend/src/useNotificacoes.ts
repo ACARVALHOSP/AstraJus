@@ -15,6 +15,9 @@ export type Notificacao = {
   criado_em: string
   lida_em: string | null
   destino: DestinoNotificacao
+  /** Só prazos pedem ciência; `ciente` indica que alguém já confirmou para a data atual do prazo. */
+  exige_ciencia?: boolean
+  ciente?: boolean
 }
 
 type Feed = { notificacoes: Notificacao[]; proximo_cursor: string | null; nao_lidas: number }
@@ -152,6 +155,19 @@ export function useNotificacoes(cliente: ClienteMCP | null, aberta: boolean, som
     await atualizarContagem()
   }
 
+  // Confirma ciência do prazo ao qual a notificação se refere. Vale para todos os avisos da mesma atividade.
+  async function confirmarCiencia(item: Notificacao) {
+    const destino = item.destino
+    if (destino.tipo !== 'atividade' || item.ciente) return
+    const resultado = await executarAcao(item.id, sinal => enviarJson<{ ciencia: { usuario: string; confirmado_em: string } }>(
+      cliente, `/casos/${encodeURIComponent(destino.caso_id)}/atividades/${encodeURIComponent(String(destino.atividade_id))}/ciencia`, {}, 'POST', sinal,
+    ))
+    if (!resultado) return
+    setItens(atual => atual.map(n => n.destino.tipo === 'atividade' && String(n.destino.atividade_id) === String(destino.atividade_id) ? { ...n, ciente: true } : n))
+    // Confirmar a ciência já conta como ler o aviso.
+    if (!item.lida_em) await marcarLida(item)
+  }
+
   async function buscarDestino(item: Notificacao) {
     return executarAcao(item.id, async sinal => {
       const dados = await buscarJson<{ destino: DestinoNotificacao }>(cliente, `/notificacoes/${encodeURIComponent(item.id)}/destino`, sinal)
@@ -165,5 +181,5 @@ export function useNotificacoes(cliente: ClienteMCP | null, aberta: boolean, som
     })
   }
 
-  return { itens, naoLidas, cursor, carregando, carregou, erro, acaoPendente, carregar, marcarLida, buscarDestino }
+  return { itens, naoLidas, cursor, carregando, carregou, erro, acaoPendente, carregar, marcarLida, confirmarCiencia, buscarDestino }
 }

@@ -36,6 +36,7 @@ _FONTES = """
  LEFT JOIN casos c ON c.id=e.caso_id
  LEFT JOIN caso_atividades a ON a.id=e.atividade_id AND a.caso_id=e.caso_id
  LEFT JOIN publicacoes_capturadas p ON p.hash=e.publicacao_hash
+ LEFT JOIN atividade_ciencia ci ON ci.atividade_id=e.atividade_id AND ci.data_prazo=substr(a.data, 1, 10)
 """
 _VISIVEL = """
  (json_extract(u.dados, '$.revogado') IS NULL OR json_extract(u.dados, '$.revogado')=0)
@@ -46,7 +47,7 @@ _VISIVEL = """
        OR (c.id IS NOT NULL AND p.caso_id=e.caso_id)
    ))
    OR (e.tipo='movimento_processual' AND c.id IS NOT NULL)
-   OR (e.tipo='prazo_vencendo' AND a.id IS NOT NULL AND c.id IS NOT NULL AND a.status IN ('pendente', 'em_andamento', 'aguardando'))
+   OR (e.tipo IN ('prazo_vencendo', 'prazo_escalonado') AND a.id IS NOT NULL AND c.id IS NOT NULL AND a.status IN ('pendente', 'em_andamento', 'aguardando'))
  )
 """
 
@@ -130,6 +131,21 @@ class Repositorio:
                     novos.append(usuario)
         return novos
 
+    def registrar_escalonamento(self, caso_id, atividade_id, destinatarios):
+        """Avisa os contatos de reserva de um prazo sem ciência. Uma vez por atividade e pessoa.
+        Devolve quem ainda não tinha sido avisado, para o e-mail sair uma vez só."""
+        novos = []
+        chave = f"{atividade_id}:escalonado"
+        with self.transacao() as c:
+            for usuario in destinatarios:
+                cursor = c.execute(
+                    "INSERT OR IGNORE INTO notificacao_eventos (usuario, tipo, chave, caso_id, atividade_id, criado_em) VALUES (?, ?, ?, ?, ?, ?)",
+                    (usuario, "prazo_escalonado", chave, caso_id, atividade_id, instante(self.agora())),
+                )
+                if cursor.rowcount:
+                    novos.append(usuario)
+        return novos
+
     def _processar(self, c, usuario, corte, agora):
         c.execute("UPDATE notificacao_eventos SET pendencia='destino_indisponivel' WHERE usuario=? AND criado_em>=? AND processado_em IS NULL AND pendencia IS NULL", (usuario, corte))
         ids = [linha[0] for linha in c.execute("SELECT e.id" + _FONTES + " WHERE e.usuario=? AND e.criado_em>=? AND e.processado_em IS NULL AND " + _VISIVEL, (usuario, corte))]
@@ -183,7 +199,7 @@ class Repositorio:
             if estado == "nao_lidas":
                 query += " AND n.lida_em IS NULL"
             linhas = c.execute(
-                "SELECT e.id, e.tipo, e.caso_id, e.atividade_id, e.criado_em, n.lida_em, a.titulo, a.responsavel, c.titulo AS caso_titulo, a.data AS ativ_data, a.hora AS ativ_hora, a.tipo AS ativ_tipo" + query
+                "SELECT e.id, e.tipo, e.caso_id, e.atividade_id, e.criado_em, n.lida_em, a.titulo, a.responsavel, c.titulo AS caso_titulo, a.data AS ativ_data, a.hora AS ativ_hora, a.tipo AS ativ_tipo, ci.confirmado_em AS ciente_em" + query
                 + " ORDER BY e.criado_em DESC, e.id DESC LIMIT ?", [*argumentos, limite + 1],
             ).fetchall()
             mais = len(linhas) > limite
@@ -191,12 +207,22 @@ class Repositorio:
             itens = []
             for linha in linhas:
                 delegacao = linha["tipo"] == "atividade_delegada"
+                if linha["tipo"] == "prazo_escalonado":
+                    itens.append({"id": str(linha["id"]), "tipo": linha["tipo"], "titulo": "Prazo sem confirmação de ciência",
+                                  "mensagem": f"{linha['titulo']} — {_quando(linha['ativ_data'], linha['ativ_hora'], agora_dt)}"
+                                              + (f" ({linha['caso_titulo']})" if linha["caso_titulo"] else "")
+                                              + (f". Responsável: {linha['responsavel']}" if linha["responsavel"] else ""),
+                                  "criado_em": linha["criado_em"], "lida_em": linha["lida_em"],
+                                  "exige_ciencia": True, "ciente": linha["ciente_em"] is not None,
+                                  "destino": {"tipo": "atividade", "caso_id": linha["caso_id"], "atividade_id": linha["atividade_id"]}})
+                    continue
                 if linha["tipo"] == "prazo_vencendo":
                     itens.append({"id": str(linha["id"]), "tipo": linha["tipo"],
                                   "titulo": "Audiência próxima" if linha["ativ_tipo"] == "audiencia" else "Prazo vencendo",
                                   "mensagem": f"{linha['titulo']} — {_quando(linha['ativ_data'], linha['ativ_hora'], agora_dt)}"
                                               + (f" ({linha['caso_titulo']})" if linha["caso_titulo"] else ""),
                                   "criado_em": linha["criado_em"], "lida_em": linha["lida_em"],
+                                  "exige_ciencia": linha["ativ_tipo"] == "prazo", "ciente": linha["ciente_em"] is not None,
                                   "destino": {"tipo": "atividade", "caso_id": linha["caso_id"], "atividade_id": linha["atividade_id"]}})
                     continue
                 if linha["tipo"] == "movimento_processual":
@@ -242,6 +268,6 @@ class Repositorio:
                 return None
             if linha["tipo"] == "movimento_processual":
                 return {"tipo": "movimentos_processo", "caso_id": linha["caso_id"]}
-            if linha["tipo"] in ("atividade_delegada", "prazo_vencendo"):
+            if linha["tipo"] in ("atividade_delegada", "prazo_vencendo", "prazo_escalonado"):
                 return {"tipo": "atividade", "caso_id": linha["caso_id"], "atividade_id": linha["atividade_id"]}
             return {"tipo": "publicacoes_processo", "caso_id": linha["caso_id"]} if linha["caso_id"] else {"tipo": "publicacoes_monitoradas"}

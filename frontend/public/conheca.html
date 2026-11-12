@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AstraJus · Gestão jurídica</title>
+<meta name="description" content="Publicações do DJEN, processos, prazos, agenda, financeiro jurídico e IA (MCP) num só sistema para escritórios de advocacia.">
+<link rel="icon" href="favicon.svg">
+<style>
+:root{--bg:#f7f8fb;--card:#fff;--tx:#1a1d24;--mut:#5b6170;--ac:#3b5bdb;--ac2:#e8edff;--bd:#e3e6ee;--warn:#c92a2a}
+@media (prefers-color-scheme:dark){:root{--bg:#111318;--card:#1a1d24;--tx:#eceef3;--mut:#a3a9b8;--ac:#7b93ff;--ac2:#1f2747;--bd:#2a2f3a;--warn:#ff6b6b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--ac)}
+.w{max-width:1080px;margin:0 auto;padding:0 16px}
+header{padding:72px 0 48px;text-align:center}
+header .tag{display:inline-block;background:var(--ac2);color:var(--ac);border-radius:99px;padding:4px 14px;font-size:14px;font-weight:600}
+h1{font-size:clamp(30px,5vw,48px);line-height:1.15;margin:18px 0 12px}
+header p{color:var(--mut);font-size:18px;max-width:720px;margin:0 auto 28px}
+.btn{display:inline-block;background:var(--ac);color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:600;margin:4px}
+.btn.sec{background:transparent;color:var(--ac);border:1px solid var(--ac)}
+.hl{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:0 0 56px}
+.hl div{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px 16px;font-weight:600}
+.hl span{display:block;font-weight:400;color:var(--mut);font-size:14px}
+nav.idx{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:40px}
+nav.idx a{background:var(--card);border:1px solid var(--bd);border-radius:99px;padding:4px 12px;font-size:14px;text-decoration:none;color:var(--tx)}
+section{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:28px clamp(18px,4vw,36px);margin-bottom:20px}
+h2{margin:0 0 6px;font-size:24px}
+section>p.sub{color:var(--mut);margin:0 0 16px}
+ul{padding-left:20px;margin:0}
+li{margin:6px 0}
+.cols{columns:2 320px;column-gap:32px}
+.cols li{break-inside:avoid}
+table{width:100%;border-collapse:collapse;font-size:15px;margin-top:8px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
+th{color:var(--mut);font-weight:600}
+.tw{overflow-x:auto}
+blockquote{margin:12px 0;padding:10px 16px;border-left:3px solid var(--ac);background:var(--ac2);border-radius:0 8px 8px 0;font-style:italic}
+.badge{color:var(--warn);font-weight:700}
+.note{color:var(--mut);font-size:14px;margin-top:12px}
+footer{text-align:center;padding:48px 0 64px;color:var(--mut)}
+footer h2{color:var(--tx)}
+</style>
+</head>
+<body>
+<div class="w">
+<header>
+  <span class="tag">Gestão jurídica · DJEN · DataJud · IA</span>
+  <h1>Prazo perdido não é azar.<br>É falta de sistema.</h1>
+  <p>O AstraJus reúne publicações, processos, prazos, agenda, clientes, financeiro, cobranças e pesquisa jurídica num só lugar, e ainda conversa com assistentes de inteligência artificial.</p>
+  <a class="btn" href="#contato">Quero conhecer</a>
+  <a class="btn sec" href="#funcionalidades">Ver funcionalidades</a>
+</header>
+
+<div class="hl">
+  <div>📬 Publicações todo dia<span>Captura automática por OAB no DJEN</span></div>
+  <div>⚖️ Capa automática<span>DataJud de todos os tribunais</span></div>
+  <div>⏰ Prazos do CPC<span>Feriados, recesso e prazo em dobro</span></div>
+  <div>💰 Financeiro jurídico<span>Honorários, custas, repasses e Pix</span></div>
+  <div>🤖 Servidor MCP<span>Pergunte ao Claude sobre seus processos</span></div>
+  <div>🔐 Seus dados<span>No servidor do escritório</span></div>
+</div>
+
+<nav class="idx" id="funcionalidades">
+  <a href="#publicacoes">Publicações</a><a href="#processos">Processos</a><a href="#prazos">Prazos</a><a href="#alertas">Alertas</a><a href="#agenda">Agenda</a><a href="#clientes">Clientes</a><a href="#financeiro">Financeiro</a><a href="#pesquisa">Pesquisa</a><a href="#mcp">IA / MCP</a><a href="#integracoes">API e integrações</a><a href="#automacoes">Automações</a><a href="#equipe">Equipe</a><a href="#seguranca">Segurança</a>
+</nav>
+
+<section id="publicacoes">
+  <h2>📬 Publicações do Diário de Justiça</h2>
+  <p class="sub">Sem abrir o site do tribunal.</p>
+  <ul class="cols">
+    <li><b>Captura automática por OAB todos os dias</b> no DJEN (Comunica PJe), de todos os tribunais.</li>
+    <li><b>Captura manual</b> por OAB e período.</li>
+    <li><b>Alerta de cliente:</b> selo <span class="badge">❗ Cliente (parte passiva): Nome</span>, faixa vermelha e topo da fila. A parte contrária também é indicada.</li>
+    <li><b>Reconhecimento estrito</b> por CPF/CNPJ ou nome completo: sem alarme falso por homônimo.</li>
+    <li><b>Fila de trabalho</b> com filtros, ações em lote e atalhos de teclado.</li>
+    <li><b>Da publicação ao processo</b> em um clique: capa preenchida e pasta no Drive.</li>
+    <li><b>Da publicação ao prazo</b>, com a data da disponibilização.</li>
+    <li><b>Sem duplicadas</b>, mesmo com captura manual.</li>
+    <li><b>Certidão em PDF</b> com link seguro.</li>
+    <li><b>Monitoramentos</b> de processo ou OAB com aviso por e-mail.</li>
+    <li><b>Triagem com IA (opcional):</b> tipo do ato, se abre prazo, prazo provável e urgência, com o texto anonimizado.</li>
+  </ul>
+</section>
+
+<section id="processos">
+  <h2>⚖️ Processos com a capa preenchida sozinha</h2>
+  <ul class="cols">
+    <li><b>Capa automática</b> (DataJud + DJEN): tribunal, classe, assuntos, grau, distribuição, órgão julgador, município, sigilo, partes e advogados.</li>
+    <li><b>Andamentos automáticos</b> a cada 12 horas, com aviso ao responsável.</li>
+    <li><b>Movimentações</b> por instância, com destaque aos atos do juiz.</li>
+    <li><b>Posição do cliente</b> (ativa, passiva ou terceiro), automática e editável.</li>
+    <li><b>Vínculos</b> entre recursos, apensos e execuções.</li>
+    <li><b>Lista inteligente</b> com filtros, favoritos, colunas e <b>exportação para Excel</b>.</li>
+    <li><b>Pasta no Google Drive</b>: CLIENTES / Cliente / Processo.</li>
+  </ul>
+</section>
+
+<section id="prazos">
+  <h2>⏰ Prazos calculados, com a conta à vista</h2>
+  <ul class="cols">
+    <li><b>15 prazos-padrão</b> do CPC e da Lei 9.099/95, com a base legal.</li>
+    <li>Contagem em <b>dias úteis</b> ou <b>corridos</b>, com prorrogação.</li>
+    <li><b>Feriados</b> nacionais, estaduais e forenses por comarca no TJSP.</li>
+    <li><b>Suspensão de 20/12 a 20/01</b> (art. 220).</li>
+    <li><b>Prazo em dobro</b> (arts. 180, 183, 186 e 229).</li>
+    <li><b>Regra do DJEN</b>: disponibilização, publicação e início.</li>
+    <li><b>Demonstrativo dia a dia</b> para imprimir ou salvar em PDF.</li>
+    <li><b>Revisão obrigatória</b>: o sistema sugere, o advogado confirma.</li>
+  </ul>
+</section>
+
+<section id="alertas">
+  <h2>🔔 Ninguém é pego de surpresa</h2>
+  <ul>
+    <li>Alertas de prazo e audiência <b>5, 2 e 1 dia antes</b>, no dia e após o vencimento.</li>
+    <li>No <b>sino do sistema</b> e <b>por e-mail</b>, um por pessoa.</li>
+    <li><b>Central de notificações</b>: atividade atribuída, publicação monitorada, novo andamento e prazo vencendo.</li>
+  </ul>
+</section>
+
+<section id="agenda">
+  <h2>📅 Agenda, atividades e visão do escritório</h2>
+  <ul class="cols">
+    <li><b>Agenda em mês, semana e dia</b>, com filtros.</li>
+    <li><b>Arraste para remarcar</b>, com desfazer.</li>
+    <li><b>Google Agenda</b> e exportação <b>.ics</b>.</li>
+    <li>Atividades com responsável, horário e <b>checklist</b>.</li>
+    <li>Quadro <b>Meu dia</b> em colunas.</li>
+    <li>Painel <b>Escritório</b>: prazos da semana, atrasos, publicações por revisar e valores vencidos.</li>
+  </ul>
+</section>
+
+<section id="clientes">
+  <h2>👤 Clientes e contatos</h2>
+  <ul class="cols">
+    <li>Pessoa <b>física e jurídica</b>, com vários telefones, e-mails e endereços.</li>
+    <li><b>Digite o CNPJ e o cadastro se preenche</b> pela Receita Federal.</li>
+    <li><b>Endereço pelo CEP</b>.</li>
+    <li>Validação de CPF/CNPJ e bloqueio de duplicados.</li>
+    <li>Ficha com processos e financeiro do cliente.</li>
+    <li>Etiquetas, ações em massa e importação em lote.</li>
+  </ul>
+</section>
+
+<section id="financeiro">
+  <h2>💰 Financeiro feito para a advocacia</h2>
+  <ul class="cols">
+    <li><b>Honorários contratuais e de êxito</b>, custas, despesas e repasses.</li>
+    <li><b>Parcelamento</b> em até 120 vezes e lançamentos recorrentes.</li>
+    <li><b>Custas reembolsáveis</b> que geram a cobrança ao cliente.</li>
+    <li><b>Saldo por processo</b>.</li>
+    <li><b>Inadimplência</b> por faixa de atraso e por cliente, com lembrete pronto.</li>
+    <li><b>Boleto e Pix</b> pelo Asaas, com baixa automática.</li>
+    <li><b>Exportação para Excel</b>.</li>
+  </ul>
+</section>
+
+<section id="pesquisa">
+  <h2>🔎 Pesquisa jurídica</h2>
+  <ul class="cols">
+    <li>Consulta de processo em <b>todos os tribunais</b> pelo número CNJ.</li>
+    <li>Busca no DJEN por número, nome ou OAB.</li>
+    <li><b>Jurisprudência do TJSP</b>.</li>
+    <li><b>Jurimetria do 1º grau</b> (CJPG) com perguntas guiadas.</li>
+    <li><b>Perfil decisório do magistrado</b>.</li>
+    <li>Histórico e favoritos em qualquer computador.</li>
+  </ul>
+</section>
+
+<section id="mcp">
+  <h2>🤖 Inteligência artificial: servidor MCP</h2>
+  <p class="sub">O AstraJus fala o Model Context Protocol, padrão aberto que liga assistentes como o Claude a sistemas externos.</p>
+  <blockquote>"Quais publicações saíram para a minha OAB esta semana?"</blockquote>
+  <blockquote>"Como o juiz da 3ª Vara Cível costuma decidir em ações de cobrança?"</blockquote>
+  <div class="tw"><table>
+    <tr><th>Ferramenta</th><th>O que faz</th></tr>
+    <tr><td>Processo no DataJud</td><td>Dados e movimentações de qualquer tribunal</td></tr>
+    <tr><td>Publicações no DJEN</td><td>Intimações por OAB ou número do processo</td></tr>
+    <tr><td>Consulta unificada</td><td>DataJud e DJEN juntos, com partes e advogados</td></tr>
+    <tr><td>Certidão</td><td>PDF da publicação</td></tr>
+    <tr><td>Feriados forenses</td><td>Por comarca, ano e tribunal</td></tr>
+    <tr><td>Jurimetria CJPG</td><td>Decisões de 1º grau do TJSP</td></tr>
+    <tr><td>Jurisprudência TJSP</td><td>Acórdãos</td></tr>
+    <tr><td>Perfil do magistrado</td><td>Tendência de decisões</td></tr>
+    <tr><td>Monitoramentos</td><td>Criar, listar, renovar e remover acompanhamentos</td></tr>
+    <tr><td>Status das APIs</td><td>Disponibilidade dos serviços dos tribunais</td></tr>
+  </table></div>
+  <p class="note">13 ferramentas no total. Funciona pela internet (OAuth) ou localmente. Exemplos ilustrativos; a resposta depende do assistente.</p>
+</section>
+
+<section id="integracoes">
+  <h2>🔌 API e integrações</h2>
+  <p class="sub"><b>API REST</b> com token para conectar outros sistemas do escritório. Credenciais cadastradas pelo painel e guardadas cifradas.</p>
+  <div class="tw"><table>
+    <tr><th>Serviço</th><th>Para quê</th></tr>
+    <tr><td>DataJud (CNJ)</td><td>Capa e andamentos</td></tr>
+    <tr><td>DJEN / Comunica PJe</td><td>Publicações e intimações</td></tr>
+    <tr><td>Google Drive</td><td>Pastas de clientes e processos</td></tr>
+    <tr><td>Google Agenda</td><td>Prazos e audiências no calendário</td></tr>
+    <tr><td>Asaas</td><td>Boleto e Pix</td></tr>
+    <tr><td>Receita Federal (BrasilAPI)</td><td>Dados de CNPJ</td></tr>
+    <tr><td>ViaCEP</td><td>Endereço pelo CEP</td></tr>
+    <tr><td>TJSP</td><td>Feriados, jurisprudência e jurimetria</td></tr>
+    <tr><td>E-mail (SMTP)</td><td>Avisos de prazo e publicação</td></tr>
+    <tr><td>TypeSafe AI</td><td>Triagem de publicações (opcional)</td></tr>
+  </table></div>
+</section>
+
+<section id="automacoes">
+  <h2>⚙️ Automações que trabalham por você</h2>
+  <div class="tw"><table>
+    <tr><th>O que</th><th>Quando</th></tr>
+    <tr><td>Publicações por OAB</td><td>Todo dia</td></tr>
+    <tr><td>Monitoramentos</td><td>A cada 6 horas</td></tr>
+    <tr><td>Andamentos no DataJud</td><td>A cada 12 horas</td></tr>
+    <tr><td>Alertas de prazo e audiência</td><td>A cada 6 horas</td></tr>
+    <tr><td>Google Agenda</td><td>A cada hora</td></tr>
+    <tr><td>Triagem (se ativada)</td><td>A cada hora</td></tr>
+  </table></div>
+</section>
+
+<section id="equipe">
+  <h2>👥 Equipe com permissões</h2>
+  <ul>
+    <li>Perfis <b>administrador, operador e consulta</b>.</li>
+    <li><b>Acesso por área</b> para cada pessoa: ver e alterar, somente ver ou sem acesso.</li>
+    <li>Bloqueio aplicado no servidor, não só na tela, e histórico de alterações.</li>
+  </ul>
+</section>
+
+<section id="seguranca">
+  <h2>🔐 Segurança e seus dados</h2>
+  <ul class="cols">
+    <li><b>Dados no servidor do escritório.</b></li>
+    <li>Acesso por token; o sistema guarda só o hash.</li>
+    <li>Credenciais de integrações cifradas.</li>
+    <li>Proteção contra tentativas repetidas.</li>
+    <li>Continua funcionando quando um tribunal cai.</li>
+    <li>Backup e verificação do banco pelo painel.</li>
+    <li>IA com dados anonimizados, só se você quiser.</li>
+    <li>Computador e celular, tema claro e escuro, busca global (Ctrl+K).</li>
+  </ul>
+</section>
+
+<footer id="contato">
+  <h2>Quer ver funcionando?</h2>
+  <p>Para advogados autônomos e escritórios pequenos e médios que querem sair da planilha.</p>
+  <a class="btn" href="/radix/">Acessar o sistema</a>
+  <p class="note">Prazos calculados são sugestões e exigem conferência do advogado. Uso gratuito para fins não comerciais (licença PolyForm Noncommercial); para uso comercial, fale conosco.</p>
+</footer>
+</div>
+</body>
+</html>

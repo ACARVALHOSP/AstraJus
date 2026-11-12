@@ -1,10 +1,10 @@
-import { Component, Suspense, lazy, useEffect, useState, type ReactNode } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { Callout, Flex, Popover, SegmentedControl, Text, Theme } from '@radix-ui/themes'
 import {
   Scale, Users, CalendarCheck, CalendarDays, Search, Gavel, Briefcase,
   Newspaper, BarChart2, BookOpen, History, FileSearch, Receipt, KeyRound,
   Settings, Link, Wallet, CreditCard, ShieldCheck, Menu, X,
-  Palette, ChevronDown, ChevronRight, Check, House,
+  Palette, ChevronDown, ChevronRight, Check, House, ListChecks, Clock,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ClienteProvider, useCliente } from './api/ClienteContext'
@@ -15,6 +15,7 @@ import { sincronizarPreferencias } from './utils/listasRapidas'
 import { CHAVE_TEMA } from './api/mcpClient'
 import { EVENTO_DADOS_ALTERADOS } from './api/rest'
 import Carregamento from './Carregamento'
+import LimiteDeErro from './LimiteDeErro'
 import BuscaGlobal from './BuscaGlobal'
 import ContaUsuario from './ContaUsuario'
 import CentralNotificacoes from './CentralNotificacoes'
@@ -37,6 +38,8 @@ const Agenda = lazy(() => import('./routes/Agenda'))
 const PublicacoesOab = lazy(() => import('./routes/PublicacoesOab'))
 const Contatos = lazy(() => import('./routes/Contatos'))
 const Casos = lazy(() => import('./routes/Casos'))
+const ModelosPrazo = lazy(() => import('./routes/ModelosPrazo'))
+const HorasPagina = lazy(() => import('./routes/Horas'))
 import './app-radix.css'
 
 export type AccentColor = 'indigo' | 'violet' | 'teal' | 'crimson'
@@ -52,6 +55,7 @@ const GRUPOS_NAVEGACAO = [
       { id: 'casos', label: 'Processos', icone: Scale },
       { id: 'agenda', label: 'Agenda', icone: CalendarDays },
       { id: 'atividades', label: 'Atividades', icone: CalendarCheck },
+      { id: 'horas', label: 'Horas', icone: Clock },
       { id: 'publicacoes-oab', label: 'Publicações recebidas', icone: Gavel },
       { id: 'contatos', label: 'Contatos', icone: Users },
     ],
@@ -77,6 +81,7 @@ const GRUPOS_NAVEGACAO = [
     id: 'configuracoes', label: 'Configurações', icone: Settings,
     abas: [
       { id: 'acesso', label: 'Acesso', icone: KeyRound },
+      { id: 'modelos-prazo', label: 'Modelos de prazos', icone: ListChecks },
       { id: 'integracoes', label: 'Integrações', icone: Link },
       { id: 'administracao', label: 'Administração', icone: ShieldCheck },
     ],
@@ -148,6 +153,8 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
   switch (abaAtiva) {
     case 'inicio': return <Home />
     case 'administracao': return <Administracao />
+    case 'modelos-prazo': return <ModelosPrazo />
+    case 'horas': return <HorasPagina />
     case 'acesso': return <Acesso />
     case 'processo': return <Processo />
     case 'publicacoes': return <Publicacoes />
@@ -403,32 +410,13 @@ export default function App() {
   )
 }
 
-// Se um arquivo da tela não carregar (ex.: nova versão publicada com a página antiga aberta),
-// avisa e oferece recarregar em vez de deixar a área em branco.
-class FalhaAoCarregarTela extends Component<{ children: ReactNode }, { falhou: boolean }> {
-  state = { falhou: false }
-  static getDerivedStateFromError() { return { falhou: true } }
-  render() {
-    if (!this.state.falhou) return this.props.children
-    return (
-      <Callout.Root color="red" role="alert">
-        <Callout.Icon><ShieldCheck size={14} /></Callout.Icon>
-        <Callout.Text>
-          Não foi possível carregar esta tela. O sistema pode ter sido atualizado.{' '}
-          <button type="button" className="casos-link" onClick={() => window.location.reload()}>Recarregar a página</button>
-        </Callout.Text>
-      </Callout.Root>
-    )
-  }
-}
-
 function NavConteudo() {
   const { abaAtiva } = useNavegacao()
   return (
-    <FalhaAoCarregarTela key={abaAtiva}>
+    <LimiteDeErro key={abaAtiva}>
       <Suspense fallback={<Carregamento tipo="detalhe" descricao="Carregando tela…" />}>
         <ConteudoAba abaAtiva={abaAtiva} />
       </Suspense>
-    </FalhaAoCarregarTela>
+    </LimiteDeErro>
   )
 }

@@ -37,7 +37,7 @@ from html import escape as _escapar
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 from zoneinfo import ZoneInfo
 
 import asaas_integracao
@@ -45,6 +45,8 @@ import agenda_atividades
 import financeiro_juridico
 import triagem
 import notificacoes
+import modelos_prazo
+import horas
 import monitoramento_runtime
 import db as _db
 import google_integracao
@@ -4006,7 +4008,11 @@ async def _alertar_prazos(gestao: "RegistroClientesCasos", agora=lambda: datetim
     """Avisa quem é responsável por prazos e audiências que estão a 5, 2 ou 1 dia de vencer, vencem hoje
     ou venceram há até 3 dias (só prazos). Cada pessoa recebe cada faixa uma vez, no sino e, havendo
     SMTP e e-mail cadastrado, também por e-mail. O aviso some quando a atividade é concluída.
-    O destinatário é o responsável da atividade; sem ele, o do processo; sem ele, os administradores."""
+    O destinatário é o responsável da atividade; sem ele, o do processo; sem ele, os administradores.
+
+    Escalonamento (só prazos): se faltando 1 dia, no dia ou já vencido ninguém confirmou ciência até a
+    execução seguinte ao primeiro aviso daquela faixa, os administradores que ainda não foram avisados
+    recebem um aviso de "prazo sem confirmação de ciência", uma vez por prazo."""
     hoje = agora().astimezone(timezone(timedelta(hours=-3))).date()  # data de Brasília
     itens = gestao.atividades_para_alerta(hoje.isoformat(), (hoje + timedelta(days=5)).isoformat(), (hoje - timedelta(days=3)).isoformat())
     if not itens:
@@ -4019,22 +4025,42 @@ async def _alertar_prazos(gestao: "RegistroClientesCasos", agora=lambda: datetim
     cfg = _smtp_do_ambiente()
     base = (os.environ.get("CNJ_MCP_URL_PUBLICA") or "").rstrip("/")
     falhou = False
+
+    async def mandar_email(usuario, assunto, corpo):
+        nonlocal falhou
+        email = usuarios[usuario].get("email")
+        if not (cfg and email):
+            return
+        try:
+            await asyncio.to_thread((enviar or _enviar_email_simples), cfg, email, assunto, corpo)
+        except Exception:
+            falhou = True
+            log.exception("Alerta de prazo: falha ao enviar e-mail para %s", usuario)
+
     for a in itens:
         destinatarios = [u for u in (a["responsavel"], a["caso_responsavel"]) if u in ativos][:1] or administradores
         faixa = _faixa_alerta_prazo((datetime.fromisoformat(a["data"][:10]).date() - hoje).days)
-        for usuario in repo.registrar_alerta_prazo(a["caso_id"], a["id"], faixa, destinatarios):
-            email = usuarios[usuario].get("email")
-            if not (cfg and email):
-                continue
-            quando = {"atrasado": "VENCEU", "0": "vence HOJE", "1": "vence amanhã"}.get(faixa, f"vence em até {faixa} dias")
-            tipo = "Audiência" if a["tipo"] == "audiencia" else "Prazo"
-            corpo = (f"{tipo} {quando}: {a['titulo']}\nData: {a['data'][:10]}{' às ' + a['hora'][:5] if a.get('hora') else ''}\n"
-                     f"Processo: {a['caso_titulo'] or '(sem título)'}\n" + (f"\nAbrir a agenda: {base}/radix/#/agenda\n" if base else ""))
-            try:
-                await asyncio.to_thread((enviar or _enviar_email_simples), cfg, email, f"{tipo} {quando}: {a['titulo']}", corpo)
-            except Exception:
-                falhou = True
-                log.exception("Alerta de prazo: falha ao enviar e-mail para %s", usuario)
+        tipo = "Audiência" if a["tipo"] == "audiencia" else "Prazo"
+        quando = {"atrasado": "VENCEU", "0": "vence HOJE", "1": "vence amanhã"}.get(faixa, f"vence em até {faixa} dias")
+        detalhe = (f"Data: {a['data'][:10]}{' às ' + a['hora'][:5] if a.get('hora') else ''}\n"
+                   f"Processo: {a['caso_titulo'] or '(sem título)'}\n")
+        link = f"{base}/radix/#/casos?id={a['caso_id']}&aba=atividades&atividadeId={a['id']}" if base else ""
+        novos = repo.registrar_alerta_prazo(a["caso_id"], a["id"], faixa, destinatarios)
+        for usuario in novos:
+            corpo = (f"{tipo} {quando}: {a['titulo']}\n{detalhe}"
+                     + (f"\nAbrir o {tipo.lower()}"
+                        f"{' e confirmar a ciência' if a['tipo'] == 'prazo' else ''}: {link}\n" if link else "")
+                     + (f"Abrir a agenda: {base}/radix/#/agenda\n" if base else ""))
+            await mandar_email(usuario, f"{tipo} {quando}: {a['titulo']}", corpo)
+        # Escalonamento: o primeiro aviso da faixa já saiu numa execução anterior e ninguém confirmou ciência.
+        if a["tipo"] == "prazo" and faixa in ("1", "0", "atrasado") and not a.get("ciencia_em") and not novos:
+            reserva = [u for u in administradores if u not in destinatarios]
+            for usuario in repo.registrar_escalonamento(a["caso_id"], a["id"], reserva):
+                corpo = (f"Prazo sem confirmação de ciência: {a['titulo']} ({quando})\n{detalhe}"
+                         f"Responsável: {a['responsavel'] or a['caso_responsavel'] or 'não definido'}\n"
+                         "Ninguém confirmou ciência deste prazo desde o primeiro aviso.\n"
+                         + (f"\nAbrir o prazo: {link}\n" if link else ""))
+                await mandar_email(usuario, f"Prazo sem confirmação de ciência: {a['titulo']}", corpo)
     return not falhou
 
 
@@ -4364,6 +4390,7 @@ class _AutenticacaoBearer:
         import usuarios_admin
         usuarios_admin.registrar_acesso(self.registro, usuario)
         perfil = self.registro.carregar().get(usuario, {})
+        scope["nivel_acesso"] = perfil.get("nivel_acesso") or "operador"
         recusa = usuarios_admin.liberar_rota(perfil, caminho, scope.get('method') or 'GET')
         if recusa:
             await _json(send, 403, _erro(recusa))
@@ -4471,6 +4498,16 @@ class _AutenticacaoBearer:
             alvo, _, resto = caminho[1:].partition("/")
             await self._pasta_drive_sob_demanda(send, alvo, resto[:-len("/pasta-drive")])
             return
+        if (caminho == "/horas" or caminho.startswith("/horas/")) and self.gestao is not None:
+            await self._horas(scope, receive, send, caminho[len("/horas"):].strip("/"))
+            return
+        if (caminho == "/modelos-prazo" or caminho.startswith("/modelos-prazo/")) and self.gestao is not None:
+            await self._modelos_prazo(scope, receive, send, caminho[len("/modelos-prazo"):].strip("/"))
+            return
+        rota_modelos = re.fullmatch(r"/casos/([^/]+)/modelos-prazo(?:/(.*))?", caminho)
+        if rota_modelos and self.gestao is not None:
+            await self._modelos_do_caso(scope, receive, send, rota_modelos[1], (rota_modelos[2] or "").strip("/"))
+            return
         if caminho.startswith("/casos/") and caminho.endswith("/polos") and self.gestao is not None:
             await self._caso_polos(scope, receive, send, caminho[len("/casos/"):-len("/polos")].rstrip("/"))
             return
@@ -4482,6 +4519,10 @@ class _AutenticacaoBearer:
             rota_agenda = re.fullmatch(r"/casos/([^/]+)/atividades/([0-9]+)/agenda", caminho)
             if rota_agenda:
                 await self._agenda_da_atividade(scope, receive, send, rota_agenda[1], int(rota_agenda[2]))
+                return
+            rota_ciencia = re.fullmatch(r"/casos/([^/]+)/atividades/([0-9]+)/ciencia", caminho)
+            if rota_ciencia:
+                await self._ciencia_da_atividade(scope, send, rota_ciencia[1], int(rota_ciencia[2]))
                 return
             partes = caminho[len("/casos/"):].split("/atividades")
             caso_id = partes[0].rstrip("/")
@@ -5275,6 +5316,249 @@ class _AutenticacaoBearer:
             return
         await _json(send, 200, {"drive_pasta_id": pasta_caso or pasta_cliente, "drive_pasta_cliente_id": pasta_cliente})
 
+    async def _corpo_json(self, receive, send):
+        """Lê um corpo JSON objeto. Se inválido ou grande demais, já responde o erro e devolve None."""
+        corpo = await _ler_corpo(receive)
+        if corpo is None:
+            await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB."))
+            return None
+        try:
+            dados = json.loads(corpo.decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            await _json(send, 400, _erro("JSON inválido."))
+            return None
+        if not isinstance(dados, dict):
+            await _json(send, 400, _erro("Informe um objeto JSON."))
+            return None
+        return dados
+
+    async def _horas(self, scope, receive, send, resto: str) -> None:
+        """Horas por processo. GET/POST /horas, PATCH/DELETE /horas/<id>, GET /horas/relatorio,
+        GET /horas/tarifas, PUT /horas/tarifas/<usuario> (administrador), GET/POST/DELETE /horas/cronometro,
+        POST /horas/cronometro/parar, POST /horas/faturar (cria um lançamento de honorário no Financeiro)."""
+        repo = horas.Repositorio(self.gestao.caminho)
+        usuario, metodo = scope["usuario"], scope.get("method")
+        administrador = scope.get("nivel_acesso") == "administrador"
+        agora = lambda: datetime.now(timezone.utc)
+        consulta = parse_qs((scope.get("query_string") or b"").decode("utf-8", "ignore"))
+
+        def parametro(nome):
+            return (consulta.get(nome) or [None])[0] or None
+
+        def booleano(nome):
+            valor = parametro(nome)
+            if valor is None:
+                return None
+            if valor not in ("true", "false"):
+                raise ValueError(f"O filtro {nome} deve ser true ou false.")
+            return valor == "true"
+
+        def filtros():
+            return {"de": parametro("de"), "ate": parametro("ate"), "usuario": parametro("usuario"), "caso_id": parametro("caso_id"),
+                    "cliente_id": parametro("cliente_id"), "faturavel": booleano("faturavel"), "faturado": booleano("faturado")}
+
+        try:
+            partes = resto.split("/") if resto else []
+            if not partes:
+                if metodo == "GET":
+                    itens = repo.listar(**filtros())
+                    await _json(send, 200, {"horas": itens, "totais": repo.totais(itens)})
+                    return
+                if metodo == "POST":
+                    dados = await self._corpo_json(receive, send)
+                    if dados is None:
+                        return
+                    dono = usuario
+                    if dados.get("usuario") not in (None, usuario):
+                        if not administrador:
+                            raise horas.ProibidoHoras("Só um administrador lança horas em nome de outra pessoa.")
+                        dono = str(dados["usuario"])
+                        if dono not in self.registro.carregar():
+                            raise LookupError("Usuário não encontrado.")
+                    criado = repo.criar(caso_id=dados.get("caso_id"), usuario=dono,
+                                        data=dados.get("data") or agora().astimezone(horas.BRASILIA).date().isoformat(),
+                                        minutos=dados.get("minutos"), descricao=dados.get("descricao"),
+                                        faturavel=dados.get("faturavel", True), valor_hora=dados.get("valor_hora"), agora=agora)
+                    await _json(send, 201, {"horas": criado})
+                    return
+            elif len(partes) == 1 and partes[0].isdigit():
+                horas_id = int(partes[0])
+                if metodo == "PATCH":
+                    dados = await self._corpo_json(receive, send)
+                    if dados is not None:
+                        await _json(send, 200, {"horas": repo.atualizar(horas_id, dados, usuario, administrador, agora)})
+                    return
+                if metodo == "DELETE":
+                    repo.excluir(horas_id, usuario, administrador)
+                    await _json(send, 200, {"excluido": True})
+                    return
+            elif partes == ["relatorio"] and metodo == "GET":
+                await _json(send, 200, repo.relatorio(**filtros()))
+                return
+            elif partes[0] == "tarifas":
+                if len(partes) == 1 and metodo == "GET":
+                    await _json(send, 200, {"tarifas": repo.listar_tarifas() if administrador else {usuario: v for u, v in repo.listar_tarifas().items() if u == usuario},
+                                            "administrador": administrador})
+                    return
+                if len(partes) == 2 and metodo == "PUT":
+                    if not administrador:
+                        raise horas.ProibidoHoras("Só um administrador define o valor por hora.")
+                    alvo = unquote(partes[1])
+                    if alvo not in self.registro.carregar():
+                        raise LookupError("Usuário não encontrado.")
+                    dados = await self._corpo_json(receive, send)
+                    if dados is not None:
+                        await _json(send, 200, {"usuario": alvo, "valor_hora": repo.definir_tarifa(alvo, dados.get("valor_hora"), agora)})
+                    return
+            elif partes[0] == "cronometro":
+                if len(partes) == 1 and metodo == "GET":
+                    await _json(send, 200, {"cronometro": repo.cronometro(usuario)})
+                    return
+                if len(partes) == 1 and metodo == "POST":
+                    dados = await self._corpo_json(receive, send)
+                    if dados is not None:
+                        await _json(send, 201, {"cronometro": repo.iniciar_cronometro(usuario, dados.get("caso_id"), dados.get("descricao"), agora)})
+                    return
+                if len(partes) == 1 and metodo == "DELETE":
+                    await _json(send, 200, {"descartado": repo.descartar_cronometro(usuario)})
+                    return
+                if partes == ["cronometro", "parar"] and metodo == "POST":
+                    dados = await self._corpo_json(receive, send)
+                    if dados is not None:
+                        await _json(send, 200, {"horas": repo.parar_cronometro(usuario, dados.get("faturavel", True), agora)})
+                    return
+            elif partes == ["faturar"] and metodo == "POST":
+                dados = await self._corpo_json(receive, send)
+                if dados is not None:
+                    await _json(send, 200, repo.faturar(dados.get("ids"), usuario, self.gestao, dados.get("vencimento"), dados.get("descricao"), agora))
+                return
+        except horas.ConflitoHoras as erro:
+            await _json(send, 409, _erro(str(erro)))
+            return
+        except ValueError as erro:
+            await _json(send, 400, _erro(str(erro)))
+            return
+        except LookupError as erro:
+            await _json(send, 404, _erro(str(erro.args[0]) if erro.args else "Não encontrado."))
+            return
+        except PermissionError as erro:
+            await _json(send, 403, _erro(str(erro)))
+            return
+        conhecida = not partes or partes[0].isdigit() or partes[0] in ("relatorio", "tarifas", "cronometro", "faturar")
+        await _responder(send, 405 if conhecida else 404, b"Metodo nao permitido" if conhecida else b"Nao encontrado")
+
+    async def _modelos_prazo(self, scope, receive, send, modelo_id: str) -> None:
+        """Modelos de prazos e tarefas por assunto ou classe: GET /modelos-prazo[/<id>],
+        POST /modelos-prazo, PATCH /modelos-prazo/<id>, DELETE /modelos-prazo/<id>."""
+        repo = modelos_prazo.Repositorio(self.gestao.caminho)
+        metodo = scope.get("method")
+        try:
+            if metodo == "GET":
+                if not modelo_id:
+                    await _json(send, 200, {"modelos": repo.listar()})
+                    return
+                modelo = repo.obter(modelo_id)
+                await _json(send, 200 if modelo else 404, {"modelo": modelo} if modelo else _erro("Modelo não encontrado."))
+                return
+            if metodo == "POST" and not modelo_id:
+                dados = await self._corpo_json(receive, send)
+                if dados is not None:
+                    await _json(send, 201, {"modelo": repo.criar(dados, scope.get("usuario"))})
+                return
+            if metodo == "PATCH" and modelo_id:
+                dados = await self._corpo_json(receive, send)
+                if dados is None:
+                    return
+                modelo = repo.atualizar(modelo_id, dados)
+                await _json(send, 200 if modelo else 404, {"modelo": modelo} if modelo else _erro("Modelo não encontrado."))
+                return
+            if metodo == "DELETE" and modelo_id:
+                achou = repo.excluir(modelo_id)
+                await _json(send, 200 if achou else 404, {"excluido": True} if achou else _erro("Modelo não encontrado."))
+                return
+        except ValueError as erro:
+            await _json(send, 400, _erro(str(erro)))
+            return
+        await _responder(send, 405, b"Metodo nao permitido")
+
+    async def _modelos_do_caso(self, scope, receive, send, caso_id: str, resto: str) -> None:
+        """GET /casos/<id>/modelos-prazo: modelos que combinam com o processo e ainda não foram decididos.
+        POST /casos/<id>/modelos-prazo/<modelo>/aplicar: {itens: [{tipo, titulo, data}]} cria as atividades
+        já revisadas pela pessoa. POST .../<modelo>/dispensar: não sugerir este modelo neste processo."""
+        repo = modelos_prazo.Repositorio(self.gestao.caminho)
+        metodo = scope.get("method")
+        if not resto:
+            if metodo != "GET":
+                await _responder(send, 405, b"Metodo nao permitido")
+                return
+            sugestoes = repo.sugestoes(caso_id)
+            await _json(send, 200 if sugestoes is not None else 404,
+                        {"sugestoes": sugestoes} if sugestoes is not None else _erro("Processo não encontrado."))
+            return
+        partes = resto.split("/")
+        if metodo != "POST" or len(partes) != 2 or partes[1] not in ("aplicar", "dispensar"):
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        modelo_id, acao = partes
+        modelo = repo.obter(modelo_id)
+        if modelo is None or self.gestao.obter_caso(caso_id) is None:
+            await _json(send, 404, _erro("Modelo ou processo não encontrado."))
+            return
+        usuario = scope.get("usuario")
+        if acao == "dispensar":
+            if not repo.reservar(caso_id, modelo_id, "dispensado", usuario):
+                await _json(send, 409, _erro("Este modelo já foi aplicado ou dispensado neste processo."))
+                return
+            await _json(send, 200, {"dispensado": True})
+            return
+        dados = await self._corpo_json(receive, send)
+        if dados is None:
+            return
+        itens = dados.get("itens")
+        if not isinstance(itens, list) or not 1 <= len(itens) <= 2 * modelos_prazo.MAX_ITENS:
+            await _json(send, 400, _erro("Informe de 1 a %d itens para criar." % (2 * modelos_prazo.MAX_ITENS)))
+            return
+        validos = []
+        for item in itens:
+            tipo = item.get("tipo") if isinstance(item, dict) else None
+            titulo = " ".join(str(item.get("titulo") or "").split()) if isinstance(item, dict) else ""
+            data = item.get("data") if isinstance(item, dict) else None
+            try:
+                datetime.strptime(str(data), "%Y-%m-%d")
+            except ValueError:
+                await _json(send, 400, _erro("Informe a data de cada item no formato AAAA-MM-DD."))
+                return
+            if tipo not in ("prazo", "tarefa") or not titulo or len(titulo) > 200:
+                await _json(send, 400, _erro("Cada item precisa de tipo (prazo ou tarefa) e de um título de até 200 caracteres."))
+                return
+            validos.append((tipo, titulo, data))
+        if not repo.reservar(caso_id, modelo_id, "aplicado", usuario):
+            await _json(send, 409, _erro("Este modelo já foi aplicado ou dispensado neste processo."))
+            return
+        criadas = []
+        try:
+            agora = lambda: datetime.now(timezone.utc)
+            for tipo, titulo, data in validos:
+                criadas.append(self.gestao.criar_atividade(
+                    caso_id, tipo, titulo, data, None, f"Sugerido pelo modelo “{modelo['nome']}”. Confira antes de cumprir.", agora))
+        except Exception:
+            log.exception("Modelo de prazos: falha ao criar atividades (processo %s, modelo %s)", caso_id, modelo_id)
+            # Desfaz o que já foi criado para a pessoa poder tentar de novo sem duplicar.
+            sobraram = 0
+            for criada in criadas:
+                try:
+                    self.gestao.excluir_atividade(caso_id, criada["id"])
+                except Exception:
+                    sobraram += 1
+                    log.exception("Modelo de prazos: não foi possível desfazer a atividade %s", criada.get("id"))
+            if sobraram == 0:
+                repo.liberar(caso_id, modelo_id)
+            await _json(send, 500, _erro("Não foi possível criar todas as atividades. "
+                                         + ("Nada foi criado; tente de novo." if sobraram == 0
+                                            else f"{sobraram} atividade(s) ficaram criadas; confira o processo antes de tentar de novo.")))
+            return
+        await _json(send, 200, {"atividades": criadas})
+
     async def _caso_polos(self, scope, receive, send, caso_id: str) -> None:
         """PUT /casos/<id>/polos: {cliente_id, polo}. Corrige o polo de um cliente no processo
         (ativo, passivo ou terceiro); polo vazio volta ao polo deduzido da capa e das publicações."""
@@ -5780,6 +6064,18 @@ class _AutenticacaoBearer:
                         _erro("Operação de notificação indisponível."))
         except ValueError as erro:
             await _json(send, 400, _erro(str(erro)))
+
+    async def _ciencia_da_atividade(self, scope, send, caso_id, aid):
+        """POST /casos/<id>/atividades/<aid>/ciencia: a pessoa confirma que está ciente do prazo.
+        Idempotente: repetir devolve a primeira confirmação daquela data."""
+        if scope.get("method") != "POST":
+            await _responder(send, 405, b"Metodo nao permitido")
+            return
+        ciencia = self.gestao.confirmar_ciencia(caso_id, aid, scope["usuario"], lambda: datetime.now(timezone.utc))
+        if ciencia is None:
+            await _json(send, 404, _erro("Prazo não encontrado."))
+            return
+        await _json(send, 200, {"ciencia": ciencia})
 
     async def _agenda_da_atividade(self, scope, receive, send, caso_id, aid):
         """Agenda individual autenticada, com propriedade verificada em cada vínculo."""
