@@ -24,7 +24,7 @@ import { useCliente } from '../api/ClienteContext'
 import { AREAS, usePerfil } from '../api/PerfilContext'
 import { formatarMoeda } from '../utils/formatadores'
 import { NIVEIS, PERFIS, aplicarPerfil, grauPadrao, perfilDe, type Grau } from './administracao/perfis'
-import { descreverCampos, haQuanto, lerValorHora, rotuloAcao } from './administracao/formatos'
+import { descreverCampos, haQuanto, lerValorHora, listarEmFrase, resumoVinculos, rotuloAcao, type Vinculos } from './administracao/formatos'
 import './administracao.scss'
 
 type Usuario = {
@@ -45,6 +45,9 @@ const STATUS: Record<string, { rotulo: string; cor: 'green' | 'amber' | 'orange'
 const data = (valor: string | null) => valor ? new Date(valor).toLocaleString('pt-BR') : 'Não registrado'
 type Carga = 'carregando' | 'ok' | 'erro'
 type Editor = { login: string | null; campos: typeof VAZIO; valorHora: string }
+type AlvoToken = { login: string; nome: string; email: string | null; enviarEmail: boolean }
+type ResultadoToken = { token: string; encerraSessao: boolean; email: { enviado: boolean; destino: string | null; motivo: string | null } | null }
+type AlvoApagar = { login: string; nome: string; vinculos: Vinculos | null; erro: string; texto: string }
 
 export default function Administracao() {
   const { cliente } = useCliente()
@@ -66,6 +69,9 @@ export default function Administracao() {
   const [tokenNovo, setTokenNovo] = useState('')
   const [confirmarBackup, setConfirmarBackup] = useState(false)
   const [limpeza, setLimpeza] = useState<{ categorias: string[]; texto: string; resultado: Record<string, number> | null } | null>(null)
+  const [alvoToken, setAlvoToken] = useState<AlvoToken | null>(null)
+  const [resultadoToken, setResultadoToken] = useState<ResultadoToken | null>(null)
+  const [alvoApagar, setAlvoApagar] = useState<AlvoApagar | null>(null)
   const [autoCarregando, setAutoCarregando] = useState(false)
   const [esperouPerfil, setEsperouPerfil] = useState(false)
   const tentouAuto = useRef(false)
@@ -142,6 +148,36 @@ export default function Administracao() {
   const abrindo = !sessao && (autoCarregando || (Boolean(cliente) && nivel === null && !esperouPerfil))
   const sessaoDaConexao = sessao !== null && sessao === cliente?.token
 
+  // Novo token: o anterior deixa de valer na hora; pode seguir por e-mail para a pessoa.
+  async function gerarNovoToken() {
+    if (!alvoToken || !sessao) return
+    const { login, enviarEmail } = alvoToken
+    const r = await (await requisicao(`/admin/usuarios/api/${encodeURIComponent(login)}/token`, sessao, 'POST', { enviar_email: enviarEmail })).json() as
+      { token: string; encerra_sessao_atual: boolean; email: ResultadoToken['email'] }
+    setAlvoToken(null)
+    setResultadoToken({ token: r.token, encerraSessao: r.encerra_sessao_atual, email: r.email })
+    if (!r.encerra_sessao_atual) await carregar(sessao)   // o token da própria pessoa que pediu deixou de valer: não recarrega
+  }
+  // Apagar: mostra antes o que muda (processos e demais itens ficam sem responsável) e só então confirma.
+  async function abrirApagar(u: Usuario) {
+    if (!sessao) return
+    setAlvoApagar({ login: u.login, nome: u.nome_completo, vinculos: null, erro: '', texto: '' })
+    try {
+      const v = (await (await requisicao(`/admin/usuarios/api/${encodeURIComponent(u.login)}/vinculos`, sessao)).json()).vinculos as Vinculos
+      setAlvoApagar(a => a && a.login === u.login ? { ...a, vinculos: v } : a)
+    } catch (e) {
+      setAlvoApagar(a => a && a.login === u.login ? { ...a, erro: e instanceof Error ? e.message : 'Não foi possível consultar o que está ligado a esta pessoa.' } : a)
+    }
+  }
+  async function confirmarApagar() {
+    if (!alvoApagar || !sessao) return
+    const { login, nome } = alvoApagar
+    const r = await (await requisicao(`/admin/usuarios/api/${encodeURIComponent(login)}`, sessao, 'DELETE')).json() as { resumo: Vinculos }
+    const frases = resumoVinculos(r.resumo).desatribuidos
+    setAlvoApagar(null)
+    await carregar(sessao)
+    setMensagem(`${nome} foi apagado.${frases.length ? ` ${listarEmFrase(frases)} ficaram sem responsável.` : ''}`)
+  }
   function abrirEditor(u: Usuario | null) {
     setErro('')
     const valor = u && tarifas ? tarifas[u.login] : undefined
@@ -227,7 +263,7 @@ export default function Administracao() {
             </div>
             <Button size="2" disabled={ocupado} onClick={() => abrirEditor(null)}>Criar usuário</Button>
           </div>
-          <div className="administracao__tabela" role="region" aria-label="Usuários cadastrados" tabIndex={0}><TabelaResponsiva principais={['Usuário', 'Nível de acesso', 'Status', 'Último acesso']}><table><caption>Usuários do sistema — {lista.length} resultado(s)</caption><thead><tr>{['Usuário', 'E-mail', 'Nível de acesso', 'Status', ...(tarifas ? ['Valor por hora'] : []), 'Último acesso', 'Ações'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>
+          <div className="administracao__tabela" role="region" aria-label="Usuários cadastrados" tabIndex={0}><TabelaResponsiva principais={['Usuário', 'Nível de acesso', 'Status']}><table><caption>Usuários do sistema — {lista.length} resultado(s)</caption><thead><tr>{['Usuário', 'E-mail', 'Nível de acesso', 'Status', ...(tarifas ? ['Valor por hora'] : []), 'Ações'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>
             {lista.map(u => {
               const n = NIVEIS[u.nivel_acesso as keyof typeof NIVEIS]
               const st = STATUS[u.status]
@@ -235,17 +271,24 @@ export default function Administracao() {
               const personalizado = n && u.nivel_acesso !== 'administrador' && !pronto && Object.keys(u.permissoes ?? {}).length > 0
               return (
                 <tr key={u.usuario_id}>
-                  <td>{u.nome_completo}{u.login === eu && <> <Badge color="blue" variant="soft">Você</Badge></>}<small>{u.login}</small></td>
+                  <td>{u.nome_completo}{u.login === eu && <> <Badge color="blue" variant="soft">Você</Badge></>}<small title={data(u.ultimo_acesso_em)}>Último acesso: {haQuanto(u.ultimo_acesso_em)}</small>{u.login.toLowerCase() !== (u.email ?? '').toLowerCase() && <small>{u.login}</small>}</td>
                   <td>{u.email || 'Não informado'}</td>
                   <td><Badge color={n?.cor ?? 'gray'} variant="soft">{n?.rotulo ?? u.nivel_acesso}</Badge>{(pronto || personalizado) && <small>{pronto ? pronto.rotulo : 'Acesso personalizado'}</small>}</td>
                   <td><Badge color={st?.cor ?? 'gray'} variant="soft">{st?.rotulo ?? u.status}</Badge></td>
                   {tarifas && <td>{tarifas[u.login] !== undefined ? `${formatarMoeda(tarifas[u.login])}/h` : '—'}</td>}
-                  <td title={data(u.ultimo_acesso_em)}>{haQuanto(u.ultimo_acesso_em)}</td>
-                  <td><Button size="1" variant="ghost" disabled={ocupado} onClick={() => abrirEditor(u)}>Editar<Text className="aj-sr-only"> {u.nome_completo}</Text></Button></td>
+                  <td>
+                    <Flex gap="3" wrap="wrap">
+                      <Button size="1" variant="ghost" disabled={ocupado} onClick={() => abrirEditor(u)}>Editar<Text className="aj-sr-only"> {u.nome_completo}</Text></Button>
+                      <Button size="1" variant="ghost" disabled={ocupado || u.status !== 'ativo'} title={u.status !== 'ativo' ? 'Só usuários ativos recebem um novo token' : undefined}
+                        onClick={() => setAlvoToken({ login: u.login, nome: u.nome_completo, email: u.email, enviarEmail: Boolean(u.email) })}>Novo token<Text className="aj-sr-only"> de {u.nome_completo}</Text></Button>
+                      <Button size="1" variant="ghost" color="red" disabled={ocupado || u.login === eu} title={u.login === eu ? 'Você não pode apagar o próprio acesso' : undefined}
+                        onClick={() => void abrirApagar(u)}>Apagar<Text className="aj-sr-only"> {u.nome_completo}</Text></Button>
+                    </Flex>
+                  </td>
                 </tr>
               )
             })}
-            {!lista.length && <tr><td colSpan={tarifas ? 7 : 6}>Nenhum usuário encontrado.</td></tr>}
+            {!lista.length && <tr><td colSpan={tarifas ? 6 : 5}>Nenhum usuário encontrado.</td></tr>}
           </tbody></table></TabelaResponsiva></div>
         </Tabs.Content>
         <Tabs.Content value="banco">
@@ -380,6 +423,82 @@ export default function Administracao() {
         </div>}
       </Dialog.Content>
     </Dialog.Root>
+
+    <AlertDialog.Root open={alvoToken !== null} onOpenChange={(open) => { if (!open && !ocupado) { setAlvoToken(null); setErro('') } }}>
+      <AlertDialog.Content maxWidth="480px">
+        <AlertDialog.Title>Gerar novo token</AlertDialog.Title>
+        {alvoToken && <div className="administracao__formulario">
+          <AlertDialog.Description>
+            Será gerado um novo token para <strong>{alvoToken.nome}</strong>. O token atual <strong>deixa de funcionar imediatamente</strong>: quem o usa em algum computador ou no Claude precisará colar o novo.
+            {alvoToken.login === eu && ' Este é o seu próprio acesso: você será desconectado e terá de entrar com o token novo.'}
+          </AlertDialog.Description>
+          {erro && <Callout.Root color="red" size="1"><Callout.Icon><AlertTriangle size={14} /></Callout.Icon><Callout.Text>{erro}</Callout.Text></Callout.Root>}
+          <Text as="label" size="2">
+            <Flex gap="2" align="center">
+              <Checkbox checked={alvoToken.enviarEmail} disabled={ocupado || !alvoToken.email} onCheckedChange={v => setAlvoToken({ ...alvoToken, enviarEmail: v === true })} />
+              {alvoToken.email ? <>Enviar o novo token por e-mail para <strong>{alvoToken.email}</strong></> : 'Sem e-mail cadastrado: o token será só exibido a você'}
+            </Flex>
+          </Text>
+          <Text as="p" size="1" color="gray">O token aparece para você uma única vez, de qualquer forma. O e-mail leva o token em texto: use só se o e-mail da pessoa for confiável.</Text>
+        </div>}
+        <Flex gap="3" mt="4" justify="end">
+          <AlertDialog.Cancel><Button variant="soft" color="gray" disabled={ocupado}>Cancelar</Button></AlertDialog.Cancel>
+          <Button disabled={ocupado} onClick={() => void executar(gerarNovoToken)}>{ocupado ? 'Gerando…' : 'Gerar novo token'}</Button>
+        </Flex>
+      </AlertDialog.Content>
+    </AlertDialog.Root>
+
+    <Dialog.Root open={resultadoToken !== null} onOpenChange={(open) => { if (!open) setResultadoToken(null) }}>
+      <Dialog.Content maxWidth="480px">
+        <Dialog.Title>Novo token gerado</Dialog.Title>
+        {resultadoToken && <div className="administracao__formulario">
+          <Text as="p" size="2">O token abaixo é exibido somente agora. O anterior já não funciona.</Text>
+          {resultadoToken.email && (resultadoToken.email.enviado
+            ? <Callout.Root color="green" size="1" role="status"><Callout.Text>Enviado por e-mail para {resultadoToken.email.destino}.</Callout.Text></Callout.Root>
+            : <Callout.Root color="amber" size="1" role="status"><Callout.Icon><AlertTriangle size={14} /></Callout.Icon><Callout.Text>E-mail não enviado: {resultadoToken.email.motivo} Entregue o token por um canal seguro.</Callout.Text></Callout.Root>)}
+          {resultadoToken.encerraSessao && <Callout.Root color="amber" size="1" role="status"><Callout.Icon><AlertTriangle size={14} /></Callout.Icon><Callout.Text>Este era o seu próprio token: a sessão atual deixou de valer. Copie o novo token e entre de novo pela tela Acesso.</Callout.Text></Callout.Root>}
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="token-gerado">Token gerado</label>
+            <TextField.Root id="token-gerado" value={resultadoToken.token} readOnly />
+          </div>
+        </div>}
+        <Flex gap="3" mt="4" justify="end"><Dialog.Close><Button variant="soft">Fechar</Button></Dialog.Close></Flex>
+      </Dialog.Content>
+    </Dialog.Root>
+
+    <AlertDialog.Root open={alvoApagar !== null} onOpenChange={(open) => { if (!open && !ocupado) { setAlvoApagar(null); setErro('') } }}>
+      <AlertDialog.Content maxWidth="520px">
+        <AlertDialog.Title>Apagar usuário</AlertDialog.Title>
+        {alvoApagar && (() => {
+          const r = alvoApagar.vinculos ? resumoVinculos(alvoApagar.vinculos) : null
+          return <div className="administracao__formulario">
+            <AlertDialog.Description>Você vai apagar <strong>{alvoApagar.nome}</strong> ({alvoApagar.login}). O token dela deixa de funcionar e esta ação não pode ser desfeita.</AlertDialog.Description>
+            {alvoApagar.erro && <Callout.Root color="red" size="1" role="alert"><Callout.Icon><AlertTriangle size={14} /></Callout.Icon><Callout.Text>{alvoApagar.erro}</Callout.Text></Callout.Root>}
+            {erro && <Callout.Root color="red" size="1" role="alert"><Callout.Icon><AlertTriangle size={14} /></Callout.Icon><Callout.Text>{erro}</Callout.Text></Callout.Root>}
+            {!r && !alvoApagar.erro && <Carregamento tipo="texto" descricao="Verificando o que está ligado a esta pessoa…" />}
+            {r?.bloqueio && <Callout.Root color="red" size="1" role="alert"><Callout.Icon><AlertTriangle size={14} /></Callout.Icon><Callout.Text>Não é possível apagar agora: {r.bloqueio}</Callout.Text></Callout.Root>}
+            {r && !r.bloqueio && <>
+              <Text as="p" size="2">
+                {r.desatribuidos.length
+                  ? <><strong>Ficam sem responsável</strong> (e podem ser atribuídos a outra pessoa depois): {listarEmFrase(r.desatribuidos)}.</>
+                  : 'Nada está atribuído a esta pessoa.'}
+              </Text>
+              <Text as="p" size="2"><strong>São removidos junto:</strong> {listarEmFrase(r.removidos)}.</Text>
+              {r.mantidos.length > 0 && <Text as="p" size="2"><strong>Continuam:</strong> {listarEmFrase(r.mantidos)}, com o nome da pessoa.</Text>}
+              <div className="form-campo">
+                <label className="form-campo-label" htmlFor="apagar-confirmacao">Digite "APAGAR" para confirmar</label>
+                <TextField.Root id="apagar-confirmacao" value={alvoApagar.texto} disabled={ocupado} autoComplete="off" onChange={e => setAlvoApagar({ ...alvoApagar, texto: e.target.value })} />
+              </div>
+            </>}
+          </div>
+        })()}
+        <Flex gap="3" mt="4" justify="end">
+          <AlertDialog.Cancel><Button variant="soft" color="gray" disabled={ocupado}>Cancelar</Button></AlertDialog.Cancel>
+          <Button color="red" disabled={ocupado || !alvoApagar?.vinculos || Boolean(alvoApagar && resumoVinculos(alvoApagar.vinculos ?? { processos: 0, atividades: 0, lancamentos: 0, monitoramentos: 0, notificacoes: 0, horas: 0, agenda: 0 }).bloqueio) || alvoApagar?.texto !== 'APAGAR'}
+            onClick={() => void executar(confirmarApagar)}>{ocupado ? 'Apagando…' : 'Apagar usuário'}</Button>
+        </Flex>
+      </AlertDialog.Content>
+    </AlertDialog.Root>
 
     <Dialog.Root open={!!tokenNovo} onOpenChange={(open) => { if (!open) setTokenNovo('') }}>
       <Dialog.Content maxWidth="480px">

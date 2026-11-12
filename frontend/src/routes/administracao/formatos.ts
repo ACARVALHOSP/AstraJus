@@ -30,11 +30,14 @@ export function lerValorHora(texto: string): number | null | undefined {
 
 const CAMPOS_CADASTRO: Record<string, string> = {
   nome_completo: 'Nome', email: 'E-mail', nivel_acesso: 'Nível de acesso', status: 'Status', permissoes: 'Acesso por área',
+  // resumo da exclusão de um usuário
+  processos: 'Processos sem responsável', atividades: 'Atividades sem responsável', lancamentos: 'Lançamentos sem responsável',
+  monitoramentos: 'Monitoramentos removidos', notificacoes: 'Notificações removidas', horas: 'Horas mantidas', agenda: 'Agenda',
 }
 const CATEGORIAS_LIMPEZA: Record<string, string> = {
   publicacoes: 'Publicações capturadas', monitoramento_tecnico: 'Dados técnicos de monitoramento', notificacoes: 'Notificações',
 }
-const ACOES: Record<string, string> = { criar: 'Cadastro criado', atualizar: 'Cadastro alterado', limpar_banco: 'Limpeza de dados' }
+const ACOES: Record<string, string> = { criar: 'Cadastro criado', atualizar: 'Cadastro alterado', limpar_banco: 'Limpeza de dados', novo_token: 'Novo token gerado', apagar: 'Usuário apagado' }
 
 /** Rótulo da ação do histórico administrativo; ação desconhecida aparece como veio. */
 export const rotuloAcao = (acao: string): string => ACOES[acao] ?? acao
@@ -49,8 +52,38 @@ export function descreverCampos(bruto: unknown): string {
   if (Array.isArray(valor)) return valor.map(c => CAMPOS_CADASTRO[String(c)] ?? String(c)).join(', ')
   if (valor && typeof valor === 'object') {
     return Object.entries(valor as Record<string, unknown>)
+      .filter(([chave, total]) => CATEGORIAS_LIMPEZA[chave] || total !== 0)      // no resumo de exclusão, só o que teve efeito
       .map(([chave, total]) => CATEGORIAS_LIMPEZA[chave] ? `${CATEGORIAS_LIMPEZA[chave]}: ${total} registro(s) apagado(s)` : `${CAMPOS_CADASTRO[chave] ?? chave}: ${String(total)}`)
       .join('; ')
   }
   return valor === null || valor === undefined ? '' : String(valor)
 }
+
+export type Vinculos = {
+  processos: number; atividades: number; lancamentos: number; monitoramentos: number
+  notificacoes: number; horas: number; agenda: number
+}
+const quantos = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`
+
+/** O que a exclusão de um usuário faz, em frases para a confirmação. */
+export function resumoVinculos(v: Vinculos): { desatribuidos: string[]; removidos: string[]; mantidos: string[]; bloqueio: string | null } {
+  const desatribuidos = [
+    v.processos > 0 && quantos(v.processos, 'processo', 'processos'),
+    v.atividades > 0 && quantos(v.atividades, 'atividade', 'atividades'),
+    v.lancamentos > 0 && quantos(v.lancamentos, 'lançamento financeiro', 'lançamentos financeiros'),
+  ].filter((x): x is string => Boolean(x))
+  const removidos = [
+    v.monitoramentos > 0 && quantos(v.monitoramentos, 'monitoramento de publicações', 'monitoramentos de publicações'),
+    v.notificacoes > 0 && quantos(v.notificacoes, 'notificação', 'notificações'),
+    'preferências, valor por hora, cronômetro e conexão com a Google Agenda',
+  ].filter((x): x is string => Boolean(x))
+  const mantidos = v.horas > 0 ? [`${quantos(v.horas, 'lançamento de horas', 'lançamentos de horas')} (histórico de trabalho)`] : []
+  const bloqueio = v.agenda > 0
+    ? `${quantos(v.agenda, 'atividade sincronizada', 'atividades sincronizadas')} com a Google Agenda desta pessoa. Peça para ela cancelar esses vínculos antes de apagar o usuário.`
+    : null
+  return { desatribuidos, removidos, mantidos, bloqueio }
+}
+
+/** "a, b e c" */
+export const listarEmFrase = (itens: string[]): string =>
+  itens.length <= 1 ? (itens[0] ?? '') : `${itens.slice(0, -1).join(', ')} e ${itens[itens.length - 1]}`
