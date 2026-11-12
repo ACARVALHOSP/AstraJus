@@ -382,9 +382,13 @@ def apagar(registro, login, ator):
 async def _enviar_token_por_email(s, perfil, token):
     """Envia o novo token para o e-mail do usuário. Devolve {enviado, destino, motivo}; nunca levanta erro
     (o token já foi gerado e será mostrado a quem chamou). O token não vai para o log."""
+    valido = lambda t: bool(re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', t))
     email = (perfil.get('email') or '').strip()
-    if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email):
-        return {'enviado': False, 'destino': None, 'motivo': 'O usuário não tem um e-mail válido cadastrado.'}
+    if not valido(email):
+        # Muitos usuários entram com o e-mail como login, sem preencher o campo e-mail.
+        email = (perfil.get('login') or '').strip()
+    if not valido(email):
+        return {'enviado': False, 'destino': None, 'motivo': 'O usuário não tem um e-mail válido cadastrado (nem o login é um e-mail).'}
     cfg = s._smtp_do_ambiente()
     if cfg is None:
         return {'enviado': False, 'destino': email, 'motivo': 'O envio de e-mail não está configurado no servidor (SMTP).'}
@@ -396,9 +400,10 @@ async def _enviar_token_por_email(s, perfil, token):
              + (f" ({base}/radix/#/acesso)" if base else "") + " e guarde-o em um local seguro: ele funciona como uma senha.\n")
     try:
         await asyncio.to_thread(s._enviar_email_simples, cfg, email, 'Seu novo token de acesso ao AstraJus', corpo)
-    except Exception:
-        s.log.error('Falha ao enviar o novo token por e-mail para o usuário %s', perfil.get('login'))
-        return {'enviado': False, 'destino': email, 'motivo': 'Não foi possível enviar o e-mail agora. Entregue o token por outro canal seguro.'}
+    except Exception as e:
+        s.log.error('Falha ao enviar o novo token por e-mail para o usuário %s: %s: %s', perfil.get('login'), type(e).__name__, e)
+        detalhe = f' ({type(e).__name__}: {str(e)[:120]})' if str(e) else f' ({type(e).__name__})'
+        return {'enviado': False, 'destino': email, 'motivo': 'O servidor de e-mail recusou ou não respondeu' + detalhe + '. Entregue o token por outro canal seguro.'}
     return {'enviado': True, 'destino': email, 'motivo': None}
 
 

@@ -99,6 +99,7 @@ class NovoTokenTest(_Base):
         self.assertEqual(status, 200)
         self.assertFalse(corpo["email"]["enviado"])
         self.assertIn("outro canal seguro", corpo["email"]["motivo"])
+        self.assertIn("OSError: smtp fora do ar", corpo["email"]["motivo"])
         self.assertEqual(self.registro.identificar(corpo["token"]), "bia@teste.com")
 
     def test_sem_smtp_ou_sem_email_valido_explica_e_entrega_o_token(self):
@@ -106,11 +107,20 @@ class NovoTokenTest(_Base):
         self.assertEqual((status, corpo["email"]["enviado"]), (200, False))
         self.assertIn("SMTP", corpo["email"]["motivo"])
         enviado.assert_not_called()
-        # usuário sem e-mail válido
+        # sem o campo e-mail, mas com login em formato de e-mail: usa o login
         with sqlite3.connect(self.caminho) as c:
             c.execute("UPDATE usuarios SET email = NULL, dados = json_set(dados, '$.email', NULL) WHERE nome = 'cid@teste.com'")
-        with mock.patch.object(server, "_smtp_do_ambiente", return_value=server.ConfiguracaoSMTP("h", 587, "u", "s", "r@x.com")):
+        cfg = server.ConfiguracaoSMTP("h", 587, "u", "s", "r@x.com")
+        with mock.patch.object(server, "_smtp_do_ambiente", return_value=cfg), \
+             mock.patch.object(server, "_enviar_email_simples") as enviado:
             status, corpo = self.req("POST", "/admin/usuarios/api/cid%40teste.com/token", {"enviar_email": True})
+        self.assertEqual((status, corpo["email"]["enviado"], corpo["email"]["destino"]), (200, True, "cid@teste.com"))
+        enviado.assert_called_once()
+        # login que não é e-mail e sem e-mail cadastrado: explica
+        with sqlite3.connect(self.caminho) as c:
+            c.execute("UPDATE usuarios SET nome = 'cid' WHERE nome = 'cid@teste.com'")
+        with mock.patch.object(server, "_smtp_do_ambiente", return_value=cfg):
+            status, corpo = self.req("POST", "/admin/usuarios/api/cid/token", {"enviar_email": True})
         self.assertEqual((status, corpo["email"]["enviado"]), (200, False))
         self.assertIn("e-mail válido", corpo["email"]["motivo"])
 
