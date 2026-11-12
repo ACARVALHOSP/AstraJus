@@ -66,6 +66,19 @@ Restam ~26 arquivos com `buscarJson` direto. Ordem sugerida:
 - [ ] **B+F** Assistente de IA sobre os dados do escritório (comandos, anexos, voz), com confirmação antes de executar, usando a chave de IA do próprio escritório
 - [ ] **?** Aba "Reputação" em Clientes (vi só o nome da aba no Jurix, não explorei o que ela faz)
 
+## Administração (inspirado no Jurix)
+- [x] **F** Abre já carregada quando a pessoa conectada é administradora (sem o passo do token) e as abas Banco, Histórico e Acessos carregam sozinhas
+- [x] **F** Legenda de níveis, selos coloridos (nível e status), "Você", último acesso relativo e descrição do nível no diálogo
+- [x] **F** Perfis prontos de acesso (Advogado, Secretaria, Financeiro, Somente consulta e Administrador), que preenchem a matriz por área sem criar níveis no servidor; a tabela mostra o perfil reconhecido ou "Acesso personalizado"
+- [x] **F** Valor por hora no cadastro do usuário (coluna na tabela e campo no diálogo; some se a conexão não for de administrador)
+- [ ] **B+F** Gerar novo token de um usuário (invalida o anterior) e enviar por e-mail (reaproveita o envio do cadastro público); hoje só o próprio usuário consegue um token novo
+- [ ] **B+F** OAB por usuário, cadastrando a captura de publicações daquele advogado automaticamente
+- [ ] **B+F** Painel de saúde: disjuntores e cache do `/healthz`, resultado das rotinas (`/automacoes`) e botão "enviar e-mail de teste" para conferir o SMTP
+- [ ] **B+F** Perfil do escritório (nome, CNPJ, OAB, e-mails, endereço, logo), base para assinatura de e-mail, cabeçalho de PDFs e recibos
+- [ ] **B** Backup agendado e restauração (hoje só download manual)
+- [ ] **F** Reunir Integrações dentro da Administração (hoje em tela própria, mais o painel legado `/admin/integracoes`)
+- [ ] **F** Exclusão de usuário na lista (hoje só revogar pelo Status), com confirmação
+
 ## Decidido não trazer (por enquanto)
 - WhatsApp integrado (infraestrutura e risco de bloqueio): preferir e-mail
 - Extensão do Chrome para ePROC, app desktop e criador de sites: produtos à parte
