@@ -5597,6 +5597,11 @@ class _AutenticacaoBearer:
             except _db.ConflitoAgenda as erro:
                 await _json(send, 409, _erro(str(erro)))
                 return
+            except sqlite3.IntegrityError:
+                # Algum registro ainda aponta para o processo: avisa em vez de devolver um erro genérico de servidor.
+                log.exception("Exclusão do processo %s recusada pelo banco (chave estrangeira)", caso_id)
+                await _json(send, 409, _erro("Este processo ainda tem registros ligados a ele e não pode ser excluído. Exclua ou mova esses registros primeiro."))
+                return
             if not excluiu:
                 await _json(send, 404, _erro("Caso não encontrado."))
                 return

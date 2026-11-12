@@ -39,6 +39,11 @@ class ConflitoAgenda(ValueError):
     """Mudança incompatível com um vínculo de agenda ativo."""
 
 
+class ConflitoCaso(ConflitoAgenda):
+    """O processo não pode ser excluído porque ainda tem registros que dependem dele (HTTP 409).
+    Herda de ConflitoAgenda para entrar no tratamento que já devolve 409 com a mensagem."""
+
+
 class ConflitoClientesLote(ValueError):
     """Os dados mudaram após a revisão de uma operação em massa."""
 
@@ -1467,6 +1472,24 @@ class RegistroClientesCasos:
             cursor = conexao.execute("SELECT 1 FROM casos WHERE id = ?", (caso_id,))
             if cursor.fetchone() is None:
                 return False
+            # Registros que não se apagam em silêncio: lançamentos financeiros (a chave estrangeira os
+            # protege, mas o erro virava um 500 genérico) e horas lançadas.
+            def quantos(tabela: str) -> int:
+                existe = conexao.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (tabela,)).fetchone()
+                return conexao.execute(f"SELECT count(*) FROM {tabela} WHERE caso_id = ?", (caso_id,)).fetchone()[0] if existe else 0
+            pendencias = []
+            if (n := quantos("lancamentos_financeiros")):
+                pendencias.append(f"{n} {'lançamento financeiro' if n == 1 else 'lançamentos financeiros'} (em Financeiro)")
+            if (n := quantos("horas_lancamentos")):
+                pendencias.append(f"{n} {'lançamento de horas' if n == 1 else 'lançamentos de horas'} (em Horas)")
+            if pendencias:
+                raise ConflitoCaso("Este processo ainda tem " + " e ".join(pendencias)
+                                   + ". Exclua ou mova esses registros antes de excluir o processo.")
+            # Dados derivados que não valem sem o processo: somem junto (as tabelas de horas e de modelos
+            # são criadas sob demanda, então só limpa as que existem).
+            for tabela in ("atividade_ciencia", "horas_cronometro", "modelo_prazo_decisoes"):
+                if conexao.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (tabela,)).fetchone():
+                    conexao.execute(f"DELETE FROM {tabela} WHERE caso_id = ?", (caso_id,))
             conexao.execute(
                 "UPDATE publicacoes_capturadas SET caso_id = NULL, status = 'nao_tratada' "
                 "WHERE caso_id = ?",

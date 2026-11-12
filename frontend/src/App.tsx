@@ -1,10 +1,10 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
-import { Callout, Flex, Popover, SegmentedControl, Text, Theme } from '@radix-ui/themes'
+import { Callout, Theme } from '@radix-ui/themes'
 import {
   Scale, Users, CalendarCheck, CalendarDays, Search, Gavel, Briefcase,
   Newspaper, BarChart2, BookOpen, History, FileSearch, Receipt, KeyRound,
   Settings, Link, Wallet, CreditCard, ShieldCheck, Menu, X,
-  Palette, ChevronDown, ChevronRight, Check, House, ListChecks, Clock,
+  ChevronDown, ChevronRight, House, ListChecks, Clock,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ClienteProvider, useCliente } from './api/ClienteContext'
@@ -18,6 +18,7 @@ import Carregamento from './Carregamento'
 import LimiteDeErro from './LimiteDeErro'
 import BuscaGlobal from './BuscaGlobal'
 import ContaUsuario from './ContaUsuario'
+import type { AccentColor } from './aparencia'
 import CentralNotificacoes from './CentralNotificacoes'
 import { NavegacaoProvider, useNavegacao } from './api/NavegacaoContext'
 import Acesso from './routes/Acesso'
@@ -41,8 +42,6 @@ const Casos = lazy(() => import('./routes/Casos'))
 const ModelosPrazo = lazy(() => import('./routes/ModelosPrazo'))
 const HorasPagina = lazy(() => import('./routes/Horas'))
 import './app-radix.css'
-
-export type AccentColor = 'indigo' | 'violet' | 'teal' | 'crimson'
 
 const CHAVE_ACCENT = 'astrajus-accent'
 
@@ -262,66 +261,6 @@ function SidebarAstraJus({ aberta, fechar }: { aberta: boolean; fechar: () => vo
   )
 }
 
-const ACCENTS: { key: AccentColor; label: string; cor: string }[] = [
-  { key: 'indigo',  label: 'Índigo',   cor: 'var(--indigo-9)' },
-  { key: 'violet',  label: 'Violeta',  cor: 'var(--violet-9)' },
-  { key: 'teal',    label: 'Verde-azulado', cor: 'var(--teal-9)' },
-  { key: 'crimson', label: 'Carmesim', cor: 'var(--crimson-9)' },
-]
-
-function SeletorAparencia({ accent, setAccent, aparencia, setAparencia }: {
-  accent: AccentColor
-  setAccent: (a: AccentColor) => void
-  aparencia: 'light' | 'dark'
-  setAparencia: (a: 'light' | 'dark') => void
-}) {
-  return (
-    <Popover.Root>
-      <Popover.Trigger>
-        <button type="button" className="aj-ib" aria-label="Aparência" title="Aparência">
-          <Palette size={17} aria-hidden="true" />
-        </button>
-      </Popover.Trigger>
-      <Popover.Content width="240px" align="end">
-        <Flex direction="column" gap="3">
-          <Flex direction="column" gap="2">
-            <Text as="p" size="1" weight="medium" color="gray">Tema</Text>
-            <SegmentedControl.Root
-              size="1"
-              value={aparencia}
-              onValueChange={(v) => setAparencia(v as 'light' | 'dark')}
-              aria-label="Tema"
-            >
-              <SegmentedControl.Item value="light">Claro</SegmentedControl.Item>
-              <SegmentedControl.Item value="dark">Escuro</SegmentedControl.Item>
-            </SegmentedControl.Root>
-          </Flex>
-          <Flex direction="column" gap="2">
-            <Text as="p" size="1" weight="medium" color="gray">Cor de destaque</Text>
-            <div className="aj-accent-picker" role="radiogroup" aria-label="Cor de destaque">
-              {ACCENTS.map((a) => (
-                <button
-                  key={a.key}
-                  type="button"
-                  role="radio"
-                  className="aj-accent-dot"
-                  style={{ background: a.cor }}
-                  title={a.label}
-                  aria-label={a.label}
-                  aria-checked={accent === a.key}
-                  onClick={() => setAccent(a.key)}
-                >
-                  {accent === a.key && <Check size={14} aria-hidden="true" />}
-                </button>
-              ))}
-            </div>
-          </Flex>
-        </Flex>
-      </Popover.Content>
-    </Popover.Root>
-  )
-}
-
 function accentSalvo(): AccentColor {
   try {
     const v = localStorage.getItem(CHAVE_ACCENT)
@@ -384,14 +323,7 @@ export default function App() {
                 <BuscaGlobal paginas={[{ id: 'inicio', label: 'Início', grupo: '' }, ...GRUPOS_NAVEGACAO.flatMap(g => g.abas.map(a => ({ id: a.id, label: a.label, grupo: g.label })))]} />
                 <CentralNotificacoes />
 
-                <SeletorAparencia
-                  accent={accent}
-                  setAccent={setAccent}
-                  aparencia={aparencia}
-                  setAparencia={setAparencia}
-                />
-
-                <ContaUsuario />
+                <ContaUsuario aparencia={aparencia} setAparencia={setAparencia} accent={accent} setAccent={setAccent} />
               </div>
             </header>
 

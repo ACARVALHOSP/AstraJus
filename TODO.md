@@ -35,6 +35,7 @@ Restam ~26 arquivos com `buscarJson` direto. Ordem sugerida:
 ### Experiência de uso
 - [ ] **F** PWA: manifest, ícones e service worker simples (instalável, sem app nativo)
 - [ ] **F** Celular: barra de navegação inferior com ação central (nova atividade / novo processo)
+- [x] **F** Menu da conta em lista (Meu perfil, Administração para administradores, Acesso e token, tema e cor de destaque dentro, Sair); "Meu perfil" mostra o acesso por área. Pendências: editar nome e foto e preferências de notificação por tipo (exigem backend)
 - [ ] **F** Atalho para "ocultar valores" (olho) na Home e no Financeiro
 - [ ] **F** Linha do tempo única do processo (movimentações, publicações, atividades e vínculos em ordem cronológica)
 - [ ] **F** Checklist de "Configuração inicial" na Home (Google Drive, Google Agenda, Asaas, OAB para monitorar), com dica contextual curta por tela e "Guia de uso" em cada seção de Integrações
