@@ -85,3 +85,39 @@ test('campos do histórico: lista de cadastro, objeto da limpeza e dados estranh
 test('rótulos das ações do histórico', () => {
   assert.deepEqual(['criar', 'atualizar', 'limpar_banco', 'outra'].map(rotuloAcao), ['Cadastro criado', 'Cadastro alterado', 'Limpeza de dados', 'outra'])
 })
+
+import { listarEmFrase, resumoVinculos } from '../src/routes/administracao/formatos.ts'
+
+const zero = { processos: 0, atividades: 0, lancamentos: 0, monitoramentos: 0, notificacoes: 0, horas: 0, agenda: 0 }
+
+test('resumo da exclusão: o que fica sem responsável, o que some e o que fica', () => {
+  const r = resumoVinculos({ ...zero, processos: 1, atividades: 12, lancamentos: 3, monitoramentos: 1, notificacoes: 40, horas: 2 })
+  assert.deepEqual(r.desatribuidos, ['1 processo', '12 atividades', '3 lançamentos financeiros'])
+  assert.deepEqual(r.removidos, ['1 monitoramento de publicações', '40 notificações', 'preferências, valor por hora, cronômetro e conexão com a Google Agenda'])
+  assert.deepEqual(r.mantidos, ['2 lançamentos de horas (histórico de trabalho)'])
+  assert.equal(r.bloqueio, null)
+})
+
+test('resumo da exclusão sem nada ligado e com agenda sincronizada', () => {
+  const vazio = resumoVinculos(zero)
+  assert.deepEqual([vazio.desatribuidos, vazio.mantidos, vazio.bloqueio], [[], [], null])
+  assert.equal(vazio.removidos.length, 1)
+  assert.match(resumoVinculos({ ...zero, agenda: 1 }).bloqueio, /^1 atividade sincronizada com a Google Agenda/)
+  assert.match(resumoVinculos({ ...zero, agenda: 3 }).bloqueio, /^3 atividades sincronizadas/)
+  assert.deepEqual(resumoVinculos({ ...zero, horas: 1 }).mantidos, ['1 lançamento de horas (histórico de trabalho)'])
+})
+
+test('lista em frase', () => {
+  assert.equal(listarEmFrase([]), '')
+  assert.equal(listarEmFrase(['a']), 'a')
+  assert.equal(listarEmFrase(['a', 'b']), 'a e b')
+  assert.equal(listarEmFrase(['a', 'b', 'c']), 'a, b e c')
+})
+
+test('histórico: novo token e exclusão de usuário em português', () => {
+  assert.deepEqual(['novo_token', 'apagar'].map(rotuloAcao), ['Novo token gerado', 'Usuário apagado'])
+  assert.equal(descreverCampos('[]'), '')
+  assert.equal(descreverCampos('{"processos": 2, "atividades": 0, "lancamentos": 1, "monitoramentos": 0, "horas": 3}'),
+    'Processos sem responsável: 2; Lançamentos sem responsável: 1; Horas mantidas: 3')
+  assert.equal(descreverCampos('{"publicacoes": 0}'), 'Publicações capturadas: 0 registro(s) apagado(s)')   // a limpeza continua mostrando zeros
+})

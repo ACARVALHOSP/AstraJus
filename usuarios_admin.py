@@ -1,6 +1,8 @@
 """Perfis estruturados e administração de usuários, compatíveis com dados legados."""
+import asyncio
 import hmac
 import json
+import os
 import re
 import secrets
 import sqlite3
@@ -263,6 +265,143 @@ def alterar(registro, dados, ator, login=None):
     return {'usuario': publico(login, r), **({'token': token} if token else {})}
 
 
+def _tem_tabela(c, nome):
+    return c.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (nome,)).fetchone() is not None
+
+
+def _contar(c, tabela, coluna, login):
+    """Quantas linhas de `tabela` têm `login` em `coluna` (0 se a tabela ainda não existe)."""
+    if not _tem_tabela(c, tabela):
+        return 0
+    return c.execute(f'SELECT count(*) FROM {tabela} WHERE {coluna} = ?', (login,)).fetchone()[0]
+
+
+def _monitoramentos_de(c, login):
+    """Ids dos monitoramentos de publicações cujo dono é `login` (o dono fica dentro de um JSON)."""
+    ids = []
+    for mid, dados in c.execute('SELECT id, dados FROM monitoramentos').fetchall():
+        try:
+            if json.loads(dados).get('usuario') == login:
+                ids.append(mid)
+        except (ValueError, AttributeError):
+            continue
+    return ids
+
+
+def _vinculos(c, login):
+    """O que depende de um usuário. Os quatro primeiros ficam "sem responsável" quando ele é apagado; os
+    demais são pessoais e somem junto; `horas` é histórico de trabalho e fica; `agenda` impede a exclusão."""
+    return {
+        'processos': _contar(c, 'casos', 'responsavel', login),
+        'atividades': _contar(c, 'caso_atividades', 'responsavel', login),
+        'lancamentos': _contar(c, 'lancamentos_financeiros', 'responsavel', login),
+        'monitoramentos': len(_monitoramentos_de(c, login)),
+        'notificacoes': _contar(c, 'notificacao_eventos', 'usuario', login),
+        'horas': _contar(c, 'horas_lancamentos', 'usuario', login),
+        'agenda': c.execute("SELECT count(*) FROM atividade_agenda WHERE usuario = ? AND estado <> 'cancelado'", (login,)).fetchone()[0]
+                  if _tem_tabela(c, 'atividade_agenda') else 0,
+    }
+
+
+def vinculos(registro, login):
+    """Resumo do que está ligado a um usuário (para a confirmação de exclusão)."""
+    from db import _abrir
+    with _abrir(registro.caminho) as c:
+        if not c.execute('SELECT 1 FROM usuarios WHERE nome = ?', (login,)).fetchone():
+            raise LookupError('Usuário não encontrado.')
+        return _vinculos(c, login)
+
+
+def novo_token(registro, login, ator):
+    """Gera um token novo para um usuário ativo. O anterior deixa de valer na hora. Só o hash é guardado;
+    o token em claro é devolvido uma única vez, para quem chamou entregá-lo."""
+    from db import _abrir
+    from _util import _hash_token
+    with registro._trava, _abrir(registro.caminho) as c, c:
+        c.execute('BEGIN IMMEDIATE')
+        row = c.execute('SELECT dados FROM usuarios WHERE nome=?', (login,)).fetchone()
+        if not row:
+            raise LookupError('Usuário não encontrado.')
+        r = completar(login, json.loads(row[0]))
+        if r['status'] != 'ativo':
+            raise ValueError('Só é possível gerar um novo token para usuários ativos. Ative o usuário antes (usuários revogados não voltam).')
+        token = secrets.token_urlsafe(32)
+        r.update(hash=_hash_token(token), atualizado_em=agora())
+        r = gravar(c, login, r)
+        c.execute('INSERT INTO usuarios_auditoria (ocorrido_em, ator, usuario, acao, campos) VALUES (?, ?, ?, ?, ?)',
+                  (agora(), ator, login, 'novo_token', json.dumps([])))
+    return token, publico(login, r)
+
+
+def apagar(registro, login, ator):
+    """Apaga o usuário. O que era dele e tem "responsável" fica sem responsável (processos, atividades e
+    lançamentos financeiros); o que é pessoal some junto (monitoramentos, notificações, preferências, valor
+    por hora, cronômetro e conexão com a Google Agenda). Horas já lançadas, ciências e o histórico de
+    auditoria ficam. Devolve o resumo do que foi desatribuído e removido."""
+    from db import _abrir
+    with registro._trava, _abrir(registro.caminho) as c, c:
+        c.execute('BEGIN IMMEDIATE')
+        row = c.execute('SELECT dados FROM usuarios WHERE nome=?', (login,)).fetchone()
+        if not row:
+            raise LookupError('Usuário não encontrado.')
+        anterior = json.loads(row[0])
+        if ator == 'usuario:' + login:
+            raise ValueError('Você não pode apagar o próprio acesso.')
+        if anterior.get('nivel_acesso') == 'administrador' and anterior.get('status') == 'ativo' \
+                and c.execute("SELECT count(*) FROM usuarios WHERE nivel_acesso='administrador' AND status='ativo' AND nome<>?", (login,)).fetchone()[0] < 1:
+            raise ValueError('Mantenha pelo menos um administrador ativo.')
+        resumo = _vinculos(c, login)
+        if resumo['agenda']:
+            raise ValueError(f"Esta pessoa tem {resumo['agenda']} atividade(s) sincronizada(s) com a Google Agenda. "
+                             "Peça para ela cancelar esses vínculos antes de apagar o usuário.")
+        monitoramentos = _monitoramentos_de(c, login)
+        # Fica sem responsável (a coluna dos lançamentos financeiros não aceita nulo: vazio = sem responsável).
+        c.execute('UPDATE casos SET responsavel = NULL WHERE responsavel = ?', (login,))
+        c.execute('UPDATE caso_atividades SET responsavel = NULL WHERE responsavel = ?', (login,))
+        c.execute("UPDATE lancamentos_financeiros SET responsavel = '' WHERE responsavel = ?", (login,))
+        # Pessoal: some junto.
+        for mid in monitoramentos:
+            c.execute('DELETE FROM monitoramentos WHERE id = ?', (mid,))
+        c.execute('DELETE FROM notificacoes WHERE evento_id IN (SELECT id FROM notificacao_eventos WHERE usuario = ?)', (login,))
+        c.execute('DELETE FROM notificacao_eventos WHERE usuario = ?', (login,))
+        for tabela, coluna in (('preferencias_usuario', 'usuario'), ('horas_tarifas', 'usuario'), ('horas_cronometro', 'usuario'),
+                               ('integracoes_google', 'dono')):
+            if _tem_tabela(c, tabela):
+                c.execute(f'DELETE FROM {tabela} WHERE {coluna} = ?', (login,))
+        c.execute('DELETE FROM usuarios WHERE nome = ?', (login,))
+        c.execute('INSERT INTO usuarios_auditoria (ocorrido_em, ator, usuario, acao, campos) VALUES (?, ?, ?, ?, ?)',
+                  (agora(), ator, login, 'apagar', json.dumps(resumo)))
+    if monitoramentos:   # dados de execução dos monitoramentos removidos (mesmo banco, outra transação)
+        import monitoramento_runtime
+        repo = monitoramento_runtime.Repositorio(registro.caminho)
+        for mid in monitoramentos:
+            repo.remover(mid)
+    return resumo
+
+
+async def _enviar_token_por_email(s, perfil, token):
+    """Envia o novo token para o e-mail do usuário. Devolve {enviado, destino, motivo}; nunca levanta erro
+    (o token já foi gerado e será mostrado a quem chamou). O token não vai para o log."""
+    email = (perfil.get('email') or '').strip()
+    if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email):
+        return {'enviado': False, 'destino': None, 'motivo': 'O usuário não tem um e-mail válido cadastrado.'}
+    cfg = s._smtp_do_ambiente()
+    if cfg is None:
+        return {'enviado': False, 'destino': email, 'motivo': 'O envio de e-mail não está configurado no servidor (SMTP).'}
+    base = (os.environ.get('CNJ_MCP_URL_PUBLICA') or '').rstrip('/')
+    corpo = (f"Olá, {perfil.get('nome_completo') or perfil.get('login')}.\n\n"
+             "Um administrador gerou um novo token de acesso ao AstraJus para você:\n\n"
+             f"{token}\n\n"
+             "O token anterior deixou de funcionar. Cole este token na tela de Acesso"
+             + (f" ({base}/radix/#/acesso)" if base else "") + " e guarde-o em um local seguro: ele funciona como uma senha.\n")
+    try:
+        await asyncio.to_thread(s._enviar_email_simples, cfg, email, 'Seu novo token de acesso ao AstraJus', corpo)
+    except Exception:
+        s.log.error('Falha ao enviar o novo token por e-mail para o usuário %s', perfil.get('login'))
+        return {'enviado': False, 'destino': email, 'motivo': 'Não foi possível enviar o e-mail agora. Entregue o token por outro canal seguro.'}
+    return {'enviado': True, 'destino': email, 'motivo': None}
+
+
 def registrar_acesso(registro, login):
     from db import _abrir
     with registro._trava, _abrir(registro.caminho) as c, c:
@@ -353,6 +492,26 @@ async def tratar(app, scope, receive, send, s):
                     origem.backup(copia)
                 await s._responder(send, 200, destino.read_bytes(), tipo='application/octet-stream',
                     cabecalhos_extra=[(b'content-disposition', b'attachment; filename="cnj-backup.db"'), (b'cache-control', b'no-store')])
+        elif path.startswith('/admin/usuarios/api/') and path.endswith('/vinculos') and method == 'GET':
+            alvo = unquote(path[len('/admin/usuarios/api/'):-len('/vinculos')])
+            await s._json(send, 200, {'usuario': alvo, 'vinculos': vinculos(app.registro, alvo)})
+        elif path.startswith('/admin/usuarios/api/') and path.endswith('/token') and method == 'POST':
+            alvo = unquote(path[len('/admin/usuarios/api/'):-len('/token')])
+            raw = await s._ler_corpo(receive)
+            if raw is None:
+                await s._json(send, 413, {'mensagem': 'Corpo da requisição grande demais.'})
+                return
+            pedido = json.loads(raw or b'{}')
+            if not isinstance(pedido, dict):
+                raise ValueError('Informe um objeto JSON.')
+            token_novo, perfil = novo_token(app.registro, alvo, ator)
+            resposta = {'token': token_novo, 'usuario': perfil, 'encerra_sessao_atual': ator == 'usuario:' + alvo, 'email': None}
+            if pedido.get('enviar_email') is True:
+                resposta['email'] = await _enviar_token_por_email(s, perfil, token_novo)
+            await s._json(send, 200, resposta)
+        elif path.startswith('/admin/usuarios/api/') and method == 'DELETE':
+            alvo = unquote(path[len('/admin/usuarios/api/'):])
+            await s._json(send, 200, {'apagado': True, 'usuario': alvo, 'resumo': apagar(app.registro, alvo, ator)})
         elif (path == '/admin/usuarios/api' and method == 'POST') or (path.startswith('/admin/usuarios/api/') and method == 'PATCH'):
             raw = await s._ler_corpo(receive)
             if raw is None:

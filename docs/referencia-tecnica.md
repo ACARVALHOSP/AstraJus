@@ -148,6 +148,9 @@ O frontend Radix (`/radix/`) é servido diretamente pelo Caddy a partir de `/srv
 | POST | `/admin/google/desconectar` | Desconecta a conta Google institucional |
 | GET, POST | `/admin/usuarios/api` | Lista / cria usuário |
 | PATCH | `/admin/usuarios/api/<login>` | Atualiza usuário |
+| DELETE | `/admin/usuarios/api/<login>` | Apaga o usuário: processos, atividades e lançamentos financeiros ficam sem responsável; remove monitoramentos, notificações e preferências; mantém horas. Recusa a própria conta, o último administrador e quem tem Google Agenda sincronizada |
+| GET | `/admin/usuarios/api/<login>/vinculos` | Contagem do que a exclusão afeta (para a confirmação) |
+| POST | `/admin/usuarios/api/<login>/token` | Gera novo token (invalida o anterior); corpo `{"enviar_email": bool}`; devolve o token uma única vez e o resultado do e-mail |
 | GET | `/admin/usuarios/historico` | Histórico administrativo |
 | GET | `/admin/usuarios/acessos` | Últimos acessos |
 | GET | `/admin/banco/api` | Estatísticas do banco |

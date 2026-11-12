@@ -71,13 +71,13 @@ Restam ~26 arquivos com `buscarJson` direto. Ordem sugerida:
 - [x] **F** Legenda de níveis, selos coloridos (nível e status), "Você", último acesso relativo e descrição do nível no diálogo
 - [x] **F** Perfis prontos de acesso (Advogado, Secretaria, Financeiro, Somente consulta e Administrador), que preenchem a matriz por área sem criar níveis no servidor; a tabela mostra o perfil reconhecido ou "Acesso personalizado"
 - [x] **F** Valor por hora no cadastro do usuário (coluna na tabela e campo no diálogo; some se a conexão não for de administrador)
-- [ ] **B+F** Gerar novo token de um usuário (invalida o anterior) e enviar por e-mail (reaproveita o envio do cadastro público); hoje só o próprio usuário consegue um token novo
+- [x] **B+F** Novo token de um usuário (invalida o anterior) com envio opcional por e-mail; "Último acesso" logo abaixo do nome. Pendência: link de redefinição em vez do token no e-mail
 - [ ] **B+F** OAB por usuário, cadastrando a captura de publicações daquele advogado automaticamente
 - [ ] **B+F** Painel de saúde: disjuntores e cache do `/healthz`, resultado das rotinas (`/automacoes`) e botão "enviar e-mail de teste" para conferir o SMTP
 - [ ] **B+F** Perfil do escritório (nome, CNPJ, OAB, e-mails, endereço, logo), base para assinatura de e-mail, cabeçalho de PDFs e recibos
 - [ ] **B** Backup agendado e restauração (hoje só download manual)
 - [ ] **F** Reunir Integrações dentro da Administração (hoje em tela própria, mais o painel legado `/admin/integracoes`)
-- [ ] **F** Exclusão de usuário na lista (hoje só revogar pelo Status), com confirmação
+- [x] **B+F** Exclusão de usuário com confirmação (digitar APAGAR): processos, atividades e lançamentos ficam sem responsável; monitoramentos e notificações pessoais são removidos; horas mantidas. Pendência: usuário com Google Agenda sincronizada precisa desconectar antes
 
 ## Decidido não trazer (por enquanto)
 - WhatsApp integrado (infraestrutura e risco de bloqueio): preferir e-mail
