@@ -8,6 +8,40 @@
   box-sizing: border-box;
 }
 
+/* ── Faixa de atenção ── */
+.home-atencao {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-3);
+  border: 1px solid var(--amber-a6);
+  background: var(--amber-a2);
+  color: var(--gray-12);
+  font-size: 14px;
+}
+.home-atencao--critico { border-color: var(--red-a6); background: var(--red-a2); }
+.home-atencao--ok { border-color: var(--green-a6); background: var(--green-a2); color: var(--gray-12); }
+.home-atencao--ok svg { color: var(--green-11); flex: none; }
+.home-atencao-titulo { display: inline-flex; align-items: center; gap: 0.375rem; font-weight: 600; }
+.home-atencao-titulo svg { color: var(--amber-11); }
+.home-atencao--critico .home-atencao-titulo svg { color: var(--red-11); }
+.home-atencao-lista { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+.home-atencao-item {
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--gray-a6);
+  background: var(--color-panel-solid);
+  color: var(--gray-12);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.home-atencao-item:hover { background: var(--gray-a3); }
+.home-atencao-item:focus-visible { outline: 2px solid var(--accent-8); outline-offset: 2px; }
+.home-atencao-item--critico { border-color: var(--red-a7); color: var(--red-11); font-weight: 500; }
+
 /* ── Métricas ── */
 .home-resumo {
   display: grid;

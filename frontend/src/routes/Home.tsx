@@ -8,6 +8,7 @@ import {
 import { AlertTriangle, Info, Plus, RefreshCw } from 'lucide-react'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
+import { usePerfil } from '../api/PerfilContext'
 import { buscarJson, enviarJson } from '../api/rest'
 import { ErroMCP } from '../api/mcpClient'
 import AtividadeModal from './casos/AtividadeModal'
@@ -17,6 +18,8 @@ import {
   type AtividadeHome, type ItemHome, type Periodo, type ProcessoHome, type StatusAtividade,
 } from './home/dados'
 import Escritorio from './home/Escritorio'
+import FaixaAtencao from './home/FaixaAtencao'
+import type { ResumoInadimplencia } from './financeiro/dadosResumo'
 import './home/home-radix.css'
 
 const SEM_RESPONSAVEL = '__sem_responsavel__'
@@ -41,9 +44,12 @@ export default function Home() {
 function PainelHome({ abas }: { abas: ReactNode }) {
   const { cliente, status } = useCliente()
   const { irPara } = useNavegacao()
+  const verFinanceiro = usePerfil().abaPermitida('financeiro')
   const [itens, setItens] = useState<ItemHome[]>([])
   const [processos, setProcessos] = useState<ProcessoHome[]>([])
   const [publicacoes, setPublicacoes] = useState<number | null>(null)
+  const [deClientes, setDeClientes] = useState(0)
+  const [vencido, setVencido] = useState<ResumoInadimplencia | null>(null)
   const [carregando, setCarregando] = useState(Boolean(cliente))
   const [erro, setErro] = useState('')
   const [aviso, setAviso] = useState('')
@@ -72,15 +78,26 @@ function PainelHome({ abas }: { abas: ReactNode }) {
     requisicao.current = controle
     const { signal } = controle
     setCarregando(true); setErro(''); setAviso('')
-    setItens([]); setProcessos([]); setPublicacoes(null)
+    setItens([]); setProcessos([]); setPublicacoes(null); setDeClientes(0); setVencido(null)
     const avisos: string[] = []
     const carregarPublicacoes = async () => {
       try {
-        const dados = await buscarJson<{ total: number }>(cliente, '/publicacoes-oab?status=nao_tratada&pagina=1&tamanho=5', signal)
+        const dados = await buscarJson<{ total: number; destinadas_a_clientes?: number }>(cliente, '/publicacoes-oab?status=nao_tratada&pagina=1&tamanho=5', signal)
         if (!Number.isInteger(dados.total) || dados.total < 0) throw new Error('Total inválido')
-        if (!signal.aborted) setPublicacoes(dados.total)
+        if (!signal.aborted) { setPublicacoes(dados.total); setDeClientes(Number(dados.destinadas_a_clientes) || 0) }
       } catch {
         if (!signal.aborted) avisos.push('Não foi possível consultar as publicações para revisar.')
+      }
+    }
+    // Só para quem acessa o financeiro. Se falhar, avisa (a faixa não afirma "tudo em ordem").
+    const carregarVencidos = async () => {
+      if (!verFinanceiro) return
+      try {
+        const dados = await buscarJson<{ inadimplencia: ResumoInadimplencia }>(cliente, `/lancamentos/resumo?hoje=${diaLocal(new Date())}`, signal)
+        if (!dados.inadimplencia || !Number.isFinite(dados.inadimplencia.total_vencido)) throw new Error('Resposta inválida')
+        if (!signal.aborted) setVencido(dados.inadimplencia)
+      } catch {
+        if (!signal.aborted) avisos.push('Não foi possível consultar os valores vencidos.')
       }
     }
     const carregarAtividades = async () => {
@@ -118,9 +135,9 @@ function PainelHome({ abas }: { abas: ReactNode }) {
         if (!signal.aborted) setErro(e instanceof Error ? e.message : 'Não foi possível carregar as atividades.')
       }
     }
-    await Promise.all([carregarPublicacoes(), carregarAtividades()])
+    await Promise.all([carregarPublicacoes(), carregarVencidos(), carregarAtividades()])
     if (!signal.aborted) { setAviso(avisos.join(' ')); setCarregando(false); setAgora(new Date()) }
-  }, [cliente])
+  }, [cliente, verFinanceiro])
 
   useEffect(() => {
     montado.current = true
@@ -255,6 +272,20 @@ function PainelHome({ abas }: { abas: ReactNode }) {
         </Box>
       ) : (
         <>
+          {/* Faixa única de atenção */}
+          <FaixaAtencao
+            carregando={carregando}
+            incompleto={Boolean(aviso || erro) || publicacoes === null}
+            atrasadas={itens.filter(i => noPeriodo(i.atividade, 'atrasadas', agora)).length}
+            hoje={itens.filter(i => noPeriodo(i.atividade, 'hoje', agora)).length}
+            publicacoes={publicacoes}
+            deClientes={deClientes}
+            vencido={vencido}
+            onPeriodo={p => { setExecutor(''); setResponsavel(''); setTipo(''); setPeriodo(p); setColunaMobile('pendente') }}
+            onPublicacoes={() => irPara('publicacoes-oab', { status: 'nao_tratada' })}
+            onFinanceiro={() => irPara('financeiro', { aba: 'inadimplencia' })}
+          />
+
           {/* Métricas */}
           <div className="home-resumo">
             {resumo.map(r => (
