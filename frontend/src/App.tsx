@@ -41,6 +41,7 @@ const Contatos = lazy(() => import('./routes/Contatos'))
 const Casos = lazy(() => import('./routes/Casos'))
 const ModelosPrazo = lazy(() => import('./routes/ModelosPrazo'))
 const HorasPagina = lazy(() => import('./routes/Horas'))
+const AdminIntegracoes = lazy(() => import('./routes/integracoes/AdminIntegracoes'))
 import './app-radix.css'
 
 const CHAVE_ACCENT = 'astrajus-accent'
@@ -82,6 +83,7 @@ const GRUPOS_NAVEGACAO = [
       { id: 'acesso', label: 'Acesso', icone: KeyRound },
       { id: 'modelos-prazo', label: 'Modelos de prazos', icone: ListChecks },
       { id: 'integracoes', label: 'Integrações', icone: Link },
+      { id: 'integracoes/admin', label: 'Admin. integrações', icone: Settings },
       { id: 'administracao', label: 'Administração', icone: ShieldCheck },
     ],
   },
@@ -162,6 +164,7 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
     case 'jurimetria': return <Jurimetria />
     case 'jurisprudencia': return <Jurisprudencia />
     case 'integracoes': return <Integracoes />
+    case 'integracoes/admin': return <AdminIntegracoes />
     case 'financeiro': return <Financeiro />
     case 'pagamentos': return <Pagamentos />
     case 'atividades': return <Atividades />

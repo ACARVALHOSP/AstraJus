@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { Badge, Button, Callout, Card, Flex, Heading, Text } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
+import { useNavegacao } from '../api/NavegacaoContext'
 
 type StatusSelo = 'verificando' | 'configurado' | 'nao-configurado' | 'acesso-necessario' | 'falha'
 
@@ -23,6 +24,7 @@ function Selo({ status }: { status: StatusSelo }) {
 
 export default function Integracoes() {
   const { cliente } = useCliente()
+  const { irPara } = useNavegacao()
   const [googleStatus, setGoogleStatus] = useState<StatusSelo>('acesso-necessario')
   const [asaasStatus, setAsaasStatus] = useState<StatusSelo>('acesso-necessario')
   const [zapsignStatus, setZapsignStatus] = useState<StatusSelo>('acesso-necessario')
@@ -106,9 +108,9 @@ export default function Integracoes() {
         acesso foram cadastrados.
       </Text>
       <div>
-        <a href="/admin/integracoes" target="_blank" rel="noopener">
+        <Button variant="soft" size="2" onClick={() => irPara('integracoes/admin')}>
           Administrar integrações
-        </a>
+        </Button>
       </div>
       <div aria-live="polite">
         {aviso && (
