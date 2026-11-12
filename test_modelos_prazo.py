@@ -31,7 +31,8 @@ def chamar(middleware, metodo, url, token=None, corpo=None):
     cabecalhos = [(b"authorization", f"Bearer {token}".encode())] if token else []
     if corpo is not None:
         cabecalhos.append((b"content-type", b"application/json"))
-    scope = {"type": "http", "method": metodo, "path": url, "query_string": b"", "headers": cabecalhos}
+    caminho, _, consulta = url.partition("?")
+    scope = {"type": "http", "method": metodo, "path": caminho, "query_string": consulta.encode(), "headers": cabecalhos}
     asyncio.run(middleware(scope, receive, send))
     bruto = b"".join(m.get("body", b"") for m in respostas[1:])
     try:

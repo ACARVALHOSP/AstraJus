@@ -4,7 +4,7 @@ import {
   Scale, Users, CalendarCheck, CalendarDays, Search, Gavel, Briefcase,
   Newspaper, BarChart2, BookOpen, History, FileSearch, Receipt, KeyRound,
   Settings, Link, Wallet, CreditCard, ShieldCheck, Menu, X,
-  Palette, ChevronDown, ChevronRight, Check, House, ListChecks,
+  Palette, ChevronDown, ChevronRight, Check, House, ListChecks, Clock,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ClienteProvider, useCliente } from './api/ClienteContext'
@@ -39,6 +39,7 @@ const PublicacoesOab = lazy(() => import('./routes/PublicacoesOab'))
 const Contatos = lazy(() => import('./routes/Contatos'))
 const Casos = lazy(() => import('./routes/Casos'))
 const ModelosPrazo = lazy(() => import('./routes/ModelosPrazo'))
+const HorasPagina = lazy(() => import('./routes/Horas'))
 import './app-radix.css'
 
 export type AccentColor = 'indigo' | 'violet' | 'teal' | 'crimson'
@@ -54,6 +55,7 @@ const GRUPOS_NAVEGACAO = [
       { id: 'casos', label: 'Processos', icone: Scale },
       { id: 'agenda', label: 'Agenda', icone: CalendarDays },
       { id: 'atividades', label: 'Atividades', icone: CalendarCheck },
+      { id: 'horas', label: 'Horas', icone: Clock },
       { id: 'publicacoes-oab', label: 'Publicações recebidas', icone: Gavel },
       { id: 'contatos', label: 'Contatos', icone: Users },
     ],
@@ -152,6 +154,7 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
     case 'inicio': return <Home />
     case 'administracao': return <Administracao />
     case 'modelos-prazo': return <ModelosPrazo />
+    case 'horas': return <HorasPagina />
     case 'acesso': return <Acesso />
     case 'processo': return <Processo />
     case 'publicacoes': return <Publicacoes />

@@ -10,17 +10,17 @@ export const AREAS: Record<string, string> = {
   pagamentos: 'Pagamentos', integracoes: 'Integrações',
 }
 const ABA_AREA: Record<string, string> = {
-  casos: 'casos', atividades: 'atividades', agenda: 'atividades', 'modelos-prazo': 'atividades', 'publicacoes-oab': 'publicacoes_oab', monitoramentos: 'publicacoes_oab',
+  casos: 'casos', atividades: 'atividades', agenda: 'atividades', 'modelos-prazo': 'atividades', horas: 'atividades', 'publicacoes-oab': 'publicacoes_oab', monitoramentos: 'publicacoes_oab',
   contatos: 'contatos', processo: 'pesquisa', publicacoes: 'pesquisa', jurisprudencia: 'pesquisa',
   jurimetria: 'pesquisa', financeiro: 'financeiro', pagamentos: 'pagamentos', integracoes: 'integracoes',
 }
 
-type Valor = { nivel: string | null; permissoes: Record<string, Grau> | null; abaPermitida: (aba: string) => boolean; podeEditar: (area: string) => boolean }
+type Valor = { login: string | null; nivel: string | null; permissoes: Record<string, Grau> | null; abaPermitida: (aba: string) => boolean; podeEditar: (area: string) => boolean }
 const PerfilContext = createContext<Valor | null>(null)
 
 export function PerfilProvider({ children }: { children: ReactNode }) {
   const { cliente } = useCliente()
-  const [perfil, setPerfil] = useState<{ nivel: string; permissoes: Record<string, Grau> } | null>(null)
+  const [perfil, setPerfil] = useState<{ login: string | null; nivel: string; permissoes: Record<string, Grau> } | null>(null)
 
   useEffect(() => {
     if (!cliente) return
@@ -28,14 +28,15 @@ export function PerfilProvider({ children }: { children: ReactNode }) {
     void fetch('/responsaveis/me', { headers: { Authorization: `Bearer ${cliente.token}` }, cache: 'no-store', signal: controlador.signal })
       .then(async r => {
         if (!r.ok) throw new Error('Perfil indisponível')
-        const d = await r.json() as { usuario: { nivel_acesso: string; permissoes?: Record<string, Grau> } }
-        if (!controlador.signal.aborted) setPerfil({ nivel: d.usuario.nivel_acesso, permissoes: d.usuario.permissoes ?? {} })
+        const d = await r.json() as { usuario: { login?: string; nivel_acesso: string; permissoes?: Record<string, Grau> } }
+        if (!controlador.signal.aborted) setPerfil({ login: d.usuario.login ?? null, nivel: d.usuario.nivel_acesso, permissoes: d.usuario.permissoes ?? {} })
       })
       .catch(() => { if (!controlador.signal.aborted) setPerfil(null) })
     return () => { controlador.abort(); setPerfil(null) }
   }, [cliente])
 
   const valor = useMemo<Valor>(() => ({
+    login: perfil?.login ?? null,
     nivel: perfil?.nivel ?? null,
     permissoes: perfil?.permissoes ?? null,
     // Sem perfil carregado nada é escondido; o servidor continua recusando o que não é permitido.

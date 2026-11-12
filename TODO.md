@@ -51,7 +51,7 @@ Restam ~26 arquivos com `buscarJson` direto. Ordem sugerida:
 - [ ] **B+F** Importação de outros sistemas (Astrea, ProJuris, Advbox) por planilha ou lista de números CNJ
 
 ### Prioridade média
-- [ ] **B+F** Horas por caso: cronômetro, lançamento manual, tempo faturável, valor/hora e relatório de horas
+- [x] **B+F** Horas por caso: cronômetro, lançamento manual, tempo faturável, valor por hora (por pessoa, gravado em cada lançamento), relatório (totais e CSV) e faturamento em um lançamento de honorário. Pendências: indicador do cronômetro na barra superior (hoje só na tela Horas); horas na ficha do processo; valor por hora por processo ou cliente (contrato); faturar vários processos do mesmo cliente de uma vez; relatório em PDF; aprovação de horas; horas no resumo do Escritório
 - [ ] **B+F** Financeiro: contas/caixas, fluxo de caixa, recorrência de honorários e controle de alvarás
 - [ ] **B+F** Contrato de honorários com geração de parcelas e recibo em PDF; lembretes de cobrança (já listado como "ainda não existe" no README)
 - [ ] **B+F** Assinatura eletrônica via ZapSign (hoje só configura e testa a API)

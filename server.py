@@ -37,7 +37,7 @@ from html import escape as _escapar
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 from zoneinfo import ZoneInfo
 
 import asaas_integracao
@@ -46,6 +46,7 @@ import financeiro_juridico
 import triagem
 import notificacoes
 import modelos_prazo
+import horas
 import monitoramento_runtime
 import db as _db
 import google_integracao
@@ -4389,6 +4390,7 @@ class _AutenticacaoBearer:
         import usuarios_admin
         usuarios_admin.registrar_acesso(self.registro, usuario)
         perfil = self.registro.carregar().get(usuario, {})
+        scope["nivel_acesso"] = perfil.get("nivel_acesso") or "operador"
         recusa = usuarios_admin.liberar_rota(perfil, caminho, scope.get('method') or 'GET')
         if recusa:
             await _json(send, 403, _erro(recusa))
@@ -4495,6 +4497,9 @@ class _AutenticacaoBearer:
                 and caminho.startswith(("/casos/", "/clientes/")):
             alvo, _, resto = caminho[1:].partition("/")
             await self._pasta_drive_sob_demanda(send, alvo, resto[:-len("/pasta-drive")])
+            return
+        if (caminho == "/horas" or caminho.startswith("/horas/")) and self.gestao is not None:
+            await self._horas(scope, receive, send, caminho[len("/horas"):].strip("/"))
             return
         if (caminho == "/modelos-prazo" or caminho.startswith("/modelos-prazo/")) and self.gestao is not None:
             await self._modelos_prazo(scope, receive, send, caminho[len("/modelos-prazo"):].strip("/"))
@@ -5326,6 +5331,121 @@ class _AutenticacaoBearer:
             await _json(send, 400, _erro("Informe um objeto JSON."))
             return None
         return dados
+
+    async def _horas(self, scope, receive, send, resto: str) -> None:
+        """Horas por processo. GET/POST /horas, PATCH/DELETE /horas/<id>, GET /horas/relatorio,
+        GET /horas/tarifas, PUT /horas/tarifas/<usuario> (administrador), GET/POST/DELETE /horas/cronometro,
+        POST /horas/cronometro/parar, POST /horas/faturar (cria um lançamento de honorário no Financeiro)."""
+        repo = horas.Repositorio(self.gestao.caminho)
+        usuario, metodo = scope["usuario"], scope.get("method")
+        administrador = scope.get("nivel_acesso") == "administrador"
+        agora = lambda: datetime.now(timezone.utc)
+        consulta = parse_qs((scope.get("query_string") or b"").decode("utf-8", "ignore"))
+
+        def parametro(nome):
+            return (consulta.get(nome) or [None])[0] or None
+
+        def booleano(nome):
+            valor = parametro(nome)
+            if valor is None:
+                return None
+            if valor not in ("true", "false"):
+                raise ValueError(f"O filtro {nome} deve ser true ou false.")
+            return valor == "true"
+
+        def filtros():
+            return {"de": parametro("de"), "ate": parametro("ate"), "usuario": parametro("usuario"), "caso_id": parametro("caso_id"),
+                    "cliente_id": parametro("cliente_id"), "faturavel": booleano("faturavel"), "faturado": booleano("faturado")}
+
+        try:
+            partes = resto.split("/") if resto else []
+            if not partes:
+                if metodo == "GET":
+                    itens = repo.listar(**filtros())
+                    await _json(send, 200, {"horas": itens, "totais": repo.totais(itens)})
+                    return
+                if metodo == "POST":
+                    dados = await self._corpo_json(receive, send)
+                    if dados is None:
+                        return
+                    dono = usuario
+                    if dados.get("usuario") not in (None, usuario):
+                        if not administrador:
+                            raise horas.ProibidoHoras("Só um administrador lança horas em nome de outra pessoa.")
+                        dono = str(dados["usuario"])
+                        if dono not in self.registro.carregar():
+                            raise LookupError("Usuário não encontrado.")
+                    criado = repo.criar(caso_id=dados.get("caso_id"), usuario=dono,
+                                        data=dados.get("data") or agora().astimezone(horas.BRASILIA).date().isoformat(),
+                                        minutos=dados.get("minutos"), descricao=dados.get("descricao"),
+                                        faturavel=dados.get("faturavel", True), valor_hora=dados.get("valor_hora"), agora=agora)
+                    await _json(send, 201, {"horas": criado})
+                    return
+            elif len(partes) == 1 and partes[0].isdigit():
+                horas_id = int(partes[0])
+                if metodo == "PATCH":
+                    dados = await self._corpo_json(receive, send)
+                    if dados is not None:
+                        await _json(send, 200, {"horas": repo.atualizar(horas_id, dados, usuario, administrador, agora)})
+                    return
+                if metodo == "DELETE":
+                    repo.excluir(horas_id, usuario, administrador)
+                    await _json(send, 200, {"excluido": True})
+                    return
+            elif partes == ["relatorio"] and metodo == "GET":
+                await _json(send, 200, repo.relatorio(**filtros()))
+                return
+            elif partes[0] == "tarifas":
+                if len(partes) == 1 and metodo == "GET":
+                    await _json(send, 200, {"tarifas": repo.listar_tarifas() if administrador else {usuario: v for u, v in repo.listar_tarifas().items() if u == usuario},
+                                            "administrador": administrador})
+                    return
+                if len(partes) == 2 and metodo == "PUT":
+                    if not administrador:
+                        raise horas.ProibidoHoras("Só um administrador define o valor por hora.")
+                    alvo = unquote(partes[1])
+                    if alvo not in self.registro.carregar():
+                        raise LookupError("Usuário não encontrado.")
+                    dados = await self._corpo_json(receive, send)
+                    if dados is not None:
+                        await _json(send, 200, {"usuario": alvo, "valor_hora": repo.definir_tarifa(alvo, dados.get("valor_hora"), agora)})
+                    return
+            elif partes[0] == "cronometro":
+                if len(partes) == 1 and metodo == "GET":
+                    await _json(send, 200, {"cronometro": repo.cronometro(usuario)})
+                    return
+                if len(partes) == 1 and metodo == "POST":
+                    dados = await self._corpo_json(receive, send)
+                    if dados is not None:
+                        await _json(send, 201, {"cronometro": repo.iniciar_cronometro(usuario, dados.get("caso_id"), dados.get("descricao"), agora)})
+                    return
+                if len(partes) == 1 and metodo == "DELETE":
+                    await _json(send, 200, {"descartado": repo.descartar_cronometro(usuario)})
+                    return
+                if partes == ["cronometro", "parar"] and metodo == "POST":
+                    dados = await self._corpo_json(receive, send)
+                    if dados is not None:
+                        await _json(send, 200, {"horas": repo.parar_cronometro(usuario, dados.get("faturavel", True), agora)})
+                    return
+            elif partes == ["faturar"] and metodo == "POST":
+                dados = await self._corpo_json(receive, send)
+                if dados is not None:
+                    await _json(send, 200, repo.faturar(dados.get("ids"), usuario, self.gestao, dados.get("vencimento"), dados.get("descricao"), agora))
+                return
+        except horas.ConflitoHoras as erro:
+            await _json(send, 409, _erro(str(erro)))
+            return
+        except ValueError as erro:
+            await _json(send, 400, _erro(str(erro)))
+            return
+        except LookupError as erro:
+            await _json(send, 404, _erro(str(erro.args[0]) if erro.args else "Não encontrado."))
+            return
+        except PermissionError as erro:
+            await _json(send, 403, _erro(str(erro)))
+            return
+        conhecida = not partes or partes[0].isdigit() or partes[0] in ("relatorio", "tarifas", "cronometro", "faturar")
+        await _responder(send, 405 if conhecida else 404, b"Metodo nao permitido" if conhecida else b"Nao encontrado")
 
     async def _modelos_prazo(self, scope, receive, send, modelo_id: str) -> None:
         """Modelos de prazos e tarefas por assunto ou classe: GET /modelos-prazo[/<id>],
