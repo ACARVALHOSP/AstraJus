@@ -128,29 +128,73 @@ async def _baixar_arvore_cjpg(campo: str) -> list[dict]:
 
 
 async def atualizar_arvores_cjpg() -> dict:
-    """Baixa e salva as 4 árvores de referência do CJPG. Usado pelo comando --atualizar-arvores-cjpg."""
+    """Baixa e salva as 4 árvores de referência do CJPG. Usado pelo comando --atualizar-arvores-cjpg.
+
+    Um campo que voltar vazio não sobrescreve o arquivo que já existe (ex.: a lista de magistrados,
+    que o e-SAJ só entrega a um navegador, não é baixável por HTTP simples)."""
     destino = _dir_arvores_cjpg()
     resumo = {}
     for campo in ("vara", "classe", "assunto", "magistrado"):
         registros = await _baixar_arvore_cjpg(campo)
-        arquivo = destino / f"{campo}.json"
-        arquivo.write_text(json.dumps(registros, ensure_ascii=False), encoding="utf-8")
         resumo[campo] = len(registros)
+        if registros:
+            _gravar_arvore_cjpg(destino / f"{campo}.json", registros)
     (destino / "atualizado_em.txt").write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+    _CACHE_ARVORES_CJPG.clear()
     return resumo
 
 
+def _gravar_arvore_cjpg(arquivo: Path, registros: list[dict]) -> None:
+    temporario = arquivo.with_suffix(".json.tmp")  # troca atômica: nunca deixa um arquivo pela metade
+    temporario.write_text(json.dumps(registros, ensure_ascii=False), encoding="utf-8")
+    temporario.replace(arquivo)
+
+
 _CACHE_ARVORES_CJPG: dict[str, list[dict]] = {}
+# Lista de magistrados que acompanha o código: o e-SAJ só a entrega a um navegador (a grade é montada
+# por JavaScript), então o download HTTP devolve 0 registros. Gerada por scripts/coletar_magistrados_cjpg.js.
+_SEMENTE_MAGISTRADOS_CJPG = Path(__file__).parent / "dados" / "magistrado.json"
+
+
+def _ler_lista_json(arquivo: Path) -> list[dict]:
+    try:
+        dados = json.loads(arquivo.read_text(encoding="utf-8")) if arquivo.is_file() else []
+    except (OSError, ValueError):
+        nucleo.log.exception("Árvore do CJPG ilegível: %s", arquivo)
+        return []
+    return dados if isinstance(dados, list) else []
 
 
 def _carregar_arvore_cjpg(campo: str) -> list[dict]:
-    if campo not in _CACHE_ARVORES_CJPG:
-        arquivo = _dir_arvores_cjpg() / f"{campo}.json"
-        if arquivo.is_file():
-            _CACHE_ARVORES_CJPG[campo] = json.loads(arquivo.read_text(encoding="utf-8"))
-        else:
-            _CACHE_ARVORES_CJPG[campo] = []
-    return _CACHE_ARVORES_CJPG[campo]
+    if _CACHE_ARVORES_CJPG.get(campo):
+        return _CACHE_ARVORES_CJPG[campo]
+    registros = _ler_lista_json(_dir_arvores_cjpg() / f"{campo}.json")
+    if not registros and campo == "magistrado":
+        registros = _ler_lista_json(_SEMENTE_MAGISTRADOS_CJPG)
+    if registros:  # lista vazia não fica em cache: assim o download automático é percebido logo
+        _CACHE_ARVORES_CJPG[campo] = registros
+    return registros
+
+
+_TRAVA_ARVORES_CJPG = asyncio.Lock()
+
+
+async def _garantir_arvore_cjpg(campo: str) -> None:
+    """Baixa a árvore (vara/classe/assunto) se ainda não existir neste servidor, em vez de devolver
+    sempre vazio até alguém rodar --atualizar-arvores-cjpg (o cache se perde se o container for recriado)."""
+    if _carregar_arvore_cjpg(campo):
+        return
+    async with _TRAVA_ARVORES_CJPG:
+        if _carregar_arvore_cjpg(campo):  # outra requisição já baixou enquanto esperávamos
+            return
+        try:
+            registros = await _baixar_arvore_cjpg(campo)
+        except Exception:
+            nucleo.log.exception("Falha ao baixar a árvore '%s' do CJPG (seguindo sem ela)", campo)
+            return
+        if registros:
+            _gravar_arvore_cjpg(_dir_arvores_cjpg() / f"{campo}.json", registros)
+            _CACHE_ARVORES_CJPG.pop(campo, None)
 
 
 def _filhos_arvore_cjpg(campo: str, no_pai: str | None) -> list[dict]:
@@ -183,6 +227,7 @@ async def _arvore_filhos_http(scope, send) -> None:
         await nucleo._json(send, 400, {"erro": f"campo inválido: use um entre {sorted(_CAMPOS_ARVORE_CJPG)}."})
         return
     no_pai = query.get("no") or None
+    await _garantir_arvore_cjpg(campo)
     await nucleo._json(send, 200, {"filhos": _filhos_arvore_cjpg(campo, no_pai)})
 
 
@@ -196,6 +241,7 @@ async def _arvore_buscar_http(scope, send) -> None:
     if len(termo) < 2:
         await nucleo._json(send, 400, {"erro": "informe ao menos 2 caracteres em q."})
         return
+    await _garantir_arvore_cjpg(campo)
     await nucleo._json(send, 200, {"resultados": _buscar_arvore_cjpg(campo, termo)})
 
 

@@ -318,9 +318,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
     if (p.status !== 'nao_tratada') {
       return <Button size={largura ? '3' : '1'} variant="soft" color="gray" style={estilo} disabled={bloqueada} onClick={() => mudarStatus([p.hash], 'nao_tratada')}>Reabrir</Button>
     }
-    if (!p.caso_id) {
-      return <Button size={largura ? '3' : '1'} variant="soft" style={estilo} disabled={bloqueada || numeroPublicacao(p).length !== 20} onClick={() => abrirAcao('processo', p)}>Vincular processo</Button>
-    }
+    if (!p.caso_id) return null // vincular fica no menu de três pontos
     return <Button size={largura ? '3' : '1'} variant="soft" style={estilo} disabled={bloqueada} onClick={() => abrirAcao('atividade', p)}>Criar atividade</Button>
   }
   function menuAcoes(p: PublicacaoOab) {
@@ -617,7 +615,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
             <table aria-label="Publicações recebidas" className="oab-tabela">
               <thead>
                 <tr>
-                  <th aria-label="Detalhes" />
+                  <th className="oab-col-seta" aria-label="Detalhes" />
                   <th className="tabela-controle">
                     <Checkbox
                       aria-label="Selecionar publicações desta página"
@@ -649,7 +647,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
                     <Fragment key={p.hash}>
                       <tr data-publicacao={p.hash} onClick={() => setFoco(p.hash)}
                         className={[selecionadas.has(p.hash) ? 'oab-linha-selecionada' : '', foco === p.hash ? 'oab-linha-foco' : '', paraCliente(p) ? 'oab-linha-cliente' : ''].filter(Boolean).join(' ') || undefined}>
-                        <td>
+                        <td className="oab-col-seta">
                           <IconButton variant="ghost" size="1" aria-expanded={aberta} aria-controls={`oab-detalhes-${p.hash}`}
                             aria-label={`${aberta ? 'Recolher' : 'Expandir'} publicação ${formatarNumeroCNJ(numeroPublicacao(p))}`}
                             onClick={() => alternarExpandida(p.hash)}>

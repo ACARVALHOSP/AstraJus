@@ -156,7 +156,9 @@ function LinhaAdaptavel({ linha, expansao, colunas, ordem, complementares, indic
     return [cloneElement(celula, { className: classe(celula, coluna?.controle ? 'tabela-controle' : indice === indiceAcoes ? 'tabela-acoes' : coluna?.monetaria ? 'tabela-numero tabela-valor' : coluna?.numerica ? 'tabela-numero' : '') }, <>
       {indice === indiceAcoes && complementares.length > 0
         ? <div className="tabela-acoes-grupo">{celula.props.children}{botao}</div>
-        : celula.props.children}
+        : coluna && !coluna.controle && !coluna.numerica && indice !== indiceAcoes
+          ? <CelulaLimitada>{celula.props.children}</CelulaLimitada>
+          : celula.props.children}
     </>)]
   })
   if (indiceAcoes < 0 && complementares.length > 0) conteudo.push(<td key="detalhes" className="tabela-acoes">{botao}</td>)
@@ -169,4 +171,20 @@ function LinhaAdaptavel({ linha, expansao, colunas, ordem, complementares, indic
     {expansao && ajustarExpansao(expansao, quantidade)}
     {complementares.length > 0 && <tr {...propsDetalhes}><td colSpan={quantidade}>{aberta && detalhes}</td></tr>}
   </>
+}
+
+/** Limita o conteúdo da célula a 3 linhas; o texto completo fica no title quando há corte. */
+function CelulaLimitada({ children }: { children: ReactNode }) {
+  const alvo = useRef<HTMLDivElement>(null)
+  const [completo, setCompleto] = useState<string>()
+  useLayoutEffect(() => {
+    const el = alvo.current
+    if (!el) return
+    const medir = () => setCompleto(el.scrollHeight > el.clientHeight + 1 ? el.innerText.trim() : undefined)
+    medir()
+    const observador = new ResizeObserver(medir)
+    observador.observe(el)
+    return () => observador.disconnect()
+  }, [children])
+  return <div ref={alvo} className="tabela-celula-limitada" title={completo}>{children}</div>
 }

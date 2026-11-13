@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
-import { Avatar, Badge, Button, Callout, Dialog, Flex, Text, TextField } from '@radix-ui/themes'
+import { Avatar, Badge, Button, Callout, Dialog, Flex, RadioGroup, Text, TextField } from '@radix-ui/themes'
+import { ACCENTS, type AccentColor } from './aparencia'
 import { AlertTriangle, Camera } from 'lucide-react'
 import { useAvisos } from './Avisos'
 import { useCliente } from './api/ClienteContext'
@@ -13,7 +14,7 @@ const GRAUS: Record<Grau, { texto: string; cor: 'green' | 'blue' | 'gray' }> = {
   editar: { texto: 'Pode editar', cor: 'green' }, ver: { texto: 'Só consulta', cor: 'blue' }, nenhum: { texto: 'Sem acesso', cor: 'gray' },
 }
 /** "Meu perfil": foto, nome de exibição e e-mail editáveis; acesso por área só para leitura. */
-export default function PerfilDialogo({ onClose }: { onClose: () => void }) {
+export default function PerfilDialogo({ onClose, accent, setAccent }: { onClose: () => void; accent: AccentColor; setAccent: (a: AccentColor) => void }) {
   const { cliente } = useCliente()
   const { avisar } = useAvisos()
   const { nome: nomeAtual, email: emailAtual, foto: fotoAtual, login, nivel, permissoes, atualizarPerfil } = usePerfil()
@@ -74,6 +75,17 @@ export default function PerfilDialogo({ onClose }: { onClose: () => void }) {
               <Text size="1" color="gray">Usado nos avisos por e-mail. O login de acesso não muda.</Text>
             </div>
           </Flex>
+
+          <Text as="p" size="2" weight="medium" mt="4" mb="2">Cor de destaque</Text>
+          <RadioGroup.Root value={accent} onValueChange={v => setAccent(v as AccentColor)} aria-label="Cor de destaque">
+            <Flex gap="4" wrap="wrap">
+              {ACCENTS.map(a => (
+                <Text as="label" size="2" key={a.key}>
+                  <Flex align="center" gap="2"><RadioGroup.Item value={a.key} /><span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: '50%', background: a.cor, display: 'inline-block' }} />{a.label}</Flex>
+                </Text>
+              ))}
+            </Flex>
+          </RadioGroup.Root>
 
           <Text as="p" size="2" weight="medium" mt="4" mb="1">Perfil de acesso: {nivel ? (NIVEIS[nivel] ?? nivel) : 'não informado'}</Text>
           {administrador ? (

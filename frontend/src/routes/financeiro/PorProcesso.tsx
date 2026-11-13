@@ -72,8 +72,10 @@ export default function PorProcesso({ abas }: { abas: ReactNode }) {
                 {linhas.map(p => (
                   <tr key={p.caso_id}>
                     <td>
-                      <button type="button" className="fin-link" onClick={() => irPara('casos', { id: p.caso_id })}>{tituloCaso(p.caso_id)}</button>
-                      <div className="fin-secundario">{nomeCliente(p.cliente_id)}</div>
+                      <div className="tabela-celula-limitada">
+                        <button type="button" className="fin-link" onClick={() => irPara('casos', { id: p.caso_id })}>{tituloCaso(p.caso_id)}</button>
+                        <div className="fin-secundario">{nomeCliente(p.cliente_id)}</div>
+                      </div>
                     </td>
                     <td className="fin-num">{formatarMoeda(p.honorarios.previstos)}</td>
                     <td className="fin-num fin-receita">{formatarMoeda(p.honorarios.recebidos)}</td>

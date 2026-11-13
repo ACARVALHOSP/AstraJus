@@ -5,17 +5,25 @@ substituto mínimo de `_html_para_texto`/`_sem_acento_cjpg`, que é só o que o 
 Casos marcados com `expectedFailure` documentam limitações conhecidas das regex: ao corrigir a
 heurística, o teste passa a "passar inesperadamente" e a marca deve ser removida.
 """
+import asyncio
 import html
+import json
+import os
 import re
 import statistics
+import tempfile
 import unicodedata
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from modulos.jurimetria import servico
 from modulos.nucleo import nucleo
 
 
 class _NucleoFalso:
+    log = mock.MagicMock()
+
     @staticmethod
     def _html_para_texto(conteudo):
         return html.unescape(re.sub(r"<[^>]+>", "", conteudo or ""))
@@ -297,6 +305,82 @@ class EstatisticaDaAmostra(unittest.TestCase):
         self.assertIn("pequena", servico._avisos_amostra(12, "casos")[0])
         self.assertNotIn("muito", servico._avisos_amostra(12, "casos")[0])
         self.assertEqual(servico._avisos_amostra(servico.CJPG_AMOSTRA_MINIMA, "casos"), [])
+
+
+class ArvoresEmDisco(unittest.TestCase):
+    """Cache das árvores (vara/classe/assunto/magistrado): leitura, lista embutida, download sob demanda."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        patcher = mock.patch.dict(os.environ, {"CNJ_MCP_ARVORES_CJPG_DIR": self.dir})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        servico._CACHE_ARVORES_CJPG.clear()
+        self.addCleanup(servico._CACHE_ARVORES_CJPG.clear)
+
+    def arquivo(self, campo):
+        return Path(self.dir) / f"{campo}.json"
+
+    def test_magistrado_usa_a_lista_embutida_quando_nao_ha_cache(self):
+        lista = servico._carregar_arvore_cjpg("magistrado")
+        self.assertGreater(len(lista), 1000)
+        self.assertEqual(set(lista[0]), {"codigo", "nome"})
+        self.assertTrue(all(m["codigo"] and m["nome"].strip() not in ("", ".") for m in lista))
+        self.assertEqual(len({m["codigo"] for m in lista}), len(lista))  # sem códigos repetidos
+
+    def test_cache_do_servidor_tem_prioridade_sobre_a_lista_embutida(self):
+        self.arquivo("magistrado").write_text(json.dumps([{"codigo": "1", "nome": "Fulano"}]), encoding="utf-8")
+        self.assertEqual(servico._carregar_arvore_cjpg("magistrado"), [{"codigo": "1", "nome": "Fulano"}])
+
+    def test_arquivo_vazio_ou_corrompido_cai_na_lista_embutida(self):
+        for conteudo in ("[]", "{nao e json", '{"objeto": 1}'):
+            with self.subTest(conteudo):
+                servico._CACHE_ARVORES_CJPG.clear()
+                self.arquivo("magistrado").write_text(conteudo, encoding="utf-8")
+                self.assertGreater(len(servico._carregar_arvore_cjpg("magistrado")), 1000)
+
+    def test_arvore_sem_arquivo_fica_vazia_e_nao_entra_no_cache(self):
+        self.assertEqual(servico._carregar_arvore_cjpg("vara"), [])
+        self.assertNotIn("vara", servico._CACHE_ARVORES_CJPG)
+
+    def test_atualizar_nao_sobrescreve_arquivo_existente_com_lista_vazia(self):
+        existente = [{"codigo": "9", "nome": "Beltrano"}]
+        self.arquivo("magistrado").write_text(json.dumps(existente), encoding="utf-8")
+
+        async def baixar(campo):
+            return [] if campo == "magistrado" else [{"id": "1", "pai": None, "nome": campo, "busca": campo, "folha": True}]
+
+        with mock.patch.object(servico, "_baixar_arvore_cjpg", baixar):
+            resumo = asyncio.run(servico.atualizar_arvores_cjpg())
+        self.assertEqual(resumo, {"vara": 1, "classe": 1, "assunto": 1, "magistrado": 0})
+        self.assertEqual(json.loads(self.arquivo("magistrado").read_text(encoding="utf-8")), existente)
+        self.assertEqual(len(json.loads(self.arquivo("vara").read_text(encoding="utf-8"))), 1)
+        self.assertFalse(list(Path(self.dir).glob("*.tmp")))  # nenhum temporário esquecido
+
+    def test_garantir_baixa_uma_vez_quando_falta_e_nao_repete_quando_ja_existe(self):
+        chamadas = []
+
+        async def baixar(campo):
+            chamadas.append(campo)
+            return [{"id": "1", "pai": None, "nome": "1ª Vara Cível", "busca": "1ª vara cível", "folha": True}]
+
+        async def duas_vezes():
+            await asyncio.gather(servico._garantir_arvore_cjpg("vara"), servico._garantir_arvore_cjpg("vara"))
+            await servico._garantir_arvore_cjpg("vara")
+
+        with mock.patch.object(servico, "_baixar_arvore_cjpg", baixar):
+            asyncio.run(duas_vezes())
+        self.assertEqual(chamadas, ["vara"])
+        self.assertEqual(servico._buscar_arvore_cjpg("vara", "VARA civel")[0]["id"], "1")
+
+    def test_garantir_tolera_falha_do_download(self):
+        async def baixar(campo):
+            raise RuntimeError("e-SAJ fora do ar")
+
+        with mock.patch.object(servico, "_baixar_arvore_cjpg", baixar):
+            asyncio.run(servico._garantir_arvore_cjpg("classe"))  # não propaga
+        self.assertEqual(servico._carregar_arvore_cjpg("classe"), [])
+        self.assertFalse(self.arquivo("classe").exists())
 
 
 if __name__ == "__main__":
