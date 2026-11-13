@@ -515,6 +515,13 @@ class PerfilEComparacaoComUniverso(unittest.TestCase):
         self.assertEqual(baseline["buscados"], 4)
         self.assertIn("escopo", baseline)
 
+    def test_do_cache_reflete_o_aviso_de_consulta_guardada(self):
+        aviso = f"{servico.CJPG_AVISO_CACHE} feita em 13/11/2026 10:00 (guardada por 7 dias)."
+        com_cache, _ = self.chamar([(1, [decisao("procedente")], [aviso])], magistrado_codigo="1", comparar_com_universo=False)
+        sem_cache, _ = self.chamar([(1, [decisao("procedente")], [])], magistrado_codigo="1", comparar_com_universo=False)
+        self.assertTrue(com_cache["do_cache"])
+        self.assertFalse(sem_cache["do_cache"])
+
     def test_so_com_nome_o_juiz_vai_no_texto_entre_aspas(self):
         _, chamadas = self.chamar([(1, [decisao("procedente")], [])], magistrado_nome="Fulano de Tal", comparar_com_universo=False)
         params = chamadas[0][0]

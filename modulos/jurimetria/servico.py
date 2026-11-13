@@ -468,6 +468,7 @@ async def _cjpg_buscar_no_esaj(params: dict, paginas: int) -> tuple[int | None, 
 # (sem avisos de página falha/bloqueada), para nunca servir por 7 dias um resultado parcial.
 
 CJPG_CACHE_TTL_S = 7 * 24 * 3600
+CJPG_AVISO_CACHE = "Resultado de uma consulta idêntica"  # início do aviso; a tela usa o campo `do_cache`
 _BANCO_CAMINHO: str | None = None
 
 
@@ -516,6 +517,10 @@ def _cjpg_cache_gravar(chave: str, total_servidor: int | None, todos: list[dict]
         nucleo.log.exception("Falha ao gravar o cache da Jurimetria (seguindo sem cache)")
 
 
+def _veio_do_cache(avisos: list[str]) -> bool:
+    return any(a.startswith(CJPG_AVISO_CACHE) for a in avisos)
+
+
 async def _cjpg_executar_busca(
     params: dict, paginas: int, ignorar_cache: bool = False
 ) -> tuple[int | None, list[dict], list[str]]:
@@ -527,7 +532,7 @@ async def _cjpg_executar_busca(
             criado_em, dados = em_cache
             quando = datetime.fromtimestamp(criado_em, timezone.utc).astimezone().strftime("%d/%m/%Y %H:%M")
             aviso = (
-                f"Resultado de uma consulta idêntica feita em {quando} (guardada por 7 dias para não "
+                f"{CJPG_AVISO_CACHE} feita em {quando} (guardada por 7 dias para não "
                 "sobrecarregar o e-SAJ); sentenças publicadas depois não aparecem."
             )
             return dados["total_servidor"], dados["resultados"], [aviso]
@@ -616,6 +621,7 @@ async def consultar_jurimetria_cjpg(
             "buscados": len(todos),
             "resultados": todos,
             "avisos": avisos,
+            "do_cache": _veio_do_cache(avisos),
         }
 
         # Agrega sempre que houver algum critério de busca (termo livre incluído): a tela envia só
@@ -801,6 +807,7 @@ async def perfil_decisorio_magistrado(
             "buscados": len(todos),
             "resultados": todos,
             "avisos": avisos,
+            "do_cache": _veio_do_cache(avisos),
             "perfil": perfil,
         }
 

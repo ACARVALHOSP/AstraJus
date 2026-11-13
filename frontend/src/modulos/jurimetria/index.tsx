@@ -1,7 +1,7 @@
 import CampoData from '../../CampoData'
 import CabecalhoPagina from '../../CabecalhoPagina'
 import Carregamento from '../../Carregamento'
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { AlertTriangle, Download } from 'lucide-react'
 import { Badge, Button, Callout, Card, Checkbox, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
 import Paginacao, { POR_PAGINA } from '../../Paginacao'
@@ -74,6 +74,7 @@ type RespostaJurimetria = {
   erro?: boolean
   mensagem?: string
   avisos?: string[]
+  do_cache?: boolean
   total_servidor?: number
   buscados?: number
   agregado?: Agregado
@@ -98,8 +99,18 @@ export default function Jurimetria() {
   const [erro, setErro] = useState<string | null>(null)
   const [resultado, setResultado] = useState<RespostaJurimetria | null>(null)
   const [analiseAtual, setAnaliseAtual] = useState<Analise | null>(null)
+  const [decorrido, setDecorrido] = useState(0)
+  const [estimativa, setEstimativa] = useState(0)
 
-  async function executar(analise: Analise) {
+  // A consulta é uma única chamada ao servidor (sem andamento parcial); mostra o tempo decorrido contra
+  // uma estimativa. Atualiza de 5 em 5 segundos para não encher o leitor de tela de avisos.
+  useEffect(() => {
+    if (!consultando) return
+    const t = setInterval(() => setDecorrido(d => d + 5), 5000)
+    return () => clearInterval(t)
+  }, [consultando])
+
+  async function executar(analise: Analise, ignorarCache = false) {
     if (!cliente) {
       setErro('Informe o seu token na aba Acesso e clique em Conectar antes de consultar.')
       return
@@ -116,11 +127,16 @@ export default function Jurimetria() {
       vara_codigo: varas.map(o => o.id).join(',') || null,
       classe_codigo: classes.map(o => o.id).join(',') || null,
       assunto_codigo: assuntos.map(o => o.id).join(',') || null,
+      ignorar_cache: ignorarCache,
     }
     if (analise === 'perfil_magistrado' && !comuns.magistrado_nome && !comuns.magistrado_codigo) {
       setErro('Informe o magistrado.')
       return
     }
+    // ~1,2 s por página no e-SAJ; o perfil do juiz ainda busca até 5 páginas do universo para comparar.
+    const paginasTotais = comuns.paginas + (analise === 'perfil_magistrado' ? Math.min(comuns.paginas, 5) : 0)
+    setEstimativa(Math.ceil((paginasTotais * 1.2 + 2) / 5) * 5)
+    setDecorrido(0)
     setConsultando(true)
     setErro(null)
     setResultado(null)
@@ -191,7 +207,16 @@ export default function Jurimetria() {
         </Flex>
       </form>
       <div aria-live="polite">
-        {consultando && <Carregamento tipo="cartoes" descricao="Buscando sentenças no TJSP; quanto mais sentenças, mais demora…" />}
+        {consultando && (
+          <Carregamento
+            tipo="cartoes"
+            descricao={decorrido === 0
+              ? `Buscando sentenças no TJSP; deve levar cerca de ${estimativa} segundos…`
+              : decorrido > estimativa
+                ? `Buscando há ${decorrido} segundos, mais que o esperado (cerca de ${estimativa}); o tribunal pode estar lento. Aguarde…`
+                : `Buscando sentenças no TJSP: ${decorrido} de cerca de ${estimativa} segundos…`}
+          />
+        )}
         {erro && (
           <Callout.Root color="red" size="1">
             <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
@@ -213,6 +238,13 @@ export default function Jurimetria() {
                 <Callout.Text>{aviso}</Callout.Text>
               </Callout.Root>
             ))}
+            {resultado.do_cache && (
+              <div>
+                <Button size="2" variant="soft" onClick={() => executar(analiseAtual, true)}>
+                  Atualizar com dados novos do tribunal
+                </Button>
+              </div>
+            )}
             <Text size="2">
               {resultado.total_servidor != null ? `${resultado.total_servidor.toLocaleString('pt-BR')} sentenças encontradas; ` : ''}
               {resultado.buscados} analisadas nesta consulta.
