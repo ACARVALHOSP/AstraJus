@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Badge, Button, Flex, Heading, Skeleton, Tabs, Text } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
+import { useModulos } from '../api/ModulosContext'
 import { usePerfil } from '../api/PerfilContext'
 import { buscarJson } from '../api/rest'
 import { formatarNomeExibicao, formatarNumeroCNJ } from '../utils/formatadores'
@@ -16,16 +17,20 @@ import MovimentacoesCaso from './casos/MovimentacoesCaso'
 import PoloClientes from './casos/PoloClientes'
 import VinculosCaso from './casos/VinculosCaso'
 import LinhaDoTempoCaso from './casos/LinhaDoTempoCaso'
+import JurimetriaCaso from './casos/JurimetriaCaso'
 import SugestaoModelos from './casos/SugestaoModelos'
 import './casos/processos-radix.css'
 
-const ABAS = ['cadastro', 'atividades', 'publicacoes', 'movimentacoes', 'vinculos', 'linha-do-tempo'] as const
+const ABAS = ['cadastro', 'atividades', 'publicacoes', 'movimentacoes', 'vinculos', 'linha-do-tempo', 'jurimetria'] as const
 type AbaId = typeof ABAS[number]
 
 export default function Casos() {
   const { consumirPayload, versaoNavegacao, sincronizarUrl } = useNavegacao()
   const { cliente } = useCliente()
-  const { podeEditar } = usePerfil()
+  const { podeEditar, abaPermitida } = usePerfil()
+  const { modulos } = useModulos()
+  // A aba só aparece com o módulo ligado e acesso à Pesquisa; um link direto cai na explicação dentro da aba.
+  const jurimetriaDisponivel = abaPermitida('jurimetria') && modulos.some(m => m.id === 'jurimetria' && m.ativo)
   const [casoId, setCasoId] = useState<string | null>(null)
 
   // Números das abas; recarregados quando uma aba altera atividades ou publicações.
@@ -51,12 +56,12 @@ export default function Casos() {
     if (versaoLida.current === versaoNavegacao) return // evita reler no StrictMode
     versaoLida.current = versaoNavegacao
     deUrl.current = true
-    const destino = consumirPayload<{ id: string; aba?: 'atividades' | 'publicacoes' | 'movimentacoes' | 'linha-do-tempo'; atividadeId?: string | number }>('casos')
+    const destino = consumirPayload<{ id: string; aba?: 'atividades' | 'publicacoes' | 'movimentacoes' | 'linha-do-tempo' | 'jurimetria'; atividadeId?: string | number }>('casos')
     if (!destino?.id) { setCasoId(null); return } // menu ou "voltar" do navegador: lista de processos
     setCasoId(destino.id)
     setResumo(null)
     setTitulo(null)
-    setAbaSelecionada(destino.aba === 'atividades' ? 'atividades' : destino.aba === 'publicacoes' ? 'publicacoes' : destino.aba === 'movimentacoes' ? 'movimentacoes' : destino.aba === 'linha-do-tempo' ? 'linha-do-tempo' : 'cadastro')
+    setAbaSelecionada(destino.aba === 'atividades' ? 'atividades' : destino.aba === 'publicacoes' ? 'publicacoes' : destino.aba === 'movimentacoes' ? 'movimentacoes' : destino.aba === 'linha-do-tempo' ? 'linha-do-tempo' : destino.aba === 'jurimetria' ? 'jurimetria' : 'cadastro')
     setDestinoAtividade({ id: destino.atividadeId, versao: versaoNavegacao })
   }, [consumirPayload, versaoNavegacao])
 
@@ -138,6 +143,7 @@ export default function Casos() {
               <Tabs.Trigger value="movimentacoes">Movimentações</Tabs.Trigger>
               <Tabs.Trigger value="vinculos">Vínculos</Tabs.Trigger>
               <Tabs.Trigger value="linha-do-tempo">Linha do tempo</Tabs.Trigger>
+              {jurimetriaDisponivel && <Tabs.Trigger value="jurimetria">Jurimetria</Tabs.Trigger>}
             </Tabs.List>
           </div>
           <Tabs.Content value="cadastro">
@@ -163,6 +169,9 @@ export default function Casos() {
           </Tabs.Content>
           <Tabs.Content value="linha-do-tempo">
             <LinhaDoTempoCaso casoId={casoId} />
+          </Tabs.Content>
+          <Tabs.Content value="jurimetria">
+            <JurimetriaCaso casoId={casoId} />
           </Tabs.Content>
         </Tabs.Root>
       </Flex>

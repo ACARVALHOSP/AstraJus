@@ -64,6 +64,7 @@ Restam ~26 arquivos com `buscarJson` direto. Ordem sugerida:
 - [ ] **B+F** Portal do cliente e explicação dos andamentos em linguagem simples (IA, sempre com revisão do advogado)
 - [ ] **B+F** Cofre de documentos com hash e marca d'água; documentos por link (estende `/certidoes/<arquivo>`)
 - [ ] **B+F** Assistente de IA sobre os dados do escritório (comandos, anexos, voz), com confirmação antes de executar, usando a chave de IA do próprio escritório
+- [ ] **B+F** Jurimetria na ficha do processo (desfecho e valor de condenação por vara e assunto, TJSP): especificação em `.scratch/jurimetria-processo/spec.md`; fases 0 e 1 feitas (aba "Jurimetria" com filtros resolvidos pela capa, dois cartões e texto-resumo; resolvedor `GET /cjpg-arvore/resolver`); faltam a fase 2 (perfil do magistrado, lembrar a escolha por processo, link para a tela de Jurimetria com filtros) e a fase 3. A ferramenta de jurimetria agora recusa períodos acima de 364 dias e mostra a mensagem do e-SAJ em vez de devolver vazio
 - [ ] **?** Aba "Reputação" em Clientes (vi só o nome da aba no Jurix, não explorei o que ela faz)
 
 ## Administração (inspirado no Jurix)

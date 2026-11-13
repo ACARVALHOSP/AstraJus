@@ -15,6 +15,7 @@ from typing import Any
 import httpx
 
 from modulos.contrato import ferramenta
+from modulos.jurimetria import resolver as _resolver
 from modulos.nucleo import nucleo
 
 # --- CJPG: julgados de 1º grau do TJSP e árvores de referência ---------------
@@ -249,6 +250,21 @@ async def _arvore_buscar_http(scope, send) -> None:
     await nucleo._json(send, 200, {"resultados": _buscar_arvore_cjpg(campo, termo)})
 
 
+async def _arvore_resolver_http(scope, send) -> None:
+    """Casa vara, classe e assunto da capa do processo com os códigos do CJPG (ver resolver.py)."""
+    query = dict(nucleo._query(scope))
+    numero = (query.get("numero") or "").strip()
+    if len(re.sub(r"\D", "", numero)) != 20:
+        await nucleo._json(send, 400, {"erro": "informe o número CNJ completo (20 dígitos) em numero."})
+        return
+    campos = ("vara", "classe", "assunto")
+    for campo in campos:
+        await _garantir_arvore_cjpg(campo)
+    arvores = {campo: _carregar_arvore_cjpg(campo) for campo in campos}
+    await nucleo._json(send, 200, _resolver.resolver(
+        numero, query.get("vara", ""), query.get("classe", ""), query.get("assunto", ""), arvores))
+
+
 async def _arvore_magistrados_http(send) -> None:
     # lista plana (não é árvore) - servida inteira de uma vez, autocomplete filtra no navegador
     await nucleo._json(send, 200, {"magistrados": _carregar_arvore_cjpg("magistrado")})
@@ -422,6 +438,37 @@ def _cjpg_total_resultados(html: str) -> int | None:
     return int(m.group(1).replace(".", "")) if m else None
 
 
+CJPG_PERIODO_MAX_DIAS = 364  # limite do e-SAJ: (fim - início) de no máximo 364 dias; 365 é recusado
+
+
+def _validar_periodo_cjpg(data_inicio: str | None, data_fim: str | None) -> str | None:
+    """Mensagem de erro se o período não serve ao e-SAJ (as duas datas ou nenhuma; no máximo ~1 ano)."""
+    ini, fim = nucleo._data_tjsp(data_inicio), nucleo._data_tjsp(data_fim)
+    if not ini and not fim:
+        return None
+    if not ini or not fim:
+        return "Informe as duas datas (início e fim) ou nenhuma: o e-SAJ não aceita só uma delas."
+    try:
+        d_ini = datetime.strptime(ini, "%d/%m/%Y")
+        d_fim = datetime.strptime(fim, "%d/%m/%Y")
+    except ValueError:
+        return "Datas inválidas: use o formato dd/mm/aaaa."
+    if d_fim < d_ini:
+        return "A data final é anterior à data inicial."
+    if (d_fim - d_ini).days > CJPG_PERIODO_MAX_DIAS:
+        return ("O e-SAJ só aceita períodos de até 1 ano (no máximo 364 dias entre a data inicial e a final). "
+                "Reduza o período ou faça mais de uma consulta.")
+    return None
+
+
+def _cjpg_mensagem_atencao(html: str) -> str | None:
+    """Texto do aviso "Atenção" que o e-SAJ mostra no lugar dos resultados quando recusa a consulta."""
+    if "fundocinza1" in html:  # há resultados: a palavra "Atenção" pode estar no texto das decisões
+        return None
+    m = re.search(r"Atenção\s+(.*?)\s+Orientações", nucleo._html_para_texto(html), re.DOTALL)
+    return re.sub(r"\s+", " ", m.group(1)).strip() or None if m else None
+
+
 def _cjpg_bloqueado(html: str) -> bool:
     return "fundocinza1" not in html and "Parâmetros de Consulta" not in html
 
@@ -437,6 +484,9 @@ async def _cjpg_buscar_no_esaj(params: dict, paginas: int) -> tuple[int | None, 
         resp = await cliente.get(f"{CJPG_BASE_URL}/pesquisar.do", params=params)
         resp.raise_for_status()
         html = resp.text
+        recusa = _cjpg_mensagem_atencao(html)
+        if recusa:
+            raise ValueError(f"O e-SAJ recusou a consulta: {recusa}")
         if _cjpg_bloqueado(html):
             raise ValueError("CJPG: resposta sem resultados nem formulário reconhecível (possível bloqueio ou mudança de layout).")
 
@@ -589,6 +639,9 @@ async def consultar_jurimetria_cjpg(
     try:
         if paginas < 1 or paginas > CJPG_PAGINAS_MAX:
             return nucleo._erro(f"paginas deve ser entre 1 e {CJPG_PAGINAS_MAX}.")
+        erro_periodo = _validar_periodo_cjpg(data_inicio, data_fim)
+        if erro_periodo:
+            return nucleo._erro(erro_periodo)
 
         termo_busca = (termo or "").strip()
         if magistrado_nome and not magistrado_codigo:  # com o código o filtro é exato; o nome não precisa ir no texto
@@ -757,6 +810,9 @@ async def perfil_decisorio_magistrado(
             return nucleo._erro("Informe magistrado_codigo ou magistrado_nome.")
         if paginas < 1 or paginas > CJPG_PAGINAS_MAX:
             return nucleo._erro(f"paginas deve ser entre 1 e {CJPG_PAGINAS_MAX}.")
+        erro_periodo = _validar_periodo_cjpg(data_inicio, data_fim)
+        if erro_periodo:
+            return nucleo._erro(erro_periodo)
 
         termo_busca = (termo or "").strip()
         if magistrado_nome and not magistrado_codigo:  # com o código o filtro é exato; o nome não precisa ir no texto
@@ -826,6 +882,8 @@ async def http(scope, send, caminho: str) -> bool:
         await _arvore_filhos_http(scope, send)
     elif caminho == "/cjpg-arvore/buscar":
         await _arvore_buscar_http(scope, send)
+    elif caminho == "/cjpg-arvore/resolver":
+        await _arvore_resolver_http(scope, send)
     elif caminho == "/cjpg-arvore/magistrados":
         await _arvore_magistrados_http(send)
     else:
