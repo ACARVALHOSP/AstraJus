@@ -138,7 +138,46 @@ def resolver_lista(texto: str, arvore: list[dict], limite: int = 6) -> dict:
     return {"candidatos": candidatos, "escolhido": escolhido, "confianca": candidatos[0]["confianca"] if candidatos else None, "ambiguo": ambiguo}
 
 
-def resolver(numero: str, vara: str, classe: str, assunto: str, arvores: dict[str, list[dict]]) -> dict:
+_TRATAMENTO = {"dr", "dra", "juiz", "juiza", "desembargador", "desembargadora", "direito", "substituto", "substituta"}
+
+
+def resolver_magistrado(texto: str, lista: list[dict], limite: int = 5) -> dict:
+    """Magistrado pelo nome (a lista do CJPG tem {codigo, nome}). Só escolhe quando o nome bate inteiro e é único."""
+    consulta = {t for t in tokens(texto) if t not in _TRATAMENTO}
+    if not consulta:
+        return {"candidatos": [], "escolhido": None, "confianca": None, "ambiguo": False}
+    ranking = []
+    for m in lista:
+        score = jaccard(consulta, {t for t in tokens(m["nome"]) if t not in _TRATAMENTO})
+        if score >= 0.6:
+            ranking.append((score, m))
+    ranking.sort(key=lambda r: (-r[0], r[1]["nome"]))
+    candidatos = [{"id": m["codigo"], "nome": m["nome"], "caminho": m["nome"], "confianca": round(sc, 2)} for sc, m in ranking[:limite]]
+    exatos = [c for c in candidatos if c["confianca"] >= CONFIANCA_ALTA]
+    return {"candidatos": candidatos, "escolhido": exatos[0] if len(exatos) == 1 else None,
+            "confianca": candidatos[0]["confianca"] if candidatos else None, "ambiguo": len(exatos) > 1}
+
+
+def descrever_no(campo: str, id_no: str, arvores: dict[str, list[dict]]) -> dict | None:
+    """{id, nome, caminho} de um nó pelo id (para reabrir uma escolha guardada ou um link). None se não existir."""
+    if campo == "magistrado":
+        m = next((x for x in arvores.get("magistrado", []) if x["codigo"] == id_no), None)
+        return {"id": m["codigo"], "nome": m["nome"], "caminho": m["nome"]} if m else None
+    arvore = arvores.get(campo, [])
+    achados = [n for n in arvore if n["id"] == id_no]
+    if campo == "vara":  # comarca e foro (raízes) dividem o id com o prefixo das varas; só vale a vara
+        achados = [n for n in achados if n.get("pai") is not None]
+    if not achados:
+        return None
+    no = achados[0]
+    if campo == "vara":
+        pai = [n for n in arvore if n.get("pai") is None and n["id"] == no["pai"]]
+        foro = next((n for n in pai if sem_acento(n["nome"]).startswith("foro")), pai[-1] if pai else None)
+        return {"id": no["id"], "nome": no["nome"], "caminho": f'{foro["nome"]} > {no["nome"]}' if foro else no["nome"]}
+    return {"id": no["id"], "nome": no["nome"], "caminho": _caminho_busca(no.get("busca", ""), no["nome"])}
+
+
+def resolver(numero: str, vara: str, classe: str, assunto: str, arvores: dict[str, list[dict]], magistrado: str = "") -> dict:
     """Resolve foro, vara, classe e assunto de um processo do TJSP. Fora do TJSP devolve {"tjsp": False}."""
     if not eh_tjsp(numero):
         return {"tjsp": False}
@@ -149,4 +188,5 @@ def resolver(numero: str, vara: str, classe: str, assunto: str, arvores: dict[st
         "vara": resolver_vara(vara or "", foro, arvores.get("vara", [])),
         "classe": resolver_lista(classe or "", arvores.get("classe", [])),
         "assunto": resolver_lista(assunto or "", arvores.get("assunto", [])),
+        "magistrado": resolver_magistrado(magistrado or "", arvores.get("magistrado", [])),
     }

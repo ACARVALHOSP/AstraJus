@@ -3546,7 +3546,7 @@ class _AutenticacaoBearer:
                 return
 
         # Rotas dos módulos plugáveis (manifestos em modulos/) e o gerenciador Configurações › Módulos.
-        if await registro_modulos.despachar_http(scope, send, caminho):
+        if await registro_modulos.despachar_http(scope, send, caminho, receive):
             return
         if (caminho == "/modulos" or caminho.startswith("/modulos/")) \
                 and await registro_modulos.gerenciador_http(scope, receive, send, caminho, usuario):

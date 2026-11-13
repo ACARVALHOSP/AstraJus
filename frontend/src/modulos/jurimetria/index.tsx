@@ -1,7 +1,7 @@
 import CampoData from '../../CampoData'
 import CabecalhoPagina from '../../CabecalhoPagina'
 import Carregamento from '../../Carregamento'
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { AlertTriangle, Download } from 'lucide-react'
 import { Badge, Button, Callout, Card, Checkbox, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
 import Paginacao, { POR_PAGINA } from '../../Paginacao'
@@ -10,6 +10,8 @@ import { chaveParaData, contarDesfechos, ehAtipico, histograma, intervaloWilson,
 import { SeletorArvore, SeletorMagistrado, type Magistrado, type OpcaoArvore } from './seletores'
 import { GraficoDesfechos, GraficoHistograma, GraficoSerieMensal } from './graficos'
 import { useCliente } from '../../api/ClienteContext'
+import { useNavegacao } from '../../api/NavegacaoContext'
+import { buscarJson } from '../../api/rest'
 import { ErroMCP } from '../../api/mcpClient'
 import { formatarNumeroCNJ, formatarPercentual, formatarReais, isoParaDdMmAaaa } from '../../utils/formatadores'
 
@@ -94,6 +96,30 @@ export default function Jurimetria() {
   const [dataInicio, setDataInicio] = useState('')
   const [dataFim, setDataFim] = useState('')
   const [paginas, setPaginas] = useState(1)
+  const [trazido, setTrazido] = useState(false)
+
+  // Filtros trazidos da ficha do processo (aba Jurimetria): o link leva só os ids e as datas; os nomes vêm do servidor.
+  const { consumirPayload } = useNavegacao()
+  const payloadLido = useRef(false)
+  useEffect(() => {
+    if (payloadLido.current || !cliente) return
+    payloadLido.current = true
+    const p = consumirPayload<Record<string, string>>('jurimetria')
+    if (!p || !(p.vara || p.classe || p.assunto || p.magistrado)) return
+    const iso = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '')
+    const buscar = async (campo: string, id?: string) => {
+      if (!id) return null
+      try { return (await buscarJson<{ nos: { id: string; nome: string }[] }>(cliente, `/cjpg-arvore/nos?campo=${campo}&ids=${encodeURIComponent(id)}`)).nos[0] ?? null } catch { return null }
+    }
+    void Promise.all([buscar('vara', p.vara), buscar('classe', p.classe), buscar('assunto', p.assunto), buscar('magistrado', p.magistrado)]).then(([v, c, a, m]) => {
+      if (iso(p.inicio) && iso(p.fim)) { setDataInicio(iso(p.inicio)); setDataFim(iso(p.fim)) }
+      if (v) setVaras([v])
+      if (c) setClasses([c])
+      if (a) setAssuntos([a])
+      if (m) { setMagistradoEscolhido({ codigo: m.id, nome: m.nome }); setMagistrado(m.nome) }
+      setTrazido(true)
+    })
+  }, [cliente, consumirPayload])
 
   const [consultando, setConsultando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
@@ -165,6 +191,11 @@ export default function Jurimetria() {
         titulo="Jurimetria"
         descricao="Números das sentenças de 1º grau do TJSP para responder a duas perguntas: quanto se costuma conceder e como um juiz costuma decidir."
       />
+      {trazido && (
+        <Callout.Root color="blue" size="1" role="status">
+          <Callout.Text>Filtros trazidos da ficha do processo. Confira e clique em consultar.</Callout.Text>
+        </Callout.Root>
+      )}
       <form onSubmit={(e) => aoEnviar(e, 'benchmark_valor')}>
         <Flex direction="column" gap="5">
           <div className="form-campo">

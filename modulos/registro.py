@@ -197,15 +197,20 @@ class RegistroModulos:
             return await fn(*args, **kwargs)
         return protegida
 
-    async def despachar_http(self, scope, send, caminho: str) -> bool:
-        """Entrega a rota ao módulo dono do prefixo. True se a resposta já foi enviada."""
+    async def despachar_http(self, scope, send, caminho: str, receive=None) -> bool:
+        """Entrega a rota ao módulo dono do prefixo. True se a resposta já foi enviada. O módulo que precisa
+        do corpo da requisição (PUT/POST) define `http_com_corpo(scope, receive, send, caminho)`; os demais
+        seguem com `http(scope, send, caminho)`."""
         for id_, m in self.manifestos.items():
             if not any(caminho.startswith(p) for p in m["rotas_http"]):
                 continue
             if not self.ativo(id_):
                 await nucleo._json(send, 404, nucleo._erro(f"O módulo {m['nome']} está desativado."))
                 return True
-            return await self._servico(id_).http(scope, send, caminho)
+            servico = self._servico(id_)
+            if receive is not None and hasattr(servico, "http_com_corpo"):
+                return await servico.http_com_corpo(scope, receive, send, caminho)
+            return await servico.http(scope, send, caminho)
         return False
 
     async def gerenciador_http(self, scope, receive, send, caminho: str, usuario: str | None) -> bool:

@@ -1,26 +1,28 @@
 import Carregamento from '../../Carregamento'
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Badge, Button, Callout, Card, Flex, Heading, Select, Text } from '@radix-ui/themes'
 import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
+import { useNomePessoa } from '../../api/consultas'
+import { useNavegacao } from '../../api/NavegacaoContext'
 import { useModulos } from '../../api/ModulosContext'
 import { usePerfil } from '../../api/PerfilContext'
 import { ErroMCP } from '../../api/mcpClient'
-import { buscarJson } from '../../api/rest'
+import { buscarJson, enviarJson } from '../../api/rest'
 import { GraficoDesfechos } from '../../modulos/jurimetria/graficos'
-import { SeletorArvore, type CampoArvore } from '../../modulos/jurimetria/seletores'
+import { SeletorArvore, SeletorMagistrado, type CampoArvore } from '../../modulos/jurimetria/seletores'
 import { formatarNumeroCNJ, formatarPercentual } from '../../utils/formatadores'
 import {
-  analisar, consultasDe, ehTjsp, escolhaInicial, pendencias, periodoPadrao, textoResumo,
-  type Analise, type Candidato, type CampoFiltro, type Consulta, type Escolha, type Resolucao, type ResolucaoCampo, type RespostaConsulta,
+  analisar, comparacaoJuiz, consultasDe, ehTjsp, escolhaInicial, escolhaParaServidor, formatarPontos, payloadParaTela, pendencias, periodoPadrao, textoResumo,
+  type Analise, type Candidato, type CampoFiltro, type Consulta, type Escolha, type EscolhaSalva, type Resolucao, type ResolucaoCampo, type RespostaConsulta,
 } from './jurimetriaCaso'
 import './jurimetria-caso.scss'
 
-type Capa = { classe?: string | null; orgao_julgador?: string | null; assuntos?: string[] | null }
+type Capa = { classe?: string | null; orgao_julgador?: string | null; assuntos?: string[] | null; magistrado?: string | null }
 type Estado = { fase: 'carregando' } | { fase: 'erro'; mensagem: string } | { fase: 'ok'; dados: RespostaConsulta }
 
-const ROTULO: Record<CampoFiltro, string> = { vara: 'Vara', classe: 'Classe', assunto: 'Assunto' }
+const ROTULO: Record<CampoFiltro, string> = { vara: 'Vara', classe: 'Classe', assunto: 'Assunto', magistrado: 'Magistrado (opcional)' }
 
 /** Aba "Jurimetria" da ficha: como as sentenças de 1º grau do TJSP costumam sair para a vara e o assunto deste processo. */
 export default function JurimetriaCaso({ casoId }: { casoId: string }) {
@@ -44,13 +46,20 @@ export default function JurimetriaCaso({ casoId }: { casoId: string }) {
     queryFn: ({ signal }) => buscarJson<Capa>(cliente, `/casos/${casoId}/processos/${numero.replace(/\D/g, '')}/capa`, signal).catch((): Capa => ({})),
   })
   const assunto = capa.data?.assuntos?.[0] ?? ''
+  const magistrado = capa.data?.magistrado ?? ''
+  // Escolha que alguém já confirmou para este processo; sem ela (ou se falhar) valem as sugestões da capa.
+  const salva = useQuery({
+    queryKey: ['jurimetria-escolha', cliente?.token, casoId],
+    enabled: Boolean(cliente),
+    queryFn: ({ signal }) => buscarJson<{ escolha: EscolhaSalva | null }>(cliente, `/jurimetria/caso/${casoId}`, signal).then(r => r.escolha).catch(() => null),
+  })
   const resolucao = useQuery({
-    queryKey: ['jurimetria-resolver', cliente?.token, numero, capa.data?.orgao_julgador ?? '', capa.data?.classe ?? '', assunto],
+    queryKey: ['jurimetria-resolver', cliente?.token, numero, capa.data?.orgao_julgador ?? '', capa.data?.classe ?? '', assunto, magistrado],
     enabled: Boolean(cliente && numero && capa.data),
     staleTime: 5 * 60_000,
     queryFn: ({ signal }) => buscarJson<Resolucao>(cliente,
       `/cjpg-arvore/resolver?numero=${encodeURIComponent(numero)}&vara=${encodeURIComponent(capa.data?.orgao_julgador ?? '')}`
-      + `&classe=${encodeURIComponent(capa.data?.classe ?? '')}&assunto=${encodeURIComponent(assunto)}`, signal),
+      + `&classe=${encodeURIComponent(capa.data?.classe ?? '')}&assunto=${encodeURIComponent(assunto)}&magistrado=${encodeURIComponent(magistrado)}`, signal),
   })
 
   const ligado = modulos.some(m => m.id === 'jurimetria' && m.ativo)
@@ -59,7 +68,7 @@ export default function JurimetriaCaso({ casoId }: { casoId: string }) {
   if (base.isLoading) return <Carregamento tipo="texto" descricao="Lendo o processo…" />
   if (base.isError) return <Aviso cor="red" texto="Não foi possível ler o processo. Tente de novo." />
   if (!numeros.length) return <Aviso cor="gray" texto="A jurimetria cobre só sentenças do TJSP. Este processo não tem número do TJSP (CNJ com .8.26.)." />
-  if (capa.isLoading || resolucao.isLoading) return <Carregamento tipo="texto" descricao="Identificando vara, classe e assunto…" />
+  if (capa.isLoading || resolucao.isLoading || salva.isLoading) return <Carregamento tipo="texto" descricao="Identificando vara, classe e assunto…" />
 
   return (
     <div className="jurimetria-caso">
@@ -73,7 +82,7 @@ export default function JurimetriaCaso({ casoId }: { casoId: string }) {
         </Flex>
       )}
       {resolucao.isError && <Aviso cor="amber" texto="Não foi possível identificar os filtros automaticamente. Escolha vara, classe e assunto abaixo." />}
-      <Painel key={numero} resolucao={resolucao.data} />
+      <Painel key={numero} casoId={casoId} resolucao={resolucao.data} salva={salva.data ?? null} />
     </div>
   )
 }
@@ -87,28 +96,57 @@ function Aviso({ cor, texto }: { cor: 'gray' | 'red' | 'amber'; texto: string })
   )
 }
 
-function Painel({ resolucao }: { resolucao: Resolucao | undefined }) {
+function Painel({ casoId, resolucao, salva }: { casoId: string; resolucao: Resolucao | undefined; salva: EscolhaSalva | null }) {
   const { cliente } = useCliente()
-  const [escolha, setEscolha] = useState<Escolha>(() => escolhaInicial(resolucao))
+  const { irPara } = useNavegacao()
+  const queryClient = useQueryClient()
+  const nomePessoa = useNomePessoa()
+  const [escolha, setEscolha] = useState<Escolha>(() => escolhaInicial(resolucao, salva))
   const [periodo] = useState(() => periodoPadrao(new Date()))
   const [estados, setEstados] = useState<Partial<Record<Consulta['chave'], Estado>>>({})
   const [calculadoCom, setCalculadoCom] = useState<string | null>(null)
+  const [lembrar, setLembrar] = useState<'salvando' | 'salvo' | 'erro' | null>(salva ? 'salvo' : null)
   const consultas = consultasDe(escolha, periodo)
   const faltando = pendencias(escolha)
   const assinatura = JSON.stringify(consultas.map(c => c.params))
   const desatualizado = calculadoCom !== null && calculadoCom !== assinatura
   const calculando = Object.values(estados).some(e => e.fase === 'carregando')
+  const chaveSalva = ['jurimetria-escolha', cliente?.token, casoId]
 
-  function trocar(campo: CampoFiltro, valor: Candidato | null) { setEscolha(e => ({ ...e, [campo]: valor })) }
+  /** Guarda a escolha no processo para a próxima pessoa (ou a próxima visita) não refazer a confirmação. */
+  async function guardar(nova: Escolha) {
+    if (!cliente) return
+    setLembrar('salvando')
+    try {
+      const r = await enviarJson<{ escolha: EscolhaSalva | null }>(cliente, `/jurimetria/caso/${casoId}`, escolhaParaServidor(nova), 'PUT')
+      queryClient.setQueryData(chaveSalva, r.escolha)
+      setLembrar(r.escolha ? 'salvo' : null)
+    } catch { setLembrar('erro') }
+  }
+  async function descartar() {
+    if (!cliente) return
+    try {
+      await enviarJson(cliente, `/jurimetria/caso/${casoId}`, {}, 'DELETE')
+      queryClient.setQueryData(chaveSalva, null)
+      setEscolha(escolhaInicial(resolucao))
+      setLembrar(null)
+    } catch { setLembrar('erro') }
+  }
+  function trocar(campo: CampoFiltro, valor: Candidato | null) {
+    const nova = { ...escolha, [campo]: valor }
+    setEscolha(nova)
+    void guardar(nova)
+  }
 
   async function calcular() {
     if (!cliente || calculando || faltando.length) return
     setCalculadoCom(assinatura)
     setEstados(Object.fromEntries(consultas.map(c => [c.chave, { fase: 'carregando' } as Estado])))
+    if (lembrar !== 'salvo') void guardar(escolha) // calcular confirma os filtros sugeridos
     await Promise.all(consultas.map(async c => {
       let estado: Estado
       try {
-        const dados = (await cliente.chamarFerramenta('consultar_jurimetria_cjpg', c.params)) as RespostaConsulta
+        const dados = (await cliente.chamarFerramenta(c.ferramenta, c.params)) as RespostaConsulta
         estado = dados.erro ? { fase: 'erro', mensagem: dados.mensagem || 'O e-SAJ não respondeu como esperado.' } : { fase: 'ok', dados }
       } catch (e) {
         estado = { fase: 'erro', mensagem: e instanceof ErroMCP ? e.message : 'Não foi possível concluir a consulta. Tente de novo.' }
@@ -117,17 +155,21 @@ function Painel({ resolucao }: { resolucao: Resolucao | undefined }) {
     }))
   }
 
+  const quando = salva?.atualizado_em ? new Date(salva.atualizado_em * 1000).toLocaleDateString('pt-BR') : ''
   return (
     <Flex direction="column" gap="4">
       <Card variant="surface">
         <Flex direction="column" gap="3">
-          <div>
-            <Heading as="h3" size="3">Filtros desta consulta</Heading>
-            <Text as="p" size="2" color="gray">Confira vara, classe e assunto: os números valem só para o que estiver selecionado aqui.</Text>
-          </div>
+          <Flex justify="between" align="start" gap="3" wrap="wrap">
+            <div>
+              <Heading as="h3" size="3">Filtros desta consulta</Heading>
+              <Text as="p" size="2" color="gray">Confira vara, classe e assunto: os números valem só para o que estiver selecionado aqui.</Text>
+            </div>
+            <Button variant="soft" size="1" onClick={() => irPara('jurimetria', payloadParaTela(escolha, periodo))}>Abrir na tela de Jurimetria</Button>
+          </Flex>
           {resolucao?.foro && <Text size="2">Foro pelo número do processo: <strong>{resolucao.foro.nome}</strong></Text>}
           <div className="jurimetria-caso__filtros">
-            {(['vara', 'classe', 'assunto'] as CampoFiltro[]).map(campo => (
+            {(['vara', 'classe', 'assunto', 'magistrado'] as CampoFiltro[]).map(campo => (
               <CampoEscolha key={campo} campo={campo} resolucao={resolucao?.[campo]} escolha={escolha[campo]} onEscolher={v => trocar(campo, v)} />
             ))}
           </div>
@@ -135,7 +177,13 @@ function Painel({ resolucao }: { resolucao: Resolucao | undefined }) {
           <Flex gap="3" align="center" wrap="wrap">
             <Button disabled={calculando || faltando.length > 0} onClick={() => void calcular()}>{calculando ? 'Consultando…' : calculadoCom ? 'Calcular de novo' : 'Calcular jurimetria'}</Button>
             {faltando.length > 0 && <Text size="2" color="gray">{faltando.join(' ')}</Text>}
-            {calculando && <Text size="2" color="gray" role="status">Consultando o e-SAJ; costuma levar de 5 a 15 segundos.</Text>}
+            {calculando && <Text size="2" color="gray" role="status">Consultando o e-SAJ; costuma levar de 5 a 20 segundos.</Text>}
+          </Flex>
+          <Flex gap="3" align="center" wrap="wrap" role="status">
+            {lembrar === 'salvo' && <Text size="1" color="gray">Filtros lembrados para este processo{salva?.atualizado_por ? `, confirmados por ${nomePessoa(salva.atualizado_por)}${quando ? ` em ${quando}` : ''}` : ''}.</Text>}
+            {lembrar === 'salvando' && <Text size="1" color="gray">Guardando os filtros…</Text>}
+            {lembrar === 'erro' && <Text size="1" color="red">Não foi possível lembrar os filtros (sem permissão de edição na Pesquisa ou sem conexão). Eles valem só nesta tela.</Text>}
+            {(lembrar === 'salvo' || salva) && <Button variant="ghost" size="1" color="gray" onClick={() => void descartar()}>Voltar às sugestões da capa</Button>}
           </Flex>
         </Flex>
       </Card>
@@ -146,7 +194,7 @@ function Painel({ resolucao }: { resolucao: Resolucao | undefined }) {
       </div>
       <Text size="1" color="gray">
         Referência histórica de sentenças de 1º grau do TJSP publicadas no CJPG; o desfecho e o valor são identificados automaticamente
-        no texto e podem errar. Não é previsão do resultado nem parecer. Ao e-SAJ vão só códigos de vara, classe e assunto e o período.
+        no texto e podem errar. Não é previsão do resultado nem parecer. Ao e-SAJ vão só códigos de vara, classe, assunto e magistrado e o período.
       </Text>
     </Flex>
   )
@@ -156,6 +204,7 @@ function CampoEscolha({ campo, resolucao, escolha, onEscolher }: {
   campo: CampoFiltro; resolucao: ResolucaoCampo | undefined; escolha: Candidato | null; onEscolher: (c: Candidato | null) => void
 }) {
   const candidatos = resolucao?.candidatos ?? []
+  const [textoJuiz, setTextoJuiz] = useState('')
   return (
     <div className="jurimetria-caso__campo">
       <Text as="div" size="2" weight="bold">{ROTULO[campo]}</Text>
@@ -168,7 +217,9 @@ function CampoEscolha({ campo, resolucao, escolha, onEscolher }: {
       ) : (
         <Flex direction="column" gap="2">
           <Text size="1" color={candidatos.length ? 'amber' : 'gray'}>
-            {resolucao?.ambiguo ? 'Há mais de um com este nome; escolha pelo ramo.' : candidatos.length ? 'Confirme qual é:' : 'Não foi possível identificar sozinho. Busque abaixo.'}
+            {campo === 'magistrado' && !candidatos.length
+              ? 'A capa não informa o magistrado. Busque o nome para ver como ele costuma decidir esta classe de ação.'
+              : resolucao?.ambiguo ? 'Há mais de um com este nome; escolha pelo ramo.' : candidatos.length ? 'Confirme qual é:' : 'Não foi possível identificar sozinho. Busque abaixo.'}
           </Text>
           {candidatos.map(c => (
             <button key={c.id} type="button" className="jurimetria-caso__candidato" onClick={() => onEscolher(c)}>
@@ -176,8 +227,13 @@ function CampoEscolha({ campo, resolucao, escolha, onEscolher }: {
               <small>{c.caminho !== c.nome ? c.caminho : ''}{c.caminho !== c.nome ? ' · ' : ''}{formatarPercentual(c.confianca)} de semelhança</small>
             </button>
           ))}
-          <SeletorArvore campo={campo as CampoArvore} id={`jc-${campo}`} rotulo="Buscar outro" placeholder={`Buscar ${ROTULO[campo].toLowerCase()}`} valor={[]}
-            onChange={lista => { const o = lista[lista.length - 1]; if (o) onEscolher({ id: o.id, nome: o.nome, caminho: o.nome, confianca: 1 }) }} />
+          {campo === 'magistrado' ? (
+            <SeletorMagistrado id="jc-magistrado" texto={textoJuiz} onTexto={setTextoJuiz} escolhido={null}
+              onEscolher={m => { if (m) onEscolher({ id: m.codigo, nome: m.nome, caminho: m.nome, confianca: 1 }) }} />
+          ) : (
+            <SeletorArvore campo={campo as CampoArvore} id={`jc-${campo}`} rotulo="Buscar outro" placeholder={`Buscar ${ROTULO[campo].toLowerCase()}`} valor={[]}
+              onChange={lista => { const o = lista[lista.length - 1]; if (o) onEscolher({ id: o.id, nome: o.nome, caminho: o.nome, confianca: 1 }) }} />
+          )}
         </Flex>
       )}
     </div>
@@ -194,14 +250,15 @@ function Cartao({ consulta, estado, periodo }: { consulta: Consulta; estado: Est
         </div>
         {estado.fase === 'carregando' && <Carregamento tipo="texto" descricao="Consultando o e-SAJ…" />}
         {estado.fase === 'erro' && <Aviso cor="red" texto={estado.mensagem} />}
-        {estado.fase === 'ok' && <Resultado dados={estado.dados} periodo={periodo} />}
+        {estado.fase === 'ok' && <Resultado dados={estado.dados} periodo={periodo} juiz={consulta.chave === 'juiz'} />}
       </Flex>
     </Card>
   )
 }
 
-function Resultado({ dados, periodo }: { dados: RespostaConsulta; periodo: { inicio: string; fim: string } }) {
+function Resultado({ dados, periodo, juiz }: { dados: RespostaConsulta; periodo: { inicio: string; fim: string }; juiz: boolean }) {
   const a: Analise = analisar(dados)
+  const cmp = juiz ? comparacaoJuiz(dados) : null
   return (
     <Flex direction="column" gap="3">
       {a.classificados > 0 && (
@@ -216,6 +273,14 @@ function Resultado({ dados, periodo }: { dados: RespostaConsulta; periodo: { ini
           </Text>
           {a.amostraPequena && <div><Badge color="amber" variant="soft">Amostra pequena</Badge></div>}
         </div>
+      )}
+      {cmp && (
+        <Text size="2" color={cmp.media === null ? 'gray' : undefined}>
+          {cmp.media !== null
+            ? <>Todos os juízes, nos mesmos filtros: <strong>{formatarPercentual(cmp.media)}</strong>{cmp.amostraMedia ? ` (${cmp.amostraMedia} sentenças)` : ''}
+              {cmp.diferenca !== null && <> · este magistrado: <strong>{formatarPontos(cmp.diferenca)}</strong></>}</>
+            : `Sem comparação com a média dos juízes: ${cmp.indisponivel ?? 'dados insuficientes'}`}
+        </Text>
       )}
       <GraficoDesfechos contagens={a.contagens} total={a.classificados} />
       <Text size="2">{textoResumo(a, periodo)}</Text>

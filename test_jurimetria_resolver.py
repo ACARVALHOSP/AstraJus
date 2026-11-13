@@ -35,7 +35,13 @@ ASSUNTO = [
     {"id": "7779", "pai": None, "nome": "Indenização por Dano Moral", "busca": "1156-direito do consumidor|6220-responsabilidade do fornecedor|7779-indenizacao por dano moral", "folha": True},
     {"id": "7681", "pai": None, "nome": "Obrigações", "busca": "899-direito civil|7681-obrigacoes", "folha": True},
 ]
-ARVORES = {"vara": VARA, "classe": CLASSE, "assunto": ASSUNTO}
+MAGISTRADO = [
+    {"codigo": "7753", "nome": "Abelardo de Azevedo Silveira"},
+    {"codigo": "36471", "nome": "Aben Athar de Paiva Coutinho"},
+    {"codigo": "900", "nome": "Maria da Silva"},
+    {"codigo": "901", "nome": "Maria Souza da Silva"},
+]
+ARVORES = {"vara": VARA, "classe": CLASSE, "assunto": ASSUNTO, "magistrado": MAGISTRADO}
 CNJ_SP = "1003325-11.2025.8.26.0100"
 CNJ_LEME = "1003325-11.2025.8.26.0318"
 
@@ -186,6 +192,48 @@ class RotaResolverTest(unittest.TestCase):
     def test_numero_obrigatorio(self):
         self.assertEqual(self.chamar({"vara": "x"})[0], 400)
         self.assertEqual(self.chamar({"numero": "123"})[0], 400)
+
+
+class MagistradoETest(unittest.TestCase):
+    def test_nome_inteiro_e_unico_e_escolhido_mesmo_com_caixa_e_tratamento(self):
+        for texto in ("ABELARDO AZEVEDO SILVEIRA", "Dr. Abelardo de Azevedo Silveira", "Juiz de Direito Abelardo de Azevedo Silveira"):
+            r = resolver.resolver_magistrado(texto, MAGISTRADO)
+            self.assertEqual(r["escolhido"]["id"], "7753", texto)
+
+    def test_nome_parcial_nao_escolhe_sozinho(self):
+        r = resolver.resolver_magistrado("Maria Souza", MAGISTRADO)  # só 2 de 3 palavras de "Maria Souza da Silva"
+        self.assertIsNone(r["escolhido"])
+        self.assertEqual([c["id"] for c in r["candidatos"]], ["901"])
+
+    def test_homonimos_pedem_confirmacao(self):
+        lista = [*MAGISTRADO, {"codigo": "902", "nome": "Maria da Silva"}]
+        r = resolver.resolver_magistrado("Maria da Silva", lista)
+        self.assertIsNone(r["escolhido"])
+        self.assertTrue(r["ambiguo"])
+        self.assertEqual({c["id"] for c in r["candidatos"] if c["confianca"] == 1.0}, {"900", "902"})
+
+    def test_sem_texto_ou_sem_parecido(self):
+        self.assertEqual(resolver.resolver_magistrado("", MAGISTRADO)["candidatos"], [])
+        self.assertEqual(resolver.resolver_magistrado("Fulano Beltrano", MAGISTRADO)["candidatos"], [])
+
+    def test_resolver_inclui_o_magistrado(self):
+        r = resolver.resolver(CNJ_SP, "", "", "", ARVORES, "Aben Athar de Paiva Coutinho")
+        self.assertEqual(r["magistrado"]["escolhido"]["id"], "36471")
+        self.assertEqual(resolver.resolver(CNJ_SP, "", "", "", ARVORES)["magistrado"]["candidatos"], [])
+
+
+class DescreverNoTest(unittest.TestCase):
+    def test_cada_campo(self):
+        self.assertEqual(resolver.descrever_no("vara", "100-12", ARVORES),
+                         {"id": "100-12", "nome": "12ª Vara Cível", "caminho": "Foro Central Cível > 12ª Vara Cível"})
+        self.assertEqual(resolver.descrever_no("classe", "8501", ARVORES)["caminho"], "Procedimento de conhecimento > Procedimento Comum Cível")
+        self.assertEqual(resolver.descrever_no("assunto", "7779", ARVORES)["nome"], "Indenização por Dano Moral")
+        self.assertEqual(resolver.descrever_no("magistrado", "7753", ARVORES)["nome"], "Abelardo de Azevedo Silveira")
+
+    def test_id_inexistente_e_raiz_de_vara_nao_valem(self):
+        self.assertIsNone(resolver.descrever_no("vara", "999-1", ARVORES))
+        self.assertIsNone(resolver.descrever_no("vara", "100", ARVORES))  # raiz (foro/comarca), não é vara
+        self.assertIsNone(resolver.descrever_no("magistrado", "0", ARVORES))
 
 
 if __name__ == "__main__":

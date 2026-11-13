@@ -1,6 +1,6 @@
 # Jurimetria na ficha do processo
 
-Status: fase 0 concluída (13/11/2026); fase 1 implementada (aguarda merge do backend em `main`).
+Status: fases 0 e 1 no ar; fase 2 implementada (aguarda merge do backend em `main`); fase 3 em aberto.
 
 Traz a jurimetria (hoje uma tela de pesquisa à parte, módulo `modulos/jurimetria`) para dentro do processo aberto:
 "nesta vara, para este assunto, X% das sentenças foram procedentes; valor mediano R$ Y". Serve de referência
@@ -75,6 +75,18 @@ processo do TJSP.
 | 3 | Tempo aproximado pelo ano do CNJ; calculadora de provisão com premissas explícitas | a definir |
 
 Backend + frontend: o frontend sai direto na `astrajus-radix`; a rota nova e a correção dependem de PR para `main`.
+
+## Fase 2 (implementada)
+
+- **Escolha guardada por processo** (`jurimetria_caso`, rota `GET/PUT/DELETE /jurimetria/caso/<id>`): vale sobre a sugestão da capa,
+  campo a campo; guarda quem confirmou e quando; "Calcular" também confirma. "Voltar às sugestões da capa" apaga. Quem só consulta
+  não consegue gravar: a tela avisa e segue usando os filtros naquela sessão. Processo excluído leva a escolha (limpeza na partida).
+- **Cartão "Este magistrado"** (magistrado + classe, `perfil_decisorio_magistrado`): taxa de alguma procedência contra a de todos os
+  juízes nos mesmos filtros (diferença em pontos percentuais). O magistrado vem da capa (nome casado com a lista do CJPG, só se for
+  exato e único) ou de busca; a lista tem uma semente de 5.164 nomes em `modulos/jurimetria/dados/magistrado.json`.
+- **Link "Abrir na tela de Jurimetria"**: vai com ids e datas no endereço (`#/jurimetria?vara=…&classe=…`), a tela busca os nomes em
+  `GET /cjpg-arvore/nos` e pré-preenche; continua funcionando ao recarregar a página.
+- Contrato dos módulos: o núcleo passou a entregar `receive` ao módulo que define `http_com_corpo(scope, receive, send, caminho)`.
 
 ## Testes
 

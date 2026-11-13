@@ -9,7 +9,7 @@
   "permissoes": {},
   "ferramentas": ["consultar_jurimetria_cjpg", "perfil_decisorio_magistrado"],
   "ferramentas_consulta": ["consultar_jurimetria_cjpg", "perfil_decisorio_magistrado"],
-  "rotas_http": ["/cjpg-arvore/"],
+  "rotas_http": ["/cjpg-arvore/", "/jurimetria/"],
   "dependencias": [],
-  "tabelas": ["jurimetria_cache"]
+  "tabelas": ["jurimetria_cache", "jurimetria_caso"]
 }

@@ -6,8 +6,10 @@ import { formatarPercentual, formatarReais } from '../../utils/formatadores.ts'
 
 export type Candidato = { id: string; nome: string; caminho: string; confianca: number; variantes?: string[] }
 export type ResolucaoCampo = { candidatos: Candidato[]; escolhido: Candidato | null; confianca: number | null; ambiguo?: boolean }
-export type Resolucao = { tjsp: boolean; foro?: { id: string; nome: string } | null; vara?: ResolucaoCampo; classe?: ResolucaoCampo; assunto?: ResolucaoCampo }
-export type Escolha = { vara: Candidato | null; classe: Candidato | null; assunto: Candidato | null }
+export type Resolucao = { tjsp: boolean; foro?: { id: string; nome: string } | null; vara?: ResolucaoCampo; classe?: ResolucaoCampo; assunto?: ResolucaoCampo; magistrado?: ResolucaoCampo }
+export type Escolha = { vara: Candidato | null; classe: Candidato | null; assunto: Candidato | null; magistrado: Candidato | null }
+/** Escolha guardada no servidor para o processo (quem confirmou e quando). */
+export type EscolhaSalva = Escolha & { atualizado_em?: number; atualizado_por?: string | null }
 export type CampoFiltro = keyof Escolha
 
 /** Limite do e-SAJ: no máximo 364 dias entre a data inicial e a final. */
@@ -34,24 +36,37 @@ export function ehTjsp(numero: string): boolean {
 
 export const soDigitos = (v: string) => v.replace(/\D/g, '')
 
-/** O que a resolução já escolheu sozinha (só com confiança alta e sem ambiguidade). */
-export function escolhaInicial(r: Resolucao | undefined): Escolha {
-  return { vara: r?.vara?.escolhido ?? null, classe: r?.classe?.escolhido ?? null, assunto: r?.assunto?.escolhido ?? null }
+/** O que vale ao abrir: a escolha guardada para o processo, e onde ela não tem nada, o que a resolução escolheu sozinha
+ *  (só com confiança alta e sem ambiguidade). */
+export function escolhaInicial(r: Resolucao | undefined, salva?: Partial<Escolha> | null): Escolha {
+  const campo = (c: CampoFiltro) => salva?.[c] ?? r?.[c]?.escolhido ?? null
+  return { vara: campo('vara'), classe: campo('classe'), assunto: campo('assunto'), magistrado: campo('magistrado') }
 }
 
-export type Consulta = { chave: 'vara' | 'tjsp'; titulo: string; descricao: string; params: Record<string, string | number | null> }
+/** Corpo do PUT que guarda a escolha: só id, nome e caminho de cada filtro. */
+export function escolhaParaServidor(e: Escolha): Record<CampoFiltro, { id: string; nome: string; caminho: string } | null> {
+  const c = (x: Candidato | null) => (x ? { id: x.id, nome: x.nome, caminho: x.caminho || x.nome } : null)
+  return { vara: c(e.vara), classe: c(e.classe), assunto: c(e.assunto), magistrado: c(e.magistrado) }
+}
 
-/** Duas consultas: a vara (vara + classe) e o TJSP todo (classe + assunto). Cada uma só existe se tiver filtro suficiente. */
+export type Consulta = { chave: 'vara' | 'tjsp' | 'juiz'; ferramenta: 'consultar_jurimetria_cjpg' | 'perfil_decisorio_magistrado'; titulo: string; descricao: string; params: Record<string, string | number | boolean | null> }
+
+/** Até três consultas: a vara (vara + classe), o TJSP todo (classe + assunto) e o magistrado (magistrado + classe). Cada uma só existe se tiver filtro suficiente. */
 export function consultasDe(escolha: Escolha, periodo: { inicio: string; fim: string }): Consulta[] {
   const base = { data_inicio: periodo.inicio, data_fim: periodo.fim, paginas: PAGINAS }
   const saida: Consulta[] = []
   if (escolha.vara && escolha.classe) {
-    saida.push({ chave: 'vara', titulo: 'Nesta vara', descricao: `${escolha.vara.nome} · ${escolha.classe.nome}`,
+    saida.push({ chave: 'vara', ferramenta: 'consultar_jurimetria_cjpg', titulo: 'Nesta vara', descricao: `${escolha.vara.nome} · ${escolha.classe.nome}`,
       params: { ...base, vara_codigo: escolha.vara.id, classe_codigo: escolha.classe.id } })
   }
   if (escolha.assunto) {
-    saida.push({ chave: 'tjsp', titulo: 'TJSP, mesmo assunto', descricao: [escolha.assunto.nome, escolha.classe?.nome].filter(Boolean).join(' · '),
+    saida.push({ chave: 'tjsp', ferramenta: 'consultar_jurimetria_cjpg', titulo: 'TJSP, mesmo assunto', descricao: [escolha.assunto.nome, escolha.classe?.nome].filter(Boolean).join(' · '),
       params: { ...base, assunto_codigo: escolha.assunto.id, classe_codigo: escolha.classe?.id ?? null } })
+  }
+  if (escolha.magistrado && escolha.classe) {
+    // Perfil do juiz nas ações da mesma classe; a ferramenta compara sozinha com a média de todos os juízes.
+    saida.push({ chave: 'juiz', ferramenta: 'perfil_decisorio_magistrado', titulo: 'Este magistrado', descricao: `${escolha.magistrado.nome} · ${escolha.classe.nome}`,
+      params: { ...base, magistrado_codigo: escolha.magistrado.id, classe_codigo: escolha.classe.id, comparar_com_universo: true } })
   }
   return saida
 }
@@ -65,6 +80,7 @@ export function pendencias(escolha: Escolha): string[] {
 }
 
 export type RespostaConsulta = {
+  perfil?: Record<string, unknown>
   erro?: boolean; mensagem?: string; avisos?: string[]; total_servidor?: number | null; buscados?: number
   resultados?: Array<ItemEstat & { numero_processo?: string }>
 }
@@ -109,4 +125,40 @@ export function textoResumo(a: Analise, periodo: { inicio: string; fim: string }
   }
   if (a.amostraPequena) partes.unshift(`Amostra pequena (${a.classificados} classificadas, o mínimo confiável é ${AMOSTRA_MINIMA}): use como indício, não como tendência.`)
   return partes.join(' ')
+}
+
+type PerfilTaxas = Record<string, unknown>
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+/** "Alguma procedência" de um perfil do servidor: taxa_procedente + taxa_parcial (nulo se faltar uma). */
+export function taxaProcedenciaPerfil(p: PerfilTaxas | undefined | null): number | null {
+  const a = num(p?.taxa_procedente), b = num(p?.taxa_parcial)
+  return a === null || b === null ? null : a + b
+}
+
+export type ComparacaoJuiz = { juiz: number | null; media: number | null; diferenca: number | null; amostraMedia: number | null; indisponivel: string | null }
+/** Taxa de procedência do juiz contra a de todos os juízes (mesmos filtros, sem o magistrado). */
+export function comparacaoJuiz(r: RespostaConsulta): ComparacaoJuiz {
+  const perfil = r.perfil ?? {}
+  const base = (perfil.baseline && typeof perfil.baseline === 'object' ? perfil.baseline : null) as PerfilTaxas | null
+  const indisponivel = base && typeof base.indisponivel === 'string' ? base.indisponivel : base ? null : 'dados insuficientes'
+  // O mesmo número que o cartão mostra (das sentenças); só sem sentenças cai nas taxas do perfil.
+  const juiz = analisar(r).taxaProcedencia ?? taxaProcedenciaPerfil(perfil)
+  const media = indisponivel ? null : taxaProcedenciaPerfil(base)
+  return { juiz, media, diferenca: juiz !== null && media !== null ? juiz - media : null, amostraMedia: num(base?.total_classificados), indisponivel }
+}
+
+/** "13/11/2026" -> "2026-11-13" (formato das datas dos campos e do link). */
+export const isoDeDdMmAaaa = (v: string) => { const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v); return m ? `${m[3]}-${m[2]}-${m[1]}` : '' }
+
+/** Parâmetros do link para a tela de Jurimetria (ids e datas, que cabem no endereço; os nomes a tela busca pelo id). */
+export function payloadParaTela(e: Escolha, periodo: { inicio: string; fim: string }): Record<string, string> {
+  const p: Record<string, string> = { inicio: isoDeDdMmAaaa(periodo.inicio), fim: isoDeDdMmAaaa(periodo.fim) }
+  for (const c of ['vara', 'classe', 'assunto', 'magistrado'] as CampoFiltro[]) if (e[c]) p[c] = e[c]!.id
+  return p
+}
+
+/** Diferença em pontos percentuais com sinal: 0,13 -> "+13,0 p.p."; -0,042 -> "-4,2 p.p.". */
+export function formatarPontos(d: number): string {
+  const v = Math.round(d * 1000) / 10
+  return `${v > 0 ? '+' : v < 0 ? '-' : ''}${Math.abs(v).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} p.p.`
 }
