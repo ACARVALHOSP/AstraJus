@@ -80,7 +80,7 @@ O frontend Radix (`/radix/`) é servido diretamente pelo Caddy a partir de `/srv
 | POST | `/casos/<id>/evento-calendar` | Cria evento de dia inteiro no Google Calendar |
 | GET, POST | `/casos/<id>/publicacoes` | Publicações vinculadas ao caso / vincular |
 | DELETE | `/casos/<id>/publicacoes/<hash>` | Desvincula publicação |
-| GET, POST | `/casos/<id>/vinculos` | Processos relacionados (`{caso_vinculado_id, tipo}`) |
+| GET, POST | `/casos/<id>/vinculos` | Processos relacionados (`{caso_vinculado_id, tipo}`); a lista traz `criado_em` de cada vínculo |
 | DELETE | `/casos/<id>/vinculos/<vid>` | Remove vínculo |
 | GET, PATCH | `/casos/<id>/processos/<numero>/capa` | Capa do processo / campos manuais |
 | POST | `/casos/<id>/processos/<numero>/capa/atualizar` | Preenche a capa via DataJud + DJEN (`{tribunal}`) |

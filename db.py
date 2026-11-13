@@ -1523,7 +1523,8 @@ class RegistroClientesCasos:
                     c.titulo,
                     c.acao,
                     c.status,
-                    cli.nome AS cliente_nome
+                    cli.nome AS cliente_nome,
+                    v.criado_em
                 FROM caso_vinculos v
                 JOIN casos c
                     ON c.id = CASE WHEN v.caso_id = ? THEN v.caso_vinculado_id ELSE v.caso_id END
@@ -1541,6 +1542,7 @@ class RegistroClientesCasos:
                     "acao": linha[3],
                     "status": linha[4],
                     "cliente_nome": linha[5],
+                    "criado_em": linha[6],
                 }
                 for linha in cursor.fetchall()
             ]

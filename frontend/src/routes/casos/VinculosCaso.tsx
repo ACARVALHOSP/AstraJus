@@ -11,7 +11,8 @@ import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { useCasos } from '../../api/consultas'
-import { buscarJson, enviarJson } from '../../api/rest'
+import { enviarJson } from '../../api/rest'
+import { consultaVinculos } from './consultasCaso'
 
 type Vinculo = {
   caso_id: string
@@ -55,11 +56,7 @@ export default function VinculosCaso({ casoId, onAbrirCaso }: { casoId: string; 
   const [enviando, setEnviando] = useState(false)
   const [removendo, setRemovendo] = useState<string | null>(null)
 
-  const consulta = useQuery({
-    queryKey: ['caso-vinculos', cliente?.token, casoId],
-    enabled: Boolean(cliente),
-    queryFn: ({ signal }) => buscarJson<{ vinculos: Vinculo[] }>(cliente, `/casos/${casoId}/vinculos`, signal).then(r => r.vinculos ?? []),
-  })
+  const consulta = useQuery({ ...consultaVinculos(cliente, casoId), enabled: Boolean(cliente) })
   const consultaCasos = useCasos<CasoDisponivel>({ enabled: Boolean(cliente) })
   const vinculos = consulta.data ?? null
   const casosDisponiveis = (consultaCasos.data ?? []).filter(c => c.id !== casoId)

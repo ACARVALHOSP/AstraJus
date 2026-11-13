@@ -8,16 +8,16 @@ import { AlertDialog, Badge, Button, Callout, Flex, IconButton, Text } from '@ra
 import { AlertTriangle, ChevronDown, ChevronRight, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
-import { buscarJson, enviarJson } from '../../api/rest'
+import { enviarJson } from '../../api/rest'
 import { formatarNomeExibicao } from '../../utils/formatadores'
 import { useEstreita } from '../../utils/useEstreita'
+import { consultaPublicacoes, type AtividadeResumo } from './consultasCaso'
 import {
   advogadosPublicacao, COR_STATUS, corTipo, dataCaptura, dataDivulgacao, nomePublicacao, ROTULO_STATUS, urlPublicacao, type PublicacaoOab,
 } from '../publicacoes-oab/dados'
 import AtividadePublicacao from '../publicacoes-oab/AtividadePublicacao'
 import '../publicacoes-oab/publicacoes.scss'
 
-type AtividadeResumo = { id: string | number; titulo: string; origem_djen_hash?: string | null }
 type Status = PublicacaoOab['status']
 
 function resumoTexto(p: PublicacaoOab) {
@@ -37,15 +37,7 @@ export default function PublicacoesCaso({ casoId, onAlterado }: { casoId: string
   const [paraDesvincular, setParaDesvincular] = useState<PublicacaoOab | null>(null)
   const [criandoAtividade, setCriandoAtividade] = useState<PublicacaoOab | null>(null)
 
-  const consulta = useQuery({
-    queryKey: ['caso-publicacoes', cliente?.token, casoId],
-    enabled: Boolean(cliente),
-    queryFn: ({ signal }) => Promise.all([
-      buscarJson<{ publicacoes: PublicacaoOab[] }>(cliente, `/casos/${casoId}/publicacoes`, signal),
-      // Só para mostrar qual atividade nasceu de cada publicação; falha não impede a lista.
-      buscarJson<{ atividades: AtividadeResumo[] }>(cliente, `/casos/${casoId}/atividades`, signal).catch(() => ({ atividades: [] as AtividadeResumo[] })),
-    ]).then(([r, ra]) => ({ publicacoes: r.publicacoes ?? [], atividades: ra.atividades ?? [] })),
-  })
+  const consulta = useQuery({ ...consultaPublicacoes(cliente, casoId), enabled: Boolean(cliente) })
   const publicacoes = consulta.data?.publicacoes ?? null
   const atividades = consulta.data?.atividades ?? SEM_ATIVIDADES
   const carregando = consulta.isLoading

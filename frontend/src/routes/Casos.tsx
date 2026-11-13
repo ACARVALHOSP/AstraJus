@@ -15,10 +15,11 @@ import PublicacoesCaso from './casos/PublicacoesCaso'
 import MovimentacoesCaso from './casos/MovimentacoesCaso'
 import PoloClientes from './casos/PoloClientes'
 import VinculosCaso from './casos/VinculosCaso'
+import LinhaDoTempoCaso from './casos/LinhaDoTempoCaso'
 import SugestaoModelos from './casos/SugestaoModelos'
 import './casos/processos-radix.css'
 
-const ABAS = ['cadastro', 'atividades', 'publicacoes', 'movimentacoes', 'vinculos'] as const
+const ABAS = ['cadastro', 'atividades', 'publicacoes', 'movimentacoes', 'vinculos', 'linha-do-tempo'] as const
 type AbaId = typeof ABAS[number]
 
 export default function Casos() {
@@ -50,12 +51,12 @@ export default function Casos() {
     if (versaoLida.current === versaoNavegacao) return // evita reler no StrictMode
     versaoLida.current = versaoNavegacao
     deUrl.current = true
-    const destino = consumirPayload<{ id: string; aba?: 'atividades' | 'publicacoes' | 'movimentacoes'; atividadeId?: string | number }>('casos')
+    const destino = consumirPayload<{ id: string; aba?: 'atividades' | 'publicacoes' | 'movimentacoes' | 'linha-do-tempo'; atividadeId?: string | number }>('casos')
     if (!destino?.id) { setCasoId(null); return } // menu ou "voltar" do navegador: lista de processos
     setCasoId(destino.id)
     setResumo(null)
     setTitulo(null)
-    setAbaSelecionada(destino.aba === 'atividades' ? 'atividades' : destino.aba === 'publicacoes' ? 'publicacoes' : destino.aba === 'movimentacoes' ? 'movimentacoes' : 'cadastro')
+    setAbaSelecionada(destino.aba === 'atividades' ? 'atividades' : destino.aba === 'publicacoes' ? 'publicacoes' : destino.aba === 'movimentacoes' ? 'movimentacoes' : destino.aba === 'linha-do-tempo' ? 'linha-do-tempo' : 'cadastro')
     setDestinoAtividade({ id: destino.atividadeId, versao: versaoNavegacao })
   }, [consumirPayload, versaoNavegacao])
 
@@ -136,6 +137,7 @@ export default function Casos() {
               </Tabs.Trigger>
               <Tabs.Trigger value="movimentacoes">Movimentações</Tabs.Trigger>
               <Tabs.Trigger value="vinculos">Vínculos</Tabs.Trigger>
+              <Tabs.Trigger value="linha-do-tempo">Linha do tempo</Tabs.Trigger>
             </Tabs.List>
           </div>
           <Tabs.Content value="cadastro">
@@ -158,6 +160,9 @@ export default function Casos() {
           </Tabs.Content>
           <Tabs.Content value="vinculos">
             <VinculosCaso casoId={casoId} onAbrirCaso={abrir} />
+          </Tabs.Content>
+          <Tabs.Content value="linha-do-tempo">
+            <LinhaDoTempoCaso casoId={casoId} />
           </Tabs.Content>
         </Tabs.Root>
       </Flex>
