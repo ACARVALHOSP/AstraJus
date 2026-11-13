@@ -40,3 +40,6 @@
 
 // Tabelas curtas (parcelas, revisões e acessos) dividem a largura disponível.
 .tabela-adaptavel--simples .tabela-fluida .tabela-numero { inline-size: auto; }
+
+// Células de texto mostram no máximo 3 linhas; o restante é cortado (texto completo no title).
+.tabela-celula-limitada { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
