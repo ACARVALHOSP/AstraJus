@@ -51,12 +51,14 @@ type Agregado = {
   procedentes_ou_parciais: number
   com_valor_extraido: number
   mediana?: number
+  outliers?: number
   p25?: number
   p75?: number
   aviso?: string
 }
 
-type Perfil = Record<string, number | undefined> & {
+type Perfil = Record<string, number | number[] | string | null | undefined> & {
+  valor_mediano_indenizacao?: number | null
   valor_medio_indenizacao?: number
   total_classificados?: number
   com_valor_extraido?: number
@@ -233,12 +235,13 @@ function Grade({ children }: { children: React.ReactNode }) {
   return <div className="aj-form-grade">{children}</div>
 }
 
-function CeluaResumo({ rotulo, valor }: { rotulo: string; valor: string }) {
+function CeluaResumo({ rotulo, valor, detalhe }: { rotulo: string; valor: string; detalhe?: string }) {
   return (
     <Card variant="surface">
       <Flex direction="column" gap="1">
         <Text size="5" weight="bold">{valor}</Text>
         <Text size="2" color="gray">{rotulo}</Text>
+        {detalhe && <Text size="1" color="gray">{detalhe}</Text>}
       </Flex>
     </Card>
   )
@@ -272,14 +275,18 @@ function ResumoPerfil({ perfil }: { perfil: Perfil }) {
   return (
     <Flex direction="column" gap="3">
       <Grade>
-        {Object.entries(ROTULO_TAXA).map(([chave, rotulo]) => (
-          <CeluaResumo key={chave} rotulo={rotulo} valor={formatarPercentual(perfil[chave])} />
-        ))}
-        <CeluaResumo rotulo="Valor médio de indenização" valor={formatarReais(perfil.valor_medio_indenizacao)} />
+        {Object.entries(ROTULO_TAXA).map(([chave, rotulo]) => {
+          const ic = perfil[chave.replace('taxa_', 'ic_')]
+          const faixa = Array.isArray(ic) && ic.length === 2
+            ? `Margem de erro: ${formatarPercentual(ic[0])} a ${formatarPercentual(ic[1])}`
+            : undefined
+          return <CeluaResumo key={chave} rotulo={rotulo} valor={formatarPercentual(perfil[chave] as number | undefined)} detalhe={faixa} />
+        })}
+        <CeluaResumo rotulo="Valor típico de indenização (mediana)" valor={formatarReais(perfil.valor_mediano_indenizacao ?? perfil.valor_medio_indenizacao)} />
         <CeluaResumo rotulo="Decisões classificadas" valor={String(perfil.total_classificados ?? '-')} />
         <CeluaResumo rotulo="Sentenças com valor identificado" valor={String(perfil.com_valor_extraido ?? '-')} />
       </Grade>
-      {perfil.aviso && (
+      {typeof perfil.aviso === 'string' && perfil.aviso && (
         <Callout.Root color="yellow" size="1">
           <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
           <Callout.Text>{perfil.aviso}</Callout.Text>
