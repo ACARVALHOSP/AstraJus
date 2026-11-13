@@ -353,7 +353,7 @@ async def consultar_jurimetria_cjpg(
 ) -> dict:
     """Busca julgados de 1º grau do TJSP (CJPG, scraping - sem API oficial, best-effort) e aplica
     heurísticas de jurimetria: classifica o desfecho de cada decisão e extrai o valor de condenação
-    por dano moral quando houver. Se assunto_codigo/assunto_nome for informado, agrega os valores
+    por dano moral quando houver. Se termo/assunto_codigo/assunto_nome for informado, agrega os valores
     das decisões procedentes/parciais em mediana e percentis 25/75 (serve de referência de pedido
     ou proposta de acordo).
 
@@ -416,7 +416,9 @@ async def consultar_jurimetria_cjpg(
             "avisos": avisos,
         }
 
-        if assunto_codigo or assunto_nome:
+        # Agrega sempre que houver algum critério de busca (termo livre incluído): a tela envia só
+        # o "termo", e antes disso o agregado (mediana/p25/p75) nunca era calculado.
+        if assunto_codigo or assunto_nome or termo_busca:
             procedentes = [r for r in todos if r["desfecho"] in ("procedente", "parcial")]
             valores = sorted(r["valor_condenacao"] for r in procedentes if r["valor_condenacao"] is not None)
             agregado: dict[str, Any] = {
