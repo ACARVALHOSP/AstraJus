@@ -6,6 +6,10 @@ export type Parametros = Record<string, string>
 // Os valores vêm da URL (qualquer pessoa pode montar um link) e acabam em caminhos de API como
 // /casos/<id>. Só aceitamos o formato de ids, números CNJ e rótulos simples; o resto é descartado.
 const VALOR_SEGURO = /^[\w.:@-]{1,120}$/ // "@" para logins em formato de e-mail
+// Busca por texto digitada pela pessoa (só filtra na tela, não vai para caminhos de API): aceita espaço e acento.
+const TEXTO_LIVRE = new Set(['busca'])
+const valorSeguro = (nome: string, valor: string) =>
+  TEXTO_LIVRE.has(nome) ? valor.length >= 1 && valor.length <= 100 && !/[\u0000-\u001f]/.test(valor) : VALOR_SEGURO.test(valor)
 const NOME_SEGURO = /^[A-Za-z][\w]{0,40}$/
 const ABA_SEGURA = /^[a-z0-9-]{1,40}(\/[a-z0-9-]{1,40})?$/ // aceita um subnível: "integracoes/admin"
 
@@ -23,7 +27,7 @@ export function lerHash(hash: string, abaInicial: string): { aba: string; parame
   const parametros: Parametros = {}
   if (corte >= 0) {
     for (const [nome, valor] of new URLSearchParams(bruto.slice(corte + 1))) {
-      if (NOME_SEGURO.test(nome) && VALOR_SEGURO.test(valor)) parametros[nome] = valor
+      if (NOME_SEGURO.test(nome) && valorSeguro(nome, valor)) parametros[nome] = valor
     }
   }
   return { aba, parametros }
@@ -37,7 +41,7 @@ export function montarHash(aba: string, payload?: unknown): string {
     for (const [nome, valor] of Object.entries(payload)) {
       if (typeof valor !== 'string' && typeof valor !== 'number' && typeof valor !== 'boolean') continue
       const texto = String(valor)
-      if (NOME_SEGURO.test(nome) && VALOR_SEGURO.test(texto)) consulta.set(nome, texto)
+      if (NOME_SEGURO.test(nome) && valorSeguro(nome, texto)) consulta.set(nome, texto)
     }
   }
   const texto = consulta.toString()
