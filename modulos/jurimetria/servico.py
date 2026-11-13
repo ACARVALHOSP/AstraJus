@@ -1,9 +1,12 @@
 """Módulo Jurimetria: julgados de 1º grau do TJSP (CJPG), árvores de referência e perfil decisório."""
 import asyncio
+import hashlib
 import json
 import os
 import re
+import sqlite3
 import statistics
+import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -350,7 +353,7 @@ def _cjpg_bloqueado(html: str) -> bool:
     return "fundocinza1" not in html and "Parâmetros de Consulta" not in html
 
 
-async def _cjpg_executar_busca(params: dict, paginas: int) -> tuple[int | None, list[dict], list[str]]:
+async def _cjpg_buscar_no_esaj(params: dict, paginas: int) -> tuple[int | None, list[dict], list[str]]:
     """Executa a busca paginada no CJPG (sessão + pesquisar.do + trocarDePagina.do) e devolve
     (total_servidor, resultados_parseados, avisos). Best-effort: se uma página falhar no meio,
     para ali e devolve o que já foi buscado, em vez de descartar tudo.
@@ -385,6 +388,82 @@ async def _cjpg_executar_busca(params: dict, paginas: int) -> tuple[int | None, 
     return total_servidor, todos, avisos
 
 
+# --- Cache das consultas ao CJPG (banco do escritório) ---------------------------
+#
+# Cada consulta refaz o scraping no e-SAJ (lento e frágil). O resultado bruto (já parseado e
+# classificado) fica numa tabela própria por CJPG_CACHE_TTL_S; só entram no cache buscas completas
+# (sem avisos de página falha/bloqueada), para nunca servir por 7 dias um resultado parcial.
+
+CJPG_CACHE_TTL_S = 7 * 24 * 3600
+_BANCO_CAMINHO: str | None = None
+
+
+def migrar(conexao) -> None:
+    """Chamada na partida pelo registro de módulos: cria a tabela do cache e guarda o caminho do banco."""
+    global _BANCO_CAMINHO
+    conexao.execute(
+        "CREATE TABLE IF NOT EXISTS jurimetria_cache ("
+        "chave TEXT PRIMARY KEY, criado_em REAL NOT NULL, dados TEXT NOT NULL)")
+    arquivo = next((linha[2] for linha in conexao.execute("PRAGMA database_list") if linha[1] == "main"), "")
+    _BANCO_CAMINHO = arquivo or None
+
+
+def _cjpg_chave_cache(params: dict, paginas: int) -> str:
+    bruto = json.dumps({"p": params, "n": paginas}, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(bruto.encode("utf-8")).hexdigest()
+
+
+def _cjpg_cache_ler(chave: str) -> tuple[float, dict] | None:
+    if not _BANCO_CAMINHO:
+        return None
+    try:
+        with sqlite3.connect(_BANCO_CAMINHO) as con:
+            linha = con.execute("SELECT criado_em, dados FROM jurimetria_cache WHERE chave = ?", (chave,)).fetchone()
+        con.close()
+        if linha and time.time() - linha[0] < CJPG_CACHE_TTL_S:
+            return linha[0], json.loads(linha[1])
+    except (sqlite3.Error, ValueError):
+        nucleo.log.exception("Falha ao ler o cache da Jurimetria (seguindo sem cache)")
+    return None
+
+
+def _cjpg_cache_gravar(chave: str, total_servidor: int | None, todos: list[dict]) -> None:
+    if not _BANCO_CAMINHO:
+        return
+    try:
+        agora = time.time()
+        with sqlite3.connect(_BANCO_CAMINHO) as con:
+            con.execute("DELETE FROM jurimetria_cache WHERE criado_em < ?", (agora - CJPG_CACHE_TTL_S,))
+            con.execute(
+                "INSERT OR REPLACE INTO jurimetria_cache (chave, criado_em, dados) VALUES (?, ?, ?)",
+                (chave, agora, json.dumps({"total_servidor": total_servidor, "resultados": todos}, ensure_ascii=False)),
+            )
+        con.close()
+    except sqlite3.Error:
+        nucleo.log.exception("Falha ao gravar o cache da Jurimetria (seguindo sem cache)")
+
+
+async def _cjpg_executar_busca(
+    params: dict, paginas: int, ignorar_cache: bool = False
+) -> tuple[int | None, list[dict], list[str]]:
+    """Como _cjpg_buscar_no_esaj, mas consulta/alimenta o cache. Devolve (total, resultados, avisos)."""
+    chave = _cjpg_chave_cache(params, paginas)
+    if not ignorar_cache:
+        em_cache = _cjpg_cache_ler(chave)
+        if em_cache:
+            criado_em, dados = em_cache
+            quando = datetime.fromtimestamp(criado_em, timezone.utc).astimezone().strftime("%d/%m/%Y %H:%M")
+            aviso = (
+                f"Resultado de uma consulta idêntica feita em {quando} (guardada por 7 dias para não "
+                "sobrecarregar o e-SAJ); sentenças publicadas depois não aparecem."
+            )
+            return dados["total_servidor"], dados["resultados"], [aviso]
+    total_servidor, todos, avisos = await _cjpg_buscar_no_esaj(params, paginas)
+    if not avisos and todos:
+        _cjpg_cache_gravar(chave, total_servidor, todos)
+    return total_servidor, todos, avisos
+
+
 @ferramenta
 async def consultar_jurimetria_cjpg(
     termo: str | None = None,
@@ -398,6 +477,7 @@ async def consultar_jurimetria_cjpg(
     data_inicio: str | None = None,
     data_fim: str | None = None,
     paginas: int = 1,
+    ignorar_cache: bool = False,
 ) -> dict:
     """Busca julgados de 1º grau do TJSP (CJPG, scraping - sem API oficial, best-effort) e aplica
     heurísticas de jurimetria: classifica o desfecho de cada decisão e extrai o valor de condenação
@@ -419,6 +499,8 @@ async def consultar_jurimetria_cjpg(
     - paginas: quantas páginas de 10 resultados buscar (padrão 1, teto 15). A busca é best-effort:
       se uma página falhar no meio, o resultado parcial já buscado é devolvido com um aviso, em
       vez de descartado.
+    - ignorar_cache: True força nova busca no e-SAJ. Por padrão, uma consulta idêntica feita nos
+      últimos 7 dias é respondida do cache (com um aviso informando a data da consulta original).
 
     Limitações conhecidas:
     - O CJPG tem um teto de ~10.000 resultados por consulta (limite do índice de busca do TJSP);
@@ -453,7 +535,7 @@ async def consultar_jurimetria_cjpg(
             params["agenteSelectedEntitiesList"] = magistrado_codigo
 
         try:
-            total_servidor, todos, avisos = await _cjpg_executar_busca(params, paginas)
+            total_servidor, todos, avisos = await _cjpg_executar_busca(params, paginas, ignorar_cache)
         except ValueError as exc:
             return nucleo._erro(str(exc))
 
@@ -507,6 +589,7 @@ async def perfil_decisorio_magistrado(
     data_inicio: str | None = None,
     data_fim: str | None = None,
     paginas: int = 1,
+    ignorar_cache: bool = False,
 ) -> dict:
     """Busca julgados de 1º grau do TJSP (CJPG, scraping - sem API oficial, best-effort) de um
     magistrado específico e monta um perfil decisório: taxa de procedência/improcedência/parcial,
@@ -529,6 +612,8 @@ async def perfil_decisorio_magistrado(
     - paginas: quantas páginas de 10 resultados buscar (padrão 1, teto 15). A busca é best-effort:
       se uma página falhar no meio, o resultado parcial já buscado é devolvido com um aviso, em
       vez de descartado.
+    - ignorar_cache: True força nova busca no e-SAJ. Por padrão, uma consulta idêntica feita nos
+      últimos 7 dias é respondida do cache (com um aviso informando a data da consulta original).
 
     Limitações conhecidas:
     - O CJPG tem um teto de ~10.000 resultados por consulta (limite do índice de busca do TJSP);
@@ -567,7 +652,7 @@ async def perfil_decisorio_magistrado(
             params["agenteSelectedEntitiesList"] = magistrado_codigo
 
         try:
-            total_servidor, todos, avisos = await _cjpg_executar_busca(params, paginas)
+            total_servidor, todos, avisos = await _cjpg_executar_busca(params, paginas, ignorar_cache)
         except ValueError as exc:
             return nucleo._erro(str(exc))
 

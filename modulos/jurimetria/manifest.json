@@ -11,5 +11,5 @@
   "ferramentas_consulta": ["consultar_jurimetria_cjpg", "perfil_decisorio_magistrado"],
   "rotas_http": ["/cjpg-arvore/"],
   "dependencias": [],
-  "tabelas": []
+  "tabelas": ["jurimetria_cache"]
 }
