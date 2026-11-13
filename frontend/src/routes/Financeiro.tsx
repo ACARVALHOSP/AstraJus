@@ -5,7 +5,7 @@ import { ariaSort, BotaoOrdenar, EscolherColunas, ordenarLista, useColunas, useO
 import TabelaResponsiva from '../TabelaResponsiva'
 import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useCasos, useClientes, useLancamentos, useNomePessoa } from '../api/consultas'
 import { AlertTriangle, ChevronLeft, ChevronRight, Download, Info } from 'lucide-react'
@@ -97,14 +97,18 @@ function partesDescricao(descricao: string) {
 
 // Lançamentos, situação por processo e inadimplência: três visões do mesmo financeiro.
 export default function Financeiro() {
-  const { consumirPayload, versaoNavegacao } = useNavegacao()
+  const { consumirPayload, versaoNavegacao, sincronizarUrl } = useNavegacao()
   const [aba, setAba] = useState<'lancamentos' | 'processos' | 'inadimplencia'>('lancamentos')
+  const versaoLida = useRef(-1)
   useEffect(() => {
+    if (versaoLida.current === versaoNavegacao) return // evita reler no StrictMode
+    versaoLida.current = versaoNavegacao
     // Atalhos de outras telas (ex.: o resumo do escritório) abrem direto numa das abas.
     const destino = consumirPayload<{ aba?: 'lancamentos' | 'processos' | 'inadimplencia' }>('financeiro')
     // eslint-disable-next-line react/set-state-in-effect
-    if (destino?.aba) setAba(destino.aba)
+    setAba(destino?.aba && ['lancamentos', 'processos', 'inadimplencia'].includes(destino.aba) ? destino.aba : 'lancamentos')
   }, [consumirPayload, versaoNavegacao])
+  useEffect(() => { sincronizarUrl('financeiro', { aba: aba === 'lancamentos' ? undefined : aba }) }, [aba, sincronizarUrl])
   const abas = (
     <Tabs.Root value={aba} onValueChange={(v) => setAba(v as typeof aba)}>
       <Tabs.List aria-label="Financeiro">

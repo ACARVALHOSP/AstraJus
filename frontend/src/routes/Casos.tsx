@@ -22,7 +22,7 @@ const ABAS = ['cadastro', 'atividades', 'publicacoes', 'movimentacoes', 'vinculo
 type AbaId = typeof ABAS[number]
 
 export default function Casos() {
-  const { consumirPayload, versaoNavegacao } = useNavegacao()
+  const { consumirPayload, versaoNavegacao, sincronizarUrl } = useNavegacao()
   const { cliente } = useCliente()
   const { podeEditar } = usePerfil()
   const [casoId, setCasoId] = useState<string | null>(null)
@@ -44,15 +44,29 @@ export default function Casos() {
   const [titulo, setTitulo] = useState<string | null>(null)
   const faixaAbas = useRef<HTMLDivElement>(null)
 
+  const versaoLida = useRef(-1)
+  const deUrl = useRef(false) // a mudança veio da URL (link, voltar): não empilha outro passo no histórico
   useEffect(() => {
+    if (versaoLida.current === versaoNavegacao) return // evita reler no StrictMode
+    versaoLida.current = versaoNavegacao
+    deUrl.current = true
     const destino = consumirPayload<{ id: string; aba?: 'atividades' | 'publicacoes' | 'movimentacoes'; atividadeId?: string | number }>('casos')
-    if (!destino?.id) return
+    if (!destino?.id) { setCasoId(null); return } // menu ou "voltar" do navegador: lista de processos
     setCasoId(destino.id)
     setResumo(null)
     setTitulo(null)
     setAbaSelecionada(destino.aba === 'atividades' ? 'atividades' : destino.aba === 'publicacoes' ? 'publicacoes' : destino.aba === 'movimentacoes' ? 'movimentacoes' : 'cadastro')
     setDestinoAtividade({ id: destino.atividadeId, versao: versaoNavegacao })
   }, [consumirPayload, versaoNavegacao])
+
+  // A URL acompanha o processo e a aba abertos: recarregar ou compartilhar reabre no mesmo lugar.
+  const casoNaUrl = useRef<string | null>(null)
+  useEffect(() => {
+    const mudou = casoNaUrl.current !== casoId
+    sincronizarUrl('casos', casoId ? { id: casoId, aba: abaSelecionada === 'cadastro' ? undefined : abaSelecionada } : {}, mudou && !deUrl.current)
+    if (mudou) deUrl.current = false
+    casoNaUrl.current = casoId
+  }, [casoId, abaSelecionada, sincronizarUrl])
 
   useEffect(() => {
     const faixa = faixaAbas.current

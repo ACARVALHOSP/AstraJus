@@ -329,8 +329,12 @@ export default function App() {
   )
 }
 
+const ABAS_CONHECIDAS = new Set(['inicio', 'monitoramentos', ...GRUPOS_NAVEGACAO.flatMap(g => g.abas.map(a => a.id))])
+
 function NavConteudo() {
   const { abaAtiva } = useNavegacao()
+  // Endereço de tela inexistente (link antigo ou digitado errado) vira o início, na URL também.
+  useEffect(() => { if (!ABAS_CONHECIDAS.has(abaAtiva)) window.location.replace('#/inicio') }, [abaAtiva])
   return (
     <LimiteDeErro key={abaAtiva}>
       <Suspense fallback={<Carregamento tipo="detalhe" descricao="Carregando tela…" />}>

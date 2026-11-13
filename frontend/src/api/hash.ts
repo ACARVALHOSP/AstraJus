@@ -7,7 +7,7 @@ export type Parametros = Record<string, string>
 // /casos/<id>. Só aceitamos o formato de ids, números CNJ e rótulos simples; o resto é descartado.
 const VALOR_SEGURO = /^[\w.:-]{1,120}$/
 const NOME_SEGURO = /^[A-Za-z][\w]{0,40}$/
-const ABA_SEGURA = /^[a-z0-9-]{1,40}$/
+const ABA_SEGURA = /^[a-z0-9-]{1,40}(\/[a-z0-9-]{1,40})?$/ // aceita um subnível: "integracoes/admin"
 
 /** Texto do hash sem o "#/" inicial. */
 export function chaveHash(hash: string): string {
