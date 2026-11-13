@@ -15,7 +15,7 @@
   border: 1px solid var(--gray-a4);
 }
 .casos-resumo h2 { margin-bottom: 1rem; }
-.casos-resumo dt { font-size: 12px; font-weight: 600; color: var(--gray-11); text-transform: uppercase; letter-spacing: 0.03em; }
+.casos-resumo dt { font-size: 12px; font-weight: 600; color: var(--gray-11); }
 .casos-resumo dd { font-size: 13px; margin-top: 0.25rem; margin-bottom: 0.75rem; overflow-wrap: anywhere; }
 .casos-resumo dl { margin: 0; }
 
@@ -35,11 +35,11 @@
 .capa-acoes { display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-block: 1rem; }
 
 .capa-secao + .capa-secao { margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--gray-a4); }
-.capa-secao-titulo { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent-11); margin: 0 0 0.9rem; }
+.capa-secao-titulo { font-size: 12px; font-weight: 700; color: var(--accent-11); margin: 0 0 0.9rem; }
 .capa-grade { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem 1.5rem; }
 .capa-grade--2 { grid-template-columns: repeat(2, 1fr); }
 .capa-grade--alinhada { align-items: end; }
-.capa-campo dt { font-size: 12px; font-weight: 600; color: var(--gray-11); text-transform: uppercase; letter-spacing: 0.03em; margin: 0; }
+.capa-campo dt { font-size: 12px; font-weight: 600; color: var(--gray-11); margin: 0; }
 .capa-campo dd { font-size: 14px; margin: 0.3rem 0 0; color: var(--gray-12); line-height: 1.45; overflow-wrap: anywhere; }
 .capa-campo dd.capa-vazio { color: var(--gray-11); font-style: italic; }
 .capa-campo--span2 { grid-column: span 2; }

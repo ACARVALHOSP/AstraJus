@@ -375,7 +375,7 @@ export default function Jurisprudencia() {
             <Card variant="surface">
               <Flex direction="column" gap="4">
                 <Flex justify="between" align="center" wrap="wrap" gap="2">
-                  <Text weight="bold">Filtrar jurisprudência por Relator, Classe, Comarca e Órgão</Text>
+                  <Text weight="bold">Filtrar jurisprudência por relator, classe, comarca e órgão</Text>
                   <Flex gap="2">
                     <Button size="1" disabled={consultando} onClick={aplicarFiltros}>
                       Aplicar filtros

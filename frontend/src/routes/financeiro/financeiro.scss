@@ -84,6 +84,6 @@
 .fin-rolagem { overflow-x: auto; border: 1px solid var(--gray-a6); border-radius: var(--radius-3);
   table { inline-size: 100%; border-collapse: collapse; min-inline-size: 46rem; }
   :is(th, td) { padding: 0.625rem 0.75rem; text-align: start; vertical-align: top; border-block-end: 1px solid var(--gray-a4); }
-  th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; color: var(--gray-11); background: var(--gray-2); }
+  th { font-size: 12px; color: var(--gray-11); background: var(--gray-2); }
   :is(th, td).fin-num { text-align: right; }
   tr:last-child td { border-block-end: 0; } }
