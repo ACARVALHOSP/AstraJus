@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { Badge, Button, Callout, Flex, Heading, Text } from '@radix-ui/themes'
 import CabecalhoPagina from '../../CabecalhoPagina'
@@ -33,44 +34,40 @@ export default function Escritorio({ abas }: { abas: ReactNode }) {
   const verAtividades = abaPermitida('atividades'), verPublicacoes = abaPermitida('publicacoes-oab'), verFinanceiro = abaPermitida('financeiro'), verIntegracoes = abaPermitida('integracoes')
   const [agora] = useState(() => new Date())
   const hoje = isoLocal(agora)
-  const [dados, setDados] = useState<Resumo | null>(null)
-  const [carregando, setCarregando] = useState(true)
-  const [erro, setErro] = useState('')
-
-  const carregar = useCallback(async () => {
-    if (!cliente) { setCarregando(false); return }
-    setCarregando(true); setErro('')
-    // Cada fonte é independente: se uma falhar (ou o acesso for negado), as outras continuam.
-    const [semana, atrasadas, pubs, fin, clientes, automacoes, statusIntegracoes, agenda] = await Promise.allSettled([
-      verAtividades ? buscarJson<{ atividades: Item[] }>(cliente, `/atividades?situacao=abertas&de=${hoje}&ate=${somarDias(hoje, 6)}`) : Promise.reject(new Error('sem acesso')),
-      verAtividades ? buscarJson<{ atividades: Item[] }>(cliente, `/atividades?situacao=abertas&ate=${somarDias(hoje, -1)}`) : Promise.reject(new Error('sem acesso')),
-      verPublicacoes ? buscarJson<{ total: number; destinadas_a_clientes?: number }>(cliente, '/publicacoes-oab?status=nao_tratada&pagina=1&tamanho=1') : Promise.reject(new Error('sem acesso')),
-      verFinanceiro ? buscarJson<{ inadimplencia: ResumoInadimplencia }>(cliente, `/lancamentos/resumo?hoje=${hoje}`) : Promise.reject(new Error('sem acesso')),
-      verFinanceiro ? buscarJson<{ clientes: { id: string; nome?: string }[] }>(cliente, '/clientes') : Promise.reject(new Error('sem acesso')),
-      verPublicacoes ? buscarJson<{ rotinas: NonNullable<Resumo['rotinas']> }>(cliente, '/automacoes') : Promise.reject(new Error('sem acesso')),
-      verIntegracoes ? buscarJson<{ google: boolean; asaas: boolean }>(cliente, '/integracoes/status') : Promise.reject(new Error('sem acesso')),
-      verIntegracoes ? buscarJson<{ conectado: boolean }>(cliente, '/integracoes/calendar/status') : Promise.reject(new Error('sem acesso')),
-    ])
-    const ok = <T,>(r: PromiseSettledResult<T>) => (r.status === 'fulfilled' ? r.value : null)
-    const resultado = {
-      semana: ok(semana)?.atividades ?? null, atrasadas: ok(atrasadas)?.atividades ?? null,
-      publicacoes: ok(pubs)?.total ?? null, deClientes: ok(pubs)?.destinadas_a_clientes ?? 0, inadimplencia: ok(fin)?.inadimplencia ?? null,
-      clientes: Object.fromEntries((ok(clientes)?.clientes ?? []).map(c => [c.id, c.nome ?? ''])),
-      rotinas: ok(automacoes)?.rotinas ?? null,
-      integracoes: ok(statusIntegracoes) && typeof ok(statusIntegracoes)?.google === 'boolean'
-        ? { google: ok(statusIntegracoes)!.google, asaas: ok(statusIntegracoes)!.asaas === true, agendaPessoal: ok(statusIntegracoes)!.google && ok(agenda) ? ok(agenda)!.conectado === true : null }
-        : null,
-    }
-    setDados(resultado)
-    const quiseram = [verAtividades, verAtividades, verPublicacoes, verFinanceiro].filter(Boolean).length
-    const vieram = [resultado.semana, resultado.atrasadas, resultado.publicacoes, resultado.inadimplencia].filter(x => x !== null).length
-    if (vieram < quiseram) setErro('Parte do resumo não pôde ser carregada. Os números abaixo podem estar incompletos.')
-    setCarregando(false)
-  }, [cliente, hoje, verAtividades, verPublicacoes, verFinanceiro, verIntegracoes])
-  useEffect(() => {
-    // eslint-disable-next-line react/set-state-in-effect
-    void carregar()
-  }, [carregar])
+  // Cada fonte é independente: se uma falhar (ou o acesso for negado), as outras continuam.
+  const consulta = useQuery({
+    queryKey: ['escritorio', cliente?.token, hoje, verAtividades, verPublicacoes, verFinanceiro, verIntegracoes],
+    enabled: Boolean(cliente),
+    queryFn: async ({ signal }) => {
+      const sem = () => Promise.reject(new Error('sem acesso'))
+      const [semana, atrasadas, pubs, fin, clientes, automacoes, statusIntegracoes, agenda] = await Promise.allSettled([
+        verAtividades ? buscarJson<{ atividades: Item[] }>(cliente, `/atividades?situacao=abertas&de=${hoje}&ate=${somarDias(hoje, 6)}`, signal) : sem(),
+        verAtividades ? buscarJson<{ atividades: Item[] }>(cliente, `/atividades?situacao=abertas&ate=${somarDias(hoje, -1)}`, signal) : sem(),
+        verPublicacoes ? buscarJson<{ total: number; destinadas_a_clientes?: number }>(cliente, '/publicacoes-oab?status=nao_tratada&pagina=1&tamanho=1', signal) : sem(),
+        verFinanceiro ? buscarJson<{ inadimplencia: ResumoInadimplencia }>(cliente, `/lancamentos/resumo?hoje=${hoje}`, signal) : sem(),
+        verFinanceiro ? buscarJson<{ clientes: { id: string; nome?: string }[] }>(cliente, '/clientes', signal) : sem(),
+        verPublicacoes ? buscarJson<{ rotinas: NonNullable<Resumo['rotinas']> }>(cliente, '/automacoes', signal) : sem(),
+        verIntegracoes ? buscarJson<{ google: boolean; asaas: boolean }>(cliente, '/integracoes/status', signal) : sem(),
+        verIntegracoes ? buscarJson<{ conectado: boolean }>(cliente, '/integracoes/calendar/status', signal) : sem(),
+      ])
+      const ok = <T,>(r: PromiseSettledResult<T>) => (r.status === 'fulfilled' ? r.value : null)
+      const resultado: Resumo = {
+        semana: ok(semana)?.atividades ?? null, atrasadas: ok(atrasadas)?.atividades ?? null,
+        publicacoes: ok(pubs)?.total ?? null, deClientes: ok(pubs)?.destinadas_a_clientes ?? 0, inadimplencia: ok(fin)?.inadimplencia ?? null,
+        clientes: Object.fromEntries((ok(clientes)?.clientes ?? []).map(c => [c.id, c.nome ?? ''])),
+        rotinas: ok(automacoes)?.rotinas ?? null,
+        integracoes: ok(statusIntegracoes) && typeof ok(statusIntegracoes)?.google === 'boolean'
+          ? { google: ok(statusIntegracoes)!.google, asaas: ok(statusIntegracoes)!.asaas === true, agendaPessoal: ok(statusIntegracoes)!.google && ok(agenda) ? ok(agenda)!.conectado === true : null }
+          : null,
+      }
+      const quiseram = [verAtividades, verAtividades, verPublicacoes, verFinanceiro].filter(Boolean).length
+      const vieram = [resultado.semana, resultado.atrasadas, resultado.publicacoes, resultado.inadimplencia].filter(x => x !== null).length
+      return { dados: resultado, parcial: vieram < quiseram }
+    },
+  })
+  const dados = consulta.data?.dados ?? null
+  const carregando = consulta.isLoading
+  const erro = consulta.data?.parcial ? 'Parte do resumo não pôde ser carregada. Os números abaixo podem estar incompletos.' : ''
 
   const prazos = dados?.semana?.filter(a => a.tipo === 'prazo') ?? []
   const audiencias = dados?.semana?.filter(a => a.tipo === 'audiencia') ?? []
@@ -106,7 +103,7 @@ export default function Escritorio({ abas }: { abas: ReactNode }) {
         sobretitulo={agora.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
         titulo="Escritório" abas={abas}
         descricao="Como está o escritório hoje: prazos, publicações a revisar e valores vencidos."
-        acoes={<Button size="2" variant="soft" color="gray" disabled={carregando} onClick={() => void carregar()}><RefreshCw size={14} aria-hidden="true" />Atualizar</Button>}
+        acoes={<Button size="2" variant="soft" color="gray" disabled={consulta.isFetching} onClick={() => void consulta.refetch()}><RefreshCw size={14} aria-hidden="true" />Atualizar</Button>}
       />
       {!cliente && <Text as="p" size="2" color="gray">Conecte-se na aba Acesso para ver o resumo do escritório.</Text>}
       {erro && <Callout.Root color="amber" size="1" role="status"><Callout.Icon><AlertTriangle size={14} /></Callout.Icon><Callout.Text>{erro}</Callout.Text></Callout.Root>}

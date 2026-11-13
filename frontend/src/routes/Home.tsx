@@ -1,10 +1,11 @@
 import { useAvisos } from '../Avisos'
 import CabecalhoPagina from '../CabecalhoPagina'
-import { useCallback, useEffect, useRef, useState, type PointerEvent as EventoPonteiro, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as EventoPonteiro, type ReactNode } from 'react'
 import {
   Box, Button, Callout, Dialog, Flex, Heading,
   Select, Skeleton, Tabs, Text,
 } from '@radix-ui/themes'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Info, Plus, RefreshCw } from 'lucide-react'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
@@ -23,6 +24,12 @@ import type { ResumoInadimplencia } from './financeiro/dadosResumo'
 import './home/home-radix.css'
 
 const SEM_RESPONSAVEL = '__sem_responsavel__'
+const SEM_ITENS: ItemHome[] = []
+const SEM_PROCESSOS: ProcessoHome[] = []
+type DadosDia = {
+  publicacoes: number | null; deClientes: number; vencido: ResumoInadimplencia | null
+  processos: ProcessoHome[]; itens: ItemHome[]; erro: string; aviso: string
+}
 
 // Início tem duas visões: o dia de quem está logado e o resumo do escritório inteiro.
 export default function Home() {
@@ -45,14 +52,6 @@ function PainelHome({ abas }: { abas: ReactNode }) {
   const { cliente, status } = useCliente()
   const { irPara } = useNavegacao()
   const verFinanceiro = usePerfil().abaPermitida('financeiro')
-  const [itens, setItens] = useState<ItemHome[]>([])
-  const [processos, setProcessos] = useState<ProcessoHome[]>([])
-  const [publicacoes, setPublicacoes] = useState<number | null>(null)
-  const [deClientes, setDeClientes] = useState(0)
-  const [vencido, setVencido] = useState<ResumoInadimplencia | null>(null)
-  const [carregando, setCarregando] = useState(Boolean(cliente))
-  const [erro, setErro] = useState('')
-  const [aviso, setAviso] = useState('')
   const { avisar } = useAvisos()
   const [executor, setExecutor] = useState('')
   const [responsavel, setResponsavel] = useState('')
@@ -67,84 +66,97 @@ function PainelHome({ abas }: { abas: ReactNode }) {
   const [processoNovo, setProcessoNovo] = useState('')
   const [criando, setCriando] = useState(false)
   const [agora, setAgora] = useState(() => new Date())
-  const requisicao = useRef<AbortController | null>(null)
   const montado = useRef(true)
   const trava = useRef(new Set<string>())
 
-  const carregar = useCallback(async () => {
-    if (!cliente || trava.current.size) return
-    requisicao.current?.abort()
-    const controle = new AbortController()
-    requisicao.current = controle
-    const { signal } = controle
-    setCarregando(true); setErro(''); setAviso('')
-    setItens([]); setProcessos([]); setPublicacoes(null); setDeClientes(0); setVencido(null)
-    const avisos: string[] = []
-    const carregarPublicacoes = async () => {
-      try {
-        const dados = await buscarJson<{ total: number; destinadas_a_clientes?: number }>(cliente, '/publicacoes-oab?status=nao_tratada&pagina=1&tamanho=5', signal)
-        if (!Number.isInteger(dados.total) || dados.total < 0) throw new Error('Total inválido')
-        if (!signal.aborted) { setPublicacoes(dados.total); setDeClientes(Number(dados.destinadas_a_clientes) || 0) }
-      } catch {
-        if (!signal.aborted) avisos.push('Não foi possível consultar as publicações para revisar.')
+  const queryClient = useQueryClient()
+  const chaveDia = ['home-dia', cliente?.token, verFinanceiro]
+  // Três fontes independentes: se publicações ou valores vencidos falham, o quadro segue com aviso.
+  const consulta = useQuery({
+    queryKey: chaveDia,
+    enabled: Boolean(cliente),
+    queryFn: async ({ signal }): Promise<DadosDia> => {
+      const avisos: string[] = []
+      const carregarPublicacoes = async () => {
+        try {
+          const dados = await buscarJson<{ total: number; destinadas_a_clientes?: number }>(cliente, '/publicacoes-oab?status=nao_tratada&pagina=1&tamanho=5', signal)
+          if (!Number.isInteger(dados.total) || dados.total < 0) throw new Error('Total inválido')
+          return { publicacoes: dados.total, deClientes: Number(dados.destinadas_a_clientes) || 0 }
+        } catch {
+          avisos.push('Não foi possível consultar as publicações para revisar.')
+          return { publicacoes: null, deClientes: 0 }
+        }
       }
-    }
-    // Só para quem acessa o financeiro. Se falhar, avisa (a faixa não afirma "tudo em ordem").
-    const carregarVencidos = async () => {
-      if (!verFinanceiro) return
-      try {
-        const dados = await buscarJson<{ inadimplencia: ResumoInadimplencia }>(cliente, `/lancamentos/resumo?hoje=${diaLocal(new Date())}`, signal)
-        if (!dados.inadimplencia || !Number.isFinite(dados.inadimplencia.total_vencido)) throw new Error('Resposta inválida')
-        if (!signal.aborted) setVencido(dados.inadimplencia)
-      } catch {
-        if (!signal.aborted) avisos.push('Não foi possível consultar os valores vencidos.')
+      // Só para quem acessa o financeiro. Se falhar, avisa (a faixa não afirma "tudo em ordem").
+      const carregarVencidos = async () => {
+        if (!verFinanceiro) return null
+        try {
+          const dados = await buscarJson<{ inadimplencia: ResumoInadimplencia }>(cliente, `/lancamentos/resumo?hoje=${diaLocal(new Date())}`, signal)
+          if (!dados.inadimplencia || !Number.isFinite(dados.inadimplencia.total_vencido)) throw new Error('Resposta inválida')
+          return dados.inadimplencia
+        } catch {
+          avisos.push('Não foi possível consultar os valores vencidos.')
+          return null
+        }
       }
-    }
-    const carregarAtividades = async () => {
       // Duas chamadas fixas, independentes da quantidade de processos: a lista de processos
       // (para criar atividade e filtrar) e todas as atividades, já com o resumo do checklist.
-      try {
-        type Resposta = { atividades: (AtividadeHome & { caso: ProcessoHome; checklist?: ItemHome['checklist'] })[] }
-        const buscarAtividades = async (): Promise<Resposta> => {
-          try {
-            return await buscarJson<Resposta>(cliente, '/atividades?situacao=todas', signal)
-          } catch (e) {
-            // Servidor anterior a "situacao=todas": busca abertas e concluídas separadamente.
-            if (!(e instanceof ErroMCP) || e.status !== 400) throw e
-            const [abertas, concluidas] = await Promise.all([
-              buscarJson<Resposta>(cliente, '/atividades?situacao=abertas', signal),
-              buscarJson<Resposta>(cliente, '/atividades?situacao=concluidas', signal),
-            ])
-            return { atividades: [...(abertas.atividades ?? []), ...(concluidas.atividades ?? [])] }
+      const carregarAtividades = async () => {
+        try {
+          type Resposta = { atividades: (AtividadeHome & { caso: ProcessoHome; checklist?: ItemHome['checklist'] })[] }
+          const buscarAtividades = async (): Promise<Resposta> => {
+            try {
+              return await buscarJson<Resposta>(cliente, '/atividades?situacao=todas', signal)
+            } catch (e) {
+              // Servidor anterior a "situacao=todas": busca abertas e concluídas separadamente.
+              if (!(e instanceof ErroMCP) || e.status !== 400) throw e
+              const [abertas, concluidas] = await Promise.all([
+                buscarJson<Resposta>(cliente, '/atividades?situacao=abertas', signal),
+                buscarJson<Resposta>(cliente, '/atividades?situacao=concluidas', signal),
+              ])
+              return { atividades: [...(abertas.atividades ?? []), ...(concluidas.atividades ?? [])] }
+            }
           }
+          const [respProcessos, respAtividades] = await Promise.all([
+            buscarJson<{ casos: ProcessoHome[] }>(cliente, '/casos', signal),
+            buscarAtividades(),
+          ])
+          if (!Array.isArray(respProcessos.casos) || !Array.isArray(respAtividades.atividades)) throw new Error('Resposta inválida do servidor.')
+          const porId = new Map(respProcessos.casos.map(c => [c.id, c]))
+          return {
+            processos: respProcessos.casos,
+            itens: respAtividades.atividades.map(({ caso, checklist, ...atividade }) => ({
+              processo: porId.get(caso.id) ?? caso,
+              atividade,
+              checklist: checklist ?? null,
+            })),
+            erro: '',
+          }
+        } catch (e) {
+          if (signal.aborted) throw e
+          return { processos: [] as ProcessoHome[], itens: [] as ItemHome[], erro: e instanceof Error ? e.message : 'Não foi possível carregar as atividades.' }
         }
-        const [respProcessos, respAtividades] = await Promise.all([
-          buscarJson<{ casos: ProcessoHome[] }>(cliente, '/casos', signal),
-          buscarAtividades(),
-        ])
-        if (!Array.isArray(respProcessos.casos) || !Array.isArray(respAtividades.atividades)) throw new Error('Resposta inválida do servidor.')
-        if (signal.aborted) return
-        setProcessos(respProcessos.casos)
-        const porId = new Map(respProcessos.casos.map(c => [c.id, c]))
-        setItens(respAtividades.atividades.map(({ caso, checklist, ...atividade }) => ({
-          processo: porId.get(caso.id) ?? caso,
-          atividade,
-          checklist: checklist ?? null,
-        })))
-      } catch (e) {
-        if (!signal.aborted) setErro(e instanceof Error ? e.message : 'Não foi possível carregar as atividades.')
       }
-    }
-    await Promise.all([carregarPublicacoes(), carregarVencidos(), carregarAtividades()])
-    if (!signal.aborted) { setAviso(avisos.join(' ')); setCarregando(false); setAgora(new Date()) }
-  }, [cliente, verFinanceiro])
+      const [pubs, vencido, ativ] = await Promise.all([carregarPublicacoes(), carregarVencidos(), carregarAtividades()])
+      return { ...pubs, vencido, ...ativ, aviso: avisos.join(' ') }
+    },
+  })
+  const dia = consulta.data
+  const itens = dia?.itens ?? SEM_ITENS
+  const processos = dia?.processos ?? SEM_PROCESSOS
+  const publicacoes = dia?.publicacoes ?? null
+  const deClientes = dia?.deClientes ?? 0
+  const vencido = dia?.vencido ?? null
+  const erro = dia?.erro ?? ''
+  const aviso = dia?.aviso ?? ''
+  const carregando = consulta.isLoading
+  const carregar = () => consulta.refetch()
 
   useEffect(() => {
     montado.current = true
-    void carregar()
     const relogio = window.setInterval(() => setAgora(new Date()), 60_000)
-    return () => { montado.current = false; requisicao.current?.abort(); window.clearInterval(relogio) }
-  }, [carregar])
+    return () => { montado.current = false; window.clearInterval(relogio) }
+  }, [])
 
   async function mover(item: ItemHome, novoStatus: StatusAtividade, desfazendo = false) {
     const chave = chaveItem(item)
@@ -154,7 +166,7 @@ function PainelHome({ abas }: { abas: ReactNode }) {
     try {
       const atualizada = await enviarJson<AtividadeHome>(cliente, `/casos/${item.processo.id}/atividades/${item.atividade.id}`, { status: novoStatus }, 'PATCH')
       if (!montado.current) return
-      setItens(atuais => atuais.map(i => chaveItem(i) === chave ? { ...i, atividade: atualizada } : i))
+      queryClient.setQueryData<DadosDia>(chaveDia, antigo => antigo && { ...antigo, itens: antigo.itens.map(i => chaveItem(i) === chave ? { ...i, atividade: atualizada } : i) })
       if (!desfazendo) {
         avisar({
           texto: `“${item.atividade.titulo}” movida para ${COLUNAS.find(c => c.id === novoStatus)?.titulo}.`,
@@ -325,7 +337,7 @@ function PainelHome({ abas }: { abas: ReactNode }) {
                 variant="soft"
                 color="gray"
                 size="2"
-                disabled={carregando || salvando.size > 0}
+                disabled={consulta.isFetching || salvando.size > 0}
                 onClick={() => void carregar()}
               >
                 <RefreshCw size={14} />
