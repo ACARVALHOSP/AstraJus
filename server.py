@@ -4395,7 +4395,8 @@ class _AutenticacaoBearer:
         if recusa:
             await _json(send, 403, _erro(recusa))
             return
-        if perfil.get('nivel_acesso') == 'consulta' and scope.get('method') not in ('GET', 'HEAD', 'OPTIONS'):
+        if perfil.get('nivel_acesso') == 'consulta' and scope.get('method') not in ('GET', 'HEAD', 'OPTIONS') \
+                and caminho != '/responsaveis/me':  # o próprio perfil é pessoal, como favoritos
             # Favoritos e histórico são pessoais: quem só consulta também pode guardá-los.
             if (caminho != '/mcp' or scope.get('method') != 'POST') and not caminho.startswith('/preferencias/'):
                 await _json(send, 403, _erro('Seu nível de acesso permite somente consulta.'))
@@ -4465,10 +4466,25 @@ class _AutenticacaoBearer:
                                    'zapsign': bool(self.integracoes and self.integracoes.ativo('zapsign'))})
             return
 
-        if caminho == "/responsaveis/me" and scope.get("method") == "GET":
+        if caminho == "/responsaveis/me" and scope.get("method") in ("GET", "PATCH"):
+            if scope.get("method") == "PATCH":
+                raw = await _ler_corpo(receive, 200_000)  # a foto reduzida cabe em ~150 KB
+                if raw is None:
+                    await _json(send, 413, {"mensagem": "Foto grande demais. Escolha uma imagem menor."})
+                    return
+                try:
+                    perfil = usuarios_admin.atualizar_perfil(self.registro, usuario, json.loads(raw))
+                except LookupError as e:
+                    await _json(send, 404, {"mensagem": str(e)})
+                    return
+                except (ValueError, UnicodeDecodeError) as e:
+                    await _json(send, 400, {"mensagem": str(e) if not isinstance(e, json.JSONDecodeError) else "JSON inválido."})
+                    return
             await _responder(send, 200, json.dumps({"usuario": {
                 "login": usuario,
                 "nome_completo": perfil.get("nome_completo") or usuario,
+                "email": perfil.get("email") or "",
+                "foto": perfil.get("foto") or "",
                 "nivel_acesso": perfil.get("nivel_acesso") or "operador",
                 "permissoes": usuarios_admin.permissoes_efetivas(perfil),
             }}, ensure_ascii=False).encode("utf-8"), tipo="application/json; charset=utf-8",

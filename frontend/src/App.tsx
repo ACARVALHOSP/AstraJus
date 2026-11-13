@@ -3,7 +3,7 @@ import { Callout, Theme } from '@radix-ui/themes'
 import {
   Scale, Users, CalendarCheck, CalendarDays, Search, Gavel, Briefcase,
   Newspaper, BarChart2, BookOpen, History, FileSearch, Receipt, KeyRound,
-  Settings, Link, Wallet, CreditCard, ShieldCheck, Menu, X,
+  Settings, Wallet, CreditCard, ShieldCheck, Menu, X,
   ChevronDown, ChevronRight, House, ListChecks, Clock,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -40,7 +40,6 @@ const Contatos = lazy(() => import('./routes/Contatos'))
 const Casos = lazy(() => import('./routes/Casos'))
 const ModelosPrazo = lazy(() => import('./routes/ModelosPrazo'))
 const HorasPagina = lazy(() => import('./routes/Horas'))
-const AdminIntegracoes = lazy(() => import('./routes/integracoes/AdminIntegracoes'))
 import './app-radix.css'
 
 const CHAVE_ACCENT = 'astrajus-accent'
@@ -81,8 +80,6 @@ const GRUPOS_NAVEGACAO = [
     abas: [
       { id: 'acesso', label: 'Acesso', icone: KeyRound },
       { id: 'modelos-prazo', label: 'Modelos de prazos', icone: ListChecks },
-      { id: 'integracoes', label: 'Integrações', icone: Link },
-      { id: 'integracoes/admin', label: 'Admin. integrações', icone: Settings },
       { id: 'administracao', label: 'Administração', icone: ShieldCheck },
     ],
   },
@@ -147,8 +144,8 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
     case 'monitoramentos': return <PublicacoesOab />
     case 'jurimetria': return <Jurimetria />
     case 'jurisprudencia': return <Jurisprudencia />
-    case 'integracoes': return <Integracoes />
-    case 'integracoes/admin': return <AdminIntegracoes />
+    case 'integracoes/admin': return <Integracoes />
+    case 'integracoes': return <Integracoes />  // atalho: administradores vão para Administração › Integrações
     case 'financeiro': return <Financeiro />
     case 'pagamentos': return <Pagamentos />
     case 'atividades': return <Atividades />
@@ -329,7 +326,8 @@ export default function App() {
   )
 }
 
-const ABAS_CONHECIDAS = new Set(['inicio', 'monitoramentos', ...GRUPOS_NAVEGACAO.flatMap(g => g.abas.map(a => a.id))])
+// 'integracoes' e 'integracoes/admin' não estão mais no menu, mas seguem valendo como atalhos para links antigos.
+const ABAS_CONHECIDAS = new Set(['inicio', 'monitoramentos', 'integracoes', 'integracoes/admin', ...GRUPOS_NAVEGACAO.flatMap(g => g.abas.map(a => a.id))])
 
 function NavConteudo() {
   const { abaAtiva } = useNavegacao()

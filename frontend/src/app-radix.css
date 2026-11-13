@@ -498,3 +498,13 @@ html, body { margin: 0; padding: 0; }
 
 .busca-resultados { max-block-size: 14rem; overflow-y: auto; border: 1px solid var(--gray-a6); border-radius: var(--radius-3); padding: 0.25rem; }
 .aj-busca-escolhido { padding: 0.5rem 0.75rem; border: 1px solid var(--accent-a6); background: var(--accent-a3); border-radius: var(--radius-3); }
+
+/* Foto no botão da conta e no diálogo "Meu perfil" */
+.aj-conta-foto { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; flex: none; }
+.aj-perfil-foto { position: relative; border: 0; background: none; padding: 0; border-radius: 50%; cursor: pointer; line-height: 0; }
+.aj-perfil-foto:focus-visible { outline: 2px solid var(--focus-8); outline-offset: 2px; }
+.aj-perfil-foto__camera {
+  position: absolute; right: 0; bottom: 0; width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent-9); color: var(--accent-contrast); border: 2px solid var(--color-panel-solid);
+}
