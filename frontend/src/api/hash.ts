@@ -5,7 +5,7 @@ export type Parametros = Record<string, string>
 
 // Os valores vêm da URL (qualquer pessoa pode montar um link) e acabam em caminhos de API como
 // /casos/<id>. Só aceitamos o formato de ids, números CNJ e rótulos simples; o resto é descartado.
-const VALOR_SEGURO = /^[\w.:-]{1,120}$/
+const VALOR_SEGURO = /^[\w.:@-]{1,120}$/ // "@" para logins em formato de e-mail
 const NOME_SEGURO = /^[A-Za-z][\w]{0,40}$/
 const ABA_SEGURA = /^[a-z0-9-]{1,40}(\/[a-z0-9-]{1,40})?$/ // aceita um subnível: "integracoes/admin"
 
