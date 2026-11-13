@@ -188,8 +188,6 @@ body.home-arrastando-cursor, body.home-arrastando-cursor * { cursor: grabbing !i
 .home-tipo {
   font-size: 12px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
   color: var(--gray-11);
   margin-bottom: 0.25rem;
 }

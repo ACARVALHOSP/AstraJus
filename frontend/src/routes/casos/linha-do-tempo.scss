@@ -20,7 +20,7 @@
   &__dia {
     position: sticky; top: 0; z-index: 2; margin: 0; padding: var(--space-3) 0 var(--space-1) 52px;
     background: var(--color-background); font-size: var(--font-size-1); font-weight: 700;
-    letter-spacing: .05em; text-transform: uppercase; color: var(--gray-11);
+    color: var(--gray-11);
   }
   &__item { position: relative; display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; padding-bottom: 12px;
     &::before { content: ''; position: absolute; left: 19px; top: 40px; bottom: -2px; width: 2px; background: var(--gray-a5); }
@@ -29,7 +29,7 @@
   &__icone { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; z-index: 1; border: 2px solid var(--color-background); background: var(--tom-fundo); color: var(--tom); }
   &__cartao { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 10px 14px; border: 1px solid var(--gray-a5); border-radius: var(--radius-3); background: var(--color-panel-solid); }
   &__topo { display: flex; gap: 10px; align-items: baseline; }
-  &__tipo { font-size: var(--font-size-1); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--tom); }
+  &__tipo { font-size: var(--font-size-1); font-weight: 700; color: var(--tom); }
   &__quando { margin-left: auto; font-size: var(--font-size-1); color: var(--gray-11); font-variant-numeric: tabular-nums; }
   &__titulo { font-weight: 600; text-wrap: balance; overflow-wrap: anywhere; }
   &__selos { display: flex; flex-wrap: wrap; gap: 6px; }

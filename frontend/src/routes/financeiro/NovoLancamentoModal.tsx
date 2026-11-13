@@ -191,7 +191,7 @@ export default function NovoLancamentoModal({ open, onClose, onSalvo, predefinid
             <label className="form-campo-label" htmlFor="honorario-descricao">Descrição *</label>
             <TextField.Root
               id="honorario-descricao"
-              placeholder="Ex.: Honorários iniciais, Parcela contratual"
+              placeholder="Ex.: Honorários iniciais, parcela contratual"
               autoComplete="off"
               value={descricao}
               onChange={(e) => setDescricao(e.target.value)}
