@@ -1,6 +1,6 @@
 # Jurimetria na ficha do processo
 
-Status: fase 0 concluída (13/11/2026); fase 1 não iniciada.
+Status: fase 0 concluída (13/11/2026); fase 1 implementada (aguarda merge do backend em `main`).
 
 Traz a jurimetria (hoje uma tela de pesquisa à parte, módulo `modulos/jurimetria`) para dentro do processo aberto:
 "nesta vara, para este assunto, X% das sentenças foram procedentes; valor mediano R$ Y". Serve de referência
@@ -96,4 +96,8 @@ Backend + frontend: o frontend sai direto na `astrajus-radix`; a rota nova e a c
 - Escopo só de desfecho e valor, sem tempo exato nem recurso: assumido ao pedir a spec; **a confirmar**.
 - Período padrão: **12 meses**, por limite do e-SAJ (a proposta de 24 meses caiu).
 - Em aberto: posição (aba própria, recomendada) e a calculadora de provisão (fase 3).
+- Fase 1: 8 páginas (80 sentenças) por consulta, as duas em paralelo (cerca de 8 s); período fixo de 364 dias terminando hoje.
+- Fase 1: o foro tem dois nós raiz com o mesmo id (a comarca, "Leme", e o foro, "Foro de Leme"); o resolvedor usa o nó "Foro ...".
+- Fase 1: outra sessão acrescentou o download automático das árvores quando faltam e uma semente de magistrados
+  (`modulos/jurimetria/dados/magistrado.json`), o que reduz o risco do item 1 da fase 0.
 - Corrigida pela fase 0: o comentário "não espelhável" do código vale só para a árvore de magistrados; vara, classe e assunto baixam normalmente.

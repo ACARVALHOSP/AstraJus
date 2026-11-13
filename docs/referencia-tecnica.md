@@ -135,6 +135,7 @@ O frontend Radix (`/radix/`) é servido diretamente pelo Caddy a partir de `/srv
 | POST | `/integracoes/calendar/desconectar` | Desconecta a agenda |
 | GET | `/cjpg-arvore/filhos` | Árvore Vara/Classe/Assunto do CJPG (autocomplete) |
 | GET | `/cjpg-arvore/buscar` | Busca na árvore do CJPG |
+| GET | `/cjpg-arvore/resolver` | Casa `numero` (CNJ), `vara`, `classe` e `assunto` da capa com os códigos do CJPG: foro pelos 4 últimos dígitos do número, vara dentro do foro (variantes agrupadas), classe e assunto por nome com o ramo; devolve candidatos e `escolhido` só quando a confiança é alta e sem ambiguidade. Só TJSP (`{"tjsp": false}` nos demais) |
 | GET | `/cjpg-arvore/magistrados` | Lista de magistrados do CJPG |
 
 ### 1.4 Administração (token administrativo)

@@ -1,0 +1,16 @@
+.jurimetria-caso {
+  display: flex; flex-direction: column; gap: var(--space-4); padding-top: var(--space-3);
+
+  &__filtros { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-4); align-items: start; }
+  &__campo { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+  &__candidato {
+    display: flex; flex-direction: column; gap: 2px; align-items: flex-start; width: 100%; text-align: left;
+    padding: var(--space-2) var(--space-3); border: 1px solid var(--gray-a6); border-radius: var(--radius-3);
+    background: var(--color-panel-solid); color: inherit; font: inherit; cursor: pointer;
+    small { color: var(--gray-11); overflow-wrap: anywhere; }
+    &:hover { background: var(--gray-a3); }
+    &:focus-visible { outline: 2px solid var(--focus-8); outline-offset: 1px; }
+  }
+  &__cartoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-4); align-items: start; }
+  &__cartoes--antigo { opacity: .55; }
+}
