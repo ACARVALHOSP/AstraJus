@@ -4,7 +4,8 @@ Cada módulo é uma pasta `modulos/<id>/` com:
 
 - `manifest.json` — identidade e contrato com o núcleo (abaixo);
 - `servico.py` — o código: funções `@ferramenta` (viram ferramentas MCP) e, se tiver rotas HTTP,
-  `async def http(scope, send, caminho) -> bool`. Serviços do núcleo (`_cliente`, `_erro`, `_json`,
+  `async def http(scope, send, caminho) -> bool`; se a rota lê o corpo da requisição (PUT/POST), defina também
+  `async def http_com_corpo(scope, receive, send, caminho) -> bool`, que o núcleo prefere quando existe. Serviços do núcleo (`_cliente`, `_erro`, `_json`,
   `log`...) vêm de `from modulos.nucleo import nucleo`; nunca importe `server` direto;
 - opcional `migrar(conexao)` em `servico.py`, chamada na partida enquanto o módulo estiver ativo e
   listado com `tabelas` no manifesto (crie só tabelas próprias, com `CREATE TABLE IF NOT EXISTS`).

@@ -260,9 +260,110 @@ async def _arvore_resolver_http(scope, send) -> None:
     campos = ("vara", "classe", "assunto")
     for campo in campos:
         await _garantir_arvore_cjpg(campo)
-    arvores = {campo: _carregar_arvore_cjpg(campo) for campo in campos}
+    arvores = {campo: _carregar_arvore_cjpg(campo) for campo in (*campos, "magistrado")}  # magistrado: lista do arquivo/semente
     await nucleo._json(send, 200, _resolver.resolver(
-        numero, query.get("vara", ""), query.get("classe", ""), query.get("assunto", ""), arvores))
+        numero, query.get("vara", ""), query.get("classe", ""), query.get("assunto", ""), arvores, query.get("magistrado", "")))
+
+
+async def _arvore_nos_http(scope, send) -> None:
+    """Nome e caminho de nós pelo id (reabre uma escolha guardada ou um link): ?campo=vara|classe|assunto|magistrado&ids=a,b."""
+    query = dict(nucleo._query(scope))
+    campo = query.get("campo", "")
+    if campo not in (*_CAMPOS_ARVORE_CJPG, "magistrado"):
+        await nucleo._json(send, 400, {"erro": f"campo inválido: use um entre {sorted((*_CAMPOS_ARVORE_CJPG, 'magistrado'))}."})
+        return
+    ids = [i for i in (query.get("ids") or "").split(",") if re.fullmatch(r"[\w.:-]{1,40}", i)][:20]
+    if campo != "magistrado":
+        await _garantir_arvore_cjpg(campo)
+    arvores = {campo: _carregar_arvore_cjpg(campo)}
+    nos = [d for d in (_resolver.descrever_no(campo, i, arvores) for i in ids) if d]
+    await nucleo._json(send, 200, {"nos": nos})
+
+
+# --- Escolha de filtros guardada por processo (a pessoa confirmou vara, classe, assunto e magistrado) ---
+
+_CAMPOS_ESCOLHA = ("vara", "classe", "assunto", "magistrado")
+_RE_ID_ESCOLHA = re.compile(r"[\w.:-]{1,40}")
+
+
+def _validar_escolha(corpo: Any) -> dict:
+    """Aceita só {vara, classe, assunto, magistrado}, cada um nulo ou {id, nome, caminho}; devolve o que será gravado."""
+    if not isinstance(corpo, dict) or set(corpo) - set(_CAMPOS_ESCOLHA):
+        raise ValueError("Envie um objeto com vara, classe, assunto e magistrado.")
+    limpo: dict[str, Any] = {}
+    for campo in _CAMPOS_ESCOLHA:
+        item = corpo.get(campo)
+        if item is None:
+            limpo[campo] = None
+            continue
+        if not isinstance(item, dict) or not isinstance(item.get("id"), str) or not _RE_ID_ESCOLHA.fullmatch(item["id"]):
+            raise ValueError(f"Escolha inválida em {campo}.")
+        nome, caminho = item.get("nome"), item.get("caminho") or item.get("nome")
+        if not isinstance(nome, str) or not nome.strip() or len(nome) > 200 or not isinstance(caminho, str) or len(caminho) > 400:
+            raise ValueError(f"Nome inválido em {campo}.")
+        limpo[campo] = {"id": item["id"], "nome": nome.strip(), "caminho": caminho.strip()}
+    return limpo
+
+
+def _escolha_ler(caso_id: str) -> dict | None:
+    if not _BANCO_CAMINHO:
+        return None
+    con = sqlite3.connect(_BANCO_CAMINHO, timeout=10)
+    try:
+        linha = con.execute("SELECT dados, atualizado_em, atualizado_por FROM jurimetria_caso WHERE caso_id = ?", (caso_id,)).fetchone()
+    finally:
+        con.close()
+    if not linha:
+        return None
+    return {**json.loads(linha[0]), "atualizado_em": linha[1], "atualizado_por": linha[2]}
+
+
+def _escolha_gravar(caso_id: str, escolha: dict, usuario: str | None) -> None:
+    con = sqlite3.connect(_BANCO_CAMINHO, timeout=10)
+    try:
+        with con:
+            if any(escolha.values()):
+                con.execute("INSERT OR REPLACE INTO jurimetria_caso (caso_id, dados, atualizado_em, atualizado_por) VALUES (?, ?, ?, ?)",
+                            (caso_id, json.dumps(escolha, ensure_ascii=False), time.time(), usuario))
+            else:  # nada escolhido: não guarda linha vazia
+                con.execute("DELETE FROM jurimetria_caso WHERE caso_id = ?", (caso_id,))
+    finally:
+        con.close()
+
+
+async def http_com_corpo(scope, receive, send, caminho: str) -> bool:
+    """Rotas do módulo que precisam do corpo; as demais seguem em http()."""
+    prefixo = "/jurimetria/caso/"
+    if not caminho.startswith(prefixo):
+        return await http(scope, send, caminho)
+    caso_id = caminho[len(prefixo):]
+    if not re.fullmatch(r"[\w-]{1,64}", caso_id):
+        await nucleo._json(send, 400, {"erro": "Identificador de processo inválido."})
+        return True
+    metodo = scope.get("method")
+    if not _BANCO_CAMINHO:
+        await nucleo._json(send, 503, {"erro": "O banco do módulo ainda não está pronto."})
+        return True
+    if metodo == "GET":
+        await nucleo._json(send, 200, {"escolha": _escolha_ler(caso_id)})
+    elif metodo == "PUT":
+        bruto = await nucleo._ler_corpo(receive, 8192)
+        if bruto is None:
+            await nucleo._json(send, 413, {"erro": "Corpo grande demais."})
+            return True
+        try:
+            escolha = _validar_escolha(json.loads(bruto))
+        except (ValueError, UnicodeDecodeError) as exc:
+            await nucleo._json(send, 400, {"erro": str(exc) if not isinstance(exc, json.JSONDecodeError) else "JSON inválido."})
+            return True
+        _escolha_gravar(caso_id, escolha, scope.get("usuario"))
+        await nucleo._json(send, 200, {"escolha": _escolha_ler(caso_id)})
+    elif metodo == "DELETE":
+        _escolha_gravar(caso_id, dict.fromkeys(_CAMPOS_ESCOLHA), None)
+        await nucleo._json(send, 200, {"escolha": None})
+    else:
+        await nucleo._json(send, 405, {"erro": "Método não permitido."})
+    return True
 
 
 async def _arvore_magistrados_http(send) -> None:
@@ -528,6 +629,13 @@ def migrar(conexao) -> None:
     conexao.execute(
         "CREATE TABLE IF NOT EXISTS jurimetria_cache ("
         "chave TEXT PRIMARY KEY, criado_em REAL NOT NULL, dados TEXT NOT NULL)")
+    conexao.execute(
+        "CREATE TABLE IF NOT EXISTS jurimetria_caso ("
+        "caso_id TEXT PRIMARY KEY, dados TEXT NOT NULL, atualizado_em REAL NOT NULL, atualizado_por TEXT)")
+    try:  # processo excluído leva a escolha junto (sem chave estrangeira: a tabela é do módulo)
+        conexao.execute("DELETE FROM jurimetria_caso WHERE caso_id NOT IN (SELECT id FROM casos)")
+    except sqlite3.Error:
+        pass
     arquivo = next((linha[2] for linha in conexao.execute("PRAGMA database_list") if linha[1] == "main"), "")
     _BANCO_CAMINHO = arquivo or None
 
@@ -884,6 +992,8 @@ async def http(scope, send, caminho: str) -> bool:
         await _arvore_buscar_http(scope, send)
     elif caminho == "/cjpg-arvore/resolver":
         await _arvore_resolver_http(scope, send)
+    elif caminho == "/cjpg-arvore/nos":
+        await _arvore_nos_http(scope, send)
     elif caminho == "/cjpg-arvore/magistrados":
         await _arvore_magistrados_http(send)
     else:
