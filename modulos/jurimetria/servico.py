@@ -44,6 +44,10 @@ CJPG_HEADERS = {
 }
 CJPG_CAMPOS_RESULTADO = ["Classe", "Assunto", "Magistrado", "Comarca", "Foro", "Vara", "Data de Disponibilização"]
 CJPG_PAGINAS_MAX = 15
+# Campo que o formulário do e-SAJ realmente usa para filtrar por magistrado (conferido capturando a
+# requisição do navegador). Os nomes antigos "cdAgente"/"agenteSelectedEntitiesList" não filtravam:
+# sem termo a busca voltava vazia e com termo trazia decisões de outros juízes.
+CJPG_CAMPO_MAGISTRADO = "dadosConsulta.agentes[0].cdAgente"
 
 # URLs dos endpoints de árvore do e-SAJ (mapeados manualmente em sessão de exploração; os parâmetros
 # extras do magistrado são necessários - sem eles o servidor devolve um resumo vazio em vez da grade).
@@ -464,6 +468,7 @@ async def _cjpg_buscar_no_esaj(params: dict, paginas: int) -> tuple[int | None, 
 # (sem avisos de página falha/bloqueada), para nunca servir por 7 dias um resultado parcial.
 
 CJPG_CACHE_TTL_S = 7 * 24 * 3600
+CJPG_AVISO_CACHE = "Resultado de uma consulta idêntica"  # início do aviso; a tela usa o campo `do_cache`
 _BANCO_CAMINHO: str | None = None
 
 
@@ -512,6 +517,10 @@ def _cjpg_cache_gravar(chave: str, total_servidor: int | None, todos: list[dict]
         nucleo.log.exception("Falha ao gravar o cache da Jurimetria (seguindo sem cache)")
 
 
+def _veio_do_cache(avisos: list[str]) -> bool:
+    return any(a.startswith(CJPG_AVISO_CACHE) for a in avisos)
+
+
 async def _cjpg_executar_busca(
     params: dict, paginas: int, ignorar_cache: bool = False
 ) -> tuple[int | None, list[dict], list[str]]:
@@ -523,7 +532,7 @@ async def _cjpg_executar_busca(
             criado_em, dados = em_cache
             quando = datetime.fromtimestamp(criado_em, timezone.utc).astimezone().strftime("%d/%m/%Y %H:%M")
             aviso = (
-                f"Resultado de uma consulta idêntica feita em {quando} (guardada por 7 dias para não "
+                f"{CJPG_AVISO_CACHE} feita em {quando} (guardada por 7 dias para não "
                 "sobrecarregar o e-SAJ); sentenças publicadas depois não aparecem."
             )
             return dados["total_servidor"], dados["resultados"], [aviso]
@@ -563,7 +572,7 @@ async def consultar_jurimetria_cjpg(
       servidor do CJPG.
     - classe_nome / assunto_nome / magistrado_nome: nome em texto, usado para exibição e (no caso
       de magistrado_nome) para compor o termo de busca.
-    - magistrado_codigo: código do magistrado (cdAgente), filtra de verdade no servidor.
+    - magistrado_codigo: código do magistrado (cdAgente) da lista do e-SAJ; filtra de verdade no servidor (e dispensa o nome).
     - data_inicio / data_fim: formato dd/mm/aaaa.
     - paginas: quantas páginas de 10 resultados buscar (padrão 1, teto 15). A busca é best-effort:
       se uma página falhar no meio, o resultado parcial já buscado é devolvido com um aviso, em
@@ -582,7 +591,7 @@ async def consultar_jurimetria_cjpg(
             return nucleo._erro(f"paginas deve ser entre 1 e {CJPG_PAGINAS_MAX}.")
 
         termo_busca = (termo or "").strip()
-        if magistrado_nome:
+        if magistrado_nome and not magistrado_codigo:  # com o código o filtro é exato; o nome não precisa ir no texto
             termo_busca = f'{termo_busca} "{magistrado_nome.strip()}"'.strip()
 
         params = {
@@ -600,8 +609,7 @@ async def consultar_jurimetria_cjpg(
         if vara_codigo:
             params["varasTreeSelection.values"] = vara_codigo
         if magistrado_codigo:
-            params["cdAgente"] = magistrado_codigo
-            params["agenteSelectedEntitiesList"] = magistrado_codigo
+            params[CJPG_CAMPO_MAGISTRADO] = magistrado_codigo
 
         try:
             total_servidor, todos, avisos = await _cjpg_executar_busca(params, paginas, ignorar_cache)
@@ -613,6 +621,7 @@ async def consultar_jurimetria_cjpg(
             "buscados": len(todos),
             "resultados": todos,
             "avisos": avisos,
+            "do_cache": _veio_do_cache(avisos),
         }
 
         # Agrega sempre que houver algum critério de busca (termo livre incluído): a tela envia só
@@ -717,7 +726,7 @@ async def perfil_decisorio_magistrado(
     calcula mediana/percentis de valor (isso é objetivo do benchmark de valor, não deste perfil).
 
     Parâmetros:
-    - magistrado_codigo: código do magistrado (cdAgente), filtra de verdade no servidor. Resolvido
+    - magistrado_codigo: código do magistrado (cdAgente) da lista do e-SAJ; filtra de verdade no servidor (e dispensa o nome). Resolvido
       via autocomplete (endpoint /cjpg-arvore/magistrados do painel web).
     - magistrado_nome: nome em texto. Obrigatório ao menos um entre magistrado_codigo/
       magistrado_nome. Quando informado, entra automaticamente entre aspas no termo de busca.
@@ -750,7 +759,7 @@ async def perfil_decisorio_magistrado(
             return nucleo._erro(f"paginas deve ser entre 1 e {CJPG_PAGINAS_MAX}.")
 
         termo_busca = (termo or "").strip()
-        if magistrado_nome:
+        if magistrado_nome and not magistrado_codigo:  # com o código o filtro é exato; o nome não precisa ir no texto
             termo_busca = f'{termo_busca} "{magistrado_nome.strip()}"'.strip()
 
         params = {
@@ -768,8 +777,7 @@ async def perfil_decisorio_magistrado(
         if vara_codigo:
             params["varasTreeSelection.values"] = vara_codigo
         if magistrado_codigo:
-            params["cdAgente"] = magistrado_codigo
-            params["agenteSelectedEntitiesList"] = magistrado_codigo
+            params[CJPG_CAMPO_MAGISTRADO] = magistrado_codigo
 
         try:
             total_servidor, todos, avisos = await _cjpg_executar_busca(params, paginas, ignorar_cache)
@@ -789,7 +797,7 @@ async def perfil_decisorio_magistrado(
             else:
                 params_universo = {
                     chave: valor for chave, valor in params.items()
-                    if chave not in ("cdAgente", "agenteSelectedEntitiesList")
+                    if chave != CJPG_CAMPO_MAGISTRADO
                 }
                 params_universo["dadosConsulta.pesquisaLivre"] = (termo or "").strip()
                 perfil["baseline"] = await _perfil_do_universo(params_universo, paginas, ignorar_cache)
@@ -799,6 +807,7 @@ async def perfil_decisorio_magistrado(
             "buscados": len(todos),
             "resultados": todos,
             "avisos": avisos,
+            "do_cache": _veio_do_cache(avisos),
             "perfil": perfil,
         }
 
