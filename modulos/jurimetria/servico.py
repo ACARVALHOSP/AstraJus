@@ -302,12 +302,19 @@ def _avisos_amostra(n: int, rotulo: str) -> list[str]:
 CJPG_MARCADORES_DISPOSITIVO = [
     "ante o exposto", "diante do exposto", "posto isso", "isto posto", "pelo exposto", "do exposto",
 ]
+# Ordem importa só no empate de posição (vence a primeira da lista): "julgo procedente em parte" casa
+# com parcial e com procedente na mesma posição e deve ser parcial; "homologo a desistência" é extinção,
+# não acordo. Fora o empate, vence a expressão que aparece primeiro no dispositivo.
 CJPG_PALAVRAS_DESFECHO = [
-    ("parcial", r"julgo\s+parcialmente\s+procedente"),
-    ("procedente", r"julgo\s+procedente"),
-    ("improcedente", r"julgo\s+improcedente"),
+    ("parcial", r"julgo\s+(?:parcialmente\s+procedentes?|procedentes?\s+em\s+parte)"),
+    ("parcial", r"acolho\s+em\s+parte"),
+    ("procedente", r"julgo\s+procedentes?"),
+    ("improcedente", r"julgo\s+improcedentes?"),
+    ("improcedente", r"rejeito\s+(?:os\s+|o\s+)?pedidos?"),
+    ("extinto", r"homologo\s+(?:o\s+pedido\s+de\s+|a\s+)?(?:desist|ren[uú]nc)"),
     ("acordo", r"homologo"),
-    ("extinto", r"julgo\s+extint[ao]"),
+    ("extinto", r"(?:julgo|declaro)\s+extint[ao]s?"),
+    ("extinto", r"extingo\s+(?:o\s+|a\s+)?(?:processo|feito|execu[cç][aã]o|cumprimento|a[cç][aã]o)"),
 ]
 
 
@@ -331,6 +338,24 @@ def _cjpg_classificar_desfecho(inteiro_teor: str | None) -> str | None:
     return melhor_categoria
 
 
+# Valor em reais: "R$ 5.000,00", "R$ 5.000", "R$5000", "R$ 10 mil", "R$ 1,5 milhão".
+_RE_VALOR_REAIS = re.compile(
+    r"R\$\s*(?P<inteiro>\d{1,3}(?:\.\d{3})+|\d+)(?:,(?P<dec>\d{1,2}))?"
+    r"(?:\s*(?P<mult>mil\b|milh(?:ão|ões|ao|oes)\b))?",
+    re.IGNORECASE,
+)
+
+
+def _cjpg_valor_do_match(m: re.Match) -> float:
+    valor = float(m.group("inteiro").replace(".", "") + ("." + m.group("dec") if m.group("dec") else ""))
+    mult = (m.group("mult") or "").lower()
+    if mult == "mil":
+        valor *= 1_000
+    elif mult:
+        valor *= 1_000_000
+    return valor
+
+
 def _cjpg_extrair_valor_condenacao(inteiro_teor: str | None) -> float | None:
     """Extrai o valor de condenação por dano moral do dispositivo. Heurística: pega o valor em
     R$ mais próximo textualmente de "moral"/"morais" (plural irregular - não é só sufixo "s"),
@@ -344,7 +369,7 @@ def _cjpg_extrair_valor_condenacao(inteiro_teor: str | None) -> float | None:
     regiao_lower = regiao.lower()
 
     melhor_valor, melhor_dist = None, None
-    for m in re.finditer(r"R\$\s*([\d.]+,\d{2})", regiao):
+    for m in _RE_VALOR_REAIS.finditer(regiao):
         pos_valor = m.start()
         dists = [abs(mm.start() - pos_valor) for mm in re.finditer(r"mora(?:l|is)", regiao_lower)]
         if not dists:
@@ -353,10 +378,8 @@ def _cjpg_extrair_valor_condenacao(inteiro_teor: str | None) -> float | None:
         if dist > CJPG_DISTANCIA_MAX_VALOR:
             continue
         if melhor_dist is None or dist < melhor_dist:
-            melhor_valor, melhor_dist = m.group(1), dist
-    if melhor_valor is None:
-        return None
-    return float(melhor_valor.replace(".", "").replace(",", "."))
+            melhor_valor, melhor_dist = _cjpg_valor_do_match(m), dist
+    return melhor_valor
 
 
 def _cjpg_parsear_resultados(html: str) -> list[dict]:

@@ -2,8 +2,8 @@
 
 Não importa o `server` (não precisa do MCP): se o núcleo ainda não estiver vinculado, usa um
 substituto mínimo de `_html_para_texto`/`_sem_acento_cjpg`, que é só o que o parser usa.
-Casos marcados com `expectedFailure` documentam limitações conhecidas das regex: ao corrigir a
-heurística, o teste passa a "passar inesperadamente" e a marca deve ser removida.
+Limitações conhecidas das regex entram aqui como `expectedFailure`; ao corrigir a heurística o teste
+passa a "passar inesperadamente" e a marca deve ser removida.
 """
 import asyncio
 import html
@@ -101,17 +101,56 @@ class ClassificarDesfecho(unittest.TestCase):
     def test_sem_nenhuma_expressao_devolve_none(self):
         self.assertIsNone(self.classificar(sentenca("Ante o exposto, determino a remessa ao arquivo.")))
 
-    @unittest.expectedFailure
-    def test_limitacao_procedente_em_parte(self):
+    def test_procedente_em_parte_e_parcial(self):
         self.assertEqual(self.classificar(sentenca("Ante o exposto, julgo procedente em parte o pedido.")), "parcial")
 
-    @unittest.expectedFailure
-    def test_limitacao_extingo_o_processo(self):
+    def test_extingo_o_processo_e_extinto(self):
         self.assertEqual(self.classificar(sentenca("Ante o exposto, extingo o processo sem resolução do mérito.")), "extinto")
 
-    @unittest.expectedFailure
-    def test_limitacao_homologo_desistencia_nao_e_acordo(self):
+    def test_homologo_desistencia_nao_e_acordo(self):
         self.assertEqual(self.classificar(sentenca("Ante o exposto, homologo a desistência e julgo extinto o processo.")), "extinto")
+
+    def test_variacoes_de_parcial(self):
+        for dispositivo in (
+            "Ante o exposto, JULGO PROCEDENTES EM PARTE os pedidos.",
+            "Ante o exposto, julgo parcialmente procedentes os pedidos.",
+            "Ante o exposto, acolho em parte o pedido inicial.",
+        ):
+            with self.subTest(dispositivo):
+                self.assertEqual(self.classificar(sentenca(dispositivo)), "parcial")
+
+    def test_variacoes_de_extinto(self):
+        for dispositivo in (
+            "Ante o exposto, extingo o processo, sem resolução do mérito, nos termos do art. 485, I, do CPC.",
+            "Ante o exposto, EXTINGO O FEITO por falta de interesse.",
+            "Ante o exposto, declaro extinto o processo.",
+            "Ante o exposto, homologo a desistência da ação.",
+            "Ante o exposto, homologo o pedido de desistência e extingo o processo.",
+            "Ante o exposto, homologo a renúncia ao direito em que se funda a ação.",
+        ):
+            with self.subTest(dispositivo):
+                self.assertEqual(self.classificar(sentenca(dispositivo)), "extinto")
+
+    def test_variacoes_de_acordo_continuam_acordo(self):
+        for dispositivo in (
+            "Ante o exposto, homologo o acordo celebrado entre as partes.",
+            "Ante o exposto, HOMOLOGO, por sentença, para que produza seus jurídicos e legais efeitos, a transação.",
+            "Ante o exposto, homologo o acordo e extingo o processo, com resolução do mérito, art. 487, III, b.",
+        ):
+            with self.subTest(dispositivo):
+                self.assertEqual(self.classificar(sentenca(dispositivo)), "acordo")
+
+    def test_extingo_depois_do_julgamento_nao_muda_o_desfecho(self):
+        # a fórmula padrão "extingo o processo com resolução do mérito" vem depois do "julgo ..."
+        texto = sentenca("Ante o exposto, julgo procedente o pedido. Extingo o processo com resolução do mérito, art. 487, I.")
+        self.assertEqual(self.classificar(texto), "procedente")
+        texto = sentenca("Ante o exposto, julgo improcedente o pedido. Extingo o processo com resolução do mérito, art. 487, I.")
+        self.assertEqual(self.classificar(texto), "improcedente")
+
+    def test_rejeito_os_pedidos_e_improcedente(self):
+        self.assertEqual(self.classificar(sentenca("Ante o exposto, rejeito os pedidos formulados na inicial.")), "improcedente")
+        # "rejeito a preliminar" não é desfecho
+        self.assertIsNone(self.classificar(sentenca("Ante o exposto, rejeito a preliminar de ilegitimidade.")))
 
 
 class ExtrairValorCondenacao(unittest.TestCase):
@@ -170,13 +209,40 @@ class ExtrairValorCondenacao(unittest.TestCase):
         texto = "danos morais R$ 9.999,00 " + ("x" * 4000) + " fim"
         self.assertIsNone(self.valor(texto))
 
-    @unittest.expectedFailure
-    def test_limitacao_valor_sem_centavos(self):
+    def test_valor_sem_centavos(self):
         self.assertEqual(self.valor(sentenca("Ante o exposto, danos morais de R$ 5.000.")), 5000.0)
 
-    @unittest.expectedFailure
-    def test_limitacao_valor_por_extenso_com_mil(self):
+    def test_valor_com_mil(self):
         self.assertEqual(self.valor(sentenca("Ante o exposto, danos morais de R$ 10 mil.")), 10000.0)
+
+    def test_formatos_de_valor(self):
+        casos = {
+            "R$ 5.000": 5000.0,
+            "R$5000": 5000.0,
+            "R$ 5.000,50": 5000.5,
+            "R$ 800,00": 800.0,
+            "R$ 1.234.567,89": 1234567.89,
+            "R$ 10 mil": 10000.0,
+            "R$ 10 MIL": 10000.0,
+            "R$ 1,5 mil": 1500.0,
+            "R$ 2 milhões": 2000000.0,
+            "R$ 1,5 milhão": 1500000.0,
+        }
+        for texto_valor, esperado in casos.items():
+            with self.subTest(texto_valor):
+                texto = sentenca(f"Ante o exposto, condeno a ré ao pagamento de {texto_valor} por danos morais.")
+                self.assertEqual(self.valor(texto), esperado)
+
+    def test_ponto_final_apos_o_valor_nao_vira_decimal(self):
+        self.assertEqual(self.valor(sentenca("Ante o exposto, danos morais de R$ 5.000. Custas pela ré.")), 5000.0)
+        self.assertEqual(self.valor(sentenca("Ante o exposto, danos morais de R$ 5.000,00. Custas pela ré.")), 5000.0)
+
+    def test_valor_sem_centavos_longe_de_moral_continua_ignorado(self):
+        self.assertIsNone(self.valor(sentenca("Ante o exposto, condeno a ré à restituição de R$ 1.500 em dobro.")))
+
+    def test_mil_so_vale_quando_colado_ao_valor(self):
+        # "mil" de outra frase não multiplica: aqui o valor é 5.000 e "milhares" vem depois
+        self.assertEqual(self.valor(sentenca("Ante o exposto, danos morais de R$ 5.000 e milhares de juros.")), 5000.0)
 
 
 def bloco_resultado(numero="1001234-56.2024.8.26.0100", teor_oculto="", **campos):
