@@ -5,12 +5,14 @@ import { Search } from 'lucide-react'
 import { useCliente } from './api/ClienteContext'
 import { useNavegacao } from './api/NavegacaoContext'
 import { usePerfil } from './api/PerfilContext'
-import { buscarJson } from './api/rest'
+import { useCasos, useClientes } from './api/consultas'
 import { formatarNomeExibicao, formatarNumeroCNJ } from './utils/formatadores'
 
 type ClienteOpcao = { id: string; nome?: string; cpf_cnpj?: string; perfil?: string }
 type Pagina = { id: string; label: string; grupo: string }
 type CasoOpcao = { id: string; titulo?: string; processos?: string[] }
+const SEM_CLIENTES: ClienteOpcao[] = []
+const SEM_CASOS: CasoOpcao[] = []
 
 function normalizar(valor: string): string {
   return valor.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase()
@@ -22,34 +24,19 @@ export default function BuscaGlobal({ paginas = [] }: { paginas?: Pagina[] }) {
   const { abaPermitida } = usePerfil()
   const [aberta, setAberta] = useState(false)
   const [termo, setTermo] = useState('')
-  const [clientes, setClientes] = useState<ClienteOpcao[]>([])
-  const [casos, setCasos] = useState<CasoOpcao[]>([])
-  const [carregando, setCarregando] = useState(false)
-  const [erro, setErro] = useState<string | null>(null)
-
-  async function carregar() {
-    setErro(null)
-    if (!cliente) { setErro('Conecte-se para buscar clientes e processos.'); return }
-    setCarregando(true)
-    try {
-      const [rc, rp] = await Promise.all([
-        buscarJson<{ clientes: ClienteOpcao[] }>(cliente, '/clientes'),
-        buscarJson<{ casos: CasoOpcao[] }>(cliente, '/casos'),
-      ])
-      setClientes(rc.clientes ?? [])
-      setCasos(rp.casos ?? [])
-    } catch {
-      setErro('Não foi possível carregar a busca. Tente novamente.')
-      setClientes([])
-      setCasos([])
-    } finally {
-      setCarregando(false)
-    }
-  }
+  // Só consulta com a busca aberta; o cache compartilhado evita refazer a cada abertura.
+  const buscar = aberta && Boolean(cliente)
+  const consultaClientes = useClientes<ClienteOpcao>({ enabled: buscar })
+  const consultaCasos = useCasos<CasoOpcao>({ enabled: buscar })
+  const clientes = consultaClientes.data ?? SEM_CLIENTES
+  const casos = consultaCasos.data ?? SEM_CASOS
+  const carregando = buscar && (consultaClientes.isLoading || consultaCasos.isLoading)
+  const erro = !cliente ? 'Conecte-se para buscar clientes e processos.'
+    : consultaClientes.isError || consultaCasos.isError ? 'Não foi possível carregar a busca. Tente novamente.' : null
+  const carregar = () => { void consultaClientes.refetch(); void consultaCasos.refetch() }
 
   function onOpenChange(aberto: boolean) {
     setAberta(aberto)
-    if (aberto) void carregar()
   }
 
   // Ctrl+K (ou ⌘K) abre a busca de qualquer tela.
@@ -58,7 +45,6 @@ export default function BuscaGlobal({ paginas = [] }: { paginas?: Pagina[] }) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         setAberta(true)
-        void carregar()
       }
     }
     window.addEventListener('keydown', aoTeclar)

@@ -1,12 +1,11 @@
 import TabelaResponsiva from '../../TabelaResponsiva'
 import TextoTabela from '../../TextoTabela'
 import Carregamento from '../../Carregamento'
-import { useEffect, useState } from 'react'
 import { Badge, Button, Callout, Flex, Heading } from '@radix-ui/themes'
 import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { useNavegacao } from '../../api/NavegacaoContext'
-import { buscarJson } from '../../api/rest'
+import { useCasos, useLancamentos } from '../../api/consultas'
 import { formatarDataSimples, formatarMoeda, formatarNomeExibicao, formatarNumeroCNJ } from '../../utils/formatadores'
 import type { Caso } from '../casos/ListaCasos'
 import { COR_POLO, ROTULO_POLO } from '../../utils/polos'
@@ -19,28 +18,16 @@ type Lancamento = {
 export default function VinculosContato({ clienteId, tipo }: { clienteId: string; tipo: 'processos' | 'financeiro' }) {
   const { cliente } = useCliente()
   const { irPara } = useNavegacao()
-  const [dados, setDados] = useState<{ casos: Caso[]; lancamentos: Lancamento[] } | null>(null)
-  const [erro, setErro] = useState<string | null>(null)
-  const [carregando, setCarregando] = useState(true)
-  const [revisao, setRevisao] = useState(0)
-
-  useEffect(() => {
-    let atual = true
-    setCarregando(true)
-    setErro(null)
-    setDados(null)
-    Promise.all([
-      buscarJson<{ casos: Caso[] }>(cliente, '/casos'),
-      tipo === 'financeiro'
-        ? buscarJson<{ lancamentos: Lancamento[] }>(cliente, '/lancamentos')
-        : Promise.resolve({ lancamentos: [] as Lancamento[] }),
-    ]).then(([processos, financeiro]) => {
-      if (atual) setDados({ casos: processos.casos ?? [], lancamentos: financeiro.lancamentos ?? [] })
-    }).catch((e: unknown) => {
-      if (atual) setErro(e instanceof Error ? e.message : 'Falha ao carregar vínculos do contato.')
-    }).finally(() => { if (atual) setCarregando(false) })
-    return () => { atual = false }
-  }, [cliente, clienteId, tipo, revisao])
+  const financeiro = tipo === 'financeiro'
+  const consultaCasos = useCasos<Caso>({ enabled: Boolean(cliente) })
+  const consultaLancamentos = useLancamentos<Lancamento>({ enabled: Boolean(cliente) && financeiro })
+  const carregando = consultaCasos.isLoading || (financeiro && consultaLancamentos.isLoading)
+  const falha = consultaCasos.error ?? (financeiro ? consultaLancamentos.error : null)
+  const erro = falha ? (falha instanceof Error ? falha.message : 'Falha ao carregar vínculos do contato.') : null
+  const dados = consultaCasos.data && (!financeiro || consultaLancamentos.data)
+    ? { casos: consultaCasos.data, lancamentos: financeiro ? consultaLancamentos.data ?? [] : [] }
+    : null
+  const recarregar = () => { void consultaCasos.refetch(); if (financeiro) void consultaLancamentos.refetch() }
 
   const casos = (dados?.casos ?? []).filter((caso) => caso.cliente_id === clienteId || caso.clientes_adicionais?.includes(clienteId))
   const itens = (dados?.lancamentos ?? []).filter((item) => item.cliente_id === clienteId)
@@ -67,7 +54,7 @@ export default function VinculosContato({ clienteId, tipo }: { clienteId: string
     <Flex direction="column" gap="5">
       <div className="aj-layout-38">
         <Heading as="h2" size="4">{tipo === 'processos' ? 'Processos vinculados' : 'Financeiro do cliente'}</Heading>
-        <Button variant="soft" size="1" disabled={carregando} onClick={() => setRevisao((r) => r + 1)}>
+        <Button variant="soft" size="1" disabled={carregando} onClick={recarregar}>
           {tipo === 'processos' ? 'Atualizar processos' : 'Atualizar financeiro'}
         </Button>
       </div>

@@ -1,6 +1,7 @@
 import { confirmarSaida } from '../AlteracoesPendentes'
 import { ChevronLeft } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Badge, Button, Flex, Heading, Skeleton, Tabs, Text } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
@@ -25,18 +26,17 @@ export default function Casos() {
   const { cliente } = useCliente()
   const { podeEditar } = usePerfil()
   const [casoId, setCasoId] = useState<string | null>(null)
-  const [contagensDe, setContagensDe] = useState<{ casoId: string; atividades_abertas: number; publicacoes_a_revisar: number } | null>(null)
 
   // Números das abas; recarregados quando uma aba altera atividades ou publicações.
-  // Guardados com o id do processo para não mostrar os números de outro durante a troca.
-  const atualizarContagens = useCallback(() => {
-    if (!casoId) return
-    buscarJson<{ contagens?: { atividades_abertas: number; publicacoes_a_revisar: number } }>(cliente, `/casos/${casoId}`)
-      .then(r => setContagensDe(r.contagens ? { casoId, ...r.contagens } : null))
-      .catch(() => setContagensDe(null))
-  }, [cliente, casoId])
-  useEffect(atualizarContagens, [atualizarContagens])
-  const contagens = contagensDe && contagensDe.casoId === casoId ? contagensDe : null
+  // A chave inclui o processo: nunca mostra os números de outro durante a troca.
+  const consultaContagens = useQuery({
+    queryKey: ['caso-contagens', cliente?.token, casoId],
+    enabled: Boolean(cliente && casoId),
+    queryFn: ({ signal }) => buscarJson<{ contagens?: { atividades_abertas: number; publicacoes_a_revisar: number } }>(cliente, `/casos/${casoId}`, signal)
+      .then(r => r.contagens ?? null),
+  })
+  const contagens = consultaContagens.data ?? null
+  const atualizarContagens = () => void consultaContagens.refetch()
   const [destinoAtividade, setDestinoAtividade] = useState<{ id?: string | number; versao: number }>({ versao: 0 })
   const [versaoAtividades, setVersaoAtividades] = useState(0) // muda quando um modelo cria atividades: recarrega a aba
   const [resumo, setResumo] = useState<Caso | null>(null)

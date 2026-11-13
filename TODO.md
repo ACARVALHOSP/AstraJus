@@ -18,7 +18,7 @@ Restam ~26 arquivos com `buscarJson` direto. Ordem sugerida:
 - [x] **F** Lote 2: Pagamentos e Histórico — sem teste no navegador
 - [x] **F** Lote 3: Publicações recebidas (`PainelPublicacoes`, `AtividadePublicacao`, `ProcessoPublicacao`) — sem teste no navegador; ficam com busca imperativa só as ações em lote (varrer todas as páginas, criar/vincular)
 - [x] **F** Lote 4: abas do processo — sem teste no navegador. Vínculos, Publicações, Atividades, Checklist e Movimentações usam a consulta; Cadastro e Capa ficam com a busca do próprio processo (preenchem formulário, uma recarga apagaria a edição) e só usam responsáveis e clientes em cache
-- [ ] **F** Lote 5: contatos (`CadastroContato`, `VinculosContato`), `NovoLancamentoModal`, `BuscaGlobal`, `Agenda`/`Atividades`/`Casos` (sobras)
+- [x] **F** Lote 5: BuscaGlobal, VinculosContato, NovoLancamentoModal e contagens das abas do processo — sem teste no navegador. Ficam com busca direta: CadastroContato (preenche formulário), useNotificacoes (polling) e as ações em lote das publicações
 - [ ] **F** Ao final: trocar `EVENTO_DADOS_ALTERADOS` por invalidação de queries
 
 ### Qualidade
