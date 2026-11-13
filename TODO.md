@@ -37,7 +37,7 @@ Restam ~26 arquivos com `buscarJson` direto. Ordem sugerida:
 - [ ] **F** Celular: barra de navegação inferior com ação central (nova atividade / novo processo)
 - [x] **F** Menu da conta em lista (Meu perfil, Administração para administradores, Acesso e token, tema e cor de destaque dentro, Sair); "Meu perfil" mostra o acesso por área. "Meu perfil" edita foto (reduzida no navegador), nome de exibição e e-mail. Pendência: preferências de notificação por tipo
 - [ ] **F** Atalho para "ocultar valores" (olho) na Home e no Financeiro
-- [ ] **F** Linha do tempo única do processo (movimentações, publicações, atividades e vínculos em ordem cronológica)
+- [x] **F** Linha do tempo única do processo: aba "Linha do tempo" com movimentações, publicações, atividades e vínculos (processos ligados) por dia, filtro por tipo, busca e "mostrar mais antigos"; só leitura e só o que já aconteceu (futuros ficam em Atividades). Pendências: lançamentos financeiros, horas e documentos do Drive no mesmo eixo; filtros na URL; atividade sem data fica de fora
 - [ ] **F** Checklist de "Configuração inicial" na Home (Google Drive, Google Agenda, Asaas, OAB para monitorar), com dica contextual curta por tela e "Guia de uso" em cada seção de Integrações
 - [ ] **F** Atalhos de teclado e mais ações em lote nas listas
 - [ ] **F** "Central de risco" como visão única: prazos fatais ou vencidos, audiências próximas, publicações sem revisão, tarefas atrasadas **e integrações desconectadas** (a aba Escritório já cobre quase tudo, falta o item de integrações)

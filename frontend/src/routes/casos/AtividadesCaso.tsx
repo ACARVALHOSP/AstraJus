@@ -9,13 +9,14 @@ import { AlertTriangle, ChevronDown, ChevronRight, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { useNomePessoa } from '../../api/consultas'
 import { ErroMCP } from '../../api/mcpClient'
-import { buscarJson, enviarJson } from '../../api/rest'
+import { enviarJson } from '../../api/rest'
 import { formatarNomeExibicao } from '../../utils/formatadores'
 import { useEstreita } from '../../utils/useEstreita'
 import {
   COR_STATUS, COR_TIPO, dataCurta, grupoDe, isoLocal, ORDEM_GRUPOS, quandoRelativo, ROTULO_STATUS, ROTULO_TIPO, TITULO_GRUPO, type Grupo,
 } from '../atividades/dados'
 import AtividadeModal from './AtividadeModal'
+import { consultaAtividades } from './consultasCaso'
 import AgendaAtividade, { type VinculoAgenda } from './AgendaAtividade'
 import '../atividades/atividades.scss'
 
@@ -53,12 +54,7 @@ export default function AtividadesCaso({ casoId, atividadeInicialId, onAlterado 
   const [excluindo, setExcluindo] = useState(false)
   const destinoConsumido = useRef(false)
 
-  const consulta = useQuery({
-    queryKey: ['caso-atividades', cliente?.token, casoId],
-    enabled: Boolean(cliente),
-    queryFn: ({ signal }) => buscarJson<{ atividades: Atividade[]; agenda_disponivel?: boolean }>(cliente, `/casos/${casoId}/atividades`, signal)
-      .then(r => ({ atividades: r.atividades ?? [], agendaDisponivel: Boolean(r.agenda_disponivel) })),
-  })
+  const consulta = useQuery({ ...consultaAtividades(cliente, casoId), enabled: Boolean(cliente) })
   const atividades = consulta.data?.atividades ?? null
   const agendaDisponivel = consulta.data?.agendaDisponivel ?? false
   const carregando = consulta.isLoading
