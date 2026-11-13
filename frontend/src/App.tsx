@@ -326,7 +326,8 @@ export default function App() {
   )
 }
 
-const ABAS_CONHECIDAS = new Set(['inicio', 'monitoramentos', ...GRUPOS_NAVEGACAO.flatMap(g => g.abas.map(a => a.id))])
+// 'integracoes' e 'integracoes/admin' não estão mais no menu, mas seguem valendo como atalhos para links antigos.
+const ABAS_CONHECIDAS = new Set(['inicio', 'monitoramentos', 'integracoes', 'integracoes/admin', ...GRUPOS_NAVEGACAO.flatMap(g => g.abas.map(a => a.id))])
 
 function NavConteudo() {
   const { abaAtiva } = useNavegacao()
