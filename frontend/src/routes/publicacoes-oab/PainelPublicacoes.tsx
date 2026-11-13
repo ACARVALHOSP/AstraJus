@@ -13,6 +13,7 @@ import { useCliente } from '../../api/ClienteContext'
 import { useNomePessoa, useResponsaveis } from '../../api/consultas'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { useNavegacao } from '../../api/NavegacaoContext'
+import { useFiltrosUrl } from '../../api/useFiltrosUrl'
 import { formatarNomeExibicao, formatarNumeroCNJ } from '../../utils/formatadores'
 import { useEstreita } from '../../utils/useEstreita'
 import {
@@ -45,6 +46,7 @@ const ATALHOS: Array<{ valor: Status | ''; rotulo: string }> = [
   { valor: '', rotulo: 'Todas' },
 ]
 
+const DATA = /^\d{4}-\d{2}-\d{2}$/
 function isoLocal(data: Date) {
   return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}-${String(data.getDate()).padStart(2, '0')}`
 }
@@ -59,26 +61,53 @@ function intervalo(periodo: Periodo, desde: string, ate: string): { desde?: stri
   return {}
 }
 export default function PainelPublicacoes({ Captura, abas }: { Captura: ComponentType<{ onCapturado: () => void }>; abas?: ReactNode }) {
-  const { cliente } = useCliente(), { irPara, consumirPayload, versaoNavegacao } = useNavegacao()
+  const { cliente } = useCliente(), { irPara } = useNavegacao()
   const estreita = useEstreita()
-  const [status, setStatus] = useState<Status | ''>('nao_tratada')
-  const [tipo, setTipo] = useState('')
-  const [periodo, setPeriodo] = useState<Periodo>('')
-  const [desde, setDesde] = useState(''), [ate, setAte] = useState('')
-  const [textoBusca, setTextoBusca] = useState(''), [busca, setBusca] = useState('')
-  const [ordemAsc, setOrdemAsc] = useState(false)
-  const [porPrioridade, setPorPrioridade] = useState(false)
+  // Filtros, ordem e página ficam na URL ("#/publicacoes-oab?status=tratada&pagina=2"): recarregar ou compartilhar mantém a lista.
+  const [filtros, setFiltros] = useFiltrosUrl('publicacoes-oab',
+    { status: 'nao_tratada', tipo: '', periodo: '', desde: '', ate: '', busca: '', ordem: '', prio: '', pagina: '1', tamanho: '20' },
+    {
+      normalizar: f => ({
+        ...f,
+        status: ['nao_tratada', 'tratada', 'arquivada', ''].includes(f.status) ? f.status : 'nao_tratada',
+        periodo: ['', 'hoje', '7', '30', 'personalizado'].includes(f.periodo) ? f.periodo : '',
+        desde: DATA.test(f.desde) ? f.desde : '',
+        ate: DATA.test(f.ate) ? f.ate : '',
+        ordem: f.ordem === 'asc' ? 'asc' : '',
+        prio: f.prio === '1' ? '1' : '',
+        pagina: /^[1-9]\d{0,4}$/.test(f.pagina) ? f.pagina : '1',
+        tamanho: ['10', '20', '50', '100'].includes(f.tamanho) ? f.tamanho : '20',
+      }),
+    })
+  const status = filtros.status as Status | ''
+  const tipo = filtros.tipo
+  const periodo = filtros.periodo as Periodo
+  const desde = filtros.desde, ate = filtros.ate
+  const busca = filtros.busca
+  const ordemAsc = filtros.ordem === 'asc'
+  const porPrioridade = filtros.prio === '1'
+  const pagina = Number(filtros.pagina), tamanho = Number(filtros.tamanho)
+  const mudar = (parcial: Partial<typeof filtros>) => setFiltros(f => ({ ...f, ...parcial }))
+  const setStatus = (v: Status | '') => mudar({ status: v })
+  const setTipo = (v: string) => mudar({ tipo: v })
+  const setPeriodo = (v: Periodo) => mudar({ periodo: v })
+  const setDesde = (v: string) => mudar({ desde: v })
+  const setAte = (v: string) => mudar({ ate: v })
+  const setBusca = (v: string) => mudar({ busca: v })
+  const setOrdemAsc = (v: (anterior: boolean) => boolean) => setFiltros(f => ({ ...f, ordem: v(f.ordem === 'asc') ? 'asc' : '' }))
+  const setPorPrioridade = (v: (anterior: boolean) => boolean) => setFiltros(f => ({ ...f, prio: v(f.prio === '1') ? '1' : '' }))
+  const setPagina = (v: number | ((p: number) => number)) => setFiltros(f => ({ ...f, pagina: String(typeof v === 'function' ? v(Number(f.pagina)) : v) }))
+  const setTamanho = (v: number) => mudar({ tamanho: String(v) })
+  const [textoBusca, setTextoBusca] = useState(busca) // o que está sendo digitado; vira filtro depois de uma pausa
   const [infoTriagem, setInfoTriagem] = useState<InfoTriagem | null>(null)
   const [classificando, setClassificando] = useState(false)
-  const [pagina, setPagina] = useState(1), [tamanho, setTamanho] = useState(20)
   useEffect(() => {
-    const destino = consumirPayload<{ status?: string }>('publicacoes-oab')
-    if (destino?.status === 'nao_tratada') { setStatus('nao_tratada'); setPagina(1) }
-  }, [consumirPayload, versaoNavegacao])
-  useEffect(() => {
-    const espera = window.setTimeout(() => { setBusca(textoBusca.trim()); setPagina(1) }, 400)
+    if (textoBusca.trim() === busca) return
+    const espera = window.setTimeout(() => setFiltros(f => ({ ...f, busca: textoBusca.trim(), pagina: '1' })), 400)
     return () => window.clearTimeout(espera)
-  }, [textoBusca])
+  }, [textoBusca, busca, setFiltros])
+  // Voltar/avançar do navegador troca a busca na URL: o campo acompanha.
+  useEffect(() => { setTextoBusca(atual => (atual.trim() === busca ? atual : busca)) }, [busca]) // eslint-disable-line react-hooks/set-state-in-effect
 
   const [contagem, setContagem] = useState<ContagemStatus | null>(null), [tipos, setTipos] = useState<string[]>([])
   const [preferencias, setPreferencias] = useState(lerPreferencias)

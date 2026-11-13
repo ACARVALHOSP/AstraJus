@@ -7,7 +7,7 @@ export type Parametros = Record<string, string>
 // /casos/<id>. Só aceitamos o formato de ids, números CNJ e rótulos simples; o resto é descartado.
 const VALOR_SEGURO = /^[\w.:@-]{1,120}$/ // "@" para logins em formato de e-mail
 // Busca por texto digitada pela pessoa (só filtra na tela, não vai para caminhos de API): aceita espaço e acento.
-const TEXTO_LIVRE = new Set(['busca'])
+const TEXTO_LIVRE = new Set(['busca', 'tipo']) // 'tipo': rótulo do tipo de comunicação ("Intimação")
 const valorSeguro = (nome: string, valor: string) =>
   TEXTO_LIVRE.has(nome) ? valor.length >= 1 && valor.length <= 100 && !/[\u0000-\u001f]/.test(valor) : VALOR_SEGURO.test(valor)
 const NOME_SEGURO = /^[A-Za-z][\w]{0,40}$/
