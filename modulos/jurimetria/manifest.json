@@ -1,0 +1,15 @@
+{
+  "id": "jurimetria",
+  "nome": "Jurimetria",
+  "descricao": "Estatística de decisões de 1º grau do TJSP (CJPG): desfecho, valores de condenação e perfil decisório de magistrados.",
+  "versao": "1.0.0",
+  "ativo_por_padrao": true,
+  "aba": { "id": "jurimetria", "rotulo": "Jurimetria", "grupo": "pesquisa", "icone": "BarChart2" },
+  "area_permissao": "pesquisa",
+  "permissoes": {},
+  "ferramentas": ["consultar_jurimetria_cjpg", "perfil_decisorio_magistrado"],
+  "ferramentas_consulta": ["consultar_jurimetria_cjpg", "perfil_decisorio_magistrado"],
+  "rotas_http": ["/cjpg-arvore/"],
+  "dependencias": [],
+  "tabelas": []
+}

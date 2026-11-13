@@ -17,3 +17,8 @@ dependencies = [
 
 [tool.setuptools]
 py-modules = ["server", "db", "_util", "google_integracao", "agenda_atividades", "notificacoes", "monitoramento_runtime", "asaas_integracao", "integracoes", "integracoes_http", "usuarios_admin", "financeiro_juridico", "triagem", "polos", "modelos_prazo", "horas"]
+packages = ["modulos", "modulos.jurimetria", "modulos.jurisprudencia"]
+
+[tool.setuptools.package-data]
+"modulos.jurimetria" = ["manifest.json"]
+"modulos.jurisprudencia" = ["manifest.json"]

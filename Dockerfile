@@ -14,6 +14,7 @@ WORKDIR /app
 
 COPY pyproject.toml README.md server.py db.py _util.py google_integracao.py agenda_atividades.py notificacoes.py monitoramento_runtime.py asaas_integracao.py integracoes.py integracoes_http.py usuarios_admin.py financeiro_juridico.py triagem.py polos.py modelos_prazo.py horas.py guia-do-usuario.html ./
 COPY static/ ./static/
+COPY modulos/ ./modulos/
 COPY --from=frontend-build /frontend/dist/ ./frontend-dist/
 RUN pip install --no-cache-dir . \
     && useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app \
