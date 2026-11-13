@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Box, DropdownMenu, Flex, Text } from '@radix-ui/themes'
-import { KeyRound, LogIn, LogOut, ShieldCheck, User } from 'lucide-react'
-import { ACCENTS, type AccentColor } from './aparencia'
+import { Box, DropdownMenu, Flex, Switch, Text } from '@radix-ui/themes'
+import { KeyRound, LogIn, LogOut, Moon, ShieldCheck, Sun, User } from 'lucide-react'
+import type { AccentColor } from './aparencia'
 import { useCliente } from './api/ClienteContext'
 import { useNavegacao } from './api/NavegacaoContext'
 import { usePerfil } from './api/PerfilContext'
@@ -52,19 +52,13 @@ export default function ContaUsuario({ aparencia, setAparencia, accent, setAccen
           )}
           <DropdownMenu.Separator />
           {/* Trocar a aparência não fecha o menu, para ver o resultado e experimentar outra cor. */}
-          <DropdownMenu.Label>Tema</DropdownMenu.Label>
-          <DropdownMenu.RadioGroup value={aparencia} onValueChange={v => setAparencia(v as 'light' | 'dark')}>
-            <DropdownMenu.RadioItem value="light" onSelect={e => e.preventDefault()}>Claro</DropdownMenu.RadioItem>
-            <DropdownMenu.RadioItem value="dark" onSelect={e => e.preventDefault()}>Escuro</DropdownMenu.RadioItem>
-          </DropdownMenu.RadioGroup>
-          <DropdownMenu.Label>Cor de destaque</DropdownMenu.Label>
-          <DropdownMenu.RadioGroup value={accent} onValueChange={v => setAccent(v as AccentColor)}>
-            {ACCENTS.map(a => (
-              <DropdownMenu.RadioItem key={a.key} value={a.key} onSelect={e => e.preventDefault()}>
-                <Flex align="center" gap="2"><span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: '50%', background: a.cor, display: 'inline-block' }} />{a.label}</Flex>
-              </DropdownMenu.RadioItem>
-            ))}
-          </DropdownMenu.RadioGroup>
+          <DropdownMenu.Item onSelect={e => { e.preventDefault(); setAparencia(aparencia === 'dark' ? 'light' : 'dark') }}>
+            <Flex align="center" gap="2" width="100%">
+              <Sun size={14} aria-hidden="true" />
+              <Switch size="1" checked={aparencia === 'dark'} tabIndex={-1} style={{ pointerEvents: 'none' }} aria-label="Tema escuro" />
+              <Moon size={14} aria-hidden="true" />
+            </Flex>
+          </DropdownMenu.Item>
           {conectado && (
             <>
               <DropdownMenu.Separator />
@@ -73,7 +67,7 @@ export default function ContaUsuario({ aparencia, setAparencia, accent, setAccen
           )}
         </DropdownMenu.Content>
       </DropdownMenu.Root>
-      {perfilAberto && <PerfilDialogo onClose={() => setPerfilAberto(false)} />}
+      {perfilAberto && <PerfilDialogo accent={accent} setAccent={setAccent} onClose={() => setPerfilAberto(false)} />}
     </>
   )
 }
