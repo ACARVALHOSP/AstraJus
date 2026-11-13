@@ -245,3 +245,47 @@ class ApagarUsuarioTest(_Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PerfilProprioTest(_Base):
+    FOTO = "data:image/jpeg;base64," + "QUJD" * 50
+
+    def test_get_traz_email_e_foto(self):
+        status, corpo = self.req("GET", "/responsaveis/me", None, "ope@teste.com")
+        self.assertEqual(status, 200)
+        self.assertEqual(corpo["usuario"]["foto"], "")
+        self.assertIn("email", corpo["usuario"])
+
+    def test_altera_nome_email_e_foto_so_do_proprio(self):
+        status, corpo = self.req("PATCH", "/responsaveis/me", {"nome_completo": "Operador Novo", "email": "novo@teste.com", "foto": self.FOTO}, "ope@teste.com")
+        self.assertEqual(status, 200, corpo)
+        self.assertEqual((corpo["usuario"]["nome_completo"], corpo["usuario"]["email"], corpo["usuario"]["foto"]),
+                         ("Operador Novo", "novo@teste.com", self.FOTO))
+        _, de_novo = self.req("GET", "/responsaveis/me", None, "ope@teste.com")
+        self.assertEqual(de_novo["usuario"]["nome_completo"], "Operador Novo")
+        # outro usuário não mudou
+        _, lista = self.req("GET", "/admin/usuarios/api")
+        bia = next(u for u in lista["usuarios"] if u["login"] == "bia@teste.com")
+        self.assertEqual(bia["nome_completo"], "Bia Lima")
+        # auditoria
+        _, hist = self.req("GET", "/admin/usuarios/historico")
+        self.assertTrue(any(h["acao"] == "perfil" and h["usuario"] == "ope@teste.com" for h in hist["historico"]))
+
+    def test_nao_mexe_em_nivel_status_ou_permissoes(self):
+        for campo in ({"nivel_acesso": "administrador"}, {"status": "ativo"}, {"permissoes": {}}, {"login": "x"}):
+            self.assertEqual(self.req("PATCH", "/responsaveis/me", campo, "ope@teste.com")[0], 400)
+
+    def test_validacoes(self):
+        for corpo in ({"nome_completo": " "}, {"email": "sem-arroba"}, {"email": ""}, {"email": "bia@teste.com"},
+                      {"foto": "http://x/y.png"}, {"foto": "data:text/html;base64,QUJD"}, {"foto": 5},
+                      {"foto": "data:image/png;base64," + "A" * 160_000}):
+            status, _ = self.req("PATCH", "/responsaveis/me", corpo, "ope@teste.com")
+            self.assertIn(status, (400, 413), corpo)
+
+    def test_remove_a_foto_e_quem_so_consulta_tambem_edita_o_proprio_perfil(self):
+        self.req("PATCH", "/responsaveis/me", {"foto": self.FOTO}, "ope@teste.com")
+        _, corpo = self.req("PATCH", "/responsaveis/me", {"foto": ""}, "ope@teste.com")
+        self.assertEqual(corpo["usuario"]["foto"], "")
+        usuarios_admin.alterar(self.registro, {"nivel_acesso": "consulta"}, "bootstrap", "cid@teste.com")
+        status, corpo = self.req("PATCH", "/responsaveis/me", {"nome_completo": "Cid Consulta"}, "cid@teste.com")
+        self.assertEqual((status, corpo["usuario"]["nome_completo"]), (200, "Cid Consulta"))

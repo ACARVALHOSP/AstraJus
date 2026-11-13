@@ -43,7 +43,7 @@ O frontend Radix (`/radix/`) é servido diretamente pelo Caddy a partir de `/srv
 
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/responsaveis/me` | Perfil do usuário autenticado |
+| GET, PATCH | `/responsaveis/me` | Perfil da pessoa conectada; PATCH altera só `nome_completo`, `email` e `foto` (data URL JPEG/PNG/WebP de até ~150 mil caracteres; `""` remove). Vale também para o nível Consulta |
 | GET | `/responsaveis` | Lista de responsáveis do escritório |
 
 **Contatos (clientes)**

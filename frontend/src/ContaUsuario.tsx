@@ -1,15 +1,13 @@
 import { useState } from 'react'
-import { Avatar, Badge, Box, Button, Dialog, DropdownMenu, Flex, Text } from '@radix-ui/themes'
+import { Box, DropdownMenu, Flex, Text } from '@radix-ui/themes'
 import { KeyRound, LogIn, LogOut, ShieldCheck, User } from 'lucide-react'
 import { ACCENTS, type AccentColor } from './aparencia'
 import { useCliente } from './api/ClienteContext'
 import { useNavegacao } from './api/NavegacaoContext'
-import { AREAS, usePerfil, type Grau } from './api/PerfilContext'
+import { usePerfil } from './api/PerfilContext'
+import PerfilDialogo from './PerfilDialogo'
 
 const NIVEIS: Record<string, string> = { administrador: 'Administrador', operador: 'Operador', consulta: 'Consulta' }
-const GRAUS: Record<Grau, { texto: string; cor: 'green' | 'blue' | 'gray' }> = {
-  editar: { texto: 'Pode editar', cor: 'green' }, ver: { texto: 'Só consulta', cor: 'blue' }, nenhum: { texto: 'Sem acesso', cor: 'gray' },
-}
 
 type Props = {
   aparencia: 'light' | 'dark'; setAparencia: (a: 'light' | 'dark') => void
@@ -21,7 +19,7 @@ type Props = {
 export default function ContaUsuario({ aparencia, setAparencia, accent, setAccent }: Props) {
   const { cliente, esquecer } = useCliente()
   const { irPara } = useNavegacao()
-  const { nome, nivel, abaPermitida } = usePerfil()
+  const { nome, nivel, foto, abaPermitida } = usePerfil()
   const [perfilAberto, setPerfilAberto] = useState(false)
   const conectado = Boolean(cliente)
   const rotulo = conectado ? (nome || 'Minha conta') : 'Conta'
@@ -31,7 +29,7 @@ export default function ContaUsuario({ aparencia, setAparencia, accent, setAccen
       <DropdownMenu.Root>
         <DropdownMenu.Trigger>
           <button type="button" className="aj-ib aj-conta-acionador" aria-label={`Menu da conta: ${rotulo}`} title={rotulo}>
-            <User size={18} aria-hidden="true" />
+            {conectado && foto ? <img src={foto} alt="" className="aj-conta-foto" /> : <User size={18} aria-hidden="true" />}
             <span className="aj-conta-nome">{rotulo}</span>
           </button>
         </DropdownMenu.Trigger>
@@ -75,47 +73,7 @@ export default function ContaUsuario({ aparencia, setAparencia, accent, setAccen
           )}
         </DropdownMenu.Content>
       </DropdownMenu.Root>
-      {perfilAberto && <DialogoPerfil onClose={() => setPerfilAberto(false)} />}
+      {perfilAberto && <PerfilDialogo onClose={() => setPerfilAberto(false)} />}
     </>
-  )
-}
-
-/** Dados da conta e o acesso de cada área. Somente leitura: nome, e-mail e nível mudam em Administração. */
-function DialogoPerfil({ onClose }: { onClose: () => void }) {
-  const { nome, login, nivel, permissoes } = usePerfil()
-  const administrador = nivel === 'administrador'
-  return (
-    <Dialog.Root open onOpenChange={aberto => { if (!aberto) onClose() }}>
-      <Dialog.Content maxWidth="480px">
-        <Dialog.Title>Meu perfil</Dialog.Title>
-        <Flex gap="3" align="center" mt="3">
-          <Avatar size="5" radius="full" fallback={(nome || login || '?').trim().charAt(0).toUpperCase()} />
-          <Flex direction="column">
-            <Text size="3" weight="bold">{nome || 'Sem nome cadastrado'}</Text>
-            <Text size="2" color="gray">Perfil de acesso: {nivel ? (NIVEIS[nivel] ?? nivel) : 'não informado'}</Text>
-          </Flex>
-        </Flex>
-        <Text as="p" size="2" weight="medium" mt="4" mb="2">Acesso por área</Text>
-        {administrador ? (
-          <Text as="p" size="2" color="gray">Administradores têm acesso completo a todas as áreas.</Text>
-        ) : (
-          <Flex direction="column" gap="2" asChild>
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-              {Object.entries(AREAS).map(([area, rotulo]) => {
-                const grau = (permissoes?.[area] ?? 'editar') as Grau
-                return (
-                  <li key={area}><Flex justify="between" align="center" gap="3">
-                    <Text size="2">{rotulo}</Text>
-                    <Badge color={GRAUS[grau].cor} variant="soft">{GRAUS[grau].texto}</Badge>
-                  </Flex></li>
-                )
-              })}
-            </ul>
-          </Flex>
-        )}
-        <Text as="p" size="1" color="gray" mt="4">{administrador ? 'Para alterar nome, e-mail ou acesso de alguém, use Administração, no menu da conta.' : 'Para alterar nome, e-mail ou acesso, peça a um administrador.'}</Text>
-        <Flex mt="4" justify="end"><Dialog.Close><Button variant="soft" color="gray">Fechar</Button></Dialog.Close></Flex>
-      </Dialog.Content>
-    </Dialog.Root>
   )
 }

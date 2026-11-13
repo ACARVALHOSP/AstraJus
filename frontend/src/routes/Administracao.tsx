@@ -21,10 +21,12 @@ import {
   TextField,
 } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
+import { useNavegacao } from '../api/NavegacaoContext'
 import { AREAS, usePerfil } from '../api/PerfilContext'
 import { formatarMoeda } from '../utils/formatadores'
 import { NIVEIS, PERFIS, aplicarPerfil, grauPadrao, perfilDe, type Grau } from './administracao/perfis'
 import { descreverCampos, haQuanto, lerValorHora, listarEmFrase, resumoVinculos, rotuloAcao, type Vinculos } from './administracao/formatos'
+import IntegracoesAdmin from './administracao/IntegracoesAdmin'
 import './administracao.scss'
 
 type Usuario = {
@@ -75,6 +77,12 @@ export default function Administracao() {
   const [alvoApagar, setAlvoApagar] = useState<AlvoApagar | null>(null)
   const [autoCarregando, setAutoCarregando] = useState(false)
   const [esperouPerfil, setEsperouPerfil] = useState(false)
+  const { consumirPayload } = useNavegacao()
+  // Links como #/administracao?aba=integracoes abrem direto na aba pedida.
+  const [abaAdmin, setAbaAdmin] = useState(() => {
+    const pedida = consumirPayload<{ aba?: string }>('administracao')?.aba
+    return pedida && ['usuarios', 'integracoes', 'banco', 'historico'].includes(pedida) ? pedida : 'usuarios'
+  })
   const tentouAuto = useRef(false)
   const CATEGORIAS_LIMPEZA: [string, string][] = [
     ['publicacoes', 'Publicações capturadas'],
@@ -240,9 +248,10 @@ export default function Administracao() {
         })}>Atualizar tudo</Button>
         {!sessaoDaConexao && <Button variant="ghost" size="2" disabled={ocupado} onClick={sair}>Encerrar administração</Button>}
       </div>
-      <Tabs.Root defaultValue="usuarios">
+      <Tabs.Root value={abaAdmin} onValueChange={setAbaAdmin}>
         <Tabs.List aria-label="Administração">
           <Tabs.Trigger value="usuarios">Usuários</Tabs.Trigger>
+          <Tabs.Trigger value="integracoes">Integrações</Tabs.Trigger>
           <Tabs.Trigger value="banco">Banco de dados</Tabs.Trigger>
           <Tabs.Trigger value="historico">Histórico administrativo</Tabs.Trigger>
         </Tabs.List>
@@ -291,6 +300,9 @@ export default function Administracao() {
             })}
             {!lista.length && <tr><td colSpan={tarifas ? 6 : 5}>Nenhum usuário encontrado.</td></tr>}
           </tbody></table></TabelaResponsiva></div>
+        </Tabs.Content>
+        <Tabs.Content value="integracoes">
+          <IntegracoesAdmin token={sessao} />
         </Tabs.Content>
         <Tabs.Content value="banco">
           <Heading as="h2" size="4" mt="4">Banco de dados</Heading>

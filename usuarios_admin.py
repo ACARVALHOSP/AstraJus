@@ -265,6 +265,49 @@ def alterar(registro, dados, ator, login=None):
     return {'usuario': publico(login, r), **({'token': token} if token else {})}
 
 
+FOTO_MAX_CHARS = 150_000  # ~110 KB de imagem; o navegador reduz a foto antes de enviar
+_FOTO_RE = re.compile(r'data:image/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}')
+
+
+def atualizar_perfil(registro, login, dados):
+    """Autoatendimento: a própria pessoa muda nome de exibição, e-mail e foto. Nível, status e permissões
+    não passam por aqui. `foto` aceita uma imagem pequena em data URL, ou '' para remover."""
+    from db import _abrir
+    if not isinstance(dados, dict) or set(dados) - {'nome_completo', 'email', 'foto'}:
+        raise ValueError('Campos de perfil inválidos.')
+    comuns = {k: dados[k] for k in ('nome_completo', 'email') if k in dados}
+    comuns = {k: v for k, v in validar(comuns).items()} if comuns else {}
+    if 'email' in comuns and not comuns['email']:
+        raise ValueError('Informe um e-mail.')
+    if 'foto' in dados:
+        foto = dados['foto']
+        if not isinstance(foto, str) or (foto and (len(foto) > FOTO_MAX_CHARS or not _FOTO_RE.fullmatch(foto))):
+            raise ValueError('Foto inválida. Use uma imagem JPEG, PNG ou WebP pequena.')
+    with registro._trava, _abrir(registro.caminho) as c, c:
+        c.execute('BEGIN IMMEDIATE')
+        row = c.execute('SELECT dados FROM usuarios WHERE nome=?', (login,)).fetchone()
+        if not row:
+            raise LookupError('Usuário não encontrado.')
+        anterior = json.loads(row[0])
+        r = completar(login, anterior)
+        r.update(comuns)
+        if 'foto' in dados:
+            r['foto'] = dados['foto'] or None
+        if r.get('email'):
+            if c.execute('SELECT 1 FROM usuarios WHERE lower(email)=lower(?) AND nome<>?', (r['email'], login)).fetchone():
+                raise ValueError('E-mail já utilizado por outro usuário.')
+        if anterior.get('email') != r.get('email'):
+            r['email_verificado_em'] = None
+        r['atualizado_em'] = agora()
+        r = gravar(c, login, r)
+        campos = sorted([k for k in ('nome_completo', 'email') if anterior.get(k) != r.get(k)]
+                        + (['foto'] if anterior.get('foto') != r.get('foto') else []))
+        if campos:
+            c.execute('INSERT INTO usuarios_auditoria (ocorrido_em, ator, usuario, acao, campos) VALUES (?, ?, ?, ?, ?)',
+                      (agora(), 'usuario:' + login, login, 'perfil', json.dumps(campos)))
+    return r
+
+
 def _tem_tabela(c, nome):
     return c.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (nome,)).fetchone() is not None
 

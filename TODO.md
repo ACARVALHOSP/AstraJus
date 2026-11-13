@@ -35,7 +35,7 @@ Restam ~26 arquivos com `buscarJson` direto. Ordem sugerida:
 ### Experiência de uso
 - [ ] **F** PWA: manifest, ícones e service worker simples (instalável, sem app nativo)
 - [ ] **F** Celular: barra de navegação inferior com ação central (nova atividade / novo processo)
-- [x] **F** Menu da conta em lista (Meu perfil, Administração para administradores, Acesso e token, tema e cor de destaque dentro, Sair); "Meu perfil" mostra o acesso por área. Pendências: editar nome e foto e preferências de notificação por tipo (exigem backend)
+- [x] **F** Menu da conta em lista (Meu perfil, Administração para administradores, Acesso e token, tema e cor de destaque dentro, Sair); "Meu perfil" mostra o acesso por área. "Meu perfil" edita foto (reduzida no navegador), nome de exibição e e-mail. Pendência: preferências de notificação por tipo
 - [ ] **F** Atalho para "ocultar valores" (olho) na Home e no Financeiro
 - [ ] **F** Linha do tempo única do processo (movimentações, publicações, atividades e vínculos em ordem cronológica)
 - [ ] **F** Checklist de "Configuração inicial" na Home (Google Drive, Google Agenda, Asaas, OAB para monitorar), com dica contextual curta por tela e "Guia de uso" em cada seção de Integrações
@@ -76,7 +76,7 @@ Restam ~26 arquivos com `buscarJson` direto. Ordem sugerida:
 - [ ] **B+F** Painel de saúde: disjuntores e cache do `/healthz`, resultado das rotinas (`/automacoes`) e botão "enviar e-mail de teste" para conferir o SMTP
 - [ ] **B+F** Perfil do escritório (nome, CNPJ, OAB, e-mails, endereço, logo), base para assinatura de e-mail, cabeçalho de PDFs e recibos
 - [ ] **B** Backup agendado e restauração (hoje só download manual)
-- [ ] **F** Reunir Integrações dentro da Administração (hoje em tela própria, mais o painel legado `/admin/integracoes`)
+- [x] **F** Integrações dentro da Administração (aba própria: lista de serviços, teste → ativação, desativar, ambiente do Asaas, Google; `#/integracoes` e a Central de risco levam para lá; "Minha agenda Google" foi para Meu perfil). Pendências: reCAPTCHA (desafio), reencriptação com a chave mestra e permissão de administrador de integrações continuam só no painel avançado `/admin/integracoes`; depois disso, aposentar o painel legado
 - [x] **B+F** Exclusão de usuário com confirmação (digitar APAGAR): processos, atividades e lançamentos ficam sem responsável; monitoramentos e notificações pessoais são removidos; horas mantidas. Pendência: usuário com Google Agenda sincronizada precisa desconectar antes
 
 ## Decidido não trazer (por enquanto)
