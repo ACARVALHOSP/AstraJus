@@ -10,6 +10,7 @@ import TabelaResponsiva from '../TabelaResponsiva'
 import { useCasos, useNomePessoa, useResponsaveis } from '../api/consultas'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
+import { useFiltrosUrl } from '../api/useFiltrosUrl'
 import { usePerfil } from '../api/PerfilContext'
 import { buscarJson, enviarJson } from '../api/rest'
 import { formatarDataSimples, formatarMoeda, formatarNomeExibicao } from '../utils/formatadores'
@@ -22,6 +23,8 @@ import {
 import './home/home-radix.css'
 
 const TODOS = '__todos__'
+const DATA = /^\d{4}-\d{2}-\d{2}$/
+const STATUS: StatusFiltro[] = ['todos', 'a_faturar', 'faturadas', 'nao_faturaveis']
 type Cronometro = { caso_id: string; caso_titulo: string | null; descricao: string | null; inicio: string }
 
 /** Horas por processo: lançamento manual, cronômetro, valor por hora, relatório e faturamento. */
@@ -35,7 +38,18 @@ export default function HorasPagina() {
   const podeFaturarNoFinanceiro = podeEditar('financeiro')
   const administrador = nivel === 'administrador'
 
-  const [filtros, setFiltros] = useState(() => ({ ...mesDe(new Date()), usuario: '', casoId: '', status: 'todos' as StatusFiltro }))
+  const [filtros, setFiltros] = useFiltrosUrl('horas',
+    { ...mesDe(new Date()), usuario: '', casoId: '', status: 'todos' as StatusFiltro },
+    {
+      fixos: ['de', 'ate'],
+      // O link pode ter sido montado à mão: data e situação fora do formato voltam ao padrão.
+      normalizar: f => ({
+        ...f,
+        de: f.de === '' || DATA.test(f.de) ? f.de : mesDe(new Date()).de,
+        ate: f.ate === '' || DATA.test(f.ate) ? f.ate : mesDe(new Date()).ate,
+        status: STATUS.includes(f.status) ? f.status : 'todos',
+      }),
+    })
   const [selecionadas, setSelecionadas] = useState<Set<number>>(new Set())
   const [dialogo, setDialogo] = useState<null | 'lancar' | 'cronometro' | 'faturar' | 'tarifas'>(null)
   const [emEdicao, setEmEdicao] = useState<Horas | null>(null)
