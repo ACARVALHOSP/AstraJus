@@ -2,23 +2,39 @@
 
 Não importa o `server` (não precisa do MCP): se o núcleo ainda não estiver vinculado, usa um
 substituto mínimo de `_html_para_texto`/`_sem_acento_cjpg`, que é só o que o parser usa.
-Casos marcados com `expectedFailure` documentam limitações conhecidas das regex: ao corrigir a
-heurística, o teste passa a "passar inesperadamente" e a marca deve ser removida.
+Limitações conhecidas das regex entram aqui como `expectedFailure`; ao corrigir a heurística o teste
+passa a "passar inesperadamente" e a marca deve ser removida.
 """
+import asyncio
 import html
+import json
+import os
 import re
 import statistics
+import tempfile
 import unicodedata
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from modulos.jurimetria import servico
 from modulos.nucleo import nucleo
 
 
 class _NucleoFalso:
+    log = mock.MagicMock()
+
     @staticmethod
     def _html_para_texto(conteudo):
         return html.unescape(re.sub(r"<[^>]+>", "", conteudo or ""))
+
+    @staticmethod
+    def _data_tjsp(data):
+        return data or ""
+
+    @staticmethod
+    def _erro(mensagem):
+        return {"erro": True, "mensagem": mensagem}
 
     @staticmethod
     def _sem_acento_cjpg(texto):
@@ -93,17 +109,56 @@ class ClassificarDesfecho(unittest.TestCase):
     def test_sem_nenhuma_expressao_devolve_none(self):
         self.assertIsNone(self.classificar(sentenca("Ante o exposto, determino a remessa ao arquivo.")))
 
-    @unittest.expectedFailure
-    def test_limitacao_procedente_em_parte(self):
+    def test_procedente_em_parte_e_parcial(self):
         self.assertEqual(self.classificar(sentenca("Ante o exposto, julgo procedente em parte o pedido.")), "parcial")
 
-    @unittest.expectedFailure
-    def test_limitacao_extingo_o_processo(self):
+    def test_extingo_o_processo_e_extinto(self):
         self.assertEqual(self.classificar(sentenca("Ante o exposto, extingo o processo sem resolução do mérito.")), "extinto")
 
-    @unittest.expectedFailure
-    def test_limitacao_homologo_desistencia_nao_e_acordo(self):
+    def test_homologo_desistencia_nao_e_acordo(self):
         self.assertEqual(self.classificar(sentenca("Ante o exposto, homologo a desistência e julgo extinto o processo.")), "extinto")
+
+    def test_variacoes_de_parcial(self):
+        for dispositivo in (
+            "Ante o exposto, JULGO PROCEDENTES EM PARTE os pedidos.",
+            "Ante o exposto, julgo parcialmente procedentes os pedidos.",
+            "Ante o exposto, acolho em parte o pedido inicial.",
+        ):
+            with self.subTest(dispositivo):
+                self.assertEqual(self.classificar(sentenca(dispositivo)), "parcial")
+
+    def test_variacoes_de_extinto(self):
+        for dispositivo in (
+            "Ante o exposto, extingo o processo, sem resolução do mérito, nos termos do art. 485, I, do CPC.",
+            "Ante o exposto, EXTINGO O FEITO por falta de interesse.",
+            "Ante o exposto, declaro extinto o processo.",
+            "Ante o exposto, homologo a desistência da ação.",
+            "Ante o exposto, homologo o pedido de desistência e extingo o processo.",
+            "Ante o exposto, homologo a renúncia ao direito em que se funda a ação.",
+        ):
+            with self.subTest(dispositivo):
+                self.assertEqual(self.classificar(sentenca(dispositivo)), "extinto")
+
+    def test_variacoes_de_acordo_continuam_acordo(self):
+        for dispositivo in (
+            "Ante o exposto, homologo o acordo celebrado entre as partes.",
+            "Ante o exposto, HOMOLOGO, por sentença, para que produza seus jurídicos e legais efeitos, a transação.",
+            "Ante o exposto, homologo o acordo e extingo o processo, com resolução do mérito, art. 487, III, b.",
+        ):
+            with self.subTest(dispositivo):
+                self.assertEqual(self.classificar(sentenca(dispositivo)), "acordo")
+
+    def test_extingo_depois_do_julgamento_nao_muda_o_desfecho(self):
+        # a fórmula padrão "extingo o processo com resolução do mérito" vem depois do "julgo ..."
+        texto = sentenca("Ante o exposto, julgo procedente o pedido. Extingo o processo com resolução do mérito, art. 487, I.")
+        self.assertEqual(self.classificar(texto), "procedente")
+        texto = sentenca("Ante o exposto, julgo improcedente o pedido. Extingo o processo com resolução do mérito, art. 487, I.")
+        self.assertEqual(self.classificar(texto), "improcedente")
+
+    def test_rejeito_os_pedidos_e_improcedente(self):
+        self.assertEqual(self.classificar(sentenca("Ante o exposto, rejeito os pedidos formulados na inicial.")), "improcedente")
+        # "rejeito a preliminar" não é desfecho
+        self.assertIsNone(self.classificar(sentenca("Ante o exposto, rejeito a preliminar de ilegitimidade.")))
 
 
 class ExtrairValorCondenacao(unittest.TestCase):
@@ -162,13 +217,40 @@ class ExtrairValorCondenacao(unittest.TestCase):
         texto = "danos morais R$ 9.999,00 " + ("x" * 4000) + " fim"
         self.assertIsNone(self.valor(texto))
 
-    @unittest.expectedFailure
-    def test_limitacao_valor_sem_centavos(self):
+    def test_valor_sem_centavos(self):
         self.assertEqual(self.valor(sentenca("Ante o exposto, danos morais de R$ 5.000.")), 5000.0)
 
-    @unittest.expectedFailure
-    def test_limitacao_valor_por_extenso_com_mil(self):
+    def test_valor_com_mil(self):
         self.assertEqual(self.valor(sentenca("Ante o exposto, danos morais de R$ 10 mil.")), 10000.0)
+
+    def test_formatos_de_valor(self):
+        casos = {
+            "R$ 5.000": 5000.0,
+            "R$5000": 5000.0,
+            "R$ 5.000,50": 5000.5,
+            "R$ 800,00": 800.0,
+            "R$ 1.234.567,89": 1234567.89,
+            "R$ 10 mil": 10000.0,
+            "R$ 10 MIL": 10000.0,
+            "R$ 1,5 mil": 1500.0,
+            "R$ 2 milhões": 2000000.0,
+            "R$ 1,5 milhão": 1500000.0,
+        }
+        for texto_valor, esperado in casos.items():
+            with self.subTest(texto_valor):
+                texto = sentenca(f"Ante o exposto, condeno a ré ao pagamento de {texto_valor} por danos morais.")
+                self.assertEqual(self.valor(texto), esperado)
+
+    def test_ponto_final_apos_o_valor_nao_vira_decimal(self):
+        self.assertEqual(self.valor(sentenca("Ante o exposto, danos morais de R$ 5.000. Custas pela ré.")), 5000.0)
+        self.assertEqual(self.valor(sentenca("Ante o exposto, danos morais de R$ 5.000,00. Custas pela ré.")), 5000.0)
+
+    def test_valor_sem_centavos_longe_de_moral_continua_ignorado(self):
+        self.assertIsNone(self.valor(sentenca("Ante o exposto, condeno a ré à restituição de R$ 1.500 em dobro.")))
+
+    def test_mil_so_vale_quando_colado_ao_valor(self):
+        # "mil" de outra frase não multiplica: aqui o valor é 5.000 e "milhares" vem depois
+        self.assertEqual(self.valor(sentenca("Ante o exposto, danos morais de R$ 5.000 e milhares de juros.")), 5000.0)
 
 
 def bloco_resultado(numero="1001234-56.2024.8.26.0100", teor_oculto="", **campos):
@@ -297,6 +379,161 @@ class EstatisticaDaAmostra(unittest.TestCase):
         self.assertIn("pequena", servico._avisos_amostra(12, "casos")[0])
         self.assertNotIn("muito", servico._avisos_amostra(12, "casos")[0])
         self.assertEqual(servico._avisos_amostra(servico.CJPG_AMOSTRA_MINIMA, "casos"), [])
+
+
+class ArvoresEmDisco(unittest.TestCase):
+    """Cache das árvores (vara/classe/assunto/magistrado): leitura, lista embutida, download sob demanda."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        patcher = mock.patch.dict(os.environ, {"CNJ_MCP_ARVORES_CJPG_DIR": self.dir})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        servico._CACHE_ARVORES_CJPG.clear()
+        self.addCleanup(servico._CACHE_ARVORES_CJPG.clear)
+
+    def arquivo(self, campo):
+        return Path(self.dir) / f"{campo}.json"
+
+    def test_magistrado_usa_a_lista_embutida_quando_nao_ha_cache(self):
+        lista = servico._carregar_arvore_cjpg("magistrado")
+        self.assertGreater(len(lista), 1000)
+        self.assertEqual(set(lista[0]), {"codigo", "nome"})
+        self.assertTrue(all(m["codigo"] and m["nome"].strip() not in ("", ".") for m in lista))
+        self.assertEqual(len({m["codigo"] for m in lista}), len(lista))  # sem códigos repetidos
+
+    def test_cache_do_servidor_tem_prioridade_sobre_a_lista_embutida(self):
+        self.arquivo("magistrado").write_text(json.dumps([{"codigo": "1", "nome": "Fulano"}]), encoding="utf-8")
+        self.assertEqual(servico._carregar_arvore_cjpg("magistrado"), [{"codigo": "1", "nome": "Fulano"}])
+
+    def test_arquivo_vazio_ou_corrompido_cai_na_lista_embutida(self):
+        for conteudo in ("[]", "{nao e json", '{"objeto": 1}'):
+            with self.subTest(conteudo):
+                servico._CACHE_ARVORES_CJPG.clear()
+                self.arquivo("magistrado").write_text(conteudo, encoding="utf-8")
+                self.assertGreater(len(servico._carregar_arvore_cjpg("magistrado")), 1000)
+
+    def test_arvore_sem_arquivo_fica_vazia_e_nao_entra_no_cache(self):
+        self.assertEqual(servico._carregar_arvore_cjpg("vara"), [])
+        self.assertNotIn("vara", servico._CACHE_ARVORES_CJPG)
+
+    def test_atualizar_nao_sobrescreve_arquivo_existente_com_lista_vazia(self):
+        existente = [{"codigo": "9", "nome": "Beltrano"}]
+        self.arquivo("magistrado").write_text(json.dumps(existente), encoding="utf-8")
+
+        async def baixar(campo):
+            return [] if campo == "magistrado" else [{"id": "1", "pai": None, "nome": campo, "busca": campo, "folha": True}]
+
+        with mock.patch.object(servico, "_baixar_arvore_cjpg", baixar):
+            resumo = asyncio.run(servico.atualizar_arvores_cjpg())
+        self.assertEqual(resumo, {"vara": 1, "classe": 1, "assunto": 1, "magistrado": 0})
+        self.assertEqual(json.loads(self.arquivo("magistrado").read_text(encoding="utf-8")), existente)
+        self.assertEqual(len(json.loads(self.arquivo("vara").read_text(encoding="utf-8"))), 1)
+        self.assertFalse(list(Path(self.dir).glob("*.tmp")))  # nenhum temporário esquecido
+
+    def test_garantir_baixa_uma_vez_quando_falta_e_nao_repete_quando_ja_existe(self):
+        chamadas = []
+
+        async def baixar(campo):
+            chamadas.append(campo)
+            return [{"id": "1", "pai": None, "nome": "1ª Vara Cível", "busca": "1ª vara cível", "folha": True}]
+
+        async def duas_vezes():
+            await asyncio.gather(servico._garantir_arvore_cjpg("vara"), servico._garantir_arvore_cjpg("vara"))
+            await servico._garantir_arvore_cjpg("vara")
+
+        with mock.patch.object(servico, "_baixar_arvore_cjpg", baixar):
+            asyncio.run(duas_vezes())
+        self.assertEqual(chamadas, ["vara"])
+        self.assertEqual(servico._buscar_arvore_cjpg("vara", "VARA civel")[0]["id"], "1")
+
+    def test_garantir_tolera_falha_do_download(self):
+        async def baixar(campo):
+            raise RuntimeError("e-SAJ fora do ar")
+
+        with mock.patch.object(servico, "_baixar_arvore_cjpg", baixar):
+            asyncio.run(servico._garantir_arvore_cjpg("classe"))  # não propaga
+        self.assertEqual(servico._carregar_arvore_cjpg("classe"), [])
+        self.assertFalse(self.arquivo("classe").exists())
+
+
+def decisao(desfecho, valor=None):
+    return {"desfecho": desfecho, "valor_condenacao": valor, "numero_processo": "1"}
+
+
+class PerfilEComparacaoComUniverso(unittest.TestCase):
+    def test_perfil_de_taxas_intervalo_e_valor(self):
+        itens = [decisao("procedente", 4000.0)] * 3 + [decisao("improcedente")] + [decisao(None)]
+        perfil = servico._perfil_de(itens)
+        self.assertEqual((perfil["total_classificados"], perfil["nao_classificados"]), (4, 1))
+        self.assertEqual(perfil["taxa_procedente"], 0.75)
+        self.assertEqual(perfil["taxa_extinto"], 0.0)
+        baixo, alto = perfil["ic_procedente"]
+        self.assertLess(baixo, 0.75)
+        self.assertGreater(alto, 0.75)
+        self.assertEqual((perfil["com_valor_extraido"], perfil["valor_mediano_indenizacao"]), (3, 4000.0))
+
+    def test_perfil_de_lista_vazia(self):
+        perfil = servico._perfil_de([])
+        self.assertIsNone(perfil["taxa_procedente"])
+        self.assertIsNone(perfil["ic_procedente"])
+        self.assertIsNone(perfil["valor_mediano_indenizacao"])
+
+    def chamar(self, buscas, **kwargs):
+        """Executa a ferramenta com a busca simulada; `buscas` é uma lista de respostas, uma por busca."""
+        chamadas = []
+
+        async def falsa(params, paginas, ignorar_cache=False):
+            chamadas.append((dict(params), paginas))
+            resposta = buscas[len(chamadas) - 1]
+            if isinstance(resposta, Exception):
+                raise resposta
+            return resposta
+
+        with mock.patch.object(servico, "_cjpg_executar_busca", falsa):
+            resultado = asyncio.run(servico.perfil_decisorio_magistrado(**kwargs))
+        return resultado, chamadas
+
+    def test_compara_com_o_universo_sem_o_magistrado(self):
+        juiz = (10, [decisao("procedente")] * 4, [])
+        universo = (500, [decisao("procedente")] * 2 + [decisao("improcedente")] * 2, [])
+        resultado, chamadas = self.chamar(
+            [juiz, universo], magistrado_codigo="123", magistrado_nome="Fulano", termo="dano moral", paginas=10,
+        )
+        self.assertEqual(len(chamadas), 2)
+        params_juiz, params_universo = chamadas[0][0], chamadas[1][0]
+        self.assertEqual(params_juiz["cdAgente"], "123")
+        self.assertIn("Fulano", params_juiz["dadosConsulta.pesquisaLivre"])
+        self.assertNotIn("cdAgente", params_universo)
+        self.assertNotIn("agenteSelectedEntitiesList", params_universo)
+        self.assertEqual(params_universo["dadosConsulta.pesquisaLivre"], "dano moral")  # sem o nome do juiz
+        self.assertEqual(chamadas[1][1], servico.CJPG_PAGINAS_UNIVERSO)  # limitado a 5 páginas
+        baseline = resultado["perfil"]["baseline"]
+        self.assertEqual(resultado["perfil"]["taxa_procedente"], 1.0)
+        self.assertEqual(baseline["taxa_procedente"], 0.5)
+        self.assertEqual(baseline["buscados"], 4)
+        self.assertIn("escopo", baseline)
+
+    def test_sem_recorte_nao_busca_universo(self):
+        resultado, chamadas = self.chamar([(1, [decisao("procedente")], [])], magistrado_nome="Fulano")
+        self.assertEqual(len(chamadas), 1)
+        self.assertIn("indisponivel", resultado["perfil"]["baseline"])
+
+    def test_pode_desligar_a_comparacao(self):
+        resultado, chamadas = self.chamar(
+            [(1, [decisao("procedente")], [])], magistrado_nome="Fulano", termo="x", comparar_com_universo=False,
+        )
+        self.assertEqual(len(chamadas), 1)
+        self.assertNotIn("baseline", resultado["perfil"])
+
+    def test_falha_na_busca_do_universo_nao_derruba_o_perfil(self):
+        resultado, _ = self.chamar(
+            [(1, [decisao("procedente")], []), ValueError("bloqueio do e-SAJ")],
+            magistrado_codigo="123", assunto_codigo="9",
+        )
+        self.assertFalse(resultado.get("erro"))
+        self.assertEqual(resultado["perfil"]["taxa_procedente"], 1.0)
+        self.assertIn("bloqueio do e-SAJ", resultado["perfil"]["baseline"]["indisponivel"])
 
 
 if __name__ == "__main__":

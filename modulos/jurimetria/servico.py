@@ -128,29 +128,73 @@ async def _baixar_arvore_cjpg(campo: str) -> list[dict]:
 
 
 async def atualizar_arvores_cjpg() -> dict:
-    """Baixa e salva as 4 árvores de referência do CJPG. Usado pelo comando --atualizar-arvores-cjpg."""
+    """Baixa e salva as 4 árvores de referência do CJPG. Usado pelo comando --atualizar-arvores-cjpg.
+
+    Um campo que voltar vazio não sobrescreve o arquivo que já existe (ex.: a lista de magistrados,
+    que o e-SAJ só entrega a um navegador, não é baixável por HTTP simples)."""
     destino = _dir_arvores_cjpg()
     resumo = {}
     for campo in ("vara", "classe", "assunto", "magistrado"):
         registros = await _baixar_arvore_cjpg(campo)
-        arquivo = destino / f"{campo}.json"
-        arquivo.write_text(json.dumps(registros, ensure_ascii=False), encoding="utf-8")
         resumo[campo] = len(registros)
+        if registros:
+            _gravar_arvore_cjpg(destino / f"{campo}.json", registros)
     (destino / "atualizado_em.txt").write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+    _CACHE_ARVORES_CJPG.clear()
     return resumo
 
 
+def _gravar_arvore_cjpg(arquivo: Path, registros: list[dict]) -> None:
+    temporario = arquivo.with_suffix(".json.tmp")  # troca atômica: nunca deixa um arquivo pela metade
+    temporario.write_text(json.dumps(registros, ensure_ascii=False), encoding="utf-8")
+    temporario.replace(arquivo)
+
+
 _CACHE_ARVORES_CJPG: dict[str, list[dict]] = {}
+# Lista de magistrados que acompanha o código: o e-SAJ só a entrega a um navegador (a grade é montada
+# por JavaScript), então o download HTTP devolve 0 registros. Gerada por scripts/coletar_magistrados_cjpg.js.
+_SEMENTE_MAGISTRADOS_CJPG = Path(__file__).parent / "dados" / "magistrado.json"
+
+
+def _ler_lista_json(arquivo: Path) -> list[dict]:
+    try:
+        dados = json.loads(arquivo.read_text(encoding="utf-8")) if arquivo.is_file() else []
+    except (OSError, ValueError):
+        nucleo.log.exception("Árvore do CJPG ilegível: %s", arquivo)
+        return []
+    return dados if isinstance(dados, list) else []
 
 
 def _carregar_arvore_cjpg(campo: str) -> list[dict]:
-    if campo not in _CACHE_ARVORES_CJPG:
-        arquivo = _dir_arvores_cjpg() / f"{campo}.json"
-        if arquivo.is_file():
-            _CACHE_ARVORES_CJPG[campo] = json.loads(arquivo.read_text(encoding="utf-8"))
-        else:
-            _CACHE_ARVORES_CJPG[campo] = []
-    return _CACHE_ARVORES_CJPG[campo]
+    if _CACHE_ARVORES_CJPG.get(campo):
+        return _CACHE_ARVORES_CJPG[campo]
+    registros = _ler_lista_json(_dir_arvores_cjpg() / f"{campo}.json")
+    if not registros and campo == "magistrado":
+        registros = _ler_lista_json(_SEMENTE_MAGISTRADOS_CJPG)
+    if registros:  # lista vazia não fica em cache: assim o download automático é percebido logo
+        _CACHE_ARVORES_CJPG[campo] = registros
+    return registros
+
+
+_TRAVA_ARVORES_CJPG = asyncio.Lock()
+
+
+async def _garantir_arvore_cjpg(campo: str) -> None:
+    """Baixa a árvore (vara/classe/assunto) se ainda não existir neste servidor, em vez de devolver
+    sempre vazio até alguém rodar --atualizar-arvores-cjpg (o cache se perde se o container for recriado)."""
+    if _carregar_arvore_cjpg(campo):
+        return
+    async with _TRAVA_ARVORES_CJPG:
+        if _carregar_arvore_cjpg(campo):  # outra requisição já baixou enquanto esperávamos
+            return
+        try:
+            registros = await _baixar_arvore_cjpg(campo)
+        except Exception:
+            nucleo.log.exception("Falha ao baixar a árvore '%s' do CJPG (seguindo sem ela)", campo)
+            return
+        if registros:
+            _gravar_arvore_cjpg(_dir_arvores_cjpg() / f"{campo}.json", registros)
+            _CACHE_ARVORES_CJPG.pop(campo, None)
 
 
 def _filhos_arvore_cjpg(campo: str, no_pai: str | None) -> list[dict]:
@@ -183,6 +227,7 @@ async def _arvore_filhos_http(scope, send) -> None:
         await nucleo._json(send, 400, {"erro": f"campo inválido: use um entre {sorted(_CAMPOS_ARVORE_CJPG)}."})
         return
     no_pai = query.get("no") or None
+    await _garantir_arvore_cjpg(campo)
     await nucleo._json(send, 200, {"filhos": _filhos_arvore_cjpg(campo, no_pai)})
 
 
@@ -196,6 +241,7 @@ async def _arvore_buscar_http(scope, send) -> None:
     if len(termo) < 2:
         await nucleo._json(send, 400, {"erro": "informe ao menos 2 caracteres em q."})
         return
+    await _garantir_arvore_cjpg(campo)
     await nucleo._json(send, 200, {"resultados": _buscar_arvore_cjpg(campo, termo)})
 
 
@@ -256,12 +302,19 @@ def _avisos_amostra(n: int, rotulo: str) -> list[str]:
 CJPG_MARCADORES_DISPOSITIVO = [
     "ante o exposto", "diante do exposto", "posto isso", "isto posto", "pelo exposto", "do exposto",
 ]
+# Ordem importa só no empate de posição (vence a primeira da lista): "julgo procedente em parte" casa
+# com parcial e com procedente na mesma posição e deve ser parcial; "homologo a desistência" é extinção,
+# não acordo. Fora o empate, vence a expressão que aparece primeiro no dispositivo.
 CJPG_PALAVRAS_DESFECHO = [
-    ("parcial", r"julgo\s+parcialmente\s+procedente"),
-    ("procedente", r"julgo\s+procedente"),
-    ("improcedente", r"julgo\s+improcedente"),
+    ("parcial", r"julgo\s+(?:parcialmente\s+procedentes?|procedentes?\s+em\s+parte)"),
+    ("parcial", r"acolho\s+em\s+parte"),
+    ("procedente", r"julgo\s+procedentes?"),
+    ("improcedente", r"julgo\s+improcedentes?"),
+    ("improcedente", r"rejeito\s+(?:os\s+|o\s+)?pedidos?"),
+    ("extinto", r"homologo\s+(?:o\s+pedido\s+de\s+|a\s+)?(?:desist|ren[uú]nc)"),
     ("acordo", r"homologo"),
-    ("extinto", r"julgo\s+extint[ao]"),
+    ("extinto", r"(?:julgo|declaro)\s+extint[ao]s?"),
+    ("extinto", r"extingo\s+(?:o\s+|a\s+)?(?:processo|feito|execu[cç][aã]o|cumprimento|a[cç][aã]o)"),
 ]
 
 
@@ -285,6 +338,24 @@ def _cjpg_classificar_desfecho(inteiro_teor: str | None) -> str | None:
     return melhor_categoria
 
 
+# Valor em reais: "R$ 5.000,00", "R$ 5.000", "R$5000", "R$ 10 mil", "R$ 1,5 milhão".
+_RE_VALOR_REAIS = re.compile(
+    r"R\$\s*(?P<inteiro>\d{1,3}(?:\.\d{3})+|\d+)(?:,(?P<dec>\d{1,2}))?"
+    r"(?:\s*(?P<mult>mil\b|milh(?:ão|ões|ao|oes)\b))?",
+    re.IGNORECASE,
+)
+
+
+def _cjpg_valor_do_match(m: re.Match) -> float:
+    valor = float(m.group("inteiro").replace(".", "") + ("." + m.group("dec") if m.group("dec") else ""))
+    mult = (m.group("mult") or "").lower()
+    if mult == "mil":
+        valor *= 1_000
+    elif mult:
+        valor *= 1_000_000
+    return valor
+
+
 def _cjpg_extrair_valor_condenacao(inteiro_teor: str | None) -> float | None:
     """Extrai o valor de condenação por dano moral do dispositivo. Heurística: pega o valor em
     R$ mais próximo textualmente de "moral"/"morais" (plural irregular - não é só sufixo "s"),
@@ -298,7 +369,7 @@ def _cjpg_extrair_valor_condenacao(inteiro_teor: str | None) -> float | None:
     regiao_lower = regiao.lower()
 
     melhor_valor, melhor_dist = None, None
-    for m in re.finditer(r"R\$\s*([\d.]+,\d{2})", regiao):
+    for m in _RE_VALOR_REAIS.finditer(regiao):
         pos_valor = m.start()
         dists = [abs(mm.start() - pos_valor) for mm in re.finditer(r"mora(?:l|is)", regiao_lower)]
         if not dists:
@@ -307,10 +378,8 @@ def _cjpg_extrair_valor_condenacao(inteiro_teor: str | None) -> float | None:
         if dist > CJPG_DISTANCIA_MAX_VALOR:
             continue
         if melhor_dist is None or dist < melhor_dist:
-            melhor_valor, melhor_dist = m.group(1), dist
-    if melhor_valor is None:
-        return None
-    return float(melhor_valor.replace(".", "").replace(",", "."))
+            melhor_valor, melhor_dist = _cjpg_valor_do_match(m), dist
+    return melhor_valor
 
 
 def _cjpg_parsear_resultados(html: str) -> list[dict]:
@@ -576,6 +645,53 @@ async def consultar_jurimetria_cjpg(
         return nucleo._erro(f"Erro inesperado ao consultar o CJPG: {exc}")
 
 CJPG_CATEGORIAS_DESFECHO = ["procedente", "parcial", "improcedente", "acordo", "extinto"]
+CJPG_PAGINAS_UNIVERSO = 5  # a comparação não precisa da mesma amostra: limita o tempo extra da 2ª busca
+
+
+def _perfil_de(resultados: list[dict]) -> dict[str, Any]:
+    """Taxas de desfecho (com intervalo de Wilson) e valor típico de indenização de uma lista de decisões."""
+    classificados = [r for r in resultados if r["desfecho"] is not None]
+    contagens = Counter(r["desfecho"] for r in classificados)
+    total_classificados = len(classificados)
+    perfil: dict[str, Any] = {
+        "total_classificados": total_classificados,
+        "nao_classificados": len(resultados) - total_classificados,
+    }
+    for categoria in CJPG_CATEGORIAS_DESFECHO:
+        quantos = contagens.get(categoria, 0)
+        perfil[f"taxa_{categoria}"] = quantos / total_classificados if total_classificados else None
+        ic = _intervalo_wilson(quantos, total_classificados)
+        perfil[f"ic_{categoria}"] = list(ic) if ic else None
+    valores = [
+        r["valor_condenacao"] for r in classificados
+        if r["desfecho"] in ("procedente", "parcial") and r["valor_condenacao"] is not None
+    ]
+    perfil["com_valor_extraido"] = len(valores)
+    # mediana (robusta a outliers) é a medida principal; a média fica por compatibilidade
+    perfil["valor_mediano_indenizacao"] = statistics.median(valores) if valores else None
+    perfil["valor_medio_indenizacao"] = statistics.mean(valores) if valores else None
+    return perfil
+
+
+async def _perfil_do_universo(params_base: dict, paginas: int, ignorar_cache: bool) -> dict[str, Any]:
+    """Perfil de TODOS os juízes com os mesmos filtros (sem o magistrado), para servir de referência.
+    Nunca derruba a consulta principal: se a 2ª busca falhar, devolve {"indisponivel": motivo}."""
+    try:
+        _, todos, avisos = await _cjpg_executar_busca(params_base, min(paginas, CJPG_PAGINAS_UNIVERSO), ignorar_cache)
+    except (ValueError, httpx.HTTPError) as exc:
+        return {"indisponivel": f"Não foi possível buscar o universo para comparação: {exc}"}
+    universo = _perfil_de(todos)
+    universo["buscados"] = len(todos)
+    universo["escopo"] = (
+        "Decisões de todos os juízes do TJSP com o mesmo termo, classe, assunto, vara e período "
+        "(as mais recentes da busca)."
+    )
+    aviso = _avisos_amostra(universo["total_classificados"], "decisões classificadas")
+    if avisos:
+        aviso += avisos
+    if aviso:
+        universo["aviso"] = " ".join(aviso)
+    return universo
 
 
 @ferramenta
@@ -590,6 +706,7 @@ async def perfil_decisorio_magistrado(
     data_fim: str | None = None,
     paginas: int = 1,
     ignorar_cache: bool = False,
+    comparar_com_universo: bool = True,
 ) -> dict:
     """Busca julgados de 1º grau do TJSP (CJPG, scraping - sem API oficial, best-effort) de um
     magistrado específico e monta um perfil decisório: taxa de procedência/improcedência/parcial,
@@ -614,6 +731,9 @@ async def perfil_decisorio_magistrado(
       vez de descartado.
     - ignorar_cache: True força nova busca no e-SAJ. Por padrão, uma consulta idêntica feita nos
       últimos 7 dias é respondida do cache (com um aviso informando a data da consulta original).
+    - comparar_com_universo: True (padrão) faz uma 2ª busca, sem o magistrado e com no máximo 5
+      páginas, e devolve em `perfil.baseline` as taxas de todos os juízes com os mesmos filtros, para
+      dar referência ao perfil. Só roda se houver termo, classe, assunto ou vara informados.
 
     Limitações conhecidas:
     - O CJPG tem um teto de ~10.000 resultados por consulta (limite do índice de busca do TJSP);
@@ -656,32 +776,23 @@ async def perfil_decisorio_magistrado(
         except ValueError as exc:
             return nucleo._erro(str(exc))
 
-        classificados = [r for r in todos if r["desfecho"] is not None]
-        contagens = Counter(r["desfecho"] for r in classificados)
-        total_classificados = len(classificados)
-
-        perfil: dict[str, Any] = {
-            "total_classificados": total_classificados,
-            "nao_classificados": len(todos) - total_classificados,
-        }
-        for categoria in CJPG_CATEGORIAS_DESFECHO:
-            quantos = contagens.get(categoria, 0)
-            perfil[f"taxa_{categoria}"] = quantos / total_classificados if total_classificados else None
-            ic = _intervalo_wilson(quantos, total_classificados)
-            perfil[f"ic_{categoria}"] = list(ic) if ic else None
-
-        valores = [
-            r["valor_condenacao"] for r in classificados
-            if r["desfecho"] in ("procedente", "parcial") and r["valor_condenacao"] is not None
-        ]
-        perfil["com_valor_extraido"] = len(valores)
-        # mediana (robusta a outliers) é a medida principal; a média fica por compatibilidade
-        perfil["valor_mediano_indenizacao"] = statistics.median(valores) if valores else None
-        perfil["valor_medio_indenizacao"] = statistics.mean(valores) if valores else None
-
-        avisos_perfil = _avisos_amostra(total_classificados, "decisões classificadas")
+        perfil = _perfil_de(todos)
+        avisos_perfil = _avisos_amostra(perfil["total_classificados"], "decisões classificadas")
         avisos_perfil.append(CJPG_AVISO_VIES)
         perfil["aviso"] = " ".join(avisos_perfil)
+
+        if comparar_com_universo:
+            if not ((termo or "").strip() or classe_codigo or assunto_codigo or vara_codigo):
+                perfil["baseline"] = {
+                    "indisponivel": "Para comparar com a média, informe um assunto/termo, uma classe ou uma vara.",
+                }
+            else:
+                params_universo = {
+                    chave: valor for chave, valor in params.items()
+                    if chave not in ("cdAgente", "agenteSelectedEntitiesList")
+                }
+                params_universo["dadosConsulta.pesquisaLivre"] = (termo or "").strip()
+                perfil["baseline"] = await _perfil_do_universo(params_universo, paginas, ignorar_cache)
 
         return {
             "total_servidor": total_servidor,
