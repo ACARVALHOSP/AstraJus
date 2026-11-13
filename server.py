@@ -138,8 +138,7 @@ def _cliente(timeout: float, **kwargs) -> httpx.AsyncClient:
 
 
 def _datajud_api_key() -> str:
-    if _COFRE_INTEGRACOES:
-        return _config_integracao("DATAJUD_API_KEY", "").strip()
+    # Chave vazia no cofre (ex.: env DATAJUD_API_KEY= vazia) geraria "APIKey " e erro de header.
     return _config_integracao("DATAJUD_API_KEY", "").strip() or DATAJUD_API_KEY_PADRAO
 
 
