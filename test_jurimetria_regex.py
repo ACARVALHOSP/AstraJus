@@ -29,6 +29,14 @@ class _NucleoFalso:
         return html.unescape(re.sub(r"<[^>]+>", "", conteudo or ""))
 
     @staticmethod
+    def _data_tjsp(data):
+        return data or ""
+
+    @staticmethod
+    def _erro(mensagem):
+        return {"erro": True, "mensagem": mensagem}
+
+    @staticmethod
     def _sem_acento_cjpg(texto):
         nfkd = unicodedata.normalize("NFD", texto or "")
         return "".join(c for c in nfkd if unicodedata.category(c) != "Mn").lower()
@@ -447,6 +455,85 @@ class ArvoresEmDisco(unittest.TestCase):
             asyncio.run(servico._garantir_arvore_cjpg("classe"))  # não propaga
         self.assertEqual(servico._carregar_arvore_cjpg("classe"), [])
         self.assertFalse(self.arquivo("classe").exists())
+
+
+def decisao(desfecho, valor=None):
+    return {"desfecho": desfecho, "valor_condenacao": valor, "numero_processo": "1"}
+
+
+class PerfilEComparacaoComUniverso(unittest.TestCase):
+    def test_perfil_de_taxas_intervalo_e_valor(self):
+        itens = [decisao("procedente", 4000.0)] * 3 + [decisao("improcedente")] + [decisao(None)]
+        perfil = servico._perfil_de(itens)
+        self.assertEqual((perfil["total_classificados"], perfil["nao_classificados"]), (4, 1))
+        self.assertEqual(perfil["taxa_procedente"], 0.75)
+        self.assertEqual(perfil["taxa_extinto"], 0.0)
+        baixo, alto = perfil["ic_procedente"]
+        self.assertLess(baixo, 0.75)
+        self.assertGreater(alto, 0.75)
+        self.assertEqual((perfil["com_valor_extraido"], perfil["valor_mediano_indenizacao"]), (3, 4000.0))
+
+    def test_perfil_de_lista_vazia(self):
+        perfil = servico._perfil_de([])
+        self.assertIsNone(perfil["taxa_procedente"])
+        self.assertIsNone(perfil["ic_procedente"])
+        self.assertIsNone(perfil["valor_mediano_indenizacao"])
+
+    def chamar(self, buscas, **kwargs):
+        """Executa a ferramenta com a busca simulada; `buscas` é uma lista de respostas, uma por busca."""
+        chamadas = []
+
+        async def falsa(params, paginas, ignorar_cache=False):
+            chamadas.append((dict(params), paginas))
+            resposta = buscas[len(chamadas) - 1]
+            if isinstance(resposta, Exception):
+                raise resposta
+            return resposta
+
+        with mock.patch.object(servico, "_cjpg_executar_busca", falsa):
+            resultado = asyncio.run(servico.perfil_decisorio_magistrado(**kwargs))
+        return resultado, chamadas
+
+    def test_compara_com_o_universo_sem_o_magistrado(self):
+        juiz = (10, [decisao("procedente")] * 4, [])
+        universo = (500, [decisao("procedente")] * 2 + [decisao("improcedente")] * 2, [])
+        resultado, chamadas = self.chamar(
+            [juiz, universo], magistrado_codigo="123", magistrado_nome="Fulano", termo="dano moral", paginas=10,
+        )
+        self.assertEqual(len(chamadas), 2)
+        params_juiz, params_universo = chamadas[0][0], chamadas[1][0]
+        self.assertEqual(params_juiz["cdAgente"], "123")
+        self.assertIn("Fulano", params_juiz["dadosConsulta.pesquisaLivre"])
+        self.assertNotIn("cdAgente", params_universo)
+        self.assertNotIn("agenteSelectedEntitiesList", params_universo)
+        self.assertEqual(params_universo["dadosConsulta.pesquisaLivre"], "dano moral")  # sem o nome do juiz
+        self.assertEqual(chamadas[1][1], servico.CJPG_PAGINAS_UNIVERSO)  # limitado a 5 páginas
+        baseline = resultado["perfil"]["baseline"]
+        self.assertEqual(resultado["perfil"]["taxa_procedente"], 1.0)
+        self.assertEqual(baseline["taxa_procedente"], 0.5)
+        self.assertEqual(baseline["buscados"], 4)
+        self.assertIn("escopo", baseline)
+
+    def test_sem_recorte_nao_busca_universo(self):
+        resultado, chamadas = self.chamar([(1, [decisao("procedente")], [])], magistrado_nome="Fulano")
+        self.assertEqual(len(chamadas), 1)
+        self.assertIn("indisponivel", resultado["perfil"]["baseline"])
+
+    def test_pode_desligar_a_comparacao(self):
+        resultado, chamadas = self.chamar(
+            [(1, [decisao("procedente")], [])], magistrado_nome="Fulano", termo="x", comparar_com_universo=False,
+        )
+        self.assertEqual(len(chamadas), 1)
+        self.assertNotIn("baseline", resultado["perfil"])
+
+    def test_falha_na_busca_do_universo_nao_derruba_o_perfil(self):
+        resultado, _ = self.chamar(
+            [(1, [decisao("procedente")], []), ValueError("bloqueio do e-SAJ")],
+            magistrado_codigo="123", assunto_codigo="9",
+        )
+        self.assertFalse(resultado.get("erro"))
+        self.assertEqual(resultado["perfil"]["taxa_procedente"], 1.0)
+        self.assertIn("bloqueio do e-SAJ", resultado["perfil"]["baseline"]["indisponivel"])
 
 
 if __name__ == "__main__":
