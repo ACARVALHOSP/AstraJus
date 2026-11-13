@@ -1,9 +1,12 @@
 """Módulo Jurimetria: julgados de 1º grau do TJSP (CJPG), árvores de referência e perfil decisório."""
 import asyncio
+import hashlib
 import json
 import os
 import re
+import sqlite3
 import statistics
+import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -202,6 +205,54 @@ async def _arvore_magistrados_http(send) -> None:
 
 # --- CJPG: busca e heurísticas de jurimetria ----------------------------------
 
+# --- Estatística da amostra ------------------------------------------------------
+# Distância máxima (em caracteres) entre o valor em R$ e a palavra "moral/morais" no dispositivo.
+CJPG_DISTANCIA_MAX_VALOR = 600
+CJPG_AMOSTRA_MINIMA = 30  # abaixo disso, taxas e percentis são pouco confiáveis
+CJPG_AVISO_VIES = (
+    "A amostra são as sentenças mais recentes da busca (ordem decrescente de data), não uma "
+    "amostra aleatória: use o período (data inicial/final) para estudar épocas específicas."
+)
+
+
+def _intervalo_wilson(sucessos: int, total: int, z: float = 1.96) -> tuple[float, float] | None:
+    """Intervalo de confiança de Wilson (95%) para uma proporção; None se total == 0."""
+    if total <= 0:
+        return None
+    p = sucessos / total
+    denom = 1 + z * z / total
+    centro = (p + z * z / (2 * total)) / denom
+    margem = z * ((p * (1 - p) / total + z * z / (4 * total * total)) ** 0.5) / denom
+    return max(0.0, centro - margem), min(1.0, centro + margem)
+
+
+def _resumo_valores(valores: list[float]) -> dict[str, Any]:
+    """Mediana, quartis (interpolados), mín/máx e contagem de outliers (critério de Tukey, 1,5xIQR)."""
+    ordenados = sorted(valores)
+    resumo: dict[str, Any] = {"mediana": statistics.median(ordenados), "min": ordenados[0], "max": ordenados[-1]}
+    if len(ordenados) >= 2:
+        q1, _, q3 = statistics.quantiles(ordenados, n=4, method="inclusive")
+    else:
+        q1 = q3 = ordenados[0]
+    resumo["p25"], resumo["p75"] = q1, q3
+    iqr = q3 - q1
+    limite_sup, limite_inf = q3 + 1.5 * iqr, q1 - 1.5 * iqr
+    resumo["outliers"] = sum(1 for v in ordenados if v > limite_sup or v < limite_inf)
+    return resumo
+
+
+def _avisos_amostra(n: int, rotulo: str) -> list[str]:
+    avisos = []
+    if n < 5:
+        avisos.append(f"Amostra muito pequena (menos de 5 {rotulo}) - interprete com muita cautela.")
+    elif n < CJPG_AMOSTRA_MINIMA:
+        avisos.append(
+            f"Amostra pequena (menos de {CJPG_AMOSTRA_MINIMA} {rotulo}) - os números são indicativos, "
+            "não conclusivos."
+        )
+    return avisos
+
+
 CJPG_MARCADORES_DISPOSITIVO = [
     "ante o exposto", "diante do exposto", "posto isso", "isto posto", "pelo exposto", "do exposto",
 ]
@@ -237,7 +288,7 @@ def _cjpg_classificar_desfecho(inteiro_teor: str | None) -> str | None:
 def _cjpg_extrair_valor_condenacao(inteiro_teor: str | None) -> float | None:
     """Extrai o valor de condenação por dano moral do dispositivo. Heurística: pega o valor em
     R$ mais próximo textualmente de "moral"/"morais" (plural irregular - não é só sufixo "s"),
-    dentro de uma distância curta, pra não pegar valor de honorários/custas/dano material.
+    dentro de CJPG_DISTANCIA_MAX_VALOR caracteres, pra não pegar valor de honorários/custas/dano material.
     """
     if not inteiro_teor:
         return None
@@ -253,7 +304,7 @@ def _cjpg_extrair_valor_condenacao(inteiro_teor: str | None) -> float | None:
         if not dists:
             continue
         dist = min(dists)
-        if dist > 250:
+        if dist > CJPG_DISTANCIA_MAX_VALOR:
             continue
         if melhor_dist is None or dist < melhor_dist:
             melhor_valor, melhor_dist = m.group(1), dist
@@ -302,7 +353,7 @@ def _cjpg_bloqueado(html: str) -> bool:
     return "fundocinza1" not in html and "Parâmetros de Consulta" not in html
 
 
-async def _cjpg_executar_busca(params: dict, paginas: int) -> tuple[int | None, list[dict], list[str]]:
+async def _cjpg_buscar_no_esaj(params: dict, paginas: int) -> tuple[int | None, list[dict], list[str]]:
     """Executa a busca paginada no CJPG (sessão + pesquisar.do + trocarDePagina.do) e devolve
     (total_servidor, resultados_parseados, avisos). Best-effort: se uma página falhar no meio,
     para ali e devolve o que já foi buscado, em vez de descartar tudo.
@@ -337,6 +388,82 @@ async def _cjpg_executar_busca(params: dict, paginas: int) -> tuple[int | None, 
     return total_servidor, todos, avisos
 
 
+# --- Cache das consultas ao CJPG (banco do escritório) ---------------------------
+#
+# Cada consulta refaz o scraping no e-SAJ (lento e frágil). O resultado bruto (já parseado e
+# classificado) fica numa tabela própria por CJPG_CACHE_TTL_S; só entram no cache buscas completas
+# (sem avisos de página falha/bloqueada), para nunca servir por 7 dias um resultado parcial.
+
+CJPG_CACHE_TTL_S = 7 * 24 * 3600
+_BANCO_CAMINHO: str | None = None
+
+
+def migrar(conexao) -> None:
+    """Chamada na partida pelo registro de módulos: cria a tabela do cache e guarda o caminho do banco."""
+    global _BANCO_CAMINHO
+    conexao.execute(
+        "CREATE TABLE IF NOT EXISTS jurimetria_cache ("
+        "chave TEXT PRIMARY KEY, criado_em REAL NOT NULL, dados TEXT NOT NULL)")
+    arquivo = next((linha[2] for linha in conexao.execute("PRAGMA database_list") if linha[1] == "main"), "")
+    _BANCO_CAMINHO = arquivo or None
+
+
+def _cjpg_chave_cache(params: dict, paginas: int) -> str:
+    bruto = json.dumps({"p": params, "n": paginas}, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(bruto.encode("utf-8")).hexdigest()
+
+
+def _cjpg_cache_ler(chave: str) -> tuple[float, dict] | None:
+    if not _BANCO_CAMINHO:
+        return None
+    try:
+        with sqlite3.connect(_BANCO_CAMINHO) as con:
+            linha = con.execute("SELECT criado_em, dados FROM jurimetria_cache WHERE chave = ?", (chave,)).fetchone()
+        con.close()
+        if linha and time.time() - linha[0] < CJPG_CACHE_TTL_S:
+            return linha[0], json.loads(linha[1])
+    except (sqlite3.Error, ValueError):
+        nucleo.log.exception("Falha ao ler o cache da Jurimetria (seguindo sem cache)")
+    return None
+
+
+def _cjpg_cache_gravar(chave: str, total_servidor: int | None, todos: list[dict]) -> None:
+    if not _BANCO_CAMINHO:
+        return
+    try:
+        agora = time.time()
+        with sqlite3.connect(_BANCO_CAMINHO) as con:
+            con.execute("DELETE FROM jurimetria_cache WHERE criado_em < ?", (agora - CJPG_CACHE_TTL_S,))
+            con.execute(
+                "INSERT OR REPLACE INTO jurimetria_cache (chave, criado_em, dados) VALUES (?, ?, ?)",
+                (chave, agora, json.dumps({"total_servidor": total_servidor, "resultados": todos}, ensure_ascii=False)),
+            )
+        con.close()
+    except sqlite3.Error:
+        nucleo.log.exception("Falha ao gravar o cache da Jurimetria (seguindo sem cache)")
+
+
+async def _cjpg_executar_busca(
+    params: dict, paginas: int, ignorar_cache: bool = False
+) -> tuple[int | None, list[dict], list[str]]:
+    """Como _cjpg_buscar_no_esaj, mas consulta/alimenta o cache. Devolve (total, resultados, avisos)."""
+    chave = _cjpg_chave_cache(params, paginas)
+    if not ignorar_cache:
+        em_cache = _cjpg_cache_ler(chave)
+        if em_cache:
+            criado_em, dados = em_cache
+            quando = datetime.fromtimestamp(criado_em, timezone.utc).astimezone().strftime("%d/%m/%Y %H:%M")
+            aviso = (
+                f"Resultado de uma consulta idêntica feita em {quando} (guardada por 7 dias para não "
+                "sobrecarregar o e-SAJ); sentenças publicadas depois não aparecem."
+            )
+            return dados["total_servidor"], dados["resultados"], [aviso]
+    total_servidor, todos, avisos = await _cjpg_buscar_no_esaj(params, paginas)
+    if not avisos and todos:
+        _cjpg_cache_gravar(chave, total_servidor, todos)
+    return total_servidor, todos, avisos
+
+
 @ferramenta
 async def consultar_jurimetria_cjpg(
     termo: str | None = None,
@@ -350,10 +477,11 @@ async def consultar_jurimetria_cjpg(
     data_inicio: str | None = None,
     data_fim: str | None = None,
     paginas: int = 1,
+    ignorar_cache: bool = False,
 ) -> dict:
     """Busca julgados de 1º grau do TJSP (CJPG, scraping - sem API oficial, best-effort) e aplica
     heurísticas de jurimetria: classifica o desfecho de cada decisão e extrai o valor de condenação
-    por dano moral quando houver. Se assunto_codigo/assunto_nome for informado, agrega os valores
+    por dano moral quando houver. Se termo/assunto_codigo/assunto_nome for informado, agrega os valores
     das decisões procedentes/parciais em mediana e percentis 25/75 (serve de referência de pedido
     ou proposta de acordo).
 
@@ -371,6 +499,8 @@ async def consultar_jurimetria_cjpg(
     - paginas: quantas páginas de 10 resultados buscar (padrão 1, teto 15). A busca é best-effort:
       se uma página falhar no meio, o resultado parcial já buscado é devolvido com um aviso, em
       vez de descartado.
+    - ignorar_cache: True força nova busca no e-SAJ. Por padrão, uma consulta idêntica feita nos
+      últimos 7 dias é respondida do cache (com um aviso informando a data da consulta original).
 
     Limitações conhecidas:
     - O CJPG tem um teto de ~10.000 resultados por consulta (limite do índice de busca do TJSP);
@@ -405,7 +535,7 @@ async def consultar_jurimetria_cjpg(
             params["agenteSelectedEntitiesList"] = magistrado_codigo
 
         try:
-            total_servidor, todos, avisos = await _cjpg_executar_busca(params, paginas)
+            total_servidor, todos, avisos = await _cjpg_executar_busca(params, paginas, ignorar_cache)
         except ValueError as exc:
             return nucleo._erro(str(exc))
 
@@ -416,21 +546,25 @@ async def consultar_jurimetria_cjpg(
             "avisos": avisos,
         }
 
-        if assunto_codigo or assunto_nome:
+        # Agrega sempre que houver algum critério de busca (termo livre incluído): a tela envia só
+        # o "termo", e antes disso o agregado (mediana/p25/p75) nunca era calculado.
+        if assunto_codigo or assunto_nome or termo_busca:
             procedentes = [r for r in todos if r["desfecho"] in ("procedente", "parcial")]
             valores = sorted(r["valor_condenacao"] for r in procedentes if r["valor_condenacao"] is not None)
             agregado: dict[str, Any] = {
                 "procedentes_ou_parciais": len(procedentes),
                 "com_valor_extraido": len(valores),
             }
-            if len(valores) >= 1:
-                agregado["mediana"] = statistics.median(valores)
-                agregado["p25"] = valores[int(len(valores) * 0.25)]
-                agregado["p75"] = valores[min(int(len(valores) * 0.75), len(valores) - 1)]
-                agregado["min"] = valores[0]
-                agregado["max"] = valores[-1]
-            if len(valores) < 5:
-                agregado["aviso"] = "Amostra pequena (menos de 5 valores extraídos) - interprete com cautela."
+            avisos_agregado = _avisos_amostra(len(valores), "valores extraídos")
+            if valores:
+                agregado.update(_resumo_valores(valores))
+                if agregado["outliers"]:
+                    avisos_agregado.append(
+                        f"{agregado['outliers']} valor(es) muito fora do padrão - a mediana e a faixa "
+                        "(25%-75%) já os desconsideram, mas confira os extremos nos cartões."
+                    )
+            avisos_agregado.append(CJPG_AVISO_VIES)
+            agregado["aviso"] = " ".join(avisos_agregado)
             resposta["agregado"] = agregado
 
         return resposta
@@ -455,6 +589,7 @@ async def perfil_decisorio_magistrado(
     data_inicio: str | None = None,
     data_fim: str | None = None,
     paginas: int = 1,
+    ignorar_cache: bool = False,
 ) -> dict:
     """Busca julgados de 1º grau do TJSP (CJPG, scraping - sem API oficial, best-effort) de um
     magistrado específico e monta um perfil decisório: taxa de procedência/improcedência/parcial,
@@ -477,6 +612,8 @@ async def perfil_decisorio_magistrado(
     - paginas: quantas páginas de 10 resultados buscar (padrão 1, teto 15). A busca é best-effort:
       se uma página falhar no meio, o resultado parcial já buscado é devolvido com um aviso, em
       vez de descartado.
+    - ignorar_cache: True força nova busca no e-SAJ. Por padrão, uma consulta idêntica feita nos
+      últimos 7 dias é respondida do cache (com um aviso informando a data da consulta original).
 
     Limitações conhecidas:
     - O CJPG tem um teto de ~10.000 resultados por consulta (limite do índice de busca do TJSP);
@@ -515,7 +652,7 @@ async def perfil_decisorio_magistrado(
             params["agenteSelectedEntitiesList"] = magistrado_codigo
 
         try:
-            total_servidor, todos, avisos = await _cjpg_executar_busca(params, paginas)
+            total_servidor, todos, avisos = await _cjpg_executar_busca(params, paginas, ignorar_cache)
         except ValueError as exc:
             return nucleo._erro(str(exc))
 
@@ -528,19 +665,23 @@ async def perfil_decisorio_magistrado(
             "nao_classificados": len(todos) - total_classificados,
         }
         for categoria in CJPG_CATEGORIAS_DESFECHO:
-            perfil[f"taxa_{categoria}"] = (
-                contagens.get(categoria, 0) / total_classificados if total_classificados else None
-            )
+            quantos = contagens.get(categoria, 0)
+            perfil[f"taxa_{categoria}"] = quantos / total_classificados if total_classificados else None
+            ic = _intervalo_wilson(quantos, total_classificados)
+            perfil[f"ic_{categoria}"] = list(ic) if ic else None
 
         valores = [
             r["valor_condenacao"] for r in classificados
             if r["desfecho"] in ("procedente", "parcial") and r["valor_condenacao"] is not None
         ]
         perfil["com_valor_extraido"] = len(valores)
+        # mediana (robusta a outliers) é a medida principal; a média fica por compatibilidade
+        perfil["valor_mediano_indenizacao"] = statistics.median(valores) if valores else None
         perfil["valor_medio_indenizacao"] = statistics.mean(valores) if valores else None
 
-        if total_classificados < 5:
-            perfil["aviso"] = "Amostra pequena (menos de 5 decisões classificadas) - interprete com cautela."
+        avisos_perfil = _avisos_amostra(total_classificados, "decisões classificadas")
+        avisos_perfil.append(CJPG_AVISO_VIES)
+        perfil["aviso"] = " ".join(avisos_perfil)
 
         return {
             "total_servidor": total_servidor,
