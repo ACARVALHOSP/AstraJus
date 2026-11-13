@@ -203,6 +203,8 @@ async def _arvore_magistrados_http(send) -> None:
 # --- CJPG: busca e heurísticas de jurimetria ----------------------------------
 
 # --- Estatística da amostra ------------------------------------------------------
+# Distância máxima (em caracteres) entre o valor em R$ e a palavra "moral/morais" no dispositivo.
+CJPG_DISTANCIA_MAX_VALOR = 600
 CJPG_AMOSTRA_MINIMA = 30  # abaixo disso, taxas e percentis são pouco confiáveis
 CJPG_AVISO_VIES = (
     "A amostra são as sentenças mais recentes da busca (ordem decrescente de data), não uma "
@@ -283,7 +285,7 @@ def _cjpg_classificar_desfecho(inteiro_teor: str | None) -> str | None:
 def _cjpg_extrair_valor_condenacao(inteiro_teor: str | None) -> float | None:
     """Extrai o valor de condenação por dano moral do dispositivo. Heurística: pega o valor em
     R$ mais próximo textualmente de "moral"/"morais" (plural irregular - não é só sufixo "s"),
-    dentro de uma distância curta, pra não pegar valor de honorários/custas/dano material.
+    dentro de CJPG_DISTANCIA_MAX_VALOR caracteres, pra não pegar valor de honorários/custas/dano material.
     """
     if not inteiro_teor:
         return None
@@ -299,7 +301,7 @@ def _cjpg_extrair_valor_condenacao(inteiro_teor: str | None) -> float | None:
         if not dists:
             continue
         dist = min(dists)
-        if dist > 250:
+        if dist > CJPG_DISTANCIA_MAX_VALOR:
             continue
         if melhor_dist is None or dist < melhor_dist:
             melhor_valor, melhor_dist = m.group(1), dist
