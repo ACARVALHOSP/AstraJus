@@ -80,7 +80,6 @@ with sync_playwright() as p:
     expect(card.get_by_role('button', name='Parar monitoramento', exact=True)).to_be_enabled()
     card.get_by_role('button', name='Parar monitoramento', exact=True).click()
     expect(card.get_by_role('button', name='Monitorar automaticamente', exact=True)).to_be_enabled()
-    card.get_by_text('Mais informações', exact=True).click()
     expect(card.get_by_text('São Paulo / SP', exact=True)).to_be_visible()
     page.screenshot(path=str(OUT/'desktop.png'), full_page=True)
     for width in [390, 768]:
