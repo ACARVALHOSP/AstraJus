@@ -7,7 +7,7 @@ import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useCasos, useClientes, useLancamentos } from '../api/consultas'
+import { useCasos, useClientes, useLancamentos, useNomePessoa } from '../api/consultas'
 import { AlertTriangle, ChevronLeft, ChevronRight, Download, Info } from 'lucide-react'
 import { AlertDialog, Badge, Button, Callout, Checkbox, Flex, IconButton, Select, Tabs, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
@@ -121,6 +121,7 @@ export default function Financeiro() {
 
 function ListaLancamentos({ abas }: { abas: React.ReactNode }) {
   const { cliente } = useCliente()
+  const nomePessoa = useNomePessoa()
   const { irPara } = useNavegacao()
   const estreita = useEstreita()
   const [hoje] = useState(() => isoLocal(new Date()))
@@ -264,7 +265,7 @@ function ListaLancamentos({ abas }: { abas: React.ReactNode }) {
       { titulo: 'Pago em', valor: l => (l.pago_em ? dataCurta(l.pago_em) : '') },
       { titulo: 'Cliente', valor: l => nomeCliente(l.cliente_id) },
       { titulo: 'Processo', valor: l => tituloCaso(l.caso_id) },
-      { titulo: 'Responsável', valor: l => l.responsavel },
+      { titulo: 'Responsável', valor: l => nomePessoa(l.responsavel) },
       { titulo: 'Repasse a', valor: l => l.favorecido },
     ], visiveis)
     avisar({ texto: `${visiveis.length} lançamento(s) exportado(s).` })
@@ -436,7 +437,7 @@ function ListaLancamentos({ abas }: { abas: React.ReactNode }) {
             <Select.Trigger aria-labelledby="fin-resp-rotulo" />
             <Select.Content>
               <Select.Item value="__todos__">Todos os responsáveis</Select.Item>
-              {responsaveis.map(r => <Select.Item key={r} value={r}>{formatarNomeExibicao(r)}</Select.Item>)}
+              {responsaveis.map(r => <Select.Item key={r} value={r}>{nomePessoa(r)}</Select.Item>)}
             </Select.Content>
           </Select.Root>
         </div>

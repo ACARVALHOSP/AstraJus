@@ -10,7 +10,7 @@ import TabelaResponsiva from '../TabelaResponsiva'
 import AcoesTabela from '../AcoesTabela'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useCasos, useResponsaveis } from '../api/consultas'
+import { useCasos, useNomePessoa, useResponsaveis } from '../api/consultas'
 import { Badge, Button, Callout, Checkbox, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, CalendarCheck, Info } from 'lucide-react'
 import { useCliente } from '../api/ClienteContext'
@@ -39,6 +39,7 @@ const SEM_PROCESSOS: CasoResumo[] = []
 
 export default function Atividades() {
   const { cliente } = useCliente()
+  const nomePessoa = useNomePessoa()
   const { irPara } = useNavegacao()
   const estreita = useEstreita()
   const [hoje, setHoje] = useState(() => isoLocal(new Date()))
@@ -242,7 +243,7 @@ export default function Atividades() {
             <Select.Trigger aria-labelledby="atividades-resp-rotulo" />
             <Select.Content>
               <Select.Item value="__todos__">Todos os responsáveis</Select.Item>
-              {responsaveis.map(r => <Select.Item key={r} value={r}>{formatarNomeExibicao(r)}</Select.Item>)}
+              {responsaveis.map(r => <Select.Item key={r} value={r}>{nomePessoa(r)}</Select.Item>)}
               <Select.Item value="__sem__">Sem responsável</Select.Item>
             </Select.Content>
           </Select.Root>
@@ -264,7 +265,7 @@ export default function Atividades() {
             <Select.Content>
               <Select.Item value="__todos__">Todos os responsáveis</Select.Item>
               {[...new Set([...responsaveisProcesso, ...(responsavelProcesso ? [responsavelProcesso] : [])])].map(r =>
-                <Select.Item key={r} value={r}>{formatarNomeExibicao(r)}</Select.Item>)}
+                <Select.Item key={r} value={r}>{nomePessoa(r)}</Select.Item>)}
             </Select.Content>
           </Select.Root>
         </div>
@@ -311,7 +312,7 @@ export default function Atividades() {
                           <Flex gap="2" align="center" wrap="wrap">
                             <Checkbox aria-label={`Selecionar ${a.titulo}`} checked={selecionadas.has(chave(a))} disabled={ocupado} onCheckedChange={() => alternar(a)} />
                             {seloTipo(a)}
-                            <Text size="1" color="gray">{a.responsavel ? formatarNomeExibicao(a.responsavel) : 'Sem responsável'}</Text>
+                            <Text size="1" color="gray">{a.responsavel ? nomePessoa(a.responsavel) : 'Sem responsável'}</Text>
                           </Flex>
                           <Text as="p" size="3" weight="bold">{formatarNomeExibicao(a.titulo)}</Text>
                           <button type="button" className="atividades-link" onClick={() => abrirProcesso(a)}>{tituloProcesso(a)}</button>
@@ -375,7 +376,7 @@ export default function Atividades() {
                         </td>}
                         {colunas.visivel('responsavel') && <td>
                           <span>
-                            {a.responsavel ? formatarNomeExibicao(a.responsavel) : <Text color="gray">Sem responsável</Text>}
+                            {a.responsavel ? nomePessoa(a.responsavel) : <Text color="gray">Sem responsável</Text>}
                           </span>
                         </td>}
                         {colunas.visivel('situacao') && <td>{seloStatus(a)}</td>}
@@ -422,7 +423,7 @@ export default function Atividades() {
             <label className="form-campo-label" id="reatribuir-rotulo">Novo responsável</label>
             <Select.Root value={novoResponsavel || undefined} onValueChange={setNovoResponsavel}>
               <Select.Trigger aria-labelledby="reatribuir-rotulo" placeholder="Selecione o responsável" />
-              <Select.Content>{responsaveis.map(r => <Select.Item key={r} value={r}>{formatarNomeExibicao(r)}</Select.Item>)}</Select.Content>
+              <Select.Content>{responsaveis.map(r => <Select.Item key={r} value={r}>{nomePessoa(r)}</Select.Item>)}</Select.Content>
             </Select.Root>
           </div>
           <Flex gap="3" mt="4" justify="end">

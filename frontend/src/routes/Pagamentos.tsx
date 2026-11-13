@@ -4,11 +4,13 @@ import TabelaResponsiva from '../TabelaResponsiva'
 import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
 import CampoData from '../CampoData'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Info } from 'lucide-react'
 import { AlertDialog, Badge, Button, Callout, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
+import { useClientes } from '../api/consultas'
 import { buscarJson, enviarJson } from '../api/rest'
 import { formatarMoeda, formatarNomeExibicao } from '../utils/formatadores'
 import { useEstreita } from '../utils/useEstreita'
@@ -117,18 +119,10 @@ export default function Pagamentos() {
   const [vencAte, setVencAte] = useState('')
   const [busca, setBusca] = useState('')
   const [buscaAtiva, setBuscaAtiva] = useState('')
-  const [clientes, setClientes] = useState<Cliente[]>([])
-
-  const [carregando, setCarregando] = useState(false)
-  const [carregandoMais, setCarregandoMais] = useState(false)
-  const [erro, setErro] = useState<string | null>(null)
   const { avisar } = useAvisos()
-  const [avisoIntegracao, setAvisoIntegracao] = useState<string | null>(null)
-  const [painel, setPainel] = useState<Painel | null>(null)
   const [paraCancelar, setParaCancelar] = useState<Cobranca | null>(null)
   const [cancelando, setCancelando] = useState(false)
   const [modalNovaAberto, setModalNovaAberto] = useState(false)
-  const pedido = useRef(0)
 
   // A busca só vai ao servidor depois de uma pausa na digitação.
   useEffect(() => {
@@ -136,48 +130,37 @@ export default function Pagamentos() {
     return () => clearTimeout(t)
   }, [busca])
 
-  useEffect(() => {
-    buscarJson<{ clientes: Cliente[] }>(cliente, '/clientes')
-      .then(r => setClientes(r.clientes ?? []))
-      .catch(() => setClientes([]))
-  }, [cliente])
-
-  const carregar = useCallback(async (offset = 0, atualizar = false) => {
-    const meu = ++pedido.current
-    if (offset) setCarregandoMais(true)
-    else setCarregando(true)
-    setErro(null)
-    try {
-      const params = new URLSearchParams({ situacao, offset: String(offset) })
-      if (atualizar) params.set('atualizar', '1')
+  const queryClient = useQueryClient()
+  const { data: clientes = [] } = useClientes<Cliente>({ enabled: Boolean(cliente) })
+  // "Atualizar" pede ao servidor que releia o Asaas; vale só para a primeira página.
+  const forcar = useRef(false)
+  const consulta = useInfiniteQuery({
+    queryKey: ['pagamentos', cliente?.token, { situacao, forma, vencDe, vencAte, buscaAtiva }],
+    enabled: Boolean(cliente),
+    initialPageParam: 0,
+    queryFn: ({ pageParam, signal }) => {
+      const params = new URLSearchParams({ situacao, offset: String(pageParam) })
+      if (pageParam === 0 && forcar.current) { params.set('atualizar', '1'); forcar.current = false }
       if (forma) params.set('forma', forma)
       if (vencDe) params.set('vencimento_de', vencDe)
       if (vencAte) params.set('vencimento_ate', vencAte)
       if (buscaAtiva) params.set('busca', buscaAtiva)
-      const resp = await buscarJson<Painel>(cliente, `/pagamentos?${params}`)
-      if (meu !== pedido.current) return
-      setAvisoIntegracao(null)
-      setPainel(atual => (offset && atual ? { ...resp, cobrancas: [...atual.cobrancas, ...resp.cobrancas] } : resp))
-    } catch (e) {
-      if (meu !== pedido.current) return
-      if (e instanceof ErroMCP && e.status === 404) {
-        setAvisoIntegracao(e.message)
-        setPainel(null)
-      } else {
-        setErro(e instanceof ErroMCP ? e.message : 'Não foi possível carregar os dados. Tente de novo.')
-      }
-    } finally {
-      if (meu === pedido.current) {
-        setCarregando(false)
-        setCarregandoMais(false)
-      }
-    }
-  }, [cliente, situacao, forma, vencDe, vencAte, buscaAtiva])
-
-  useEffect(() => {
-    // eslint-disable-next-line react/set-state-in-effect
-    void carregar(0)
-  }, [carregar])
+      return buscarJson<Painel>(cliente, `/pagamentos?${params}`, signal)
+    },
+    getNextPageParam: (ultima, todas) => ultima.hasMore ? todas.reduce((n, pg) => n + pg.cobrancas.length, 0) : undefined,
+  })
+  const avisoIntegracao = consulta.error instanceof ErroMCP && consulta.error.status === 404 ? consulta.error.message : null
+  const erro = consulta.error && !avisoIntegracao
+    ? (consulta.error instanceof ErroMCP ? consulta.error.message : 'Não foi possível carregar os dados. Tente de novo.')
+    : null
+  const paginas = consulta.data?.pages
+  const painel: Painel | null = avisoIntegracao || !paginas?.length
+    ? null
+    : { ...paginas[paginas.length - 1], cobrancas: paginas.flatMap(pg => pg.cobrancas) }
+  const carregando = consulta.isLoading
+  const carregandoMais = consulta.isFetchingNextPage
+  const atualizar = () => { forcar.current = true; void consulta.refetch() }
+  const recarregar = () => queryClient.invalidateQueries({ queryKey: ['pagamentos'] })
 
   async function copiarLink(c: Cobranca) {
     const link = c.invoiceUrl || c.bankSlipUrl
@@ -197,7 +180,7 @@ export default function Pagamentos() {
       await enviarJson(cliente, `/pagamentos/${paraCancelar.id}`, {}, 'DELETE')
       setParaCancelar(null)
       avisar({ texto: 'Cobrança cancelada no Asaas.' })
-      await carregar(0)
+      await recarregar()
     } catch (e) {
       avisar({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Falha ao cancelar.' })
     } finally {
@@ -258,7 +241,7 @@ export default function Pagamentos() {
         titulo="Pagamentos"
         descricao="Cobranças por boleto ou Pix emitidas pelo Asaas para os seus clientes."
         acoes={<>
-          <Button size="2" variant="soft" color="gray" disabled={carregando} onClick={() => void carregar(0, true)}>Atualizar</Button>
+          <Button size="2" variant="soft" color="gray" disabled={consulta.isFetching} onClick={atualizar}>Atualizar</Button>
           <Button size="2" onClick={() => setModalNovaAberto(true)}>Nova cobrança</Button>
         </>}
       />
@@ -416,7 +399,7 @@ export default function Pagamentos() {
       {!carregando && painel && cobrancas.length > 0 && (
         <Flex justify="between" align="center" gap="3" wrap="wrap">
           <Text size="2" color="gray">Mostrando {cobrancas.length} de {quantas(painel.totalCount, 'cobrança', 'cobranças')}</Text>
-          {painel.hasMore && <Button size="2" variant="soft" color="gray" disabled={carregandoMais} onClick={() => carregar(cobrancas.length)}>{carregandoMais ? 'Carregando…' : 'Carregar mais'}</Button>}
+          {painel.hasMore && <Button size="2" variant="soft" color="gray" disabled={carregandoMais} onClick={() => void consulta.fetchNextPage()}>{carregandoMais ? 'Carregando…' : 'Carregar mais'}</Button>}
         </Flex>
       )}
       {painel?.atualizado_em && (
@@ -453,7 +436,7 @@ export default function Pagamentos() {
         onCriada={() => {
           setModalNovaAberto(false)
           avisar({ texto: 'Cobrança criada.' })
-          void carregar(0)
+          void recarregar()
         }}
       />
     </Flex>

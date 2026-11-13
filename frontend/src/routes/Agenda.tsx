@@ -4,7 +4,7 @@ import BuscaProcesso from '../BuscaProcesso'
 import { useAvisos } from '../Avisos'
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCasos, useResponsaveis } from '../api/consultas'
+import { useCasos, useNomePessoa, useResponsaveis } from '../api/consultas'
 import { Badge, Button, Callout, Dialog, Flex, SegmentedControl, Select, Switch, Text } from '@radix-ui/themes'
 import { AlertTriangle, Calculator, ChevronLeft, ChevronRight, Download, Plus } from 'lucide-react'
 import { useCliente } from '../api/ClienteContext'
@@ -34,6 +34,7 @@ const hora = (a: Item) => (a.hora ? a.hora.slice(0, 5) : '')
 
 export default function Agenda() {
   const { cliente } = useCliente()
+  const nomePessoa = useNomePessoa()
   const { irPara } = useNavegacao()
   const { podeEditar } = usePerfil()
   const { avisar } = useAvisos()
@@ -108,7 +109,7 @@ export default function Agenda() {
     if (!comData.length) { avisar({ tipo: 'info', texto: 'Não há atividades neste período para exportar.' }); return }
     const ics = gerarIcs(comData.map(a => ({
       id: `${a.caso_id}-${a.id}`, titulo: a.titulo, data: a.data!, hora: a.hora, tipo: ROTULO_TIPO[a.tipo] ?? a.tipo,
-      descricao: [a.caso?.titulo, a.responsavel && `Responsável: ${a.responsavel}`, a.observacoes].filter(Boolean).join('\n'),
+      descricao: [a.caso?.titulo, a.responsavel && `Responsável: ${nomePessoa(a.responsavel)}`, a.observacoes].filter(Boolean).join('\n'),
     })))
     const link = document.createElement('a')
     link.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }))
@@ -183,7 +184,7 @@ export default function Agenda() {
           <Select.Content>
             <Select.Item value="__todos__">Todos os responsáveis</Select.Item>
             <Select.Item value="__sem__">Sem responsável</Select.Item>
-            {responsaveis.map(r => <Select.Item key={r} value={r}>{r}</Select.Item>)}
+            {responsaveis.map(r => <Select.Item key={r} value={r}>{nomePessoa(r)}</Select.Item>)}
           </Select.Content>
         </Select.Root>
         <Text as="label" size="2"><Flex gap="2" align="center"><Switch checked={concluidas} onCheckedChange={setConcluidas} />Mostrar concluídas</Flex></Text>
@@ -252,7 +253,7 @@ export default function Agenda() {
                 </Flex>
                 <button type="button" className="aj-ag-titulo-item" onClick={() => abrir(a)}>{a.titulo}</button>
                 <Text as="p" size="2" color="gray">
-                  {a.caso?.titulo ? formatarNomeExibicao(a.caso.titulo) : 'Processo'}{a.responsavel ? ` · ${a.responsavel}` : ''}
+                  {a.caso?.titulo ? formatarNomeExibicao(a.caso.titulo) : 'Processo'}{a.responsavel ? ` · ${nomePessoa(a.responsavel)}` : ''}
                 </Text>
               </div>
               <Button variant="ghost" size="1" onClick={() => irPara('casos', { id: a.caso_id, aba: 'atividades', atividadeId: a.id })}>Abrir processo</Button>

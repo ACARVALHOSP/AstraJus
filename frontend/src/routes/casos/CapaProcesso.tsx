@@ -5,6 +5,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { Badge, Button, Callout, Heading, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Check } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
+import { useClientes } from '../../api/consultas'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarNomeExibicao, formatarNumeroCNJ } from '../../utils/formatadores'
 import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
@@ -31,6 +32,7 @@ type Capa = {
   area_direito?: string | null; magistrado?: string | null; valor_causa?: number | null
   fase?: string | null; status_processo?: string | null
 }
+const SEM_REGISTROS: ClienteCapa[] = []
 const campos = [
   ['area_direito', 'Área do direito'], ['magistrado', 'Magistrado'],
   ['valor_causa', 'Valor da causa (R$)'], ['fase', 'Fase'], ['status_processo', 'Status do processo'],
@@ -45,8 +47,9 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
   const { avisar } = useAvisos()
   const [capa, setCapa] = useState<Capa | null>(null)
   const [edicao, setEdicao] = useState<Edicao>(() => editar({}))
-  const [registros, setRegistros] = useState<ClienteCapa[]>([])
-  const [erroClientes, setErroClientes] = useState(false)
+  const consultaClientes = useClientes<ClienteCapa>({ enabled: Boolean(cliente) })
+  const registros = consultaClientes.data ?? SEM_REGISTROS
+  const erroClientes = consultaClientes.isError
   const [carregando, setCarregando] = useState(true)
   const [operacao, setOperacao] = useState<string | null>(null)
   const [mensagem, setMensagem] = useState<{ erro: boolean; aviso?: boolean; texto: string } | null>(null)
@@ -58,10 +61,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
   useEffect(() => {
     let atual = true
     vivo.current = true
-    Promise.allSettled([
-      buscarJson<Capa>(cliente, url),
-      buscarJson<{ clientes: ClienteCapa[] }>(cliente, '/clientes'),
-    ]).then(([resultado, clientes]) => {
+    Promise.allSettled([buscarJson<Capa>(cliente, url)]).then(([resultado]) => {
       if (!atual) return
       if (resultado.status === 'fulfilled') {
         setCapa(resultado.value)
@@ -71,8 +71,6 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
         setErroCarga(true)
         setMensagem({ erro: true, texto: 'Falha ao carregar a capa. Tente novamente.' })
       }
-      setRegistros(clientes.status === 'fulfilled' ? clientes.value.clientes ?? [] : [])
-      setErroClientes(clientes.status === 'rejected')
       setCarregando(false)
     })
     return () => { atual = false; vivo.current = false }

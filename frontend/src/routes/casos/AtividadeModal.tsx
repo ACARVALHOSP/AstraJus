@@ -4,11 +4,13 @@ import { Button, Callout, Dialog, Flex, Select, TextArea, TextField } from '@rad
 import { AlertTriangle } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
-import { buscarJson, enviarJson } from '../../api/rest'
+import { useNomePessoa, useResponsaveis } from '../../api/consultas'
+import { enviarJson } from '../../api/rest'
 import type { Atividade } from './AtividadesCaso'
 import ChecklistAtividade from './ChecklistAtividade'
 import { confirmarSaida, useAlteracoesPendentes } from '../../AlteracoesPendentes'
 
+const SEM_RESPONSAVEIS: string[] = []
 const ROTULO_TIPO: Record<string, string> = { tarefa: 'Tarefa', prazo: 'Prazo', audiencia: 'Audiência', reuniao: 'Reunião', outro: 'Outro' }
 
 export default function AtividadeModal({
@@ -19,13 +21,14 @@ export default function AtividadeModal({
   dataInicial?: string
 }) {
   const { cliente } = useCliente()
+  const nomePessoa = useNomePessoa()
   const [tipo, setTipo] = useState('tarefa')
   const [titulo, setTitulo] = useState('')
   const [data, setData] = useState('')
   const [hora, setHora] = useState('')
   const [responsavel, setResponsavel] = useState('')
   const [observacoes, setObservacoes] = useState('')
-  const [responsaveis, setResponsaveis] = useState<string[]>([])
+  const { data: responsaveis = SEM_RESPONSAVEIS } = useResponsaveis()
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
@@ -38,10 +41,7 @@ export default function AtividadeModal({
     setResponsavel(atividade?.responsavel ?? '')
     setObservacoes(atividade?.observacoes ?? '')
     setErro(null)
-    buscarJson<{ responsaveis: string[] }>(cliente, '/responsaveis')
-      .then((r) => setResponsaveis(r.responsaveis ?? []))
-      .catch(() => {})
-  }, [open, atividade, cliente, dataInicial])
+  }, [open, atividade, dataInicial])
 
   const pendente = open && (titulo !== (atividade?.titulo ?? '') || tipo !== (atividade?.tipo ?? 'tarefa') || data !== (atividade?.data ?? dataInicial ?? '')
     || hora !== (atividade?.hora ?? '') || responsavel !== (atividade?.responsavel ?? '') || observacoes !== (atividade?.observacoes ?? ''))
@@ -105,7 +105,7 @@ export default function AtividadeModal({
                 <Select.Content>
                   <Select.Item value="__none__">Eu mesmo</Select.Item>
                   {opcoesResponsavel.map((nome) => (
-                    <Select.Item key={nome} value={nome}>{nome}</Select.Item>
+                    <Select.Item key={nome} value={nome}>{nomePessoa(nome)}</Select.Item>
                   ))}
                 </Select.Content>
               </Select.Root>

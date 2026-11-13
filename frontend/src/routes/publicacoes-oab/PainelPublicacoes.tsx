@@ -5,10 +5,12 @@ import CampoData from '../../CampoData'
 import TabelaResponsiva from '../../TabelaResponsiva'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
-import { Fragment, useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
-import { Archive, Check, ChevronDown, ChevronRight, Info, Keyboard, Unlink } from 'lucide-react'
+import { Fragment, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { AlertTriangle, Archive, Check, ChevronDown, ChevronRight, FilePlus, Info, Keyboard, Link2, Unlink } from 'lucide-react'
 import { Badge, Button, Callout, Checkbox, Dialog, Flex, IconButton, Popover, Select, Text, TextField } from '@radix-ui/themes'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCliente } from '../../api/ClienteContext'
+import { useNomePessoa, useResponsaveis } from '../../api/consultas'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { useNavegacao } from '../../api/NavegacaoContext'
 import { formatarNomeExibicao, formatarNumeroCNJ } from '../../utils/formatadores'
@@ -18,6 +20,7 @@ import {
   nomePublicacao, numeroPublicacao, orgaoPublicacao, ROTULO_STATUS, urlPublicacao, type ContagemStatus, type PublicacaoOab,
 } from './dados'
 import ProcessoPublicacao from './ProcessoPublicacao'
+import type { Caso } from '../casos/ListaCasos'
 import AtividadePublicacao from './AtividadePublicacao'
 import { PRAZOS_PADRAO } from './prazos'
 import { pct, selosTriagem, type InfoTriagem } from './triagem'
@@ -31,6 +34,9 @@ type RespostaLista = {
 }
 type ResultadoStatus = { hashes_atualizados: string[]; hashes_falharam: string[] }
 type Periodo = '' | 'hoje' | '7' | '30' | 'personalizado'
+
+const SEM_PUBLICACOES: PublicacaoOab[] = []
+const SEM_RESPONSAVEIS: string[] = []
 
 const ATALHOS: Array<{ valor: Status | ''; rotulo: string }> = [
   { valor: 'nao_tratada', rotulo: 'Não tratadas' },
@@ -62,7 +68,6 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
   const [textoBusca, setTextoBusca] = useState(''), [busca, setBusca] = useState('')
   const [ordemAsc, setOrdemAsc] = useState(false)
   const [porPrioridade, setPorPrioridade] = useState(false)
-  const [paraClientes, setParaClientes] = useState(0)
   const [infoTriagem, setInfoTriagem] = useState<InfoTriagem | null>(null)
   const [classificando, setClassificando] = useState(false)
   const [pagina, setPagina] = useState(1), [tamanho, setTamanho] = useState(20)
@@ -75,52 +80,59 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
     return () => window.clearTimeout(espera)
   }, [textoBusca])
 
-  const [publicacoes, setPublicacoes] = useState<PublicacaoOab[]>([]), [total, setTotal] = useState(0)
   const [contagem, setContagem] = useState<ContagemStatus | null>(null), [tipos, setTipos] = useState<string[]>([])
   const [preferencias, setPreferencias] = useState(lerPreferencias)
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set()), [expandidas, setExpandidas] = useState<Set<string>>(new Set())
-  const [carregando, setCarregando] = useState(true), [operacao, setOperacao] = useState(false)
-  const [erro, setErro] = useState('')
+  const [todasFiltro, setTodasFiltro] = useState(false)
+  const [hashesLote, setHashesLote] = useState<string[] | null>(null)
+  const [criarLote, setCriarLote] = useState<PublicacaoOab[] | null>(null)
+  const [operacao, setOperacao] = useState(false)
   const { avisar } = useAvisos()
   const [modal, setModal] = useState<{ tipo: 'processo' | 'atividade'; p: PublicacaoOab } | null>(null)
   const [capturaAberta, setCapturaAberta] = useState(false)
-  const trava = useRef(false), sequencia = useRef(0)
+  const trava = useRef(false)
   const opcionais = COLUNAS_OPCIONAIS.filter(c => preferencias.includes(c.key))
   const { desde: filtroDesde, ate: filtroAte } = intervalo(periodo, desde, ate)
 
-  const carregar = useCallback(async () => {
-    const pedido = ++sequencia.current
-    if (!cliente) { setCarregando(false); return }
-    setCarregando(true); setErro('')
-    try {
+  const queryClient = useQueryClient()
+  const chaveLista = ['publicacoes-oab', cliente?.token, { pagina, tamanho, status, tipo, busca, filtroDesde, filtroAte, ordemAsc, porPrioridade }]
+  const consulta = useQuery({
+    queryKey: chaveLista,
+    enabled: Boolean(cliente),
+    placeholderData: keepPreviousData, // a lista anterior fica na tela enquanto a nova carrega
+    queryFn: ({ signal }) => {
       const query = new URLSearchParams({
         pagina: String(pagina), tamanho: String(tamanho), ordem: porPrioridade ? 'prioridade' : ordemAsc ? 'divulgado_asc' : 'divulgado_desc',
         ...(status ? { status } : {}), ...(tipo ? { tipo } : {}), ...(busca ? { busca } : {}),
         ...(filtroDesde ? { desde: filtroDesde } : {}), ...(filtroAte ? { ate: filtroAte } : {}),
       })
-      const dados = await buscarJson<RespostaLista>(cliente, `/publicacoes-oab?${query}`)
-      if (pedido !== sequencia.current) return
-      setPublicacoes(dados.publicacoes ?? []); setTotal(dados.total ?? 0)
-      if (dados.contagem_status) setContagem(dados.contagem_status)
-      if (dados.triagem) setInfoTriagem(dados.triagem)
-      setParaClientes(dados.destinadas_a_clientes ?? 0)
-      if (dados.tipos_disponiveis) setTipos(dados.tipos_disponiveis)
-      if (dados.pagina && dados.pagina !== pagina) setPagina(dados.pagina)
-      if (dados.hashes_disponiveis) {
-        const disponiveis = new Set(dados.hashes_disponiveis)
-        setSelecionadas(s => new Set([...s].filter(id => disponiveis.has(id))))
-        setExpandidas(s => new Set([...s].filter(id => disponiveis.has(id))))
-      }
-    } catch (e) { if (pedido === sequencia.current) setErro((e as Error).message) }
-    finally { if (pedido === sequencia.current) setCarregando(false) }
-  }, [cliente, pagina, tamanho, status, tipo, busca, filtroDesde, filtroAte, ordemAsc, porPrioridade])
+      return buscarJson<RespostaLista>(cliente, `/publicacoes-oab?${query}`, signal)
+    },
+  })
+  const dados = consulta.data
+  const publicacoes = dados?.publicacoes ?? SEM_PUBLICACOES
+  const total = dados?.total ?? 0
+  const paraClientes = dados?.destinadas_a_clientes ?? 0
+  const carregando = consulta.isFetching
+  const erro = consulta.error ? consulta.error.message : ''
+  const carregar = () => consulta.refetch()
+  // Contagens, tipos e triagem só vêm em algumas respostas: guarda o último valor recebido.
+  // A resposta também corrige a página e tira da seleção o que saiu da lista.
   useEffect(() => {
-    // The request synchronizes the list with the server; invalidate it on cleanup.
-    const controle = sequencia
-    // eslint-disable-next-line react/set-state-in-effect
-    void carregar()
-    return () => { controle.current++ }
-  }, [carregar])
+    if (!dados) return
+    /* eslint-disable react/set-state-in-effect */
+    if (dados.contagem_status) setContagem(dados.contagem_status)
+    if (dados.triagem) setInfoTriagem(dados.triagem)
+    if (dados.tipos_disponiveis) setTipos(dados.tipos_disponiveis)
+    if (dados.pagina && dados.pagina !== pagina) setPagina(dados.pagina)
+    if (dados.hashes_disponiveis) {
+      const disponiveis = new Set(dados.hashes_disponiveis)
+      setSelecionadas(s => new Set([...s].filter(id => disponiveis.has(id))))
+      setExpandidas(s => new Set([...s].filter(id => disponiveis.has(id))))
+    }
+    /* eslint-enable react/set-state-in-effect */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dados])
 
   const ocupada = carregando || operacao || modal !== null
   const lote = selecionadas.size > 0
@@ -132,7 +144,47 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
 
   function filtrar(acao: () => void) {
     if (ocupada) return
-    acao(); setPagina(1); setSelecionadas(new Set())
+    acao(); setPagina(1); setSelecionadas(new Set()); setTodasFiltro(false)
+  }
+
+  // O servidor aceita no máximo 300 por página: percorre todas as páginas do filtro.
+  async function publicacoesTodasFiltro(): Promise<PublicacaoOab[]> {
+    const todas: PublicacaoOab[] = []
+    for (let pag = 1; ; pag++) {
+      const query = new URLSearchParams({
+        pagina: String(pag), tamanho: '300',
+        ordem: porPrioridade ? 'prioridade' : ordemAsc ? 'divulgado_asc' : 'divulgado_desc',
+        ...(status ? { status } : {}), ...(tipo ? { tipo } : {}), ...(busca ? { busca } : {}),
+        ...(filtroDesde ? { desde: filtroDesde } : {}), ...(filtroAte ? { ate: filtroAte } : {}),
+      })
+      const dados = await buscarJson<RespostaLista>(cliente, `/publicacoes-oab?${query}`)
+      const lote = dados.publicacoes ?? []
+      todas.push(...lote)
+      if (!lote.length || todas.length >= (dados.total ?? 0)) return todas
+    }
+  }
+  async function hashesTodasFiltro(): Promise<string[]> {
+    return (await publicacoesTodasFiltro()).map(p => p.hash)
+  }
+
+  async function abrirCriarLote() {
+    if (ocupada) return
+    setOperacao(true)
+    try {
+      const todas = todasFiltro ? await publicacoesTodasFiltro() : publicacoes.filter(p => selecionadas.has(p.hash))
+      setCriarLote(todas)
+    } catch (e) { avisar({ tipo: 'erro', texto: (e as Error).message }) }
+    finally { setOperacao(false) }
+  }
+
+  async function abrirVincularLote() {
+    if (ocupada) return
+    setOperacao(true)
+    try {
+      const hashes = todasFiltro ? await hashesTodasFiltro() : [...selecionadas]
+      setHashesLote(hashes)
+    } catch (e) { avisar({ tipo: 'erro', texto: (e as Error).message }) }
+    finally { setOperacao(false) }
   }
   function alternar(id: string) {
     if (ocupada || trava.current) return
@@ -289,7 +341,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
     setClassificando(true)
     try {
       const r = await enviarJson<{ resultados: Record<string, NonNullable<PublicacaoOab['triagem']>>; falhas: Record<string, string> }>(cliente, '/publicacoes-oab/triagem', { hashes: pendentes.slice(0, 50) })
-      setPublicacoes(lista => lista.map(p => r.resultados[p.hash] ? { ...p, triagem: r.resultados[p.hash] } : p))
+      queryClient.setQueryData<RespostaLista>(chaveLista, d => d && { ...d, publicacoes: d.publicacoes.map(p => r.resultados[p.hash] ? { ...p, triagem: r.resultados[p.hash] } : p) })
       const falhas = Object.keys(r.falhas ?? {}).length
       avisar({ tipo: falhas ? 'info' : 'sucesso', texto: `${Object.keys(r.resultados).length} publicação(ões) classificada(s)${falhas ? `; ${falhas} falharam` : ''}. São sugestões: confira antes de agir.` })
     } catch (e) { avisar({ tipo: 'erro', texto: (e as Error).message }) } finally { setClassificando(false) }
@@ -472,10 +524,31 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
 
       {lote && (
         <div className="oab-lote" role="region" aria-label="Ações em lote">
-          <Text size="2" weight="bold">{selecionadas.size} selecionada(s)</Text>
-          <Button size="1" disabled={ocupada} onClick={() => mudarStatus([...selecionadas], 'tratada', true)}><Check size={14} /> Marcar como tratadas</Button>
-          <Button size="1" variant="soft" color="gray" disabled={ocupada} onClick={() => mudarStatus([...selecionadas], 'arquivada', true)}><Archive size={14} /> Arquivar</Button>
-          <Button size="1" variant="ghost" disabled={operacao} onClick={() => setSelecionadas(new Set())}>Cancelar</Button>
+          <Text size="2" weight="bold">
+            {todasFiltro ? `Todas ${total} publicações selecionadas` : `${selecionadas.size} selecionada(s)`}
+          </Text>
+          {todasPagina && !todasFiltro && total > publicacoes.length && (
+            <Button size="1" variant="ghost" disabled={ocupada} onClick={() => setTodasFiltro(true)}>
+              Selecionar todas {total} publicações
+            </Button>
+          )}
+          <Button size="1" disabled={ocupada} onClick={() => {
+            void (todasFiltro
+              ? hashesTodasFiltro().then(hashes => mudarStatus(hashes, 'tratada', true))
+              : mudarStatus([...selecionadas], 'tratada', true))
+          }}><Check size={14} /> Marcar como tratadas</Button>
+          <Button size="1" variant="soft" color="gray" disabled={ocupada} onClick={() => {
+            void (todasFiltro
+              ? hashesTodasFiltro().then(hashes => mudarStatus(hashes, 'arquivada', true))
+              : mudarStatus([...selecionadas], 'arquivada', true))
+          }}><Archive size={14} /> Arquivar</Button>
+          <Button size="1" variant="soft" color="gray" disabled={ocupada} onClick={() => void abrirVincularLote()}>
+            <Link2 size={14} /> Vincular processo
+          </Button>
+          <Button size="1" variant="soft" color="gray" disabled={ocupada} onClick={() => void abrirCriarLote()}>
+            <FilePlus size={14} /> Criar processos
+          </Button>
+          <Button size="1" variant="ghost" disabled={operacao} onClick={() => { setSelecionadas(new Set()); setTodasFiltro(false) }}>Cancelar</Button>
         </div>
       )}
 
@@ -511,7 +584,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
             })}
           </ul>
         ) : (
-          <TabelaResponsiva principais={triagemAtiva ? ['Processo', 'Triagem', 'Situação'] : ['Processo', 'Situação']}>
+          <TabelaResponsiva principais={triagemAtiva ? ['Processo', 'Partes', 'Triagem', 'Situação'] : ['Processo', 'Partes', 'Situação']}>
             <table aria-label="Publicações recebidas" className="oab-tabela">
               <thead>
                 <tr>
@@ -642,6 +715,180 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
       </Dialog.Root>
       {modal?.tipo === 'processo' && <ProcessoPublicacao publicacao={modal.p} onClose={() => { setModal(null); void carregar() }} onConcluido={m => { avisar({ texto: m }); setModal(null); void carregar() }} />}
       {modal?.tipo === 'atividade' && <AtividadePublicacao publicacao={modal.p} onClose={() => setModal(null)} onConcluido={m => { avisar({ texto: m }); setModal(null); void carregar() }} />}
+      {hashesLote && <VincularProcessoLote hashes={hashesLote} onClose={() => setHashesLote(null)} onConcluido={m => { avisar({ texto: m }); setHashesLote(null); setSelecionadas(new Set()); setTodasFiltro(false); void carregar() }} />}
+      {criarLote && <CriarProcessosLote publicacoes={criarLote} onClose={() => setCriarLote(null)} onConcluido={m => { avisar({ texto: m }); setCriarLote(null); setSelecionadas(new Set()); setTodasFiltro(false); void carregar() }} />}
     </Flex>
+  )
+}
+
+const CLIENTE_PENDENTE = 'Pendente'
+
+function CriarProcessosLote({ publicacoes, onClose, onConcluido }: { publicacoes: PublicacaoOab[]; onClose: () => void; onConcluido: (msg: string) => void }) {
+  const { cliente } = useCliente()
+  const nomePessoa = useNomePessoa()
+  const { data: responsaveis = SEM_RESPONSAVEIS, error: erroResponsaveis } = useResponsaveis()
+  const [responsavel, setResponsavel] = useState('')
+  const [salvando, setSalvando] = useState(false)
+  const [progresso, setProgresso] = useState(0)
+  const [erroLocal, setErro] = useState('')
+  const erro = erroLocal || (erroResponsaveis ? erroResponsaveis.message : '')
+  const trava = useRef(false)
+
+  // Só publicações sem processo; agrupadas por CNJ. Sem CNJ de 20 dígitos são puladas.
+  const pendentes = publicacoes.filter(p => !p.caso_id)
+  const grupos = new Map<string, PublicacaoOab[]>()
+  let semCnj = 0
+  for (const p of pendentes) {
+    const n = numeroPublicacao(p)
+    if (n.length !== 20) { semCnj++; continue }
+    grupos.set(n, [...(grupos.get(n) ?? []), p])
+  }
+  const numeros = [...grupos.keys()]
+
+  async function confirmar() {
+    if (trava.current || !responsavel) return
+    trava.current = true; setSalvando(true); setErro(''); setProgresso(0)
+    let criados = 0, vinculados = 0, falhas = 0
+    try {
+      const achar = async () => (await buscarJson<{ clientes: Array<{ id: string; nome: string }> }>(cliente, '/clientes'))
+        .clientes.find(c => c.nome.trim().toLowerCase() === CLIENTE_PENDENTE.toLowerCase())?.id
+      let clienteId = await achar()
+      for (const numero of numeros) {
+        const hashes = grupos.get(numero)!.map(p => p.hash)
+        try {
+          const r = await buscarJson<{ casos: Caso[] }>(cliente, `/casos?q=${encodeURIComponent(numero)}`)
+          let caso = r.casos.find(c => c.processos?.some(n => n.replace(/\D/g, '') === numero))
+          let restantes = hashes
+          if (caso) vinculados++
+          else {
+            caso = await enviarJson<Caso>(cliente, `/publicacoes-oab/${encodeURIComponent(hashes[0])}/criar-caso`, {
+              ...(clienteId ? { cliente_id: clienteId } : { nome_cliente: CLIENTE_PENDENTE }), responsavel,
+            })
+            criados++; restantes = hashes.slice(1)
+            clienteId ??= await achar() // o primeiro lote cria o "Pendente"; os demais o reutilizam
+          }
+          for (const hash of restantes) await enviarJson(cliente, `/casos/${encodeURIComponent(caso.id)}/publicacoes`, { hash })
+        } catch { falhas++ }
+        setProgresso(p => p + 1)
+      }
+    } catch (e) { setErro((e as Error).message); trava.current = false; setSalvando(false); return }
+    trava.current = false; setSalvando(false)
+    const resumo = `${criados} processo(s) criado(s), ${vinculados} vinculado(s) a processo existente${semCnj ? `, ${semCnj} publicação(ões) sem CNJ ignorada(s)` : ''}.`
+    if (falhas) setErro(`${resumo} ${falhas} processo(s) falharam; tente novamente para completar.`)
+    else onConcluido(`${resumo} Cliente "${CLIENTE_PENDENTE}": ajuste em cada processo.`)
+  }
+
+  return (
+    <Dialog.Root open onOpenChange={(open) => { if (!open && !salvando) onClose() }}>
+      <Dialog.Content maxWidth="480px">
+        <Dialog.Title>Criar processos em lote</Dialog.Title>
+        <Flex direction="column" gap="4">
+          <Text as="p" size="2">
+            {numeros.length} processo(s) serão criados ou vinculados (por número CNJ distinto), a partir de {pendentes.length - semCnj} publicação(ões) sem processo.
+            {semCnj > 0 && ` ${semCnj} sem CNJ válido serão ignoradas.`}
+            {publicacoes.length - pendentes.length > 0 && ` ${publicacoes.length - pendentes.length} já vinculadas serão ignoradas.`}
+          </Text>
+          <Text as="p" size="2" color="gray">O cliente será "{CLIENTE_PENDENTE}"; altere-o em cada processo depois.</Text>
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="clote-responsavel">Responsável <span className="aj-obrigatorio" aria-hidden="true">*</span></label>
+            <Select.Root value={responsavel || '__none__'} disabled={salvando} onValueChange={v => setResponsavel(v === '__none__' ? '' : v)}>
+              <Select.Trigger id="clote-responsavel" style={{ width: '100%' }} />
+              <Select.Content>
+                <Select.Item value="__none__">Selecione</Select.Item>
+                {responsaveis.map(r => <Select.Item key={r} value={r}>{nomePessoa(r)}</Select.Item>)}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          {salvando && <Text size="2" role="status" color="gray">Processando… {progresso} de {numeros.length}</Text>}
+          {erro && (
+            <Callout.Root color="red" size="1">
+              <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+              <Callout.Text>{erro}</Callout.Text>
+            </Callout.Root>
+          )}
+          <Flex gap="3" justify="end">
+            <Button variant="soft" color="gray" disabled={salvando} onClick={onClose}>Cancelar</Button>
+            <Button disabled={!responsavel || !numeros.length || salvando} loading={salvando} onClick={() => void confirmar()}>Criar processos</Button>
+          </Flex>
+        </Flex>
+      </Dialog.Content>
+    </Dialog.Root>
+  )
+}
+
+function VincularProcessoLote({ hashes, onClose, onConcluido }: { hashes: string[]; onClose: () => void; onConcluido: (msg: string) => void }) {
+  const { cliente } = useCliente()
+  const [termo, setTermo] = useState('')
+  const [casos, setCasos] = useState<Caso[]>([])
+  const [escolhido, setEscolhido] = useState('')
+  const [buscando, setBuscando] = useState(false)
+  const [salvando, setSalvando] = useState(false)
+  const [progresso, setProgresso] = useState(0)
+  const [erro, setErro] = useState('')
+
+  async function consultar() {
+    if (!termo.trim()) return
+    setBuscando(true); setErro('')
+    try {
+      const r = await buscarJson<{ casos: Caso[] }>(cliente, `/casos?q=${encodeURIComponent(termo.trim())}`)
+      setCasos(r.casos); setEscolhido(r.casos[0]?.id ?? '')
+    } catch (e) { setErro((e as Error).message) } finally { setBuscando(false) }
+  }
+
+  async function confirmar() {
+    if (!escolhido) return
+    setSalvando(true); setErro(''); setProgresso(0)
+    let ok = 0, falhas = 0
+    for (const hash of hashes) {
+      try {
+        await enviarJson(cliente, `/casos/${encodeURIComponent(escolhido)}/publicacoes`, { hash })
+        ok++
+      } catch { falhas++ }
+      setProgresso(ok + falhas)
+    }
+    setSalvando(false)
+    if (falhas === 0) onConcluido(`${ok} publicação(ões) vinculadas ao processo.`)
+    else setErro(`${ok} vinculada(s); ${falhas} falharam. Tente vincular as restantes individualmente.`)
+  }
+
+  return (
+    <Dialog.Root open onOpenChange={(open) => { if (!open && !salvando) onClose() }}>
+      <Dialog.Content maxWidth="480px">
+        <Dialog.Title>Vincular {hashes.length} publicação(ões) a um processo</Dialog.Title>
+        <Flex direction="column" gap="4">
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="vlote-termo">Consultar por CNJ, parte ou cliente</label>
+            <TextField.Root id="vlote-termo" value={termo} disabled={salvando}
+              onChange={e => setTermo(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void consultar() } }} />
+          </div>
+          <div>
+            <Button variant="soft" size="1" disabled={salvando || !termo.trim()} loading={buscando} onClick={() => void consultar()}>Consultar</Button>
+          </div>
+          {casos.length > 0 && (
+            <div className="form-campo">
+              <label className="form-campo-label" htmlFor="vlote-processo">Processo de destino</label>
+              <Select.Root value={escolhido} disabled={salvando} onValueChange={setEscolhido}>
+                <Select.Trigger id="vlote-processo" style={{ width: '100%' }} />
+                <Select.Content>
+                  {casos.map(c => <Select.Item key={c.id} value={c.id}>{`${formatarNomeExibicao(c.titulo) || c.id} · ${(c.processos ?? []).map(formatarNumeroCNJ).join(', ')}`}</Select.Item>)}
+                </Select.Content>
+              </Select.Root>
+            </div>
+          )}
+          {salvando && <Text size="2" role="status" color="gray">Vinculando… {progresso} de {hashes.length}</Text>}
+          {erro && (
+            <Callout.Root color="red" size="1">
+              <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+              <Callout.Text>{erro}</Callout.Text>
+            </Callout.Root>
+          )}
+          <Flex gap="3" justify="end">
+            <Button variant="soft" color="gray" disabled={salvando} onClick={onClose}>Cancelar</Button>
+            <Button disabled={!escolhido || salvando} loading={salvando} onClick={() => void confirmar()}>Confirmar vínculo</Button>
+          </Flex>
+        </Flex>
+      </Dialog.Content>
+    </Dialog.Root>
   )
 }

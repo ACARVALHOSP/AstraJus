@@ -2,10 +2,12 @@ import AcoesTabela from '../../AcoesTabela'
 import { useAvisos } from '../../Avisos'
 import Carregamento from '../../Carregamento'
 import TabelaResponsiva from '../../TabelaResponsiva'
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { AlertDialog, Badge, Button, Callout, Checkbox, Flex, IconButton, Text } from '@radix-ui/themes'
 import { AlertTriangle, ChevronDown, ChevronRight, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
+import { useNomePessoa } from '../../api/consultas'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarNomeExibicao } from '../../utils/formatadores'
@@ -36,14 +38,12 @@ export default function AtividadesCaso({ casoId, atividadeInicialId, onAlterado 
   casoId: string; atividadeInicialId?: string | number; onAlterado?: () => void
 }) {
   const { cliente } = useCliente()
+  const nomePessoa = useNomePessoa()
   const { avisar } = useAvisos()
   const estreita = useEstreita()
   const [hoje] = useState(() => isoLocal(new Date()))
-  const [carregando, setCarregando] = useState(true)
   const [operando, setOperando] = useState(false)
-  const [erro, setErro] = useState<string | null>(null)
-  const [atividades, setAtividades] = useState<Atividade[] | null>(null)
-  const [agendaDisponivel, setAgendaDisponivel] = useState(false)
+  const [erroLocal, setErro] = useState<string | null>(null)
   const [situacao, setSituacao] = useState<'abertas' | 'concluidas'>('abertas')
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set())
   const [expandidas, setExpandidas] = useState<Set<string>>(new Set())
@@ -53,19 +53,17 @@ export default function AtividadesCaso({ casoId, atividadeInicialId, onAlterado 
   const [excluindo, setExcluindo] = useState(false)
   const destinoConsumido = useRef(false)
 
-  const carregar = useCallback(() => {
-    setCarregando(true)
-    setErro(null)
-    buscarJson<{ atividades: Atividade[]; agenda_disponivel?: boolean }>(cliente, `/casos/${casoId}/atividades`)
-      .then((r) => {
-        setAtividades(r.atividades ?? [])
-        setAgendaDisponivel(Boolean(r.agenda_disponivel))
-      })
-      .catch((e) => setErro(e instanceof ErroMCP ? e.message : 'Falha ao carregar.'))
-      .finally(() => setCarregando(false))
-  }, [cliente, casoId])
-  // eslint-disable-next-line react/set-state-in-effect
-  useEffect(carregar, [carregar])
+  const consulta = useQuery({
+    queryKey: ['caso-atividades', cliente?.token, casoId],
+    enabled: Boolean(cliente),
+    queryFn: ({ signal }) => buscarJson<{ atividades: Atividade[]; agenda_disponivel?: boolean }>(cliente, `/casos/${casoId}/atividades`, signal)
+      .then(r => ({ atividades: r.atividades ?? [], agendaDisponivel: Boolean(r.agenda_disponivel) })),
+  })
+  const atividades = consulta.data?.atividades ?? null
+  const agendaDisponivel = consulta.data?.agendaDisponivel ?? false
+  const carregando = consulta.isLoading
+  const erro = erroLocal ?? (consulta.error ? (consulta.error instanceof ErroMCP ? consulta.error.message : 'Falha ao carregar.') : null)
+  const carregar = () => { setErro(null); void consulta.refetch() }
 
   useEffect(() => {
     if (atividadeInicialId == null || !atividades || carregando || destinoConsumido.current) return
@@ -258,7 +256,7 @@ export default function AtividadesCaso({ casoId, atividadeInicialId, onAlterado 
                         <span style={{ marginLeft: 'auto' }}>{situacaoSelo(a)}</span>
                       </Flex>
                       {tituloCelula(a)}
-                      <Text size="1" color="gray">{a.responsavel ? formatarNomeExibicao(a.responsavel) : 'Sem responsável'}</Text>
+                      <Text size="1" color="gray">{a.responsavel ? nomePessoa(a.responsavel) : 'Sem responsável'}</Text>
                       {a.checklist?.total ? checklist(a) : null}
                       {expandidas.has(String(a.id)) && detalhes(a)}
                       <Flex gap="2" mt="1">
@@ -322,7 +320,7 @@ export default function AtividadesCaso({ casoId, atividadeInicialId, onAlterado 
                             <div className={atrasada(a) ? 'atividades-relativo atividades-alerta' : 'atividades-relativo'}>{quandoRelativo(a, hoje)}</div>
                           </td>
                           <td>{tituloCelula(a)}</td>
-                          <td>{a.responsavel ? formatarNomeExibicao(a.responsavel) : <Text color="gray">Sem responsável</Text>}</td>
+                          <td>{a.responsavel ? nomePessoa(a.responsavel) : <Text color="gray">Sem responsável</Text>}</td>
                           <td>{checklist(a)}</td>
                           <td>{situacaoSelo(a)}</td>
                           <td className="tabela-acoes"><Flex gap="1" justify="end" align="center">{acaoPrincipal(a)}{menu(a)}</Flex></td>

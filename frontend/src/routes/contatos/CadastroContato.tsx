@@ -1,7 +1,7 @@
 import CampoData from '../../CampoData'
 import Carregamento from '../../Carregamento'
 import { useEffect, useState } from 'react'
-import { AlertDialog, Button, Callout, Flex, Select, Tabs, Text, TextField } from '@radix-ui/themes'
+import { AlertDialog, Button, Callout, Flex, RadioGroup, Select, Tabs, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Building2, Check } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
@@ -280,24 +280,22 @@ export default function CadastroContato({
           <Flex direction="column" gap="4" mt="4">
             <div className="casos-formulario-grade">
               <div className="form-campo">
-                <label className="form-campo-label" htmlFor="contato-tipo-pessoa">Pessoa física ou jurídica</label>
-                <Select.Root value={registro.tipo_pessoa} onValueChange={(v) => atualizar('tipo_pessoa', v)}>
-                  <Select.Trigger id="contato-tipo-pessoa" style={{ width: '100%' }} />
-                  <Select.Content>
-                    <Select.Item value="fisica">Pessoa física</Select.Item>
-                    <Select.Item value="juridica">Pessoa jurídica</Select.Item>
-                  </Select.Content>
-                </Select.Root>
+                <span className="form-campo-label" id="contato-tipo-pessoa-rotulo">Pessoa física ou jurídica</span>
+                <RadioGroup.Root aria-labelledby="contato-tipo-pessoa-rotulo" value={registro.tipo_pessoa} onValueChange={(v) => atualizar('tipo_pessoa', v)}>
+                  <Flex gap="4" wrap="wrap">
+                    <Text as="label" size="2"><Flex gap="2" align="center"><RadioGroup.Item value="fisica" />Pessoa física</Flex></Text>
+                    <Text as="label" size="2"><Flex gap="2" align="center"><RadioGroup.Item value="juridica" />Pessoa jurídica</Flex></Text>
+                  </Flex>
+                </RadioGroup.Root>
               </div>
               <div className="form-campo">
-                <label className="form-campo-label" htmlFor="contato-perfil">Perfil</label>
-                <Select.Root value={registro.perfil} onValueChange={(v) => atualizar('perfil', v)}>
-                  <Select.Trigger id="contato-perfil" style={{ width: '100%' }} />
-                  <Select.Content>
-                    <Select.Item value="contato">Contato</Select.Item>
-                    <Select.Item value="cliente">Cliente</Select.Item>
-                  </Select.Content>
-                </Select.Root>
+                <span className="form-campo-label" id="contato-perfil-rotulo">Perfil</span>
+                <RadioGroup.Root aria-labelledby="contato-perfil-rotulo" value={registro.perfil} onValueChange={(v) => atualizar('perfil', v)}>
+                  <Flex gap="4" wrap="wrap">
+                    <Text as="label" size="2"><Flex gap="2" align="center"><RadioGroup.Item value="contato" />Contato</Flex></Text>
+                    <Text as="label" size="2"><Flex gap="2" align="center"><RadioGroup.Item value="cliente" />Cliente</Flex></Text>
+                  </Flex>
+                </RadioGroup.Root>
               </div>
             </div>
             <div className="form-campo">

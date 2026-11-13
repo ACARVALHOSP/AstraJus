@@ -4476,7 +4476,10 @@ class _AutenticacaoBearer:
             return
 
         if caminho == "/responsaveis" and scope.get("method") == "GET":
-            await _json(send, 200, {"responsaveis": self.registro.ativos()})
+            perfis = self.registro.carregar()
+            # "nomes" deixa a interface exibir o nome da pessoa em vez do login (e-mail).
+            nomes = {l: p["nome_completo"] for l, p in perfis.items() if p.get("nome_completo")}
+            await _json(send, 200, {"responsaveis": self.registro.ativos(), "nomes": nomes})
             return
         if caminho.startswith("/clientes/consulta-cnpj/") and scope.get("method") == "GET":
             await _consulta_cnpj_http(send, caminho[len("/clientes/consulta-cnpj/"):])

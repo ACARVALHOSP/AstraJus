@@ -7,12 +7,16 @@ import { AlertTriangle } from 'lucide-react'
 import { Button, Callout, Checkbox, Dialog, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
-import { buscarJson, enviarJson } from '../../api/rest'
+import { useCasos, useClientes } from '../../api/consultas'
+import { enviarJson } from '../../api/rest'
 import { formatarNomeExibicao } from '../../utils/formatadores'
 import { calcularValoresParcelas, somarMeses, valorLancamentoEmReais } from '../../utils/parcelas'
 
 type ClienteBusca = { id: string; nome: string; cpf_cnpj?: string }
 type CasoOpcao = { id: string; titulo?: string; cliente_id?: string; clientes_adicionais?: string[] }
+
+const SEM_CLIENTES: ClienteBusca[] = []
+const SEM_CASOS: CasoOpcao[] = []
 
 function normalizar(texto: string): string {
   return texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
@@ -30,10 +34,14 @@ export default function NovoLancamentoModal({ open, onClose, onSalvo, predefinid
   open: boolean; onClose: () => void; onSalvo: () => void; predefinido?: Predefinido | null
 }) {
   const { cliente } = useCliente()
-  const [clientes, setClientes] = useState<ClienteBusca[]>([])
-  const [casos, setCasos] = useState<CasoOpcao[]>([])
-  const [carregandoBase, setCarregandoBase] = useState(false)
-  const [erroBase, setErroBase] = useState<string | null>(null)
+  // Clientes e processos só são consultados com o diálogo aberto; vêm do cache compartilhado.
+  const consultaClientes = useClientes<ClienteBusca>({ enabled: open && Boolean(cliente) })
+  const consultaCasos = useCasos<CasoOpcao>({ enabled: open && Boolean(cliente) })
+  const clientes = consultaClientes.data ?? SEM_CLIENTES
+  const casos = consultaCasos.data ?? SEM_CASOS
+  const carregandoBase = open && (consultaClientes.isLoading || consultaCasos.isLoading)
+  const falhaBase = consultaClientes.error ?? consultaCasos.error
+  const erroBase = falhaBase ? (falhaBase instanceof ErroMCP ? falhaBase.message : 'Falha ao carregar clientes/processos.') : null
 
   const [buscaCliente, setBuscaCliente] = useState('')
   const [clienteSelecionado, setClienteSelecionado] = useState<ClienteBusca | null>(null)
@@ -54,29 +62,20 @@ export default function NovoLancamentoModal({ open, onClose, onSalvo, predefinid
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (!open) return
-    setCarregandoBase(true)
-    setErroBase(null)
-    Promise.all([buscarJson<{ clientes: ClienteBusca[] }>(cliente, '/clientes'), buscarJson<{ casos: CasoOpcao[] }>(cliente, '/casos')])
-      .then(([rc, rp]) => {
-        setClientes(rc.clientes ?? [])
-        setCasos(rp.casos ?? [])
-      })
-      .catch((e) => setErroBase(e instanceof ErroMCP ? e.message : 'Falha ao carregar clientes/processos.'))
-      .finally(() => setCarregandoBase(false))
-  }, [open, cliente])
+  const clientePre = predefinido ? clientes.find(x => x.id === predefinido.clienteId) : undefined
   useEffect(() => {
     if (!open || !predefinido || carregandoBase) return
-    const c = clientes.find(x => x.id === predefinido.clienteId)
-    if (!c) return
+    if (!clientePre) return
+    const c = clientePre
     // eslint-disable-next-line react/set-state-in-effect
     setClienteSelecionado(c); setCasosSelecionados(new Set([predefinido.casoId]))
     setTipo(predefinido.tipo); setDirecao(predefinido.tipo === 'REPASSE' || predefinido.tipo === 'CUSTAS' ? 'DESPESA' : 'RECEITA')
     if (predefinido.valor) setValor(String(predefinido.valor).replace('.', ','))
     if (predefinido.descricao) setDescricao(predefinido.descricao)
     if (predefinido.favorecido) setFavorecido(predefinido.favorecido)
-  }, [open, predefinido, carregandoBase, clientes])
+    // Reaplica só quando o cliente do atalho aparece: uma recarga da lista não pode apagar o que foi digitado.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, predefinido, carregandoBase, clientePre?.id])
 
   function limpar() {
     setBuscaCliente('')

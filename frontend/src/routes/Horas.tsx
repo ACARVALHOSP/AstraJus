@@ -7,7 +7,7 @@ import CabecalhoPagina from '../CabecalhoPagina'
 import Carregamento from '../Carregamento'
 import LinhaFiltros from '../LinhaFiltros'
 import TabelaResponsiva from '../TabelaResponsiva'
-import { useCasos, useResponsaveis } from '../api/consultas'
+import { useCasos, useNomePessoa, useResponsaveis } from '../api/consultas'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
 import { usePerfil } from '../api/PerfilContext'
@@ -58,6 +58,7 @@ export default function HorasPagina() {
   })
   const casosQ = useCasos<{ id: string; titulo?: string }>({ enabled: Boolean(cliente) })
   const pessoasQ = useResponsaveis()
+  const nomePessoa = useNomePessoa()
 
   const casos = useMemo(() => [...(casosQ.data ?? [])].sort((a, b) => (a.titulo ?? '').localeCompare(b.titulo ?? '', 'pt-BR')), [casosQ.data])
   const horas = consulta.data?.horas ?? []
@@ -106,7 +107,7 @@ export default function HorasPagina() {
     if (!horas.length) { avisar({ tipo: 'info', texto: 'Não há horas neste período e filtros para exportar.' }); return }
     baixarCsv('horas', [
       { titulo: 'Data', valor: h => formatarDataSimples(h.data) },
-      { titulo: 'Pessoa', valor: h => h.usuario },
+      { titulo: 'Pessoa', valor: h => nomePessoa(h.usuario) },
       { titulo: 'Processo', valor: h => formatarNomeExibicao(h.caso_titulo) },
       { titulo: 'Descrição', valor: h => h.descricao },
       { titulo: 'Tempo', valor: h => formatarDuracao(h.minutos) },
@@ -185,7 +186,7 @@ export default function HorasPagina() {
         <Flex direction="column" gap="1"><Text size="1" color="gray">Pessoa</Text>
           <Select.Root value={filtros.usuario || TODOS} onValueChange={v => mudarFiltro({ usuario: v === TODOS ? '' : v })}>
             <Select.Trigger aria-label="Filtrar por pessoa" />
-            <Select.Content><Select.Item value={TODOS}>Todas as pessoas</Select.Item>{(pessoasQ.data ?? []).map(p => <Select.Item key={p} value={p}>{p}</Select.Item>)}</Select.Content>
+            <Select.Content><Select.Item value={TODOS}>Todas as pessoas</Select.Item>{(pessoasQ.data ?? []).map(p => <Select.Item key={p} value={p}>{nomePessoa(p)}</Select.Item>)}</Select.Content>
           </Select.Root></Flex>
         <Flex direction="column" gap="1"><Text size="1" color="gray">Processo</Text>
           <Select.Root value={filtros.casoId || TODOS} onValueChange={v => mudarFiltro({ casoId: v === TODOS ? '' : v })}>
@@ -240,7 +241,7 @@ export default function HorasPagina() {
                     </td>
                     <td>
                       <div>{formatarDataSimples(h.data)}</div>
-                      <Text as="div" size="1" color="gray">{h.usuario}</Text>
+                      <Text as="div" size="1" color="gray">{nomePessoa(h.usuario)}</Text>
                     </td>
                     <td>
                       <Button variant="ghost" size="2" onClick={() => irPara('casos', { id: h.caso_id })}>{formatarNomeExibicao(h.caso_titulo) || '(sem título)'}</Button>

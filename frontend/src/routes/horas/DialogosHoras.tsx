@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Button, Callout, Checkbox, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
+import { useNomePessoa } from '../../api/consultas'
 import { ErroMCP } from '../../api/mcpClient'
 import { enviarJson } from '../../api/rest'
 import { formatarMoeda, formatarNomeExibicao } from '../../utils/formatadores'
@@ -215,6 +216,7 @@ export function DialogoTarifas({ pessoas, tarifas, onClose, onSalvo }: {
   pessoas: string[]; tarifas: Record<string, number>; onClose: () => void; onSalvo: () => void
 }) {
   const { cliente } = useCliente()
+  const nomePessoa = useNomePessoa()
   const [valores, setValores] = useState<Record<string, string>>(() => Object.fromEntries(pessoas.map(p => [p, tarifas[p] !== undefined ? String(tarifas[p]).replace('.', ',') : ''])))
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState('')
@@ -244,7 +246,7 @@ export function DialogoTarifas({ pessoas, tarifas, onClose, onSalvo }: {
         <Flex direction="column" gap="2" mt="4">
           {pessoas.map(p => (
             <Flex key={p} align="center" justify="between" gap="3">
-              <Text size="2" as="label" htmlFor={`tarifa-${p}`}>{p}</Text>
+              <Text size="2" as="label" htmlFor={`tarifa-${p}`}>{nomePessoa(p)}</Text>
               <TextField.Root id={`tarifa-${p}`} style={{ width: '9rem' }} inputMode="decimal" placeholder="Sem valor" value={valores[p] ?? ''}
                 onChange={e => setValores(v => ({ ...v, [p]: e.target.value }))} />
             </Flex>
