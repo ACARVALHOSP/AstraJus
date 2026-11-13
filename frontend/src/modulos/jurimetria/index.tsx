@@ -1,9 +1,13 @@
 import CampoData from '../../CampoData'
 import CabecalhoPagina from '../../CabecalhoPagina'
 import Carregamento from '../../Carregamento'
-import { useState, type FormEvent } from 'react'
-import { AlertTriangle } from 'lucide-react'
-import { Badge, Button, Callout, Card, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
+import { useMemo, useState, type FormEvent } from 'react'
+import { AlertTriangle, Download } from 'lucide-react'
+import { Badge, Button, Callout, Card, Checkbox, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
+import Paginacao, { POR_PAGINA } from '../../Paginacao'
+import { baixarCsv, type ColunaCsv } from '../../utils/csv'
+import { chaveParaData, contarDesfechos, ehAtipico, histograma, intervaloWilson, resumirValores, serieMensal, valoresDeCondenacao } from './estatisticas'
+import { GraficoDesfechos, GraficoHistograma, GraficoSerieMensal } from './graficos'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { formatarNumeroCNJ, formatarPercentual, formatarReais, isoParaDdMmAaaa } from '../../utils/formatadores'
@@ -205,11 +209,7 @@ export default function Jurimetria() {
               {resultado.total_servidor != null ? `${resultado.total_servidor.toLocaleString('pt-BR')} sentenças encontradas; ` : ''}
               {resultado.buscados} analisadas nesta consulta.
             </Text>
-            {resultado.agregado && <ResumoAgregado agregado={resultado.agregado} />}
-            {resultado.perfil && <ResumoPerfil perfil={resultado.perfil} />}
-            {(resultado.resultados ?? []).map((item, i) => (
-              <CartaoJurimetria key={i} item={item} />
-            ))}
+            <PainelResultado resultado={resultado} analise={analiseAtual} />
             {!resultado.resultados?.length && (
               <Callout.Root color="blue" size="1">
                 <Callout.Text>Nenhum resultado. Tente ampliar os filtros ou o termo de busca.</Callout.Text>
@@ -227,6 +227,160 @@ export default function Jurimetria() {
           de 10.000 sentenças por consulta; para estudos maiores, divida por período.
         </Text>
       </details>
+    </Flex>
+  )
+}
+
+type Ordenacao = 'recentes' | 'maior_valor' | 'menor_valor' | 'desfecho'
+
+const ROTULO_ORDENACAO: Record<Ordenacao, string> = {
+  recentes: 'Mais recentes primeiro',
+  maior_valor: 'Maior valor primeiro',
+  menor_valor: 'Menor valor primeiro',
+  desfecho: 'Por desfecho',
+}
+
+const ORDEM_DESFECHO = ['procedente', 'parcial', 'acordo', 'improcedente', 'extinto']
+
+const COLUNAS_CSV = (consideradas: Set<number>, atipicas: Set<number>, indices: Map<ItemResultado, number>): ColunaCsv<ItemResultado>[] => [
+  { titulo: 'Processo', valor: i => formatarNumeroCNJ(i.numero_processo) },
+  { titulo: 'Desfecho', valor: i => (i.desfecho && ROTULO_DESFECHO[i.desfecho]?.[0]) || 'Não classificado' },
+  { titulo: 'Valor da condenação', valor: i => i.valor_condenacao },
+  { titulo: 'Classe', valor: i => i.classe },
+  { titulo: 'Assunto', valor: i => i.assunto },
+  { titulo: 'Magistrado', valor: i => i.magistrado },
+  { titulo: 'Vara', valor: i => i.vara },
+  { titulo: 'Comarca', valor: i => i.comarca },
+  { titulo: 'Data de disponibilização', valor: i => i.data_disponibilizacao },
+  { titulo: 'Valor atípico', valor: i => (atipicas.has(indices.get(i) ?? -1) ? 'Sim' : 'Não') },
+  { titulo: 'Considerada nos cálculos', valor: i => (consideradas.has(indices.get(i) ?? -1) ? 'Sim' : 'Não') },
+]
+
+function avisoLocal(n: number, rotulo: string): string | undefined {
+  if (n < 5) return `Amostra muito pequena (menos de 5 ${rotulo}) - interprete com muita cautela.`
+  if (n < 30) return `Amostra pequena (menos de 30 ${rotulo}) - os números são indicativos, não conclusivos.`
+  return undefined
+}
+
+function PainelResultado({ resultado, analise }: { resultado: RespostaJurimetria; analise: Analise }) {
+  const itens = useMemo(() => resultado.resultados ?? [], [resultado])
+  const [desconsideradas, setDesconsideradas] = useState<Set<number>>(new Set())
+  const [ordenacao, setOrdenacao] = useState<Ordenacao>('recentes')
+  const [pagina, setPagina] = useState(1)
+
+  const indices = useMemo(() => new Map(itens.map((item, i) => [item, i])), [itens])
+  // Valores atípicos são medidos sobre todas as sentenças buscadas, para não mudarem ao desconsiderar.
+  const atipicas = useMemo(() => {
+    const resumoTotal = resumirValores(valoresDeCondenacao(itens))
+    return new Set(
+      itens
+        .map((item, i) => ((item.desfecho === 'procedente' || item.desfecho === 'parcial') && item.valor_condenacao != null && ehAtipico(item.valor_condenacao, resumoTotal) ? i : -1))
+        .filter(i => i >= 0),
+    )
+  }, [itens])
+  const consideradas = useMemo(() => new Set(itens.map((_, i) => i).filter(i => !desconsideradas.has(i))), [itens, desconsideradas])
+  const itensConsiderados = useMemo(() => itens.filter((_, i) => consideradas.has(i)), [itens, consideradas])
+
+  const { contagens, classificados } = useMemo(() => contarDesfechos(itensConsiderados), [itensConsiderados])
+  const valores = useMemo(() => valoresDeCondenacao(itensConsiderados), [itensConsiderados])
+  const resumoValores = useMemo(() => resumirValores(valores), [valores])
+  const faixas = useMemo(() => histograma(valores), [valores])
+  const pontos = useMemo(() => serieMensal(itensConsiderados), [itensConsiderados])
+
+  const recalculado = desconsideradas.size > 0
+  const agregado: Agregado | undefined = recalculado && analise === 'benchmark_valor'
+    ? {
+        procedentes_ou_parciais: contagens.procedente + contagens.parcial,
+        com_valor_extraido: valores.length,
+        mediana: resumoValores?.mediana,
+        p25: resumoValores?.p25,
+        p75: resumoValores?.p75,
+        aviso: avisoLocal(valores.length, 'valores extraídos'),
+      }
+    : resultado.agregado
+  const perfil: Perfil | undefined = recalculado && analise === 'perfil_magistrado'
+    ? {
+        total_classificados: classificados,
+        com_valor_extraido: valores.length,
+        valor_mediano_indenizacao: resumoValores?.mediana ?? null,
+        aviso: avisoLocal(classificados, 'decisões classificadas'),
+        ...Object.fromEntries(Object.keys(ROTULO_TAXA).flatMap(chave => {
+          const desfecho = chave.replace('taxa_', '') as keyof typeof contagens
+          const ic = intervaloWilson(contagens[desfecho], classificados)
+          return [[chave, classificados ? contagens[desfecho] / classificados : null], [chave.replace('taxa_', 'ic_'), ic]]
+        })),
+      }
+    : resultado.perfil
+
+  const ordenadas = useMemo(() => {
+    const lista = itens.map((item, i) => ({ item, i }))
+    const valorDe = (x: { item: ItemResultado }) => x.item.valor_condenacao
+    if (ordenacao === 'recentes') lista.sort((a, b) => chaveParaData(b.item.data_disponibilizacao) - chaveParaData(a.item.data_disponibilizacao))
+    else if (ordenacao === 'desfecho') lista.sort((a, b) => ORDEM_DESFECHO.indexOf(a.item.desfecho ?? '') - ORDEM_DESFECHO.indexOf(b.item.desfecho ?? ''))
+    else {
+      const sinal = ordenacao === 'maior_valor' ? -1 : 1
+      lista.sort((a, b) => {
+        const va = valorDe(a)
+        const vb = valorDe(b)
+        if (va == null && vb == null) return 0
+        if (va == null) return 1 // sem valor sempre no fim
+        if (vb == null) return -1
+        return sinal * (va - vb)
+      })
+    }
+    return lista
+  }, [itens, ordenacao])
+  const paginaAtual = Math.min(pagina, Math.max(1, Math.ceil(ordenadas.length / POR_PAGINA)))
+  const visiveis = ordenadas.slice((paginaAtual - 1) * POR_PAGINA, paginaAtual * POR_PAGINA)
+
+  function alternar(i: number) {
+    setDesconsideradas(atual => {
+      const novo = new Set(atual)
+      if (novo.has(i)) novo.delete(i)
+      else novo.add(i)
+      return novo
+    })
+  }
+
+  if (itens.length === 0) return null
+  return (
+    <Flex direction="column" gap="5">
+      {recalculado && (
+        <Callout.Root color="blue" size="1">
+          <Callout.Text>Números e gráficos recalculados sem {desconsideradas.size} sentença(s) desconsiderada(s).</Callout.Text>
+        </Callout.Root>
+      )}
+      {agregado && <ResumoAgregado agregado={agregado} />}
+      {perfil && <ResumoPerfil perfil={perfil} />}
+      <Flex direction="column" gap="5">
+        <GraficoDesfechos contagens={contagens} total={classificados} />
+        <GraficoHistograma faixas={faixas} resumo={resumoValores} />
+        <GraficoSerieMensal pontos={pontos} />
+      </Flex>
+      <Flex align="end" gap="3" wrap="wrap">
+        <div className="form-campo">
+          <label className="form-campo-label" id="jur-ordenacao-rotulo">Ordenar sentenças</label>
+          <Select.Root value={ordenacao} onValueChange={v => { setOrdenacao(v as Ordenacao); setPagina(1) }}>
+            <Select.Trigger aria-labelledby="jur-ordenacao-rotulo" />
+            <Select.Content>
+              {(Object.keys(ROTULO_ORDENACAO) as Ordenacao[]).map(o => <Select.Item key={o} value={o}>{ROTULO_ORDENACAO[o]}</Select.Item>)}
+            </Select.Content>
+          </Select.Root>
+        </div>
+        <Button size="2" variant="soft" disabled={atipicas.size === 0} onClick={() => setDesconsideradas(new Set([...desconsideradas, ...atipicas]))}>
+          Desconsiderar valores atípicos ({atipicas.size})
+        </Button>
+        <Button size="2" variant="soft" color="gray" disabled={!recalculado} onClick={() => setDesconsideradas(new Set())}>
+          Considerar todas
+        </Button>
+        <Button size="2" variant="soft" color="gray" onClick={() => baixarCsv('jurimetria', COLUNAS_CSV(consideradas, atipicas, indices), itens)}>
+          <Download size={14} aria-hidden /> Exportar CSV
+        </Button>
+      </Flex>
+      {visiveis.map(({ item, i }) => (
+        <CartaoJurimetria key={i} item={item} considerada={consideradas.has(i)} atipico={atipicas.has(i)} onAlternar={() => alternar(i)} />
+      ))}
+      <Paginacao pagina={paginaAtual} total={ordenadas.length} onPagina={setPagina} nome="sentenças" />
     </Flex>
   )
 }
@@ -296,14 +450,19 @@ function ResumoPerfil({ perfil }: { perfil: Perfil }) {
   )
 }
 
-function CartaoJurimetria({ item }: { item: ItemResultado }) {
+function CartaoJurimetria({ item, considerada, atipico, onAlternar }: { item: ItemResultado; considerada: boolean; atipico: boolean; onAlternar: () => void }) {
   const [rotuloDesfecho, corDesfecho] = (item.desfecho && ROTULO_DESFECHO[item.desfecho]) || ['Não classificado', 'gray']
   return (
-    <Card variant="surface">
+    <Card variant="surface" style={considerada ? undefined : { opacity: 0.6 }}>
       <Flex direction="column" gap="3">
-        <Flex gap="2">
+        <Flex gap="2" align="center" wrap="wrap">
           <Badge color={corDesfecho as 'gray'}>{rotuloDesfecho}</Badge>
           {item.valor_condenacao != null && <Badge color="purple">{formatarReais(item.valor_condenacao)}</Badge>}
+          {atipico && <Badge color="amber">Valor atípico</Badge>}
+          <Text as="label" size="2" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Checkbox checked={considerada} onCheckedChange={onAlternar} aria-label={`Considerar o processo ${formatarNumeroCNJ(item.numero_processo) || 'sem número'} nos cálculos`} />
+            Considerar nos cálculos
+          </Text>
         </Flex>
         <Heading as="h3" size="3">{formatarNumeroCNJ(item.numero_processo) || 'Número não identificado'}</Heading>
         <Text size="2">
