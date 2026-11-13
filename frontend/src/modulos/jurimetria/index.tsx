@@ -7,6 +7,7 @@ import { Badge, Button, Callout, Card, Checkbox, Flex, Heading, Select, Text, Te
 import Paginacao, { POR_PAGINA } from '../../Paginacao'
 import { baixarCsv, type ColunaCsv } from '../../utils/csv'
 import { chaveParaData, contarDesfechos, ehAtipico, histograma, intervaloWilson, resumirValores, serieMensal, valoresDeCondenacao } from './estatisticas'
+import { SeletorArvore, SeletorMagistrado, type Magistrado, type OpcaoArvore } from './seletores'
 import { GraficoDesfechos, GraficoHistograma, GraficoSerieMensal } from './graficos'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
@@ -85,6 +86,10 @@ export default function Jurimetria() {
   const { cliente } = useCliente()
   const [termo, setTermo] = useState('')
   const [magistrado, setMagistrado] = useState('')
+  const [magistradoEscolhido, setMagistradoEscolhido] = useState<Magistrado | null>(null)
+  const [varas, setVaras] = useState<OpcaoArvore[]>([])
+  const [classes, setClasses] = useState<OpcaoArvore[]>([])
+  const [assuntos, setAssuntos] = useState<OpcaoArvore[]>([])
   const [dataInicio, setDataInicio] = useState('')
   const [dataFim, setDataFim] = useState('')
   const [paginas, setPaginas] = useState(1)
@@ -101,16 +106,18 @@ export default function Jurimetria() {
     }
     const comuns = {
       termo: termo.trim() || null,
-      magistrado_nome: magistrado.trim() || null,
-      magistrado_codigo: null,
+      // Com o juiz escolhido na lista vai só o código (filtro exato no tribunal); só o nome digitado
+      // vira busca de texto nas sentenças.
+      magistrado_nome: magistradoEscolhido ? null : magistrado.trim() || null,
+      magistrado_codigo: magistradoEscolhido?.codigo ?? null,
       data_inicio: isoParaDdMmAaaa(dataInicio),
       data_fim: isoParaDdMmAaaa(dataFim),
       paginas: paginas || 1,
-      vara_codigo: null,
-      classe_codigo: null,
-      assunto_codigo: null,
+      vara_codigo: varas.map(o => o.id).join(',') || null,
+      classe_codigo: classes.map(o => o.id).join(',') || null,
+      assunto_codigo: assuntos.map(o => o.id).join(',') || null,
     }
-    if (analise === 'perfil_magistrado' && !comuns.magistrado_nome) {
+    if (analise === 'perfil_magistrado' && !comuns.magistrado_nome && !comuns.magistrado_codigo) {
       setErro('Informe o magistrado.')
       return
     }
@@ -148,10 +155,11 @@ export default function Jurimetria() {
             <label className="form-campo-label" htmlFor="jur-termo">Assunto</label>
             <TextField.Root id="jur-termo" placeholder="Ex.: dano moral por negativação indevida" autoComplete="off" value={termo} onChange={(e) => setTermo(e.target.value)} />
           </div>
-          <div className="form-campo">
-            <label className="form-campo-label" htmlFor="jur-magistrado">Juiz (opcional)</label>
-            <TextField.Root id="jur-magistrado" placeholder="Nome do juiz ou juíza" autoComplete="off" value={magistrado} onChange={(e) => setMagistrado(e.target.value)} />
-            <Text size="1" color="gray">Necessário para &quot;Como este juiz costuma decidir?&quot;. Na outra pergunta, limita as sentenças a esse juiz.</Text>
+          <SeletorMagistrado id="jur-magistrado" texto={magistrado} onTexto={setMagistrado} escolhido={magistradoEscolhido} onEscolher={setMagistradoEscolhido} />
+          <div className="aj-form-grade">
+            <SeletorArvore campo="classe" id="jur-classe" rotulo="Classe (opcional)" placeholder="Ex.: procedimento comum" valor={classes} onChange={setClasses} />
+            <SeletorArvore campo="assunto" id="jur-assunto" rotulo="Classificação do assunto (opcional)" placeholder="Ex.: indenização por dano moral" valor={assuntos} onChange={setAssuntos} />
+            <SeletorArvore campo="vara" id="jur-vara" rotulo="Vara (opcional)" placeholder="Ex.: 1ª vara cível" valor={varas} onChange={setVaras} />
           </div>
           <div className="aj-form-grade">
             <div className="form-campo">
