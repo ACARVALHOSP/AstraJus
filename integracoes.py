@@ -352,7 +352,13 @@ async def testar(provedor, ambiente, dados, cliente, contexto=None):
                 r = await cliente.get('https://api.zapsign.com.br/api/v1/docs/', params={'page': 1}, headers={'Authorization': 'Bearer ' + chave})
             else:
                 r = await cliente.post('https://api-publica.datajud.cnj.jus.br/api_publica_tjsp/_search', json={'size': 0, 'query': {'match_all': {}}}, headers={'Authorization': 'APIKey ' + chave})
-            return (True, 'Autenticação de leitura confirmada.') if r.status_code == 200 else (False, 'O provedor recusou a verificação (HTTP %s).' % r.status_code)
+            if r.status_code == 200:
+                return True, 'Autenticação de leitura confirmada.'
+            if r.status_code in (401, 403):
+                return False, 'Chave rejeitada pelo provedor (HTTP %s). Confira a chave informada.' % r.status_code
+            if r.status_code == 429 or r.status_code >= 500:
+                return False, 'O provedor está instável ou limitando acessos (HTTP %s). A chave não foi avaliada; tente novamente em instantes.' % r.status_code
+            return False, 'O provedor recusou a verificação (HTTP %s).' % r.status_code
         if provedor == 'smtp':
             from email.utils import parseaddr
             if not dados.get('usuario') or not dados.get('senha') or '@' not in parseaddr(dados.get('remetente', ''))[1]:

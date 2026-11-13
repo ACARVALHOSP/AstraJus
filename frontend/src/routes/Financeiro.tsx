@@ -5,13 +5,14 @@ import { ariaSort, BotaoOrdenar, EscolherColunas, ordenarLista, useColunas, useO
 import TabelaResponsiva from '../TabelaResponsiva'
 import AcoesTabela from '../AcoesTabela'
 import Carregamento from '../Carregamento'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useCasos, useClientes, useLancamentos, useNomePessoa } from '../api/consultas'
 import { AlertTriangle, ChevronLeft, ChevronRight, Download, Info } from 'lucide-react'
 import { AlertDialog, Badge, Button, Callout, Checkbox, Flex, IconButton, Select, Tabs, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
+import { useFiltrosUrl } from '../api/useFiltrosUrl'
 import { ErroMCP } from '../api/mcpClient'
 import { enviarJson } from '../api/rest'
 import { formatarMoeda, formatarNomeExibicao } from '../utils/formatadores'
@@ -97,14 +98,19 @@ function partesDescricao(descricao: string) {
 
 // Lançamentos, situação por processo e inadimplência: três visões do mesmo financeiro.
 export default function Financeiro() {
-  const { consumirPayload, versaoNavegacao } = useNavegacao()
+  const { consumirPayload, versaoNavegacao, sincronizarUrl } = useNavegacao()
   const [aba, setAba] = useState<'lancamentos' | 'processos' | 'inadimplencia'>('lancamentos')
+  const versaoLida = useRef(-1)
   useEffect(() => {
+    if (versaoLida.current === versaoNavegacao) return // evita reler no StrictMode
+    versaoLida.current = versaoNavegacao
     // Atalhos de outras telas (ex.: o resumo do escritório) abrem direto numa das abas.
     const destino = consumirPayload<{ aba?: 'lancamentos' | 'processos' | 'inadimplencia' }>('financeiro')
     // eslint-disable-next-line react/set-state-in-effect
-    if (destino?.aba) setAba(destino.aba)
+    setAba(destino?.aba && ['lancamentos', 'processos', 'inadimplencia'].includes(destino.aba) ? destino.aba : 'lancamentos')
   }, [consumirPayload, versaoNavegacao])
+  // Na aba Lançamentos quem grava a URL é a lista (ela leva os filtros); nas outras, só a aba.
+  useEffect(() => { if (aba !== 'lancamentos') sincronizarUrl('financeiro', { aba }) }, [aba, sincronizarUrl])
   const abas = (
     <Tabs.Root value={aba} onValueChange={(v) => setAba(v as typeof aba)}>
       <Tabs.List aria-label="Financeiro">
@@ -125,13 +131,36 @@ function ListaLancamentos({ abas }: { abas: React.ReactNode }) {
   const { irPara } = useNavegacao()
   const estreita = useEstreita()
   const [hoje] = useState(() => isoLocal(new Date()))
-  const [mes, setMes] = useState(() => hoje.slice(0, 7))
-  const [todosMeses, setTodosMeses] = useState(false)
-  const [atalho, setAtalho] = useState<Atalho>('')
-  const [direcao, setDirecao] = useState<'' | 'RECEITA' | 'DESPESA'>('')
-  const [clienteFiltro, setClienteFiltro] = useState('')
-  const [responsavelFiltro, setResponsavelFiltro] = useState('')
-  const [busca, setBusca] = useState('')
+  // Filtros na URL ("#/financeiro?mes=2026-11&direcao=RECEITA"): recarregar ou compartilhar mantém a lista.
+  const [filtros, setFiltros] = useFiltrosUrl('financeiro',
+    { mes: hoje.slice(0, 7), todos: '', atalho: '', direcao: '', tipo: '', cliente: '', responsavel: '', busca: '' },
+    {
+      fixos: ['mes'],
+      normalizar: f => ({
+        ...f,
+        mes: /^\d{4}-(0[1-9]|1[0-2])$/.test(f.mes) ? f.mes : hoje.slice(0, 7),
+        todos: f.todos === '1' ? '1' : '',
+        atalho: ['aberto', 'vencido', 'quitado'].includes(f.atalho) ? f.atalho : '',
+        direcao: f.direcao === 'RECEITA' || f.direcao === 'DESPESA' ? f.direcao : '',
+      }),
+    })
+  const mes = filtros.mes
+  const todosMeses = filtros.todos === '1'
+  const atalho = filtros.atalho as Atalho
+  const direcao = filtros.direcao as '' | 'RECEITA' | 'DESPESA'
+  const tipoFiltro = filtros.tipo
+  const clienteFiltro = filtros.cliente
+  const responsavelFiltro = filtros.responsavel
+  const busca = filtros.busca
+  const mudar = (parcial: Partial<typeof filtros>) => setFiltros(f => ({ ...f, ...parcial }))
+  const setMes = (v: string | ((m: string) => string)) => setFiltros(f => ({ ...f, mes: typeof v === 'function' ? v(f.mes) : v }))
+  const setTodosMeses = (v: (anterior: boolean) => boolean) => setFiltros(f => ({ ...f, todos: v(f.todos === '1') ? '1' : '' }))
+  const setAtalho = (v: Atalho) => mudar({ atalho: v })
+  const setDirecao = (v: '' | 'RECEITA' | 'DESPESA') => mudar({ direcao: v })
+  const setClienteFiltro = (v: string) => mudar({ cliente: v })
+  const setResponsavelFiltro = (v: string) => mudar({ responsavel: v })
+  const setBusca = (v: string) => mudar({ busca: v })
+  const setTipoFiltro = (v: string) => mudar({ tipo: v })
   const [operando, setOperando] = useState(false)
   const { avisar } = useAvisos()
   const queryClient = useQueryClient()
@@ -150,7 +179,6 @@ function ListaLancamentos({ abas }: { abas: React.ReactNode }) {
   const [excluindo, setExcluindo] = useState(false)
   const [modalNovoAberto, setModalNovoAberto] = useState(false)
   const [predefinido, setPredefinido] = useState<Predefinido | null>(null)
-  const [tipoFiltro, setTipoFiltro] = useState('')
 
   const carregar = async () => { await Promise.all(consultas.map(c => c.refetch())) }
 

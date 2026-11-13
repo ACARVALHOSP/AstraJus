@@ -9,6 +9,7 @@ import { Badge, Button, Callout, Dialog, Flex, SegmentedControl, Select, Switch,
 import { AlertTriangle, Calculator, ChevronLeft, ChevronRight, Download, Plus } from 'lucide-react'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
+import { useFiltrosUrl } from '../api/useFiltrosUrl'
 import { usePerfil } from '../api/PerfilContext'
 import { ErroMCP } from '../api/mcpClient'
 import { buscarJson, enviarJson } from '../api/rest'
@@ -28,6 +29,11 @@ type Item = {
 }
 type CasoOpcao = { id: string; titulo?: string; processos?: string[] }
 
+/** AAAA-MM-DD de um dia que existe no calendário. */
+const dataValida = (s: string) => {
+  const d = new Date(`${s}T00:00:00Z`)
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s
+}
 const SEM_ITENS: Item[] = []
 const SEM_TEXTOS: string[] = []
 const hora = (a: Item) => (a.hora ? a.hora.slice(0, 5) : '')
@@ -40,12 +46,28 @@ export default function Agenda() {
   const { avisar } = useAvisos()
   const estreita = useEstreita()
   const [hoje, setHoje] = useState(() => isoLocal(new Date()))
-  const [visao, setVisao] = useState<Visao>('mes')
-  const [ref, setRef] = useState(hoje)
-  const [selecionado, setSelecionado] = useState(hoje)
-  const [tipo, setTipo] = useState('')
-  const [responsavel, setResponsavel] = useState('')
-  const [concluidas, setConcluidas] = useState(false)
+  // Visão, data, dia escolhido e filtros na URL ("#/agenda?visao=semana&ref=2026-11-13"): o link abre a mesma agenda.
+  const [filtros, setFiltros] = useFiltrosUrl('agenda',
+    { visao: 'mes', ref: hoje, sel: hoje, tipo: '', responsavel: '', concl: '' },
+    {
+      fixos: ['ref'],
+      normalizar: f => ({
+        ...f,
+        visao: ['mes', 'semana', 'dia'].includes(f.visao) ? f.visao : 'mes',
+        ref: dataValida(f.ref) ? f.ref : hoje,
+        sel: dataValida(f.sel) ? f.sel : dataValida(f.ref) ? f.ref : hoje,
+        concl: f.concl === '1' ? '1' : '',
+      }),
+    })
+  const visao = filtros.visao as Visao, ref = filtros.ref, selecionado = filtros.sel
+  const tipo = filtros.tipo, responsavel = filtros.responsavel, concluidas = filtros.concl === '1'
+  const setVisao = (v: Visao) => setFiltros(f => ({ ...f, visao: v }))
+  const setRef = (v: string) => setFiltros(f => ({ ...f, ref: v }))
+  const setSelecionado = (v: string) => setFiltros(f => ({ ...f, sel: v }))
+  const setTipo = (v: string) => setFiltros(f => ({ ...f, tipo: v }))
+  const setResponsavel = (v: string) => setFiltros(f => ({ ...f, responsavel: v }))
+  const setConcluidas = (v: boolean | ((anterior: boolean) => boolean)) =>
+    setFiltros(f => ({ ...f, concl: (typeof v === 'function' ? v(f.concl === '1') : v) ? '1' : '' }))
   const [editando, setEditando] = useState<{ casoId: string; atividade: AtividadeCaso | null; data?: string } | null>(null)
   const [escolhendo, setEscolhendo] = useState(false)
   const [calculandoPrazo, setCalculandoPrazo] = useState(false)

@@ -43,7 +43,7 @@ export function PerfilProvider({ children }: { children: ReactNode }) {
     // Sem perfil carregado nada é escondido; o servidor continua recusando o que não é permitido.
     abaPermitida: aba => {
       if (!perfil) return true
-      if (aba === 'administracao') return perfil.nivel === 'administrador'
+      if (aba === 'administracao' || aba === 'integracoes/admin') return perfil.nivel === 'administrador'
       const area = ABA_AREA[aba]
       return !area || (perfil.permissoes[area] ?? 'editar') !== 'nenhum'
     },

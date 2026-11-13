@@ -15,6 +15,7 @@ import { Badge, Button, Callout, Checkbox, Dialog, Flex, Select, Text, TextField
 import { AlertTriangle, CalendarCheck, Info } from 'lucide-react'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
+import { useFiltrosUrl } from '../api/useFiltrosUrl'
 import { ErroMCP } from '../api/mcpClient'
 import { buscarJson, enviarJson } from '../api/rest'
 import { formatarNomeExibicao, formatarNumeroCNJ } from '../utils/formatadores'
@@ -43,12 +44,26 @@ export default function Atividades() {
   const { irPara } = useNavegacao()
   const estreita = useEstreita()
   const [hoje, setHoje] = useState(() => isoLocal(new Date()))
-  const [situacao, setSituacao] = useState<'abertas' | 'concluidas'>('abertas')
-  const [atalho, setAtalho] = useState<Atalho>('')
-  const [tipo, setTipo] = useState('')
-  const [responsavel, setResponsavel] = useState('')
-  const [responsavelProcesso, setResponsavelProcesso] = useState('')
-  const [textoBusca, setTextoBusca] = useState(''), [busca, setBusca] = useState('')
+  // Filtros na URL ("#/atividades?atalho=atrasadas&responsavel=ana"): recarregar ou compartilhar mantém a lista.
+  const [filtros, setFiltros] = useFiltrosUrl('atividades',
+    { situacao: 'abertas', atalho: '', tipo: '', responsavel: '', rp: '', busca: '' },
+    {
+      normalizar: f => ({
+        ...f,
+        situacao: f.situacao === 'concluidas' ? 'concluidas' : 'abertas',
+        atalho: ['atrasadas', 'hoje', 'semana', 'sem_data'].includes(f.atalho) ? f.atalho : '',
+      }),
+    })
+  const situacao = filtros.situacao as 'abertas' | 'concluidas', atalho = filtros.atalho as Atalho
+  const tipo = filtros.tipo, responsavel = filtros.responsavel, responsavelProcesso = filtros.rp, busca = filtros.busca
+  const mudar = (parcial: Partial<typeof filtros>) => setFiltros(f => ({ ...f, ...parcial }))
+  const setSituacao = (v: 'abertas' | 'concluidas') => mudar({ situacao: v })
+  const setAtalho = (v: Atalho) => mudar({ atalho: v })
+  const setTipo = (v: string) => mudar({ tipo: v })
+  const setResponsavel = (v: string) => mudar({ responsavel: v })
+  const setResponsavelProcesso = (v: string) => mudar({ rp: v })
+  const setBusca = (v: string) => mudar({ busca: v })
+  const [textoBusca, setTextoBusca] = useState(busca) // o que está sendo digitado; vira filtro depois de uma pausa
   const [operando, setOperando] = useState(false)
   const [erroAcao, setErroAcao] = useState('')
   const { avisar } = useAvisos()
@@ -58,9 +73,12 @@ export default function Atividades() {
   const [processoNovo, setProcessoNovo] = useState('')
   const [editando, setEditando] = useState<{ casoId: string; atividade: AtividadeCaso | null } | null>(null)
   useEffect(() => {
-    const espera = window.setTimeout(() => setBusca(textoBusca.trim()), 400)
+    if (textoBusca.trim() === busca) return
+    const espera = window.setTimeout(() => setFiltros(f => ({ ...f, busca: textoBusca.trim() })), 400)
     return () => window.clearTimeout(espera)
-  }, [textoBusca])
+  }, [textoBusca, busca, setFiltros])
+  // Voltar/avançar do navegador troca a busca na URL: o campo acompanha.
+  useEffect(() => { setTextoBusca(atual => (atual.trim() === busca ? atual : busca)) }, [busca]) // eslint-disable-line react-hooks/set-state-in-effect
   useEffect(() => {
     // Vira o dia sem recarregar a página: reagrupa as atividades à meia-noite.
     const relogio = window.setInterval(() => setHoje(isoLocal(new Date())), 60_000)

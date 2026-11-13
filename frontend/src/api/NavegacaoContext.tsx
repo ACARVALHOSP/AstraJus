@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { confirmarSaida, temAlteracoesPendentes } from '../AlteracoesPendentes'
 import { chaveHash, lerHash, montarHash } from './hash'
 
@@ -7,6 +7,8 @@ type NavegacaoContextValor = {
   versaoNavegacao: number
   irPara: (abaId: string, payload?: unknown) => void
   consumirPayload: <T>(abaId: string) => T | undefined
+  /** Grava na URL o estado da tela aberta (processo, aba, filtros) sem recarregar; `empilhar` cria um passo no histórico. */
+  sincronizarUrl: (abaId: string, params: Record<string, unknown>, empilhar?: boolean) => void
 }
 
 const NavegacaoContext = createContext<NavegacaoContextValor | null>(null)
@@ -30,6 +32,20 @@ export function NavegacaoProvider({ children, abaInicial }: { children: ReactNod
   const hashAtual = useRef(chaveHash(window.location.hash))
   const restaurando = useRef(false)
 
+  // Link sem tela ("/") passa a mostrar o endereço da tela inicial.
+  useEffect(() => {
+    if (!chaveHash(window.location.hash)) window.history.replaceState(null, '', `#/${abaInicial}`)
+  }, [abaInicial])
+
+  const sincronizarUrl = useCallback((abaId: string, params: Record<string, unknown>, empilhar = false) => {
+    if (abaAtual.current !== abaId) return
+    const novoHash = montarHash(abaId, params)
+    if (chaveHash(novoHash) === hashAtual.current) return
+    hashAtual.current = chaveHash(novoHash)
+    // pushState/replaceState não disparam "hashchange": a tela já está no estado novo.
+    window.history[empilhar ? 'pushState' : 'replaceState'](null, '', `#${novoHash}`)
+  }, [])
+
   useEffect(() => {
     function aoMudarHash() {
       if (restaurando.current) { restaurando.current = false; return }
@@ -46,10 +62,12 @@ export function NavegacaoProvider({ children, abaInicial }: { children: ReactNod
       hashAtual.current = recebido
       const temParametros = Object.keys(parametros).length > 0
       if (temParametros) payloads.set(destino, parametros)
+      else payloads.delete(destino)
       abaAtual.current = destino
       setAbaAtiva(destino)
-      // Telas já abertas (Processos, Financeiro…) releem o payload quando esta versão muda.
-      if (temParametros) setVersaoNavegacao(atual => atual + 1)
+      // Telas já abertas (Processos, Financeiro…) releem o payload quando esta versão muda;
+      // sem parâmetros (voltar para a lista) elas voltam ao estado inicial.
+      setVersaoNavegacao(atual => atual + 1)
     }
     window.addEventListener('hashchange', aoMudarHash)
     return () => window.removeEventListener('hashchange', aoMudarHash)
@@ -73,8 +91,9 @@ export function NavegacaoProvider({ children, abaInicial }: { children: ReactNod
         payloads.delete(abaId)
         return valor
       },
+      sincronizarUrl,
     }),
-    [abaAtiva, versaoNavegacao, payloads],
+    [abaAtiva, versaoNavegacao, payloads, sincronizarUrl],
   )
 
   return <NavegacaoContext.Provider value={valor}>{children}</NavegacaoContext.Provider>

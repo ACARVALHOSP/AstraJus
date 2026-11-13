@@ -6,6 +6,7 @@ import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import { AlertTriangle, Download, Info, Star } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useFiltrosUrl } from '../../api/useFiltrosUrl'
 import { AlertDialog, Badge, Button, Callout, Flex, HoverCard, IconButton, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
 import { baixarCsv } from '../../utils/csv'
@@ -110,16 +111,28 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
   const [erroAcao, setErroAcao] = useState<string | null>(null)
   const erroConsulta = consultaCasos.error ?? consultaClientes.error
   const erro = erroAcao ?? (erroConsulta ? (erroConsulta instanceof ErroMCP ? erroConsulta.message : 'Falha ao carregar.') : null)
-  const [busca, setBusca] = useState('')
-  const [atalho, setAtalho] = useState<Atalho>('andamento')
-  const [responsavel, setResponsavel] = useState('')
-  const [tribunal, setTribunal] = useState('')
+  // Filtros e página na URL ("#/casos?atalho=atrasado&busca=silva"): recarregar ou compartilhar mantém a lista.
+  const [filtros, setFiltros] = useFiltrosUrl('casos',
+    { busca: '', atalho: 'andamento', responsavel: '', tribunal: '', pagina: '1' },
+    {
+      normalizar: f => ({
+        ...f,
+        atalho: ['andamento', 'revisar', 'atrasado', 'parado', 'encerrados', 'favoritos'].includes(f.atalho) ? f.atalho : 'andamento',
+        pagina: /^[1-9]\d{0,4}$/.test(f.pagina) ? f.pagina : '1',
+      }),
+    })
+  const busca = filtros.busca, atalho = filtros.atalho as Atalho, responsavel = filtros.responsavel, tribunal = filtros.tribunal
+  const pagina = Number(filtros.pagina)
+  const setBusca = (v: string) => setFiltros(f => ({ ...f, busca: v }))
+  const setAtalho = (v: Atalho) => setFiltros(f => ({ ...f, atalho: v }))
+  const setResponsavel = (v: string) => setFiltros(f => ({ ...f, responsavel: v }))
+  const setTribunal = (v: string) => setFiltros(f => ({ ...f, tribunal: v }))
+  const setPagina = (v: number) => setFiltros(f => ({ ...f, pagina: String(v) }))
   const { ordem, alternar: alternarOrdem, definir: definirOrdem } = useOrdenacao('processos', { campo: 'proximo', direcao: 'asc' })
   const colunas = useColunas('processos', [
     { chave: 'cliente', rotulo: 'Cliente' }, { chave: 'responsavel', rotulo: 'Responsável' },
     { chave: 'compromisso', rotulo: 'Próximo compromisso' }, { chave: 'movimentacao', rotulo: 'Última movimentação' },
   ], ['responsavel', 'compromisso'])
-  const [pagina, setPagina] = useState(1)
   const [, setVersaoFavoritos] = useState(0)
   const [paraExcluir, setParaExcluir] = useState<Caso | null>(null)
   const [excluindo, setExcluindo] = useState(false)
