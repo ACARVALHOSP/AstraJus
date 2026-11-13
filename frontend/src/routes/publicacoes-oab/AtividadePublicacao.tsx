@@ -3,9 +3,9 @@ import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Info } from 'lucide-react'
 import { Button, Callout, Checkbox, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
-import { useCasos, useResponsaveis } from '../../api/consultas'
+import { useCasos, useNomePessoa, useResponsaveis } from '../../api/consultas'
 import { buscarJson, enviarJson } from '../../api/rest'
-import { formatarDataSimples, formatarNomeExibicao } from '../../utils/formatadores'
+import { formatarDataSimples } from '../../utils/formatadores'
 import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
 import { numeroPublicacao, type PublicacaoOab } from './dados'
 import BuscaProcesso from '../../BuscaProcesso'
@@ -23,6 +23,7 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
   onClose: () => void; onConcluido: (mensagem: string) => void; provedorCalendario?: ProvedorCalendario
 }) {
   const { cliente } = useCliente()
+  const nomePessoa = useNomePessoa()
   const [casoId, setCasoId] = useState(publicacao?.caso_id ?? casoIdInicial ?? '')
   // Calculadora avulsa: lista de processos para escolher.
   const { data: casos = SEM_CASOS } = useCasos<CasoOpcao>({ enabled: Boolean(cliente) && !publicacao && !casoIdInicial })
@@ -277,7 +278,7 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
               <Select.Trigger id="oab-atividade-responsavel" style={{ width: '100%' }} />
               <Select.Content>
                 <Select.Item value="__eu__">Eu mesmo</Select.Item>
-                {responsaveis.map(r => <Select.Item key={r} value={r}>{formatarNomeExibicao(r)}</Select.Item>)}
+                {responsaveis.map(r => <Select.Item key={r} value={r}>{nomePessoa(r)}</Select.Item>)}
               </Select.Content>
             </Select.Root>
           </div>

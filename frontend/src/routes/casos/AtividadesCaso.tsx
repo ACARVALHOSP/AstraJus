@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertDialog, Badge, Button, Callout, Checkbox, Flex, IconButton, Text } from '@radix-ui/themes'
 import { AlertTriangle, ChevronDown, ChevronRight, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
+import { useNomePessoa } from '../../api/consultas'
 import { ErroMCP } from '../../api/mcpClient'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarNomeExibicao } from '../../utils/formatadores'
@@ -37,6 +38,7 @@ export default function AtividadesCaso({ casoId, atividadeInicialId, onAlterado 
   casoId: string; atividadeInicialId?: string | number; onAlterado?: () => void
 }) {
   const { cliente } = useCliente()
+  const nomePessoa = useNomePessoa()
   const { avisar } = useAvisos()
   const estreita = useEstreita()
   const [hoje] = useState(() => isoLocal(new Date()))
@@ -254,7 +256,7 @@ export default function AtividadesCaso({ casoId, atividadeInicialId, onAlterado 
                         <span style={{ marginLeft: 'auto' }}>{situacaoSelo(a)}</span>
                       </Flex>
                       {tituloCelula(a)}
-                      <Text size="1" color="gray">{a.responsavel ? formatarNomeExibicao(a.responsavel) : 'Sem responsável'}</Text>
+                      <Text size="1" color="gray">{a.responsavel ? nomePessoa(a.responsavel) : 'Sem responsável'}</Text>
                       {a.checklist?.total ? checklist(a) : null}
                       {expandidas.has(String(a.id)) && detalhes(a)}
                       <Flex gap="2" mt="1">
@@ -318,7 +320,7 @@ export default function AtividadesCaso({ casoId, atividadeInicialId, onAlterado 
                             <div className={atrasada(a) ? 'atividades-relativo atividades-alerta' : 'atividades-relativo'}>{quandoRelativo(a, hoje)}</div>
                           </td>
                           <td>{tituloCelula(a)}</td>
-                          <td>{a.responsavel ? formatarNomeExibicao(a.responsavel) : <Text color="gray">Sem responsável</Text>}</td>
+                          <td>{a.responsavel ? nomePessoa(a.responsavel) : <Text color="gray">Sem responsável</Text>}</td>
                           <td>{checklist(a)}</td>
                           <td>{situacaoSelo(a)}</td>
                           <td className="tabela-acoes"><Flex gap="1" justify="end" align="center">{acaoPrincipal(a)}{menu(a)}</Flex></td>

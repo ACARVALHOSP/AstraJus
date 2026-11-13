@@ -13,7 +13,8 @@ import { usePerfil } from '../api/PerfilContext'
 import { buscarJson, enviarJson } from '../api/rest'
 import { ErroMCP } from '../api/mcpClient'
 import AtividadeModal from './casos/AtividadeModal'
-import { formatarDataSimples, formatarNomeExibicao } from '../utils/formatadores'
+import { useNomePessoa } from '../api/consultas'
+import { formatarDataSimples } from '../utils/formatadores'
 import {
   COLUNAS, TIPOS, chaveItem, colunaAtividade, diaLocal, noPeriodo, ordenarItens,
   type AtividadeHome, type ItemHome, type Periodo, type ProcessoHome, type StatusAtividade,
@@ -50,6 +51,7 @@ export default function Home() {
 
 function PainelHome({ abas }: { abas: ReactNode }) {
   const { cliente, status } = useCliente()
+  const nomePessoa = useNomePessoa()
   const { irPara } = useNavegacao()
   const verFinanceiro = usePerfil().abaPermitida('financeiro')
   const { avisar } = useAvisos()
@@ -359,7 +361,7 @@ function PainelHome({ abas }: { abas: ReactNode }) {
               placeholder="Todos os executores"
               opcoes={opcoesExecutor.map(o => ({
                 value: o,
-                label: o === SEM_RESPONSAVEL ? 'Sem responsável' : formatarNomeExibicao(o),
+                label: o === SEM_RESPONSAVEL ? 'Sem responsável' : nomePessoa(o),
               }))}
             />
             <FiltroSelect
@@ -370,7 +372,7 @@ function PainelHome({ abas }: { abas: ReactNode }) {
               placeholder="Todos os responsáveis"
               opcoes={opcoesResponsavel.map(o => ({
                 value: o,
-                label: o === SEM_RESPONSAVEL ? 'Sem responsável' : formatarNomeExibicao(o),
+                label: o === SEM_RESPONSAVEL ? 'Sem responsável' : nomePessoa(o),
               }))}
             />
             <FiltroSelect
@@ -495,7 +497,7 @@ function PainelHome({ abas }: { abas: ReactNode }) {
                             {processo.titulo || 'Processo sem título'}
                           </button>
                           <p className="home-executor-text">
-                            {atividade.responsavel ? formatarNomeExibicao(atividade.responsavel) : 'Sem responsável'}
+                            {atividade.responsavel ? nomePessoa(atividade.responsavel) : 'Sem responsável'}
                           </p>
                           <div className="home-cartao-meta">
                             <span className={atrasada ? 'home-atrasada' : ''}>

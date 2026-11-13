@@ -92,7 +92,6 @@ function DialogoPerfil({ onClose }: { onClose: () => void }) {
           <Avatar size="5" radius="full" fallback={(nome || login || '?').trim().charAt(0).toUpperCase()} />
           <Flex direction="column">
             <Text size="3" weight="bold">{nome || 'Sem nome cadastrado'}</Text>
-            <Text size="2" color="gray">{login ?? 'Login indisponível'}</Text>
             <Text size="2" color="gray">Perfil de acesso: {nivel ? (NIVEIS[nivel] ?? nivel) : 'não informado'}</Text>
           </Flex>
         </Flex>

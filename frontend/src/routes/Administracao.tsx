@@ -55,6 +55,7 @@ export default function Administracao() {
   const [credencial, setCredencial] = useState('')
   const [sessao, setSessao] = useState<string | null>(null)
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
+  const nomeDe = (login: string) => usuarios.find(u => u.login === login)?.nome_completo ?? login
   const [historico, setHistorico] = useState<Historico[]>([])
   const [acessos, setAcessos] = useState<{ ocorrido_em: string; usuario: string }[]>([])
   const [banco, setBanco] = useState<Banco | null>(null)
@@ -307,7 +308,7 @@ export default function Administracao() {
           <Heading as="h2" size="4" mt="4">Histórico administrativo</Heading>
           <Text as="p" size="2" color="gray">Até 100 alterações de cadastro, com data e responsável.</Text>
           <Button size="2" disabled={ocupado} onClick={() => void executar(() => carregarHistorico(sessao))}>Atualizar histórico</Button>
-          <div className="administracao__tabela" role="region" aria-label="Histórico administrativo" tabIndex={0}><TabelaResponsiva principais={['Data', 'Usuário', 'Ação']}><table><thead><tr>{['Data', 'Responsável', 'Usuário', 'Ação', 'Campos alterados'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>{historico.map((h, i) => <tr key={i}><td>{data(h.ocorrido_em)}</td><td>{h.ator}</td><td>{h.usuario}</td><td>{rotuloAcao(h.acao)}</td><td>{descreverCampos(h.campos)}</td></tr>)}{!historico.length && <tr><td colSpan={5}>{falhaCarga('historico', 'Nenhuma alteração registrada.')}</td></tr>}</tbody></table></TabelaResponsiva></div>
+          <div className="administracao__tabela" role="region" aria-label="Histórico administrativo" tabIndex={0}><TabelaResponsiva principais={['Data', 'Usuário', 'Ação']}><table><thead><tr>{['Data', 'Responsável', 'Usuário', 'Ação', 'Campos alterados'].map(t => <th scope="col" key={t}>{t}</th>)}</tr></thead><tbody>{historico.map((h, i) => <tr key={i}><td>{data(h.ocorrido_em)}</td><td>{nomeDe(h.ator)}</td><td>{nomeDe(h.usuario)}</td><td>{rotuloAcao(h.acao)}</td><td>{descreverCampos(h.campos)}</td></tr>)}{!historico.length && <tr><td colSpan={5}>{falhaCarga('historico', 'Nenhuma alteração registrada.')}</td></tr>}</tbody></table></TabelaResponsiva></div>
         </Tabs.Content>
       </Tabs.Root>
       <section aria-label="Histórico de acessos">
@@ -316,7 +317,7 @@ export default function Administracao() {
         <Button size="2" disabled={ocupado} onClick={() => void executar(() => carregarAcessos(sessao))}>Atualizar acessos</Button>
         <div className="administracao__tabela" role="region" aria-label="Acessos registrados" tabIndex={0}>
           <TabelaResponsiva principais={['Data e hora', 'Usuário']}><table><thead><tr><th scope="col">Data e hora</th><th scope="col">Usuário</th></tr></thead>
-            <tbody>{acessos.map((a, i) => <tr key={i}><td>{data(a.ocorrido_em)}</td><td>{a.usuario}</td></tr>)}{!acessos.length && <tr><td colSpan={2}>{falhaCarga('acessos', 'Nenhum acesso registrado.')}</td></tr>}</tbody>
+            <tbody>{acessos.map((a, i) => <tr key={i}><td>{data(a.ocorrido_em)}</td><td>{nomeDe(a.usuario)}</td></tr>)}{!acessos.length && <tr><td colSpan={2}>{falhaCarga('acessos', 'Nenhum acesso registrado.')}</td></tr>}</tbody>
           </table></TabelaResponsiva>
         </div>
       </section>
@@ -472,7 +473,7 @@ export default function Administracao() {
         {alvoApagar && (() => {
           const r = alvoApagar.vinculos ? resumoVinculos(alvoApagar.vinculos) : null
           return <div className="administracao__formulario">
-            <AlertDialog.Description>Você vai apagar <strong>{alvoApagar.nome}</strong> ({alvoApagar.login}). O token dela deixa de funcionar e esta ação não pode ser desfeita.</AlertDialog.Description>
+            <AlertDialog.Description>Você vai apagar <strong>{alvoApagar.nome}</strong>. O token dela deixa de funcionar e esta ação não pode ser desfeita.</AlertDialog.Description>
             {alvoApagar.erro && <Callout.Root color="red" size="1" role="alert"><Callout.Icon><AlertTriangle size={14} /></Callout.Icon><Callout.Text>{alvoApagar.erro}</Callout.Text></Callout.Root>}
             {erro && <Callout.Root color="red" size="1" role="alert"><Callout.Icon><AlertTriangle size={14} /></Callout.Icon><Callout.Text>{erro}</Callout.Text></Callout.Root>}
             {!r && !alvoApagar.erro && <Carregamento tipo="texto" descricao="Verificando o que está ligado a esta pessoa…" />}

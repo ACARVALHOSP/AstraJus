@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Check } from 'lucide-react'
 import { Button, Callout, Dialog, Flex, Select, Spinner, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
-import { useClientes, useResponsaveis } from '../../api/consultas'
+import { useClientes, useNomePessoa, useResponsaveis } from '../../api/consultas'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarNomeExibicao, formatarNumeroCNJ } from '../../utils/formatadores'
 import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
@@ -22,6 +22,7 @@ export default function ProcessoPublicacao({ publicacao, onClose, onConcluido }:
   publicacao: PublicacaoOab; onClose: () => void; onConcluido: (mensagem: string) => void
 }) {
   const { cliente } = useCliente()
+  const nomePessoa = useNomePessoa()
   const numero = numeroPublicacao(publicacao)
   const [erroLocal, setErro] = useState('')
   // Processos do mesmo CNJ, clientes e responsáveis: os dois últimos vêm do cache compartilhado.
@@ -161,7 +162,7 @@ export default function ProcessoPublicacao({ publicacao, onClose, onConcluido }:
                   <Select.Trigger id="oab-processo-responsavel" style={{ width: '100%' }} />
                   <Select.Content>
                     <Select.Item value="__none__">Selecione</Select.Item>
-                    {responsaveis.map(r => <Select.Item key={r} value={r}>{formatarNomeExibicao(r)}</Select.Item>)}
+                    {responsaveis.map(r => <Select.Item key={r} value={r}>{nomePessoa(r)}</Select.Item>)}
                   </Select.Content>
                 </Select.Root>
               </div>

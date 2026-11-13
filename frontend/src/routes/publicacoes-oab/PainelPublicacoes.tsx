@@ -10,7 +10,7 @@ import { AlertTriangle, Archive, Check, ChevronDown, ChevronRight, FilePlus, Inf
 import { Badge, Button, Callout, Checkbox, Dialog, Flex, IconButton, Popover, Select, Text, TextField } from '@radix-ui/themes'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCliente } from '../../api/ClienteContext'
-import { useResponsaveis } from '../../api/consultas'
+import { useNomePessoa, useResponsaveis } from '../../api/consultas'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { useNavegacao } from '../../api/NavegacaoContext'
 import { formatarNomeExibicao, formatarNumeroCNJ } from '../../utils/formatadores'
@@ -725,6 +725,7 @@ const CLIENTE_PENDENTE = 'Pendente'
 
 function CriarProcessosLote({ publicacoes, onClose, onConcluido }: { publicacoes: PublicacaoOab[]; onClose: () => void; onConcluido: (msg: string) => void }) {
   const { cliente } = useCliente()
+  const nomePessoa = useNomePessoa()
   const { data: responsaveis = SEM_RESPONSAVEIS, error: erroResponsaveis } = useResponsaveis()
   const [responsavel, setResponsavel] = useState('')
   const [salvando, setSalvando] = useState(false)
@@ -794,7 +795,7 @@ function CriarProcessosLote({ publicacoes, onClose, onConcluido }: { publicacoes
               <Select.Trigger id="clote-responsavel" style={{ width: '100%' }} />
               <Select.Content>
                 <Select.Item value="__none__">Selecione</Select.Item>
-                {responsaveis.map(r => <Select.Item key={r} value={r}>{formatarNomeExibicao(r)}</Select.Item>)}
+                {responsaveis.map(r => <Select.Item key={r} value={r}>{nomePessoa(r)}</Select.Item>)}
               </Select.Content>
             </Select.Root>
           </div>

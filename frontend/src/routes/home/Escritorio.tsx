@@ -5,6 +5,7 @@ import { Badge, Button, Callout, Flex, Heading, Text } from '@radix-ui/themes'
 import CabecalhoPagina from '../../CabecalhoPagina'
 import Carregamento from '../../Carregamento'
 import { useCliente } from '../../api/ClienteContext'
+import { useNomePessoa } from '../../api/consultas'
 import { useNavegacao } from '../../api/NavegacaoContext'
 import { usePerfil } from '../../api/PerfilContext'
 import { buscarJson } from '../../api/rest'
@@ -29,6 +30,7 @@ const dataCurta = (iso: string) => { const [, m, d] = iso.slice(0, 10).split('-'
  *  bloco só aparece para quem tem acesso à área correspondente. */
 export default function Escritorio({ abas }: { abas: ReactNode }) {
   const { cliente } = useCliente()
+  const nomePessoa = useNomePessoa()
   const { irPara } = useNavegacao()
   const { abaPermitida } = usePerfil()
   const verAtividades = abaPermitida('atividades'), verPublicacoes = abaPermitida('publicacoes-oab'), verFinanceiro = abaPermitida('financeiro'), verIntegracoes = abaPermitida('integracoes')
@@ -139,7 +141,7 @@ export default function Escritorio({ abas }: { abas: ReactNode }) {
                         <Badge color={COR_TIPO[a.tipo] ?? 'gray'} variant="soft">{ROTULO_TIPO[a.tipo] ?? a.tipo}</Badge>
                         <button type="button" className="esc-link" onClick={() => irPara('casos', { id: a.caso_id, aba: 'atividades', atividadeId: a.id })}>{a.titulo}</button>
                       </Flex>
-                      <Text as="p" size="2" color="gray">{a.caso?.titulo ? formatarNomeExibicao(a.caso.titulo) : 'Processo'}{a.responsavel ? ` · ${a.responsavel}` : ''}</Text>
+                      <Text as="p" size="2" color="gray">{a.caso?.titulo ? formatarNomeExibicao(a.caso.titulo) : 'Processo'}{a.responsavel ? ` · ${nomePessoa(a.responsavel)}` : ''}</Text>
                     </div>
                   </li>
                 ))}

@@ -15,7 +15,7 @@ import { ErroMCP } from '../../api/mcpClient'
 import { useNavegacao } from '../../api/NavegacaoContext'
 import { enviarJson } from '../../api/rest'
 import { useQueryClient } from '@tanstack/react-query'
-import { useCasos, useClientes } from '../../api/consultas'
+import { useCasos, useClientes, useNomePessoa } from '../../api/consultas'
 import { diasEntreDatas, formatarNomeExibicao, formatarNumeroCNJ, hojeIso } from '../../utils/formatadores'
 import { alternarCasoFavorito, ehCasoFavorito, EVENTO_PREFERENCIAS } from '../../utils/listasRapidas'
 import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
@@ -97,6 +97,7 @@ const SEM_CLIENTES: Cliente[] = []
 export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void }) {
   const { avisar } = useAvisos()
   const { cliente } = useCliente()
+  const nomePessoa = useNomePessoa()
   const { irPara } = useNavegacao()
   const estreita = useEstreita()
   const [hoje] = useState(hojeIso)
@@ -258,7 +259,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
         <dl className="casos-card-lista">
           <dt>Ação</dt><dd>{c.acao ? formatarClasse(c.acao) : 'Não informada'}</dd>
           <dt>Órgão</dt><dd>{c.foro || 'Não informado'}</dd>
-          <dt>Responsável</dt><dd>{c.responsavel ? formatarNomeExibicao(c.responsavel) : 'Sem responsável'}</dd>
+          <dt>Responsável</dt><dd>{c.responsavel ? nomePessoa(c.responsavel) : 'Sem responsável'}</dd>
           <dt>Próximo</dt>
           <dd>
             {p ? <>
@@ -421,7 +422,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
               <Select.Trigger aria-labelledby="casos-resp-rotulo" />
               <Select.Content>
                 <Select.Item value="__todos__">Todos os responsáveis</Select.Item>
-                {responsaveis.map(r => <Select.Item key={r} value={r}>{formatarNomeExibicao(r)}</Select.Item>)}
+                {responsaveis.map(r => <Select.Item key={r} value={r}>{nomePessoa(r)}</Select.Item>)}
               </Select.Content>
             </Select.Root>
           </div>
@@ -489,7 +490,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                     <div>{numeros(c)}</div>
                     <div className="casos-cartao-linha">
                       {formatarNomeExibicao(nomeCliente(c.cliente_id)) || 'Sem cliente vinculado'}
-                      {c.responsavel && <Text color="gray"> · {formatarNomeExibicao(c.responsavel)}</Text>}
+                      {c.responsavel && <Text color="gray"> · {nomePessoa(c.responsavel)}</Text>}
                     </div>
                     <div className="casos-cartao-resumo">
                       <div><div className="casos-rotulo">Próximo</div>{compromisso(c)}</div>
@@ -522,7 +523,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
                         {colunas.visivel('cliente') && <td>{clienteCelula(c)}</td>}
                         {colunas.visivel('responsavel') && <td>
                           {c.responsavel ? (
-                            <span>{formatarNomeExibicao(c.responsavel)}</span>
+                            <span>{nomePessoa(c.responsavel)}</span>
                           ) : <Text size="1" color="gray">Sem responsável</Text>}
                         </td>}
                         {colunas.visivel('compromisso') && <td>{compromisso(c)}</td>}

@@ -7,7 +7,7 @@ import { AlertDialog, Button, Callout, Flex, Heading, Select, Text, TextField } 
 import { AlertTriangle } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
-import { useResponsaveis } from '../../api/consultas'
+import { useNomePessoa, useResponsaveis } from '../../api/consultas'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarNumeroCNJ } from '../../utils/formatadores'
 import type { Caso } from './ListaCasos'
@@ -29,6 +29,7 @@ export default function CadastroCaso({
   onMovimentacoes: () => void
 }) {
   const { cliente } = useCliente()
+  const nomePessoa = useNomePessoa()
   const { avisar } = useAvisos()
   const [caso, setCaso] = useState<Caso | null>(null)
   const [carregando, setCarregando] = useState(true)
@@ -135,7 +136,7 @@ export default function CadastroCaso({
             <Select.Content>
               <Select.Item value="__none__">Selecione um responsável</Select.Item>
               {opcoesResponsavel.map((nome) => (
-                <Select.Item key={nome} value={nome}>{nome}</Select.Item>
+                <Select.Item key={nome} value={nome}>{nomePessoa(nome)}</Select.Item>
               ))}
             </Select.Content>
           </Select.Root>

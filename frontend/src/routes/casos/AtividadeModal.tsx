@@ -4,7 +4,7 @@ import { Button, Callout, Dialog, Flex, Select, TextArea, TextField } from '@rad
 import { AlertTriangle } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
-import { useResponsaveis } from '../../api/consultas'
+import { useNomePessoa, useResponsaveis } from '../../api/consultas'
 import { enviarJson } from '../../api/rest'
 import type { Atividade } from './AtividadesCaso'
 import ChecklistAtividade from './ChecklistAtividade'
@@ -21,6 +21,7 @@ export default function AtividadeModal({
   dataInicial?: string
 }) {
   const { cliente } = useCliente()
+  const nomePessoa = useNomePessoa()
   const [tipo, setTipo] = useState('tarefa')
   const [titulo, setTitulo] = useState('')
   const [data, setData] = useState('')
@@ -104,7 +105,7 @@ export default function AtividadeModal({
                 <Select.Content>
                   <Select.Item value="__none__">Eu mesmo</Select.Item>
                   {opcoesResponsavel.map((nome) => (
-                    <Select.Item key={nome} value={nome}>{nome}</Select.Item>
+                    <Select.Item key={nome} value={nome}>{nomePessoa(nome)}</Select.Item>
                   ))}
                 </Select.Content>
               </Select.Root>
