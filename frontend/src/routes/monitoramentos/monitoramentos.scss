@@ -23,4 +23,4 @@
   p { margin: 0; }
 }
 .mon-cartao-resumo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--gray-a3); }
-.mon-rotulo { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--gray-11); margin-bottom: 2px; }
+.mon-rotulo { font-size: 12px; font-weight: 600; color: var(--gray-11); margin-bottom: 2px; }

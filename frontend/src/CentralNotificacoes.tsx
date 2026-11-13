@@ -43,7 +43,7 @@ function PainelNotificacoes({ cliente }: { cliente: ClienteMCP | null }) {
     <Popover.Root open={aberta} onOpenChange={setAberta}>
       <Popover.Trigger>
         <IconButton className="aj-ib" variant="ghost" aria-label={`Notificações: ${rotulo}`}>
-          <Box position="relative">
+          <Box position="relative" display="flex">
             <Bell size={17} />
             {!!naoLidas && (
               <Badge color="red" radius="full" size="1" className="aj-notif-badge" aria-hidden="true">

@@ -376,7 +376,9 @@ async def testar(provedor, ambiente, dados, cliente, contexto=None):
             import google_integracao as g
             oauth = dados if provedor == 'google_oauth' else contexto.get('oauth', {})
             conexao = contexto.get('drive')
-            if not oauth.get('client_id') or not oauth.get('client_secret') or not conexao:
+            if not oauth.get('client_id') or not oauth.get('client_secret'):
+                return False, 'Configure e ative primeiro o aplicativo Google OAuth (Client ID e secret) na lista de serviços.'
+            if not conexao:
                 return False, 'Autorize a conta Google para validar as credenciais OAuth e o acesso ao Drive.'
             token = await g.obter_access_token(cliente, oauth['client_id'], oauth['client_secret'], conexao['refresh_token'])
             from urllib.parse import quote

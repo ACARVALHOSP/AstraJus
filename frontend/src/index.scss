@@ -6,7 +6,7 @@
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: 0.25rem;
   > div { padding: 1rem; background: var(--gray-2); border-radius: var(--radius-2); }
-  dt { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; color: var(--gray-11); }
+  dt { font-size: 12px; font-weight: 600; color: var(--gray-11); }
   dd { font-size: 20px; font-weight: 600; margin: 0.75rem 0 0; }
 }
 .contato-vinculos-tabela {

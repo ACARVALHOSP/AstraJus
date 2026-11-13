@@ -55,7 +55,7 @@ export default function ModelosPrazo() {
       )}
       {consulta.data && consulta.data.length === 0 && (
         <Text as="p" size="2" color="gray" role="status">
-          Nenhum modelo cadastrado ainda. Exemplo: assunto “Ação de Cobrança” com o prazo “Contestação” em 15 dias úteis.
+          Nenhum modelo cadastrado ainda. Exemplo: assunto “Ação de cobrança” com o prazo “contestação” em 15 dias úteis.
         </Text>
       )}
       <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -130,7 +130,7 @@ function FormularioModelo({ inicial, onClose, onSalvo }: { inicial: Rascunho; on
         <Flex direction="column" gap="3" mt="4">
           <Flex direction="column" gap="1">
             <Text as="label" size="2" weight="medium" htmlFor="modelo-criterio">Assunto ou classe processual</Text>
-            <TextField.Root id="modelo-criterio" value={d.criterio} maxLength={200} placeholder="Ex.: Ação de Cobrança" onChange={e => setD({ ...d, criterio: e.target.value })} />
+            <TextField.Root id="modelo-criterio" value={d.criterio} maxLength={200} placeholder="Ex.: Ação de cobrança" onChange={e => setD({ ...d, criterio: e.target.value })} />
           </Flex>
           <Flex direction="column" gap="1">
             <Text as="label" size="2" weight="medium" htmlFor="modelo-nome">Nome do modelo (opcional)</Text>
@@ -140,7 +140,7 @@ function FormularioModelo({ inicial, onClose, onSalvo }: { inicial: Rascunho; on
           <Text size="2" weight="medium">Prazos sugeridos</Text>
           {d.prazos.map((p, i) => (
             <Flex key={i} gap="2" align="end" wrap="wrap">
-              <TextField.Root style={{ flex: '1 1 12rem' }} value={p.titulo} maxLength={120} placeholder="Tipo de prazo (ex.: Contestação)" aria-label={`Título do prazo ${i + 1}`}
+              <TextField.Root style={{ flex: '1 1 12rem' }} value={p.titulo} maxLength={120} placeholder="Tipo de prazo (ex.: contestação)" aria-label={`Título do prazo ${i + 1}`}
                 onChange={e => setD({ ...d, prazos: d.prazos.map((x, j) => j === i ? { ...x, titulo: e.target.value } : x) })} />
               <TextField.Root style={{ width: '5.5rem' }} type="number" min={1} max={365} value={Number.isNaN(p.dias) ? '' : p.dias} placeholder="Dias" aria-label={`Dias do prazo ${i + 1}`}
                 onChange={e => setD({ ...d, prazos: d.prazos.map((x, j) => j === i ? { ...x, dias: numero(e.target.value) } : x) })} />
