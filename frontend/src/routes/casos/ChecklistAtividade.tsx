@@ -1,31 +1,36 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Callout, Checkbox, Flex, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Plus, X } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { buscarJson, enviarJson } from '../../api/rest'
 
 type ItemChecklist = { id: string; texto: string; concluido: boolean }
+const SEM_ITENS: ItemChecklist[] = []
 
 export default function ChecklistAtividade({ casoId, atividadeId }: { casoId: string; atividadeId: string }) {
   const { cliente } = useCliente()
-  const [itens, setItens] = useState<ItemChecklist[]>([])
+  const queryClient = useQueryClient()
+  const chave = ['checklist', cliente?.token, casoId, atividadeId]
+  const consulta = useQuery({
+    queryKey: chave,
+    enabled: Boolean(cliente),
+    queryFn: ({ signal }) => buscarJson<{ itens: ItemChecklist[] }>(cliente, `/casos/${casoId}/atividades/${atividadeId}/checklist`, signal).then(r => r.itens ?? []),
+  })
+  const itens = consulta.data ?? SEM_ITENS
   const [novoTexto, setNovoTexto] = useState('')
-  const [erro, setErro] = useState<string | null>(null)
-
-  const carregar = useCallback(() => {
-    buscarJson<{ itens: ItemChecklist[] }>(cliente, `/casos/${casoId}/atividades/${atividadeId}/checklist`)
-      .then((r) => setItens(r.itens ?? []))
-      .catch(() => setErro('Erro ao carregar checklist'))
-  }, [cliente, casoId, atividadeId])
-
-  useEffect(carregar, [carregar])
+  const [erroLocal, setErro] = useState<string | null>(null)
+  const erro = erroLocal ?? (consulta.error ? 'Erro ao carregar checklist' : null)
+  const carregar = () => void consulta.refetch()
+  const marcar = (id: string, concluido: boolean) =>
+    queryClient.setQueryData<ItemChecklist[]>(chave, atual => atual?.map(i => (i.id === id ? { ...i, concluido } : i)))
 
   async function alternarConcluido(item: ItemChecklist, concluido: boolean) {
-    setItens((atual) => atual.map((i) => (i.id === item.id ? { ...i, concluido } : i)))
+    marcar(item.id, concluido)
     try {
       await enviarJson(cliente, `/casos/${casoId}/atividades/${atividadeId}/checklist/${item.id}`, { concluido }, 'PATCH')
     } catch {
-      setItens((atual) => atual.map((i) => (i.id === item.id ? { ...i, concluido: !concluido } : i)))
+      marcar(item.id, !concluido)
       setErro('Erro ao atualizar item')
     }
   }

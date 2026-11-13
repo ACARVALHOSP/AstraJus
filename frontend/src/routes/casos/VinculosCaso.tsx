@@ -4,11 +4,13 @@ import TabelaResponsiva from '../../TabelaResponsiva'
 import TextoTabela from '../../TextoTabela'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Button, Callout, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
+import { useCasos } from '../../api/consultas'
 import { buscarJson, enviarJson } from '../../api/rest'
 
 type Vinculo = {
@@ -45,10 +47,6 @@ function semAcento(texto: string) {
 export default function VinculosCaso({ casoId, onAbrirCaso }: { casoId: string; onAbrirCaso: (id: string) => void }) {
   const { cliente } = useCliente()
   const { avisar } = useAvisos()
-  const [carregando, setCarregando] = useState(true)
-  const [erro, setErro] = useState<string | null>(null)
-  const [vinculos, setVinculos] = useState<Vinculo[] | null>(null)
-  const [casosDisponiveis, setCasosDisponiveis] = useState<CasoDisponivel[]>([])
 
   const [numeroProcesso, setNumeroProcesso] = useState('')
   const [casoSelecionado, setCasoSelecionado] = useState<CasoDisponivel | null>(null)
@@ -57,19 +55,17 @@ export default function VinculosCaso({ casoId, onAbrirCaso }: { casoId: string; 
   const [enviando, setEnviando] = useState(false)
   const [removendo, setRemovendo] = useState<string | null>(null)
 
-  const carregar = useCallback(() => {
-    setCarregando(true)
-    setErro(null)
-    buscarJson<{ vinculos: Vinculo[] }>(cliente, `/casos/${casoId}/vinculos`)
-      .then((r) => setVinculos(r.vinculos ?? []))
-      .catch((e) => setErro(e instanceof ErroMCP ? e.message : 'Falha ao carregar.'))
-      .finally(() => setCarregando(false))
-    buscarJson<{ casos: CasoDisponivel[] }>(cliente, '/casos')
-      .then((r) => setCasosDisponiveis((r.casos ?? []).filter((c) => c.id !== casoId)))
-      .catch(() => {})
-  }, [cliente, casoId])
-
-  useEffect(carregar, [carregar])
+  const consulta = useQuery({
+    queryKey: ['caso-vinculos', cliente?.token, casoId],
+    enabled: Boolean(cliente),
+    queryFn: ({ signal }) => buscarJson<{ vinculos: Vinculo[] }>(cliente, `/casos/${casoId}/vinculos`, signal).then(r => r.vinculos ?? []),
+  })
+  const consultaCasos = useCasos<CasoDisponivel>({ enabled: Boolean(cliente) })
+  const vinculos = consulta.data ?? null
+  const casosDisponiveis = (consultaCasos.data ?? []).filter(c => c.id !== casoId)
+  const carregando = consulta.isLoading
+  const erro = consulta.error ? (consulta.error instanceof ErroMCP ? consulta.error.message : 'Falha ao carregar.') : null
+  const carregar = () => void consulta.refetch()
 
   // Busca por título, parte ou número (com ou sem pontuação), entre os processos do escritório.
   function aoDigitarNumero(valor: string) {

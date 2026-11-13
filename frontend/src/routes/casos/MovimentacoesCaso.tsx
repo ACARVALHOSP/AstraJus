@@ -1,5 +1,6 @@
 import Carregamento from '../../Carregamento'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Badge, Button, Callout, Flex, Select, Text } from '@radix-ui/themes'
 import { AlertTriangle, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
@@ -61,46 +62,46 @@ function formatarQuando(iso?: string | null) {
   return hora ? `${data} às ${hora}` : data
 }
 
+type Fonte = { tipo: 'capa' | 'datajud'; quando?: string | null }
+const SEM_NUMEROS: string[] = []
+const SEM_MOVIMENTOS: Movimento[] = []
+
 export default function MovimentacoesCaso({ casoId }: { casoId: string }) {
   const { cliente } = useCliente()
-  const [carregando, setCarregando] = useState(true)
   const [consultando, setConsultando] = useState(false)
   const [avisos, setAvisos] = useState<string[]>([])
-  const [erro, setErro] = useState<string | null>(null)
-  const [numeros, setNumeros] = useState<string[]>([])
-  const [movimentos, setMovimentos] = useState<Movimento[]>([])
-  const [fonte, setFonte] = useState<{ tipo: 'capa' | 'datajud'; quando?: string | null } | null>(null)
+  const [erroLocal, setErro] = useState<string | null>(null)
+  // Resultado de "Atualizar do DataJud": sobrepõe os movimentos gravados na capa.
+  const [consultaDataJud, setConsultaDataJud] = useState<{ movimentos: Movimento[]; fonte: Fonte } | null>(null)
   const [grau, setGrau] = useState('')
   const [numero, setNumero] = useState('')
   const [todos, setTodos] = useState(false)
 
   // Abertura: movimentos já gravados na capa de cada número (sem chamada externa).
-  const carregarCapa = useCallback(async () => {
-    setCarregando(true); setErro(null); setAvisos([])
-    try {
-      const caso = await buscarJson<{ processos?: string[] }>(cliente, `/casos/${casoId}`)
-      const lista = caso.processos ?? []
-      setNumeros(lista)
+  const consulta = useQuery({
+    queryKey: ['caso-movimentacoes', cliente?.token, casoId],
+    enabled: Boolean(cliente),
+    queryFn: async ({ signal }) => {
+      const caso = await buscarJson<{ processos?: string[] }>(cliente, `/casos/${casoId}`, signal)
+      const numeros = caso.processos ?? []
       const todasMovs: Movimento[] = []
       let atualizado: string | null = null
-      for (const n of lista) {
+      for (const n of numeros) {
         try {
-          const capa = await buscarJson<Capa>(cliente, `/casos/${casoId}/processos/${n}/capa`)
+          const capa = await buscarJson<Capa>(cliente, `/casos/${casoId}/processos/${n}/capa`, signal)
           // Cada andamento guarda a própria instância; sem ela, vale a da capa.
           for (const m of capa.movimentos ?? []) todasMovs.push({ numero: n, grau: rotuloGrau(m.grau || capa.grau), nome: m.nome, dataHora: m.dataHora })
           if (capa.atualizado_em && (!atualizado || capa.atualizado_em > atualizado)) atualizado = capa.atualizado_em
         } catch { /* número sem capa gravada: segue para o próximo */ }
       }
-      setMovimentos(semRepetidos(todasMovs))
-      setFonte({ tipo: 'capa', quando: atualizado })
-    } catch (e) {
-      setErro(e instanceof ErroMCP ? e.message : 'Falha ao carregar as movimentações.')
-    } finally {
-      setCarregando(false)
-    }
-  }, [cliente, casoId])
-  // eslint-disable-next-line react/set-state-in-effect
-  useEffect(() => { void carregarCapa() }, [carregarCapa])
+      return { numeros, movimentos: semRepetidos(todasMovs), fonte: { tipo: 'capa', quando: atualizado } as Fonte }
+    },
+  })
+  const numeros = consulta.data?.numeros ?? SEM_NUMEROS
+  const movimentos = consultaDataJud?.movimentos ?? consulta.data?.movimentos ?? SEM_MOVIMENTOS
+  const fonte = consultaDataJud?.fonte ?? consulta.data?.fonte ?? null
+  const carregando = consulta.isLoading
+  const erro = erroLocal ?? (consulta.error ? (consulta.error instanceof ErroMCP ? consulta.error.message : 'Falha ao carregar as movimentações.') : null)
 
   // "Atualizar do DataJud": consulta a API agora, sem gravar nada no processo.
   const consultarDataJud = useCallback(async () => {
@@ -123,8 +124,7 @@ export default function MovimentacoesCaso({ casoId }: { casoId: string }) {
     }
     setAvisos(erros)
     if (todasMovs.length || !erros.length) {
-      setMovimentos(semRepetidos(todasMovs))
-      setFonte({ tipo: 'datajud', quando: new Date().toISOString() })
+      setConsultaDataJud({ movimentos: semRepetidos(todasMovs), fonte: { tipo: 'datajud', quando: new Date().toISOString() } })
     }
     setConsultando(false)
   }, [cliente, numeros])

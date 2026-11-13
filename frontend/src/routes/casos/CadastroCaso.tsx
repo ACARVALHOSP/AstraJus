@@ -7,10 +7,13 @@ import { AlertDialog, Button, Callout, Flex, Heading, Select, Text, TextField } 
 import { AlertTriangle } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
+import { useResponsaveis } from '../../api/consultas'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarNumeroCNJ } from '../../utils/formatadores'
 import type { Caso } from './ListaCasos'
 import CapaProcesso from './CapaProcesso'
+
+const SEM_RESPONSAVEIS: string[] = []
 
 export default function CadastroCaso({
   casoId,
@@ -30,7 +33,7 @@ export default function CadastroCaso({
   const [caso, setCaso] = useState<Caso | null>(null)
   const [carregando, setCarregando] = useState(true)
   const [erroCarregar, setErroCarregar] = useState<string | null>(null)
-  const [responsaveis, setResponsaveis] = useState<string[]>([])
+  const { data: responsaveis = SEM_RESPONSAVEIS } = useResponsaveis()
 
   const [responsavel, setResponsavel] = useState('')
   const [pasta, setPasta] = useState('')
@@ -55,9 +58,6 @@ export default function CadastroCaso({
       })
       .catch((e) => { if (atual) setErroCarregar(e instanceof ErroMCP ? e.message : 'Falha ao carregar processo.') })
       .finally(() => { if (atual) setCarregando(false) })
-    buscarJson<{ responsaveis: string[] }>(cliente, '/responsaveis')
-      .then((r) => { if (atual) setResponsaveis(r.responsaveis ?? []) })
-      .catch(() => {})
     return () => { atual = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cliente, casoId])

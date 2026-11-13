@@ -2,7 +2,8 @@ import { useAvisos } from '../../Avisos'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
 import TabelaResponsiva from '../../TabelaResponsiva'
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { AlertDialog, Badge, Button, Callout, Flex, IconButton, Text } from '@radix-ui/themes'
 import { AlertTriangle, ChevronDown, ChevronRight, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
@@ -24,34 +25,32 @@ function resumoTexto(p: PublicacaoOab) {
   return texto.length > 160 ? `${texto.slice(0, 160)}…` : texto || 'Inteiro teor não disponibilizado.'
 }
 
+const SEM_ATIVIDADES: AtividadeResumo[] = []
+
 export default function PublicacoesCaso({ casoId, onAlterado }: { casoId: string; onAlterado?: () => void }) {
   const { cliente } = useCliente()
   const estreita = useEstreita()
-  const [carregando, setCarregando] = useState(true)
   const [operando, setOperando] = useState(false)
-  const [erro, setErro] = useState<string | null>(null)
   const { avisar } = useAvisos()
-  const [publicacoes, setPublicacoes] = useState<PublicacaoOab[] | null>(null)
-  const [atividades, setAtividades] = useState<AtividadeResumo[]>([])
   const [filtro, setFiltro] = useState<'nao_tratada' | ''>('')
   const [expandidas, setExpandidas] = useState<Set<string>>(new Set())
   const [paraDesvincular, setParaDesvincular] = useState<PublicacaoOab | null>(null)
   const [criandoAtividade, setCriandoAtividade] = useState<PublicacaoOab | null>(null)
 
-  const carregar = useCallback(() => {
-    setCarregando(true)
-    setErro(null)
-    Promise.all([
-      buscarJson<{ publicacoes: PublicacaoOab[] }>(cliente, `/casos/${casoId}/publicacoes`),
+  const consulta = useQuery({
+    queryKey: ['caso-publicacoes', cliente?.token, casoId],
+    enabled: Boolean(cliente),
+    queryFn: ({ signal }) => Promise.all([
+      buscarJson<{ publicacoes: PublicacaoOab[] }>(cliente, `/casos/${casoId}/publicacoes`, signal),
       // Só para mostrar qual atividade nasceu de cada publicação; falha não impede a lista.
-      buscarJson<{ atividades: AtividadeResumo[] }>(cliente, `/casos/${casoId}/atividades`).catch(() => ({ atividades: [] as AtividadeResumo[] })),
-    ])
-      .then(([r, ra]) => { setPublicacoes(r.publicacoes ?? []); setAtividades(ra.atividades ?? []) })
-      .catch((e) => setErro(e instanceof ErroMCP ? e.message : 'Falha ao carregar.'))
-      .finally(() => setCarregando(false))
-  }, [cliente, casoId])
-  // eslint-disable-next-line react/set-state-in-effect
-  useEffect(carregar, [carregar])
+      buscarJson<{ atividades: AtividadeResumo[] }>(cliente, `/casos/${casoId}/atividades`, signal).catch(() => ({ atividades: [] as AtividadeResumo[] })),
+    ]).then(([r, ra]) => ({ publicacoes: r.publicacoes ?? [], atividades: ra.atividades ?? [] })),
+  })
+  const publicacoes = consulta.data?.publicacoes ?? null
+  const atividades = consulta.data?.atividades ?? SEM_ATIVIDADES
+  const carregando = consulta.isLoading
+  const erro = consulta.error ? (consulta.error instanceof ErroMCP ? consulta.error.message : 'Falha ao carregar.') : null
+  const carregar = () => void consulta.refetch()
 
   const ordenadas = useMemo(() => [...(publicacoes ?? [])].sort((a, b) =>
     (b.dados?.data_disponibilizacao || b.criado_em || '').localeCompare(a.dados?.data_disponibilizacao || a.criado_em || '')), [publicacoes])

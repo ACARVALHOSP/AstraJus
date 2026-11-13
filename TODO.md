@@ -17,7 +17,7 @@ Restam ~26 arquivos com `buscarJson` direto. Ordem sugerida:
 - [x] **F** Lote 1: Home (`Home.tsx`) e Escritório (`home/Escritorio.tsx`) — sem teste no navegador
 - [x] **F** Lote 2: Pagamentos e Histórico — sem teste no navegador
 - [x] **F** Lote 3: Publicações recebidas (`PainelPublicacoes`, `AtividadePublicacao`, `ProcessoPublicacao`) — sem teste no navegador; ficam com busca imperativa só as ações em lote (varrer todas as páginas, criar/vincular)
-- [ ] **F** Lote 4: abas do processo (`CapaProcesso`, `MovimentacoesCaso`, `PublicacoesCaso`, `VinculosCaso`, `AtividadesCaso`, `ChecklistAtividade`, `AtividadeModal`, `CadastroCaso`)
+- [x] **F** Lote 4: abas do processo — sem teste no navegador. Vínculos, Publicações, Atividades, Checklist e Movimentações usam a consulta; Cadastro e Capa ficam com a busca do próprio processo (preenchem formulário, uma recarga apagaria a edição) e só usam responsáveis e clientes em cache
 - [ ] **F** Lote 5: contatos (`CadastroContato`, `VinculosContato`), `NovoLancamentoModal`, `BuscaGlobal`, `Agenda`/`Atividades`/`Casos` (sobras)
 - [ ] **F** Ao final: trocar `EVENTO_DADOS_ALTERADOS` por invalidação de queries
 

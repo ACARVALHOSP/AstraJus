@@ -2,7 +2,8 @@ import AcoesTabela from '../../AcoesTabela'
 import { useAvisos } from '../../Avisos'
 import Carregamento from '../../Carregamento'
 import TabelaResponsiva from '../../TabelaResponsiva'
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { AlertDialog, Badge, Button, Callout, Checkbox, Flex, IconButton, Text } from '@radix-ui/themes'
 import { AlertTriangle, ChevronDown, ChevronRight, Info } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
@@ -39,11 +40,8 @@ export default function AtividadesCaso({ casoId, atividadeInicialId, onAlterado 
   const { avisar } = useAvisos()
   const estreita = useEstreita()
   const [hoje] = useState(() => isoLocal(new Date()))
-  const [carregando, setCarregando] = useState(true)
   const [operando, setOperando] = useState(false)
-  const [erro, setErro] = useState<string | null>(null)
-  const [atividades, setAtividades] = useState<Atividade[] | null>(null)
-  const [agendaDisponivel, setAgendaDisponivel] = useState(false)
+  const [erroLocal, setErro] = useState<string | null>(null)
   const [situacao, setSituacao] = useState<'abertas' | 'concluidas'>('abertas')
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set())
   const [expandidas, setExpandidas] = useState<Set<string>>(new Set())
@@ -53,19 +51,17 @@ export default function AtividadesCaso({ casoId, atividadeInicialId, onAlterado 
   const [excluindo, setExcluindo] = useState(false)
   const destinoConsumido = useRef(false)
 
-  const carregar = useCallback(() => {
-    setCarregando(true)
-    setErro(null)
-    buscarJson<{ atividades: Atividade[]; agenda_disponivel?: boolean }>(cliente, `/casos/${casoId}/atividades`)
-      .then((r) => {
-        setAtividades(r.atividades ?? [])
-        setAgendaDisponivel(Boolean(r.agenda_disponivel))
-      })
-      .catch((e) => setErro(e instanceof ErroMCP ? e.message : 'Falha ao carregar.'))
-      .finally(() => setCarregando(false))
-  }, [cliente, casoId])
-  // eslint-disable-next-line react/set-state-in-effect
-  useEffect(carregar, [carregar])
+  const consulta = useQuery({
+    queryKey: ['caso-atividades', cliente?.token, casoId],
+    enabled: Boolean(cliente),
+    queryFn: ({ signal }) => buscarJson<{ atividades: Atividade[]; agenda_disponivel?: boolean }>(cliente, `/casos/${casoId}/atividades`, signal)
+      .then(r => ({ atividades: r.atividades ?? [], agendaDisponivel: Boolean(r.agenda_disponivel) })),
+  })
+  const atividades = consulta.data?.atividades ?? null
+  const agendaDisponivel = consulta.data?.agendaDisponivel ?? false
+  const carregando = consulta.isLoading
+  const erro = erroLocal ?? (consulta.error ? (consulta.error instanceof ErroMCP ? consulta.error.message : 'Falha ao carregar.') : null)
+  const carregar = () => { setErro(null); void consulta.refetch() }
 
   useEffect(() => {
     if (atividadeInicialId == null || !atividades || carregando || destinoConsumido.current) return
