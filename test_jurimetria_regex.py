@@ -502,17 +502,24 @@ class PerfilEComparacaoComUniverso(unittest.TestCase):
         )
         self.assertEqual(len(chamadas), 2)
         params_juiz, params_universo = chamadas[0][0], chamadas[1][0]
-        self.assertEqual(params_juiz["cdAgente"], "123")
-        self.assertIn("Fulano", params_juiz["dadosConsulta.pesquisaLivre"])
-        self.assertNotIn("cdAgente", params_universo)
-        self.assertNotIn("agenteSelectedEntitiesList", params_universo)
-        self.assertEqual(params_universo["dadosConsulta.pesquisaLivre"], "dano moral")  # sem o nome do juiz
+        self.assertEqual(params_juiz[servico.CJPG_CAMPO_MAGISTRADO], "123")
+        self.assertEqual(params_juiz["dadosConsulta.pesquisaLivre"], "dano moral")  # com código, o nome não entra no texto
+        self.assertNotIn("cdAgente", params_juiz)
+        self.assertNotIn("agenteSelectedEntitiesList", params_juiz)
+        self.assertNotIn(servico.CJPG_CAMPO_MAGISTRADO, params_universo)
+        self.assertEqual(params_universo["dadosConsulta.pesquisaLivre"], "dano moral")
         self.assertEqual(chamadas[1][1], servico.CJPG_PAGINAS_UNIVERSO)  # limitado a 5 páginas
         baseline = resultado["perfil"]["baseline"]
         self.assertEqual(resultado["perfil"]["taxa_procedente"], 1.0)
         self.assertEqual(baseline["taxa_procedente"], 0.5)
         self.assertEqual(baseline["buscados"], 4)
         self.assertIn("escopo", baseline)
+
+    def test_so_com_nome_o_juiz_vai_no_texto_entre_aspas(self):
+        _, chamadas = self.chamar([(1, [decisao("procedente")], [])], magistrado_nome="Fulano de Tal", comparar_com_universo=False)
+        params = chamadas[0][0]
+        self.assertEqual(params["dadosConsulta.pesquisaLivre"], '"Fulano de Tal"')
+        self.assertNotIn(servico.CJPG_CAMPO_MAGISTRADO, params)
 
     def test_sem_recorte_nao_busca_universo(self):
         resultado, chamadas = self.chamar([(1, [decisao("procedente")], [])], magistrado_nome="Fulano")
