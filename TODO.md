@@ -15,7 +15,7 @@ Legenda: `[x]` feito · `[ ]` a fazer · **F** só frontend (push na `astrajus-r
 ### Dados com React Query (em lotes pequenos, um push e um teste no navegador por lote)
 Restam ~26 arquivos com `buscarJson` direto. Ordem sugerida:
 - [x] **F** Lote 1: Home (`Home.tsx`) e Escritório (`home/Escritorio.tsx`) — sem teste no navegador
-- [ ] **F** Lote 2: Pagamentos e Histórico
+- [x] **F** Lote 2: Pagamentos e Histórico — sem teste no navegador
 - [ ] **F** Lote 3: Publicações recebidas (`PainelPublicacoes`, `AtividadePublicacao`, `ProcessoPublicacao`)
 - [ ] **F** Lote 4: abas do processo (`CapaProcesso`, `MovimentacoesCaso`, `PublicacoesCaso`, `VinculosCaso`, `AtividadesCaso`, `ChecklistAtividade`, `AtividadeModal`, `CadastroCaso`)
 - [ ] **F** Lote 5: contatos (`CadastroContato`, `VinculosContato`), `NovoLancamentoModal`, `BuscaGlobal`, `Agenda`/`Atividades`/`Casos` (sobras)

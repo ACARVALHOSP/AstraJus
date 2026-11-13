@@ -8,7 +8,7 @@ import { Info, Star } from 'lucide-react'
 import { AlertDialog, Badge, Button, Callout, Flex, IconButton, Select, Tabs, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
-import { buscarJson } from '../api/rest'
+import { useCasos, useClientes } from '../api/consultas'
 import type { PayloadProcesso } from './Processo'
 import type { PayloadPublicacoes } from './Publicacoes'
 import type { Caso } from './casos/ListaCasos'
@@ -36,6 +36,8 @@ type Cliente = { id: string; nome?: string }
 type Aba = 'processos' | 'consultas' | 'historico'
 type TipoFiltro = '' | 'processo' | 'publicacoes'
 
+const SEM_CASOS: Caso[] = []
+const SEM_CLIENTES: Cliente[] = []
 const DIAS_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
 
 function isoLocal(d: Date) {
@@ -87,9 +89,6 @@ export default function Historico() {
   const [favoritos, setFavoritos] = useState<Favorito[]>(() => lerFavoritos())
   const [historico, setHistorico] = useState<ItemHistorico[]>(() => lerHistorico())
   const [idsFavoritos, setIdsFavoritos] = useState<string[]>(() => lerCasosFavoritos())
-  const [casos, setCasos] = useState<Caso[]>([])
-  const [clientes, setClientes] = useState<Cliente[]>([])
-  const [carregando, setCarregando] = useState(() => !!cliente && lerCasosFavoritos().length > 0)
   const [confirmarApagar, setConfirmarApagar] = useState(false)
 
   // Favoritos e histórico chegam do servidor logo depois de conectar: relê a cópia local.
@@ -99,24 +98,13 @@ export default function Historico() {
     return () => window.removeEventListener(EVENTO_PREFERENCIAS, reler)
   }, [])
 
-  const temFavoritos = idsFavoritos.length > 0
-  useEffect(() => {
-    let atual = true
-    if (!temFavoritos || !cliente) {
-      // eslint-disable-next-line react/set-state-in-effect
-      setCarregando(false)
-      return
-    }
-    setCarregando(true)
-    Promise.all([
-      buscarJson<{ casos: Caso[] }>(cliente, '/casos'),
-      buscarJson<{ clientes: Cliente[] }>(cliente, '/clientes').catch(() => ({ clientes: [] as Cliente[] })),
-    ])
-      .then(([rc, rcl]) => { if (atual) { setCasos(rc.casos ?? []); setClientes(rcl.clientes ?? []) } })
-      .catch(() => { if (atual) setCasos([]) })
-      .finally(() => { if (atual) setCarregando(false) })
-    return () => { atual = false }
-  }, [cliente, temFavoritos])
+  // Só busca quando há favoritos; falha em clientes só tira o nome do cliente das linhas.
+  const buscar = idsFavoritos.length > 0 && Boolean(cliente)
+  const consultaCasos = useCasos<Caso>({ enabled: buscar })
+  const consultaClientes = useClientes<Cliente>({ enabled: buscar })
+  const casos = consultaCasos.data ?? SEM_CASOS
+  const clientes = consultaClientes.data ?? SEM_CLIENTES
+  const carregando = consultaCasos.isLoading || (buscar && consultaClientes.isLoading)
 
   const nomeCliente = (id?: string) => formatarNomeExibicao(clientes.find(c => c.id === id)?.nome ?? '')
   const termo = normalizar(busca.trim())
