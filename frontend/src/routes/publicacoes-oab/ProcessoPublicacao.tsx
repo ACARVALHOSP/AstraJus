@@ -1,12 +1,18 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Check } from 'lucide-react'
 import { Button, Callout, Dialog, Flex, Select, Spinner, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
+import { useClientes, useResponsaveis } from '../../api/consultas'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarNomeExibicao, formatarNumeroCNJ } from '../../utils/formatadores'
 import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
 import type { Caso } from '../casos/ListaCasos'
 import { nomePublicacao, numeroPublicacao, type PublicacaoOab } from './dados'
+
+const SEM_CASOS: Caso[] = []
+const SEM_CLIENTES: Array<{ id: string; nome: string }> = []
+const SEM_RESPONSAVEIS: string[] = []
 
 function semAcento(texto?: string) {
   return (texto ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
@@ -17,18 +23,32 @@ export default function ProcessoPublicacao({ publicacao, onClose, onConcluido }:
 }) {
   const { cliente } = useCliente()
   const numero = numeroPublicacao(publicacao)
-  const [carregando, setCarregando] = useState(true)
-  const [erro, setErro] = useState('')
-  const [casos, setCasos] = useState<Caso[]>([])
-  const [clientes, setClientes] = useState<Array<{ id: string; nome: string }>>([])
-  const [responsaveis, setResponsaveis] = useState<string[]>([])
+  const [erroLocal, setErro] = useState('')
+  // Processos do mesmo CNJ, clientes e responsáveis: os dois últimos vêm do cache compartilhado.
+  const consultaCasos = useQuery({
+    queryKey: ['casos-por-numero', cliente?.token, numero],
+    enabled: Boolean(cliente),
+    queryFn: ({ signal }) => buscarJson<{ casos: Caso[] }>(cliente, `/casos?q=${encodeURIComponent(numero)}`, signal)
+      .then(r => r.casos.filter(c => c.processos?.some(n => n.replace(/\D/g, '') === numero))),
+  })
+  const consultaClientes = useClientes<{ id: string; nome: string }>({ enabled: Boolean(cliente) })
+  const consultaResponsaveis = useResponsaveis()
+  const clientes = consultaClientes.data ?? SEM_CLIENTES
+  const responsaveis = consultaResponsaveis.data ?? SEM_RESPONSAVEIS
+  // Busca manual ou escolha do usuário sobrepõem o que veio da consulta inicial.
+  const [casosManual, setCasos] = useState<Caso[] | null>(null)
+  const [escolhidoManual, setEscolhido] = useState<string | null>(null)
+  const casos = casosManual ?? consultaCasos.data ?? SEM_CASOS
+  const escolhido = escolhidoManual ?? casos[0]?.id ?? ''
+  const carregando = consultaCasos.isLoading || consultaClientes.isLoading || consultaResponsaveis.isLoading
+  const falhaCarga = consultaCasos.error ?? consultaClientes.error ?? consultaResponsaveis.error
+  const erro = erroLocal || (falhaCarga ? falhaCarga.message : '')
   const [clienteId, setClienteId] = useState('')
   // Começa vazio: o nome pesquisado na captura é o do advogado, não o do cliente.
   const [nomeCliente, setNomeCliente] = useState('')
   const partes = [...new Set((publicacao.dados?.destinatarios ?? []).map(d => (d.nome ?? '').trim()).filter(Boolean))]
   const [responsavel, setResponsavel] = useState('')
   const [termo, setTermo] = useState(numero)
-  const [escolhido, setEscolhido] = useState('')
   const [salvando, setSalvando] = useState(false)
   // Etapa em andamento (índice em `passos`); as anteriores aparecem como concluídas.
   const [etapa, setEtapaIndice] = useState(-1)
@@ -36,21 +56,6 @@ export default function ProcessoPublicacao({ publicacao, onClose, onConcluido }:
   const criado = useRef<Caso | null>(null)
   const [processoCriado, setProcessoCriado] = useState(false)
   const trava = useRef(false)
-  const [tentativa, setTentativa] = useState(0)
-  useEffect(() => {
-    let ativo = true
-    Promise.all([
-      buscarJson<{ casos: Caso[] }>(cliente, `/casos?q=${encodeURIComponent(numero)}`),
-      buscarJson<{ clientes: Array<{ id: string; nome: string }> }>(cliente, '/clientes'),
-      buscarJson<{ responsaveis: string[] }>(cliente, '/responsaveis'),
-    ]).then(([processos, pessoas, equipe]) => {
-      if (!ativo) return
-      const exatos = processos.casos.filter(c => c.processos?.some(n => n.replace(/\D/g, '') === numero))
-      setCasos(exatos); setEscolhido(exatos[0]?.id ?? ''); setClientes(pessoas.clientes); setResponsaveis(equipe.responsaveis); setErro('')
-    }).catch(e => { if (ativo) setErro(e.message) }).finally(() => { if (ativo) setCarregando(false) })
-    return () => { ativo = false }
-  }, [cliente, numero, tentativa])
-
   async function consultar() {
     if (trava.current) return
     trava.current = true; setSalvando(true); setErro('')
@@ -180,7 +185,7 @@ export default function ProcessoPublicacao({ publicacao, onClose, onConcluido }:
             </Callout.Root>
             {!processoCriado && (
               <div>
-                <Button variant="ghost" size="1" disabled={salvando} onClick={() => { setCarregando(true); setTentativa(n => n + 1) }}>Recarregar dados</Button>
+                <Button variant="ghost" size="1" disabled={salvando} onClick={() => { setErro(''); void Promise.all([consultaCasos, consultaClientes, consultaResponsaveis].filter(q => q.error).map(q => q.refetch())) }}>Recarregar dados</Button>
               </div>
             )}
           </>}

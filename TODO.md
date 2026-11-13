@@ -16,7 +16,7 @@ Legenda: `[x]` feito · `[ ]` a fazer · **F** só frontend (push na `astrajus-r
 Restam ~26 arquivos com `buscarJson` direto. Ordem sugerida:
 - [x] **F** Lote 1: Home (`Home.tsx`) e Escritório (`home/Escritorio.tsx`) — sem teste no navegador
 - [x] **F** Lote 2: Pagamentos e Histórico — sem teste no navegador
-- [ ] **F** Lote 3: Publicações recebidas (`PainelPublicacoes`, `AtividadePublicacao`, `ProcessoPublicacao`)
+- [x] **F** Lote 3: Publicações recebidas (`PainelPublicacoes`, `AtividadePublicacao`, `ProcessoPublicacao`) — sem teste no navegador; ficam com busca imperativa só as ações em lote (varrer todas as páginas, criar/vincular)
 - [ ] **F** Lote 4: abas do processo (`CapaProcesso`, `MovimentacoesCaso`, `PublicacoesCaso`, `VinculosCaso`, `AtividadesCaso`, `ChecklistAtividade`, `AtividadeModal`, `CadastroCaso`)
 - [ ] **F** Lote 5: contatos (`CadastroContato`, `VinculosContato`), `NovoLancamentoModal`, `BuscaGlobal`, `Agenda`/`Atividades`/`Casos` (sobras)
 - [ ] **F** Ao final: trocar `EVENTO_DADOS_ALTERADOS` por invalidação de queries

@@ -5,10 +5,12 @@ import CampoData from '../../CampoData'
 import TabelaResponsiva from '../../TabelaResponsiva'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
-import { Fragment, useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import { AlertTriangle, Archive, Check, ChevronDown, ChevronRight, FilePlus, Info, Keyboard, Link2, Unlink } from 'lucide-react'
 import { Badge, Button, Callout, Checkbox, Dialog, Flex, IconButton, Popover, Select, Text, TextField } from '@radix-ui/themes'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCliente } from '../../api/ClienteContext'
+import { useResponsaveis } from '../../api/consultas'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { useNavegacao } from '../../api/NavegacaoContext'
 import { formatarNomeExibicao, formatarNumeroCNJ } from '../../utils/formatadores'
@@ -32,6 +34,9 @@ type RespostaLista = {
 }
 type ResultadoStatus = { hashes_atualizados: string[]; hashes_falharam: string[] }
 type Periodo = '' | 'hoje' | '7' | '30' | 'personalizado'
+
+const SEM_PUBLICACOES: PublicacaoOab[] = []
+const SEM_RESPONSAVEIS: string[] = []
 
 const ATALHOS: Array<{ valor: Status | ''; rotulo: string }> = [
   { valor: 'nao_tratada', rotulo: 'Não tratadas' },
@@ -63,7 +68,6 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
   const [textoBusca, setTextoBusca] = useState(''), [busca, setBusca] = useState('')
   const [ordemAsc, setOrdemAsc] = useState(false)
   const [porPrioridade, setPorPrioridade] = useState(false)
-  const [paraClientes, setParaClientes] = useState(0)
   const [infoTriagem, setInfoTriagem] = useState<InfoTriagem | null>(null)
   const [classificando, setClassificando] = useState(false)
   const [pagina, setPagina] = useState(1), [tamanho, setTamanho] = useState(20)
@@ -76,55 +80,59 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
     return () => window.clearTimeout(espera)
   }, [textoBusca])
 
-  const [publicacoes, setPublicacoes] = useState<PublicacaoOab[]>([]), [total, setTotal] = useState(0)
   const [contagem, setContagem] = useState<ContagemStatus | null>(null), [tipos, setTipos] = useState<string[]>([])
   const [preferencias, setPreferencias] = useState(lerPreferencias)
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set()), [expandidas, setExpandidas] = useState<Set<string>>(new Set())
   const [todasFiltro, setTodasFiltro] = useState(false)
   const [hashesLote, setHashesLote] = useState<string[] | null>(null)
   const [criarLote, setCriarLote] = useState<PublicacaoOab[] | null>(null)
-  const [carregando, setCarregando] = useState(true), [operacao, setOperacao] = useState(false)
-  const [erro, setErro] = useState('')
+  const [operacao, setOperacao] = useState(false)
   const { avisar } = useAvisos()
   const [modal, setModal] = useState<{ tipo: 'processo' | 'atividade'; p: PublicacaoOab } | null>(null)
   const [capturaAberta, setCapturaAberta] = useState(false)
-  const trava = useRef(false), sequencia = useRef(0)
+  const trava = useRef(false)
   const opcionais = COLUNAS_OPCIONAIS.filter(c => preferencias.includes(c.key))
   const { desde: filtroDesde, ate: filtroAte } = intervalo(periodo, desde, ate)
 
-  const carregar = useCallback(async () => {
-    const pedido = ++sequencia.current
-    if (!cliente) { setCarregando(false); return }
-    setCarregando(true); setErro('')
-    try {
+  const queryClient = useQueryClient()
+  const chaveLista = ['publicacoes-oab', cliente?.token, { pagina, tamanho, status, tipo, busca, filtroDesde, filtroAte, ordemAsc, porPrioridade }]
+  const consulta = useQuery({
+    queryKey: chaveLista,
+    enabled: Boolean(cliente),
+    placeholderData: keepPreviousData, // a lista anterior fica na tela enquanto a nova carrega
+    queryFn: ({ signal }) => {
       const query = new URLSearchParams({
         pagina: String(pagina), tamanho: String(tamanho), ordem: porPrioridade ? 'prioridade' : ordemAsc ? 'divulgado_asc' : 'divulgado_desc',
         ...(status ? { status } : {}), ...(tipo ? { tipo } : {}), ...(busca ? { busca } : {}),
         ...(filtroDesde ? { desde: filtroDesde } : {}), ...(filtroAte ? { ate: filtroAte } : {}),
       })
-      const dados = await buscarJson<RespostaLista>(cliente, `/publicacoes-oab?${query}`)
-      if (pedido !== sequencia.current) return
-      setPublicacoes(dados.publicacoes ?? []); setTotal(dados.total ?? 0)
-      if (dados.contagem_status) setContagem(dados.contagem_status)
-      if (dados.triagem) setInfoTriagem(dados.triagem)
-      setParaClientes(dados.destinadas_a_clientes ?? 0)
-      if (dados.tipos_disponiveis) setTipos(dados.tipos_disponiveis)
-      if (dados.pagina && dados.pagina !== pagina) setPagina(dados.pagina)
-      if (dados.hashes_disponiveis) {
-        const disponiveis = new Set(dados.hashes_disponiveis)
-        setSelecionadas(s => new Set([...s].filter(id => disponiveis.has(id))))
-        setExpandidas(s => new Set([...s].filter(id => disponiveis.has(id))))
-      }
-    } catch (e) { if (pedido === sequencia.current) setErro((e as Error).message) }
-    finally { if (pedido === sequencia.current) setCarregando(false) }
-  }, [cliente, pagina, tamanho, status, tipo, busca, filtroDesde, filtroAte, ordemAsc, porPrioridade])
+      return buscarJson<RespostaLista>(cliente, `/publicacoes-oab?${query}`, signal)
+    },
+  })
+  const dados = consulta.data
+  const publicacoes = dados?.publicacoes ?? SEM_PUBLICACOES
+  const total = dados?.total ?? 0
+  const paraClientes = dados?.destinadas_a_clientes ?? 0
+  const carregando = consulta.isFetching
+  const erro = consulta.error ? consulta.error.message : ''
+  const carregar = () => consulta.refetch()
+  // Contagens, tipos e triagem só vêm em algumas respostas: guarda o último valor recebido.
+  // A resposta também corrige a página e tira da seleção o que saiu da lista.
   useEffect(() => {
-    // The request synchronizes the list with the server; invalidate it on cleanup.
-    const controle = sequencia
-    // eslint-disable-next-line react/set-state-in-effect
-    void carregar()
-    return () => { controle.current++ }
-  }, [carregar])
+    if (!dados) return
+    /* eslint-disable react/set-state-in-effect */
+    if (dados.contagem_status) setContagem(dados.contagem_status)
+    if (dados.triagem) setInfoTriagem(dados.triagem)
+    if (dados.tipos_disponiveis) setTipos(dados.tipos_disponiveis)
+    if (dados.pagina && dados.pagina !== pagina) setPagina(dados.pagina)
+    if (dados.hashes_disponiveis) {
+      const disponiveis = new Set(dados.hashes_disponiveis)
+      setSelecionadas(s => new Set([...s].filter(id => disponiveis.has(id))))
+      setExpandidas(s => new Set([...s].filter(id => disponiveis.has(id))))
+    }
+    /* eslint-enable react/set-state-in-effect */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dados])
 
   const ocupada = carregando || operacao || modal !== null
   const lote = selecionadas.size > 0
@@ -333,7 +341,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
     setClassificando(true)
     try {
       const r = await enviarJson<{ resultados: Record<string, NonNullable<PublicacaoOab['triagem']>>; falhas: Record<string, string> }>(cliente, '/publicacoes-oab/triagem', { hashes: pendentes.slice(0, 50) })
-      setPublicacoes(lista => lista.map(p => r.resultados[p.hash] ? { ...p, triagem: r.resultados[p.hash] } : p))
+      queryClient.setQueryData<RespostaLista>(chaveLista, d => d && { ...d, publicacoes: d.publicacoes.map(p => r.resultados[p.hash] ? { ...p, triagem: r.resultados[p.hash] } : p) })
       const falhas = Object.keys(r.falhas ?? {}).length
       avisar({ tipo: falhas ? 'info' : 'sucesso', texto: `${Object.keys(r.resultados).length} publicação(ões) classificada(s)${falhas ? `; ${falhas} falharam` : ''}. São sugestões: confira antes de agir.` })
     } catch (e) { avisar({ tipo: 'erro', texto: (e as Error).message }) } finally { setClassificando(false) }
@@ -717,11 +725,12 @@ const CLIENTE_PENDENTE = 'Pendente'
 
 function CriarProcessosLote({ publicacoes, onClose, onConcluido }: { publicacoes: PublicacaoOab[]; onClose: () => void; onConcluido: (msg: string) => void }) {
   const { cliente } = useCliente()
-  const [responsaveis, setResponsaveis] = useState<string[]>([])
+  const { data: responsaveis = SEM_RESPONSAVEIS, error: erroResponsaveis } = useResponsaveis()
   const [responsavel, setResponsavel] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [progresso, setProgresso] = useState(0)
-  const [erro, setErro] = useState('')
+  const [erroLocal, setErro] = useState('')
+  const erro = erroLocal || (erroResponsaveis ? erroResponsaveis.message : '')
   const trava = useRef(false)
 
   // Só publicações sem processo; agrupadas por CNJ. Sem CNJ de 20 dígitos são puladas.
@@ -734,10 +743,6 @@ function CriarProcessosLote({ publicacoes, onClose, onConcluido }: { publicacoes
     grupos.set(n, [...(grupos.get(n) ?? []), p])
   }
   const numeros = [...grupos.keys()]
-
-  useEffect(() => {
-    buscarJson<{ responsaveis: string[] }>(cliente, '/responsaveis').then(r => setResponsaveis(r.responsaveis)).catch(e => setErro((e as Error).message))
-  }, [cliente])
 
   async function confirmar() {
     if (trava.current || !responsavel) return

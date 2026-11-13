@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Info } from 'lucide-react'
 import { Button, Callout, Checkbox, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
+import { useCasos, useResponsaveis } from '../../api/consultas'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarDataSimples, formatarNomeExibicao } from '../../utils/formatadores'
 import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
@@ -12,6 +13,8 @@ import { calcularPrazo, cruzaRecesso, dataValida, detectarDias, PRAZOS_PADRAO, R
 import { imprimirDemonstrativoPrazo } from './impressaoPrazo'
 
 type CasoOpcao = { id: string; titulo?: string | null; processos?: string[] }
+const SEM_CASOS: CasoOpcao[] = []
+const SEM_RESPONSAVEIS: string[] = []
 
 /** Calcula um prazo processual e cria a atividade. Com `publicacao`, parte dos dados dela e marca a
  *  publicação como tratada ao salvar; sem ela (calculadora avulsa da Agenda), pede o processo. */
@@ -21,7 +24,8 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
 }) {
   const { cliente } = useCliente()
   const [casoId, setCasoId] = useState(publicacao?.caso_id ?? casoIdInicial ?? '')
-  const [casos, setCasos] = useState<CasoOpcao[]>([])
+  // Calculadora avulsa: lista de processos para escolher.
+  const { data: casos = SEM_CASOS } = useCasos<CasoOpcao>({ enabled: Boolean(cliente) && !publicacao && !casoIdInicial })
   const [numeroCaso, setNumeroCaso] = useState('')
   const numero = publicacao ? numeroPublicacao(publicacao) : numeroCaso
   const textoPublicacao = publicacao?.dados?.texto || ''
@@ -38,7 +42,7 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
   const [tribunal, setTribunal] = useState(publicacao?.dados?.siglaTribunal?.toLowerCase() || siglaTribunalPorNumero(numero) || '')
   const [suspensaoCpc, setSuspensaoCpc] = useState(false)
   const [responsavel, setResponsavel] = useState('')
-  const [responsaveis, setResponsaveis] = useState<string[]>([])
+  const { data: responsaveis = SEM_RESPONSAVEIS } = useResponsaveis()
   const [calendario, setCalendario] = useState<CalendarioForense | null>(null)
   const [resultado, setResultado] = useState<ReturnType<typeof calcularPrazo> | null>(null)
   const [final, setFinal] = useState('')
@@ -52,11 +56,7 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
   const trava = useRef(false)
   const [carregandoContexto, setCarregandoContexto] = useState(true)
 
-  // Calculadora avulsa: lista de processos para escolher e, depois, o número do processo escolhido.
-  useEffect(() => {
-    if (publicacao || casoIdInicial) return
-    buscarJson<{ casos: CasoOpcao[] }>(cliente, '/casos').then(r => setCasos(r.casos ?? [])).catch(() => {})
-  }, [cliente, publicacao, casoIdInicial])
+  // Calculadora avulsa: número do processo escolhido.
   useEffect(() => {
     if (publicacao || !casoId) return
     let ativo = true
@@ -70,11 +70,9 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
   useEffect(() => {
     let ativo = true
     Promise.allSettled([
-      buscarJson<{ responsaveis: string[] }>(cliente, '/responsaveis'),
       casoId && numero ? buscarJson<{ cidade?: string; tribunal?: string }>(cliente, `/casos/${encodeURIComponent(casoId)}/processos/${numero}/capa`) : Promise.reject(new Error('sem processo')),
-    ]).then(([equipe, capa]) => {
+    ]).then(([capa]) => {
       if (!ativo) return
-      if (equipe.status === 'fulfilled') setResponsaveis(equipe.value.responsaveis)
       if (capa.status === 'fulfilled') { setMunicipio(capa.value.cidade || ''); if (capa.value.tribunal) setTribunal(capa.value.tribunal.toLowerCase()) }
       setCarregandoContexto(false)
     })
