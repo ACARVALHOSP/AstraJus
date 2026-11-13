@@ -62,7 +62,7 @@ type Agregado = {
   aviso?: string
 }
 
-type Perfil = Record<string, number | number[] | string | null | undefined> & {
+type Perfil = Record<string, number | number[] | string | null | undefined | Record<string, unknown>> & {
   valor_mediano_indenizacao?: number | null
   valor_medio_indenizacao?: number
   total_classificados?: number
@@ -311,6 +311,7 @@ function PainelResultado({ resultado, analise }: { resultado: RespostaJurimetria
         total_classificados: classificados,
         com_valor_extraido: valores.length,
         valor_mediano_indenizacao: resumoValores?.mediana ?? null,
+        baseline: resultado.perfil?.baseline,
         aviso: avisoLocal(classificados, 'decisões classificadas'),
         ...Object.fromEntries(Object.keys(ROTULO_TAXA).flatMap(chave => {
           const desfecho = chave.replace('taxa_', '') as keyof typeof contagens
@@ -397,13 +398,13 @@ function Grade({ children }: { children: React.ReactNode }) {
   return <div className="aj-form-grade">{children}</div>
 }
 
-function CeluaResumo({ rotulo, valor, detalhe }: { rotulo: string; valor: string; detalhe?: string }) {
+function CeluaResumo({ rotulo, valor, detalhe }: { rotulo: string; valor: string; detalhe?: React.ReactNode }) {
   return (
     <Card variant="surface">
       <Flex direction="column" gap="1">
         <Text size="5" weight="bold">{valor}</Text>
         <Text size="2" color="gray">{rotulo}</Text>
-        {detalhe && <Text size="1" color="gray">{detalhe}</Text>}
+        {detalhe && <Text size="1" color="gray" as="div">{detalhe}</Text>}
       </Flex>
     </Card>
   )
@@ -434,20 +435,52 @@ function ResumoAgregado({ agregado }: { agregado: Agregado }) {
 }
 
 function ResumoPerfil({ perfil }: { perfil: Perfil }) {
+  const baseline = (typeof perfil.baseline === 'object' && perfil.baseline !== null ? perfil.baseline : undefined) as Record<string, unknown> | undefined
+  const universoOk = baseline && typeof baseline.indisponivel !== 'string'
   return (
     <Flex direction="column" gap="3">
       <Grade>
         {Object.entries(ROTULO_TAXA).map(([chave, rotulo]) => {
+          const taxa = perfil[chave] as number | null | undefined
           const ic = perfil[chave.replace('taxa_', 'ic_')]
-          const faixa = Array.isArray(ic) && ic.length === 2
-            ? `Margem de erro: ${formatarPercentual(ic[0])} a ${formatarPercentual(ic[1])}`
-            : undefined
-          return <CeluaResumo key={chave} rotulo={rotulo} valor={formatarPercentual(perfil[chave] as number | undefined)} detalhe={faixa} />
+          const taxaUniverso = universoOk && typeof baseline[chave] === 'number' ? (baseline[chave] as number) : null
+          const temIc = Array.isArray(ic) && ic.length === 2
+          // Só diz "acima/abaixo" quando a média dos juízes está fora da margem de erro deste juiz.
+          const posicao = taxaUniverso !== null && temIc
+            ? taxaUniverso < ic[0] ? 'acima da média' : taxaUniverso > ic[1] ? 'abaixo da média' : 'na média'
+            : null
+          const detalhe = (temIc || taxaUniverso !== null) ? (
+            <>
+              {temIc && <div>Margem de erro: {formatarPercentual(ic[0])} a {formatarPercentual(ic[1])}</div>}
+              {taxaUniverso !== null && (
+                <div>
+                  Todos os juízes: {formatarPercentual(taxaUniverso)}{' '}
+                  {posicao && <Badge size="1" variant="soft" color={posicao === 'na média' ? 'gray' : posicao === 'acima da média' ? 'orange' : 'blue'}>{posicao}</Badge>}
+                </div>
+              )}
+            </>
+          ) : undefined
+          return <CeluaResumo key={chave} rotulo={rotulo} valor={formatarPercentual(taxa ?? undefined)} detalhe={detalhe} />
         })}
-        <CeluaResumo rotulo="Valor típico de indenização (mediana)" valor={formatarReais(perfil.valor_mediano_indenizacao ?? perfil.valor_medio_indenizacao)} />
+        <CeluaResumo
+          rotulo="Valor típico de indenização (mediana)"
+          valor={formatarReais((perfil.valor_mediano_indenizacao ?? perfil.valor_medio_indenizacao) as number | null | undefined)}
+          detalhe={universoOk && typeof baseline.valor_mediano_indenizacao === 'number' ? `Todos os juízes: ${formatarReais(baseline.valor_mediano_indenizacao)}` : undefined}
+        />
         <CeluaResumo rotulo="Decisões classificadas" valor={String(perfil.total_classificados ?? '-')} />
         <CeluaResumo rotulo="Sentenças com valor identificado" valor={String(perfil.com_valor_extraido ?? '-')} />
       </Grade>
+      {universoOk && (
+        <Text size="1" color="gray">
+          Comparação com {String(baseline.total_classificados ?? 0)} decisões classificadas de todos os juízes. {typeof baseline.escopo === 'string' ? baseline.escopo : ''}
+          {typeof baseline.aviso === 'string' && baseline.aviso ? ` ${baseline.aviso}` : ''}
+        </Text>
+      )}
+      {baseline && typeof baseline.indisponivel === 'string' && (
+        <Callout.Root color="gray" size="1">
+          <Callout.Text>Sem comparação com a média: {baseline.indisponivel}</Callout.Text>
+        </Callout.Root>
+      )}
       {typeof perfil.aviso === 'string' && perfil.aviso && (
         <Callout.Root color="yellow" size="1">
           <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>

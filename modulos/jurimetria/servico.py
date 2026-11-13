@@ -645,6 +645,53 @@ async def consultar_jurimetria_cjpg(
         return nucleo._erro(f"Erro inesperado ao consultar o CJPG: {exc}")
 
 CJPG_CATEGORIAS_DESFECHO = ["procedente", "parcial", "improcedente", "acordo", "extinto"]
+CJPG_PAGINAS_UNIVERSO = 5  # a comparação não precisa da mesma amostra: limita o tempo extra da 2ª busca
+
+
+def _perfil_de(resultados: list[dict]) -> dict[str, Any]:
+    """Taxas de desfecho (com intervalo de Wilson) e valor típico de indenização de uma lista de decisões."""
+    classificados = [r for r in resultados if r["desfecho"] is not None]
+    contagens = Counter(r["desfecho"] for r in classificados)
+    total_classificados = len(classificados)
+    perfil: dict[str, Any] = {
+        "total_classificados": total_classificados,
+        "nao_classificados": len(resultados) - total_classificados,
+    }
+    for categoria in CJPG_CATEGORIAS_DESFECHO:
+        quantos = contagens.get(categoria, 0)
+        perfil[f"taxa_{categoria}"] = quantos / total_classificados if total_classificados else None
+        ic = _intervalo_wilson(quantos, total_classificados)
+        perfil[f"ic_{categoria}"] = list(ic) if ic else None
+    valores = [
+        r["valor_condenacao"] for r in classificados
+        if r["desfecho"] in ("procedente", "parcial") and r["valor_condenacao"] is not None
+    ]
+    perfil["com_valor_extraido"] = len(valores)
+    # mediana (robusta a outliers) é a medida principal; a média fica por compatibilidade
+    perfil["valor_mediano_indenizacao"] = statistics.median(valores) if valores else None
+    perfil["valor_medio_indenizacao"] = statistics.mean(valores) if valores else None
+    return perfil
+
+
+async def _perfil_do_universo(params_base: dict, paginas: int, ignorar_cache: bool) -> dict[str, Any]:
+    """Perfil de TODOS os juízes com os mesmos filtros (sem o magistrado), para servir de referência.
+    Nunca derruba a consulta principal: se a 2ª busca falhar, devolve {"indisponivel": motivo}."""
+    try:
+        _, todos, avisos = await _cjpg_executar_busca(params_base, min(paginas, CJPG_PAGINAS_UNIVERSO), ignorar_cache)
+    except (ValueError, httpx.HTTPError) as exc:
+        return {"indisponivel": f"Não foi possível buscar o universo para comparação: {exc}"}
+    universo = _perfil_de(todos)
+    universo["buscados"] = len(todos)
+    universo["escopo"] = (
+        "Decisões de todos os juízes do TJSP com o mesmo termo, classe, assunto, vara e período "
+        "(as mais recentes da busca)."
+    )
+    aviso = _avisos_amostra(universo["total_classificados"], "decisões classificadas")
+    if avisos:
+        aviso += avisos
+    if aviso:
+        universo["aviso"] = " ".join(aviso)
+    return universo
 
 
 @ferramenta
@@ -659,6 +706,7 @@ async def perfil_decisorio_magistrado(
     data_fim: str | None = None,
     paginas: int = 1,
     ignorar_cache: bool = False,
+    comparar_com_universo: bool = True,
 ) -> dict:
     """Busca julgados de 1º grau do TJSP (CJPG, scraping - sem API oficial, best-effort) de um
     magistrado específico e monta um perfil decisório: taxa de procedência/improcedência/parcial,
@@ -683,6 +731,9 @@ async def perfil_decisorio_magistrado(
       vez de descartado.
     - ignorar_cache: True força nova busca no e-SAJ. Por padrão, uma consulta idêntica feita nos
       últimos 7 dias é respondida do cache (com um aviso informando a data da consulta original).
+    - comparar_com_universo: True (padrão) faz uma 2ª busca, sem o magistrado e com no máximo 5
+      páginas, e devolve em `perfil.baseline` as taxas de todos os juízes com os mesmos filtros, para
+      dar referência ao perfil. Só roda se houver termo, classe, assunto ou vara informados.
 
     Limitações conhecidas:
     - O CJPG tem um teto de ~10.000 resultados por consulta (limite do índice de busca do TJSP);
@@ -725,32 +776,23 @@ async def perfil_decisorio_magistrado(
         except ValueError as exc:
             return nucleo._erro(str(exc))
 
-        classificados = [r for r in todos if r["desfecho"] is not None]
-        contagens = Counter(r["desfecho"] for r in classificados)
-        total_classificados = len(classificados)
-
-        perfil: dict[str, Any] = {
-            "total_classificados": total_classificados,
-            "nao_classificados": len(todos) - total_classificados,
-        }
-        for categoria in CJPG_CATEGORIAS_DESFECHO:
-            quantos = contagens.get(categoria, 0)
-            perfil[f"taxa_{categoria}"] = quantos / total_classificados if total_classificados else None
-            ic = _intervalo_wilson(quantos, total_classificados)
-            perfil[f"ic_{categoria}"] = list(ic) if ic else None
-
-        valores = [
-            r["valor_condenacao"] for r in classificados
-            if r["desfecho"] in ("procedente", "parcial") and r["valor_condenacao"] is not None
-        ]
-        perfil["com_valor_extraido"] = len(valores)
-        # mediana (robusta a outliers) é a medida principal; a média fica por compatibilidade
-        perfil["valor_mediano_indenizacao"] = statistics.median(valores) if valores else None
-        perfil["valor_medio_indenizacao"] = statistics.mean(valores) if valores else None
-
-        avisos_perfil = _avisos_amostra(total_classificados, "decisões classificadas")
+        perfil = _perfil_de(todos)
+        avisos_perfil = _avisos_amostra(perfil["total_classificados"], "decisões classificadas")
         avisos_perfil.append(CJPG_AVISO_VIES)
         perfil["aviso"] = " ".join(avisos_perfil)
+
+        if comparar_com_universo:
+            if not ((termo or "").strip() or classe_codigo or assunto_codigo or vara_codigo):
+                perfil["baseline"] = {
+                    "indisponivel": "Para comparar com a média, informe um assunto/termo, uma classe ou uma vara.",
+                }
+            else:
+                params_universo = {
+                    chave: valor for chave, valor in params.items()
+                    if chave not in ("cdAgente", "agenteSelectedEntitiesList")
+                }
+                params_universo["dadosConsulta.pesquisaLivre"] = (termo or "").strip()
+                perfil["baseline"] = await _perfil_do_universo(params_universo, paginas, ignorar_cache)
 
         return {
             "total_servidor": total_servidor,
