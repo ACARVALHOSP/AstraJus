@@ -1,14 +1,17 @@
-import { Suspense, lazy, useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { Callout, Theme } from '@radix-ui/themes'
+import type { LucideIcon } from 'lucide-react'
 import {
   Scale, Users, CalendarCheck, CalendarDays, Search, Gavel, Briefcase,
-  Newspaper, BarChart2, BookOpen, History, FileSearch, Receipt, KeyRound,
+  Newspaper, History, FileSearch, Receipt, KeyRound,
   Settings, Wallet, CreditCard, ShieldCheck, Menu, X,
-  ChevronDown, ChevronRight, House, ListChecks, Clock,
+  ChevronDown, ChevronRight, House, ListChecks, Clock, Puzzle,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ClienteProvider, useCliente } from './api/ClienteContext'
 import { PerfilProvider, usePerfil } from './api/PerfilContext'
+import { ModulosProvider, useModulos } from './api/ModulosContext'
+import { componenteDoModulo, iconeDoModulo } from './modulos/registro'
 import { AvisosProvider } from './Avisos'
 import { DialogoSaida } from './AlteracoesPendentes'
 import { sincronizarPreferencias } from './utils/listasRapidas'
@@ -27,8 +30,7 @@ import Home from './routes/Home'
 const Processo = lazy(() => import('./routes/Processo'))
 const Publicacoes = lazy(() => import('./routes/Publicacoes'))
 const Historico = lazy(() => import('./routes/Historico'))
-const Jurimetria = lazy(() => import('./routes/Jurimetria'))
-const Jurisprudencia = lazy(() => import('./routes/Jurisprudencia'))
+const Modulos = lazy(() => import('./routes/Modulos'))
 const Integracoes = lazy(() => import('./routes/Integracoes'))
 const Administracao = lazy(() => import('./routes/Administracao'))
 const Financeiro = lazy(() => import('./routes/Financeiro'))
@@ -45,8 +47,9 @@ import './app-radix.css'
 const CHAVE_ACCENT = 'astrajus-accent'
 
 // Menu organizado pelo que a pessoa faz: o trabalho do dia, a pesquisa avulsa, o financeiro e
-// as configurações. "Início" (Meu dia) fica fixo no topo, fora dos grupos.
-const GRUPOS_NAVEGACAO = [
+// as configurações. "Início" (Meu dia) fica fixo no topo, fora dos grupos. As abas dos módulos
+// (Jurisprudência, Jurimetria...) vêm do servidor e entram no grupo que o manifesto indica.
+const GRUPOS_BASE = [
   {
     id: 'trabalho', label: 'Trabalho', icone: Briefcase,
     abas: [
@@ -63,8 +66,6 @@ const GRUPOS_NAVEGACAO = [
     abas: [
       { id: 'processo', label: 'Consultar processo', icone: FileSearch },
       { id: 'publicacoes', label: 'Buscar no DJEN', icone: Newspaper },
-      { id: 'jurisprudencia', label: 'Jurisprudência', icone: BookOpen },
-      { id: 'jurimetria', label: 'Jurimetria', icone: BarChart2 },
       { id: 'historico', label: 'Histórico e favoritos', icone: History },
     ],
   },
@@ -81,9 +82,29 @@ const GRUPOS_NAVEGACAO = [
       { id: 'acesso', label: 'Acesso', icone: KeyRound },
       { id: 'modelos-prazo', label: 'Modelos de prazos', icone: ListChecks },
       { id: 'administracao', label: 'Administração', icone: ShieldCheck },
+      { id: 'modulos', label: 'Módulos', icone: Puzzle },
     ],
   },
 ]
+
+type Grupo = { id: string; label: string; icone: LucideIcon; abas: { id: string; label: string; icone: LucideIcon }[] }
+
+const ABAS_BASE = new Set(['inicio', 'monitoramentos', 'integracoes', 'integracoes/admin', ...GRUPOS_BASE.flatMap(g => g.abas.map(a => a.id))])
+
+// Menu final: grupos fixos mais as abas dos módulos ligados a que a pessoa tem acesso.
+function useGruposNavegacao(): Grupo[] {
+  const { modulos } = useModulos()
+  const { areaPermitida } = usePerfil()
+  return useMemo(() => GRUPOS_BASE.map(g => ({
+    ...g,
+    abas: [
+      ...g.abas,
+      ...modulos
+        .filter(m => m.ativo && m.aba.grupo === g.id && areaPermitida(m.area_permissao))
+        .map(m => ({ id: m.aba.id, label: m.aba.rotulo, icone: iconeDoModulo(m.aba.icone) })),
+    ],
+  })), [modulos, areaPermitida])
+}
 
 function SincronizarPreferencias() {
   const { cliente } = useCliente()
@@ -122,15 +143,29 @@ function StatusConexao() {
   )
 }
 
+function SemAcesso({ texto }: { texto: string }) {
+  return (
+    <Callout.Root color="gray" role="status">
+      <Callout.Icon><ShieldCheck size={14} /></Callout.Icon>
+      <Callout.Text>{texto}</Callout.Text>
+    </Callout.Root>
+  )
+}
+
 function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
-  const { abaPermitida } = usePerfil()
+  const { abaPermitida, areaPermitida } = usePerfil()
+  const { modulos, carregado } = useModulos()
+  const modulo = modulos.find(m => m.aba.id === abaAtiva)
+  if (modulo) {
+    if (!areaPermitida(modulo.area_permissao)) return <SemAcesso texto="Seu perfil não tem acesso a esta área. Peça ao administrador para liberar." />
+    if (!modulo.ativo) return <SemAcesso texto={`O módulo ${modulo.nome} está desativado. Um administrador pode ativá-lo em Configurações › Módulos.`} />
+    const Tela = componenteDoModulo(modulo.id)
+    return Tela ? <Tela /> : <SemAcesso texto={`O módulo ${modulo.nome} não tem tela nesta versão do aplicativo.`} />
+  }
+  // Link direto para a tela de um módulo: espera o servidor dizer quais módulos existem.
+  if (!carregado && !ABAS_BASE.has(abaAtiva)) return <Carregamento tipo="detalhe" descricao="Carregando tela…" />
   if (!abaPermitida(abaAtiva)) {
-    return (
-      <Callout.Root color="gray" role="status">
-        <Callout.Icon><ShieldCheck size={14} /></Callout.Icon>
-        <Callout.Text>Seu perfil não tem acesso a esta área. Peça ao administrador para liberar.</Callout.Text>
-      </Callout.Root>
-    )
+    return <SemAcesso texto="Seu perfil não tem acesso a esta área. Peça ao administrador para liberar." />
   }
   switch (abaAtiva) {
     case 'inicio': return <Home />
@@ -142,8 +177,7 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
     case 'publicacoes': return <Publicacoes />
     case 'historico': return <Historico />
     case 'monitoramentos': return <PublicacoesOab />
-    case 'jurimetria': return <Jurimetria />
-    case 'jurisprudencia': return <Jurisprudencia />
+    case 'modulos': return <Modulos />
     case 'integracoes/admin': return <Integracoes />
     case 'integracoes': return <Integracoes />  // atalho: administradores vão para Administração › Integrações
     case 'financeiro': return <Financeiro />
@@ -162,17 +196,18 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
 function SidebarAstraJus({ aberta, fechar }: { aberta: boolean; fechar: () => void }) {
   const { abaAtiva, irPara } = useNavegacao()
   const { abaPermitida } = usePerfil()
-  const gruposVisiveis = GRUPOS_NAVEGACAO
+  const grupos = useGruposNavegacao()
+  const gruposVisiveis = grupos
     .map(g => ({ ...g, abas: g.abas.filter(a => abaPermitida(a.id)) }))
     .filter(g => g.abas.length > 0)
   // Só guarda o que a pessoa abriu ou fechou; sem escolha, o grupo da página atual fica aberto.
   const [gruposAbertos, setGruposAbertos] = useState<Record<string, boolean>>({})
   // Monitoramentos é uma aba de Publicações recebidas: destaca esse item no menu.
   const abaMenu = abaAtiva === 'monitoramentos' ? 'publicacoes-oab' : abaAtiva
-  const grupoAberto = (g: typeof GRUPOS_NAVEGACAO[number]) => gruposAbertos[g.id] ?? g.abas.some((a) => a.id === abaMenu)
+  const grupoAberto = (g: Grupo) => gruposAbertos[g.id] ?? g.abas.some((a) => a.id === abaMenu)
 
   function toggleGrupo(id: string) {
-    const grupo = GRUPOS_NAVEGACAO.find((g) => g.id === id)!
+    const grupo = grupos.find((g) => g.id === id)!
     setGruposAbertos((prev) => ({ ...prev, [id]: !grupoAberto(grupo) }))
   }
 
@@ -287,6 +322,7 @@ export default function App() {
       <ClienteProvider>
         <LimpaCacheAoTrocarSessao />
         <PerfilProvider>
+        <ModulosProvider>
         <SincronizarPreferencias />
         <DialogoSaida />
         <NavegacaoProvider abaInicial="inicio">
@@ -304,7 +340,7 @@ export default function App() {
 
               <div className="aj-topbar-right">
                 <StatusConexao />
-                <BuscaGlobal paginas={[{ id: 'inicio', label: 'Início', grupo: '' }, ...GRUPOS_NAVEGACAO.flatMap(g => g.abas.map(a => ({ id: a.id, label: a.label, grupo: g.label })))]} />
+                <BuscaPaginas />
                 <CentralNotificacoes />
 
                 <ContaUsuario aparencia={aparencia} setAparencia={setAparencia} accent={accent} setAccent={setAccent} />
@@ -319,6 +355,7 @@ export default function App() {
             </div>
           </div>
         </NavegacaoProvider>
+        </ModulosProvider>
         </PerfilProvider>
       </ClienteProvider>
       </AvisosProvider>
@@ -326,13 +363,19 @@ export default function App() {
   )
 }
 
-// 'integracoes' e 'integracoes/admin' não estão mais no menu, mas seguem valendo como atalhos para links antigos.
-const ABAS_CONHECIDAS = new Set(['inicio', 'monitoramentos', 'integracoes', 'integracoes/admin', ...GRUPOS_NAVEGACAO.flatMap(g => g.abas.map(a => a.id))])
+function BuscaPaginas() {
+  const grupos = useGruposNavegacao()
+  return <BuscaGlobal paginas={[{ id: 'inicio', label: 'Início', grupo: '' }, ...grupos.flatMap(g => g.abas.map(a => ({ id: a.id, label: a.label, grupo: g.label })))]} />
+}
 
 function NavConteudo() {
   const { abaAtiva } = useNavegacao()
+  const { modulos, carregado } = useModulos()
   // Endereço de tela inexistente (link antigo ou digitado errado) vira o início, na URL também.
-  useEffect(() => { if (!ABAS_CONHECIDAS.has(abaAtiva)) window.location.replace('#/inicio') }, [abaAtiva])
+  // 'integracoes' e 'integracoes/admin' não estão no menu, mas seguem valendo como atalhos de links antigos.
+  // Telas de módulo (mesmo desativado) só são conhecidas depois que o servidor responde.
+  const conhecida = ABAS_BASE.has(abaAtiva) || modulos.some(m => m.aba.id === abaAtiva)
+  useEffect(() => { if (carregado && !conhecida) window.location.replace('#/inicio') }, [abaAtiva, carregado, conhecida])
   return (
     <LimiteDeErro key={abaAtiva}>
       <Suspense fallback={<Carregamento tipo="detalhe" descricao="Carregando tela…" />}>

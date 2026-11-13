@@ -11,12 +11,11 @@ export const AREAS: Record<string, string> = {
 }
 const ABA_AREA: Record<string, string> = {
   casos: 'casos', atividades: 'atividades', agenda: 'atividades', 'modelos-prazo': 'atividades', horas: 'atividades', 'publicacoes-oab': 'publicacoes_oab', monitoramentos: 'publicacoes_oab',
-  contatos: 'contatos', processo: 'pesquisa', publicacoes: 'pesquisa', jurisprudencia: 'pesquisa',
-  jurimetria: 'pesquisa', financeiro: 'financeiro', pagamentos: 'pagamentos', integracoes: 'integracoes',
+  contatos: 'contatos', processo: 'pesquisa', publicacoes: 'pesquisa', financeiro: 'financeiro', pagamentos: 'pagamentos', integracoes: 'integracoes',
 }
 
 type Dados = { login: string | null; nome: string | null; email: string; foto: string; nivel: string; permissoes: Record<string, Grau> }
-type Valor = { login: string | null; nome: string | null; email: string; foto: string; atualizarPerfil: (novos: Partial<Pick<Dados, 'nome' | 'email' | 'foto'>>) => void; nivel: string | null; permissoes: Record<string, Grau> | null; abaPermitida: (aba: string) => boolean; podeEditar: (area: string) => boolean }
+type Valor = { login: string | null; nome: string | null; email: string; foto: string; atualizarPerfil: (novos: Partial<Pick<Dados, 'nome' | 'email' | 'foto'>>) => void; nivel: string | null; permissoes: Record<string, Grau> | null; abaPermitida: (aba: string) => boolean; areaPermitida: (area: string) => boolean; podeEditar: (area: string) => boolean }
 const PerfilContext = createContext<Valor | null>(null)
 
 export function PerfilProvider({ children }: { children: ReactNode }) {
@@ -47,10 +46,12 @@ export function PerfilProvider({ children }: { children: ReactNode }) {
     // Sem perfil carregado nada é escondido; o servidor continua recusando o que não é permitido.
     abaPermitida: aba => {
       if (!perfil) return true
-      if (aba === 'administracao' || aba === 'integracoes/admin') return perfil.nivel === 'administrador'
+      if (aba === 'administracao' || aba === 'integracoes/admin' || aba === 'modulos') return perfil.nivel === 'administrador'
       const area = ABA_AREA[aba]
       return !area || (perfil.permissoes[area] ?? 'editar') !== 'nenhum'
     },
+    // Telas de módulo: a área vem do manifesto do módulo (modulos/<id>/manifest.json no servidor).
+    areaPermitida: area => !perfil || (perfil.permissoes[area] ?? 'editar') !== 'nenhum',
     podeEditar: area => !perfil || (perfil.permissoes[area] ?? 'editar') === 'editar',
   }), [perfil])
 

@@ -1,12 +1,12 @@
-import CampoData from '../CampoData'
-import CabecalhoPagina from '../CabecalhoPagina'
-import Carregamento from '../Carregamento'
+import CampoData from '../../CampoData'
+import CabecalhoPagina from '../../CabecalhoPagina'
+import Carregamento from '../../Carregamento'
 import { useState, type FormEvent } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { Badge, Button, Callout, Card, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
-import { useCliente } from '../api/ClienteContext'
-import { ErroMCP } from '../api/mcpClient'
-import { formatarNumeroCNJ, formatarPercentual, formatarReais, isoParaDdMmAaaa } from '../utils/formatadores'
+import { useCliente } from '../../api/ClienteContext'
+import { ErroMCP } from '../../api/mcpClient'
+import { formatarNumeroCNJ, formatarPercentual, formatarReais, isoParaDdMmAaaa } from '../../utils/formatadores'
 
 type Analise = 'benchmark_valor' | 'perfil_magistrado'
 

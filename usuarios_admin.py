@@ -74,8 +74,12 @@ def exigencia_rota(caminho, metodo):
         return rota('publicacoes_oab')
     if caminho == '/mcp':
         return ('pesquisa', 'casos', 'publicacoes_oab'), False
-    if caminho.startswith(('/cjpg-arvore', '/certidoes/')):
+    if caminho.startswith('/certidoes/'):
         return rota('pesquisa')
+    from modulos.registro import modulos as registro_modulos
+    area_modulo = registro_modulos.area_da_rota(caminho)  # rotas dos módulos vêm dos manifestos
+    if area_modulo:
+        return rota(area_modulo)
     if caminho.startswith('/integracoes') and caminho != '/integracoes/status' \
             and not caminho.startswith('/integracoes/calendar'):
         return rota('integracoes')
@@ -579,7 +583,13 @@ async def tratar(app, scope, receive, send, s):
 
 FERRAMENTAS_CONSULTA = frozenset({'status_apis', 'consultar_processo_datajud',
     'consultar_publicacoes_djen', 'consultar_processo_unificado', 'buscar_feriados_forenses',
-    'consultar_jurimetria_cjpg', 'perfil_decisorio_magistrado', 'baixar_certidao_djen', 'listar_monitoramentos'})
+    'baixar_certidao_djen', 'listar_monitoramentos'})
+
+
+def ferramentas_consulta():
+    """Ferramentas liberadas a quem só consulta: as do núcleo mais as que os módulos declaram."""
+    from modulos.registro import modulos as registro_modulos
+    return FERRAMENTAS_CONSULTA | registro_modulos.ferramentas_consulta()
 
 
 def mcp_consulta_permitido(payload):
@@ -588,4 +598,4 @@ def mcp_consulta_permitido(payload):
     if not isinstance(payload, dict):
         return False
     return payload.get('method') != 'tools/call' or (
-        isinstance(payload.get('params'), dict) and payload['params'].get('name') in FERRAMENTAS_CONSULTA)
+        isinstance(payload.get('params'), dict) and payload['params'].get('name') in ferramentas_consulta())
