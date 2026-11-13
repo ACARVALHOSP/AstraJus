@@ -248,7 +248,7 @@ export default function Historico() {
 
       <Tabs.Root value={aba} onValueChange={v => { setAba(v as Aba); setBusca('') }}>
         <Tabs.List>
-          <Tabs.Trigger value="processos">{estreita ? 'Processos' : 'Processos favoritos'} <Text size="1" color="gray" ml="1">{idsFavoritos.length}</Text></Tabs.Trigger>
+          <Tabs.Trigger value="processos">{estreita ? 'Processos' : 'Processos favoritos'} <Text size="1" color="gray" ml="1">{consultaCasos.data ? casosFavoritos.length : idsFavoritos.length}</Text></Tabs.Trigger>
           <Tabs.Trigger value="consultas">{estreita ? 'Consultas' : 'Consultas favoritas'} <Text size="1" color="gray" ml="1">{favoritos.length}</Text></Tabs.Trigger>
           <Tabs.Trigger value="historico">{estreita ? 'Histórico' : 'Histórico recente'} <Text size="1" color="gray" ml="1">{historico.length}</Text></Tabs.Trigger>
         </Tabs.List>

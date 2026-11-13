@@ -253,13 +253,16 @@ html, body { margin: 0; padding: 0; }
 /* ── Busca global / Notificações ── */
 .aj-notif-badge {
   position: absolute;
-  top: -4px;
-  right: -6px;
+  top: 0;
+  right: 0;
+  transform: translate(50%, -50%);
   min-width: 15px;
   height: 15px;
-  padding: 0 3px;
+  padding: 0 4px;
+  justify-content: center;
   font-size: 10px;
   line-height: 15px;
+  box-shadow: 0 0 0 2px var(--accent-9);
 }
 
 .aj-busca-item {
