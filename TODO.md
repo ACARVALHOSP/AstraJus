@@ -19,7 +19,7 @@ Restam ~26 arquivos com `buscarJson` direto. Ordem sugerida:
 - [x] **F** Lote 3: Publicações recebidas (`PainelPublicacoes`, `AtividadePublicacao`, `ProcessoPublicacao`) — sem teste no navegador; ficam com busca imperativa só as ações em lote (varrer todas as páginas, criar/vincular)
 - [x] **F** Lote 4: abas do processo. Testado no navegador local (Home, Pagamentos, Histórico, Publicações, abas do processo, busca global, novo lançamento). Vínculos, Publicações, Atividades, Checklist e Movimentações usam a consulta; Cadastro e Capa ficam com a busca do próprio processo (preenchem formulário, uma recarga apagaria a edição) e só usam responsáveis e clientes em cache
 - [x] **F** Lote 5: BuscaGlobal, VinculosContato, NovoLancamentoModal e contagens das abas do processo. Testado no navegador local (Home, Pagamentos, Histórico, Publicações, abas do processo, busca global, novo lançamento). Ficam com busca direta: CadastroContato (preenche formulário), useNotificacoes (polling) e as ações em lote das publicações
-- [ ] **F** Ao final: trocar `EVENTO_DADOS_ALTERADOS` por invalidação de queries
+- [x] **F** Ao final: `EVENTO_DADOS_ALTERADOS` trocado por `avisarDadosAlterados()` em `api/queryClient.ts` (invalida direto no cliente de consultas, sem evento no `window`)
 
 ### Qualidade
 - [ ] **F** Componentes padrão de estado vazio e de erro (hoje só o carregamento é padronizado, em `Carregamento.tsx`) e uso nas listas

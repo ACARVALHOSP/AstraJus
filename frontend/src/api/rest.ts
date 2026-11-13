@@ -1,8 +1,9 @@
 import { ErroMCP, mensagemPorStatus, type ClienteMCP } from './mcpClient'
 
-// Disparado após qualquer gravação bem-sucedida; o app descarta o cache de consultas das telas fechadas.
-export const EVENTO_DADOS_ALTERADOS = 'aj:dados-alterados'
-export const avisarDadosAlterados = () => window.dispatchEvent(new Event(EVENTO_DADOS_ALTERADOS))
+import { avisarDadosAlterados } from './queryClient'
+
+// Após qualquer gravação bem-sucedida, avisarDadosAlterados atualiza o cache de consultas.
+export { avisarDadosAlterados }
 
 // Falha de rede (servidor fora do ar, sem internet) vira uma mensagem em linguagem do usuário.
 async function pedir(url: string, init: RequestInit): Promise<Response> {

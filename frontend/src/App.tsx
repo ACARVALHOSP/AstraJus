@@ -13,7 +13,6 @@ import { AvisosProvider } from './Avisos'
 import { DialogoSaida } from './AlteracoesPendentes'
 import { sincronizarPreferencias } from './utils/listasRapidas'
 import { CHAVE_TEMA } from './api/mcpClient'
-import { EVENTO_DADOS_ALTERADOS } from './api/rest'
 import Carregamento from './Carregamento'
 import LimiteDeErro from './LimiteDeErro'
 import BuscaGlobal from './BuscaGlobal'
@@ -96,26 +95,11 @@ function SincronizarPreferencias() {
 }
 
 // Descarta o cache de dados ao trocar ou encerrar a sessão, para não manter dados de outro usuário.
-// Após uma gravação, descarta o cache das telas fechadas (voltar a elas mostra o carregamento e os
-// dados novos) e atualiza as consultas das telas abertas.
 function LimpaCacheAoTrocarSessao() {
   const { cliente } = useCliente()
   const queryClient = useQueryClient()
   const token = cliente?.token
   useEffect(() => () => queryClient.clear(), [queryClient, token])
-  useEffect(() => {
-    let espera: number | undefined
-    const aoGravar = () => {
-      // Ações em lote disparam várias gravações seguidas: junta tudo numa atualização só.
-      window.clearTimeout(espera)
-      espera = window.setTimeout(() => {
-        queryClient.removeQueries({ type: 'inactive' })
-        void queryClient.invalidateQueries({ type: 'active' })
-      }, 150)
-    }
-    window.addEventListener(EVENTO_DADOS_ALTERADOS, aoGravar)
-    return () => { window.clearTimeout(espera); window.removeEventListener(EVENTO_DADOS_ALTERADOS, aoGravar) }
-  }, [queryClient])
   return null
 }
 
