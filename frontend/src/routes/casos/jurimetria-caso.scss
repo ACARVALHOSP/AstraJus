@@ -14,3 +14,8 @@
   &__cartoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-4); align-items: start; }
   &__cartoes--antigo { opacity: .55; }
 }
+
+.jurimetria-caso__tempo {
+  display: flex; flex-direction: column; gap: var(--space-1); padding-top: var(--space-2); border-top: 1px solid var(--gray-a5);
+  p { margin: 0; }
+}

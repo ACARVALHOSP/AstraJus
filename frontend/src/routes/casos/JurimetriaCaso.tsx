@@ -17,9 +17,11 @@ import {
   analisar, comparacaoJuiz, consultasDe, ehTjsp, escolhaInicial, escolhaParaServidor, formatarPontos, payloadParaTela, pendencias, periodoPadrao, textoResumo,
   type Analise, type Candidato, type CampoFiltro, type Consulta, type Escolha, type EscolhaSalva, type Resolucao, type ResolucaoCampo, type RespostaConsulta,
 } from './jurimetriaCaso'
+import ProvisaoJurimetria from './ProvisaoJurimetria'
+import { idadeDoProcesso, resumirTempo, textoTempo, type IdadeProcesso } from './jurimetriaTempo'
 import './jurimetria-caso.scss'
 
-type Capa = { classe?: string | null; orgao_julgador?: string | null; assuntos?: string[] | null; magistrado?: string | null }
+type Capa = { classe?: string | null; orgao_julgador?: string | null; assuntos?: string[] | null; magistrado?: string | null; valor_causa?: number | null; data_distribuicao?: string | null }
 type Estado = { fase: 'carregando' } | { fase: 'erro'; mensagem: string } | { fase: 'ok'; dados: RespostaConsulta }
 
 const ROTULO: Record<CampoFiltro, string> = { vara: 'Vara', classe: 'Classe', assunto: 'Assunto', magistrado: 'Magistrado (opcional)' }
@@ -82,7 +84,7 @@ export default function JurimetriaCaso({ casoId }: { casoId: string }) {
         </Flex>
       )}
       {resolucao.isError && <Aviso cor="amber" texto="Não foi possível identificar os filtros automaticamente. Escolha vara, classe e assunto abaixo." />}
-      <Painel key={numero} casoId={casoId} resolucao={resolucao.data} salva={salva.data ?? null} />
+      <Painel key={numero} casoId={casoId} numero={numero} capa={capa.data ?? {}} resolucao={resolucao.data} salva={salva.data ?? null} />
     </div>
   )
 }
@@ -96,13 +98,14 @@ function Aviso({ cor, texto }: { cor: 'gray' | 'red' | 'amber'; texto: string })
   )
 }
 
-function Painel({ casoId, resolucao, salva }: { casoId: string; resolucao: Resolucao | undefined; salva: EscolhaSalva | null }) {
+function Painel({ casoId, numero, capa, resolucao, salva }: { casoId: string; numero: string; capa: Capa; resolucao: Resolucao | undefined; salva: EscolhaSalva | null }) {
   const { cliente } = useCliente()
   const { irPara } = useNavegacao()
   const queryClient = useQueryClient()
   const nomePessoa = useNomePessoa()
   const [escolha, setEscolha] = useState<Escolha>(() => escolhaInicial(resolucao, salva))
   const [periodo] = useState(() => periodoPadrao(new Date()))
+  const [idade] = useState(() => idadeDoProcesso(capa.data_distribuicao, numero, new Date()))
   const [estados, setEstados] = useState<Partial<Record<Consulta['chave'], Estado>>>({})
   const [calculadoCom, setCalculadoCom] = useState<string | null>(null)
   const [lembrar, setLembrar] = useState<'salvando' | 'salvo' | 'erro' | null>(salva ? 'salvo' : null)
@@ -190,8 +193,9 @@ function Painel({ casoId, resolucao, salva }: { casoId: string; resolucao: Resol
 
       {desatualizado && <Aviso cor="amber" texto="Os filtros mudaram desde o último cálculo. Os números abaixo são dos filtros anteriores; calcule de novo." />}
       <div className={`jurimetria-caso__cartoes${desatualizado ? ' jurimetria-caso__cartoes--antigo' : ''}`} aria-live="polite">
-        {consultas.filter(c => estados[c.chave]).map(c => <Cartao key={c.chave} consulta={c} estado={estados[c.chave]!} periodo={periodo} />)}
+        {consultas.filter(c => estados[c.chave]).map(c => <Cartao key={c.chave} consulta={c} estado={estados[c.chave]!} periodo={periodo} idade={idade} />)}
       </div>
+      <ProvisaoJurimetria fontes={fontesDeProvisao(consultas, estados)} valorCausa={capa.valor_causa ?? null} />
       <Text size="1" color="gray">
         Referência histórica de sentenças de 1º grau do TJSP publicadas no CJPG; o desfecho e o valor são identificados automaticamente
         no texto e podem errar. Não é previsão do resultado nem parecer. Ao e-SAJ vão só códigos de vara, classe, assunto e magistrado e o período.
@@ -207,7 +211,7 @@ function CampoEscolha({ campo, resolucao, escolha, onEscolher }: {
   const [textoJuiz, setTextoJuiz] = useState('')
   return (
     <div className="jurimetria-caso__campo">
-      <Text as="div" size="2" weight="bold">{ROTULO[campo]}</Text>
+      {!(campo === 'magistrado' && !escolha) && <Text as="div" size="2" weight="bold">{ROTULO[campo]}</Text>}
       {escolha ? (
         <Flex direction="column" gap="1" align="start">
           <Badge color="green" variant="soft" size="2">{escolha.nome}</Badge>
@@ -240,7 +244,7 @@ function CampoEscolha({ campo, resolucao, escolha, onEscolher }: {
   )
 }
 
-function Cartao({ consulta, estado, periodo }: { consulta: Consulta; estado: Estado; periodo: { inicio: string; fim: string } }) {
+function Cartao({ consulta, estado, periodo, idade }: { consulta: Consulta; estado: Estado; periodo: { inicio: string; fim: string }; idade: IdadeProcesso | null }) {
   return (
     <Card variant="surface" className="jurimetria-caso__cartao">
       <Flex direction="column" gap="3">
@@ -250,14 +254,15 @@ function Cartao({ consulta, estado, periodo }: { consulta: Consulta; estado: Est
         </div>
         {estado.fase === 'carregando' && <Carregamento tipo="texto" descricao="Consultando o e-SAJ…" />}
         {estado.fase === 'erro' && <Aviso cor="red" texto={estado.mensagem} />}
-        {estado.fase === 'ok' && <Resultado dados={estado.dados} periodo={periodo} juiz={consulta.chave === 'juiz'} />}
+        {estado.fase === 'ok' && <Resultado dados={estado.dados} periodo={periodo} juiz={consulta.chave === 'juiz'} idade={idade} />}
       </Flex>
     </Card>
   )
 }
 
-function Resultado({ dados, periodo, juiz }: { dados: RespostaConsulta; periodo: { inicio: string; fim: string }; juiz: boolean }) {
+function Resultado({ dados, periodo, juiz, idade }: { dados: RespostaConsulta; periodo: { inicio: string; fim: string }; juiz: boolean; idade: IdadeProcesso | null }) {
   const a: Analise = analisar(dados)
+  const tempo = resumirTempo(dados.resultados ?? [])
   const cmp = juiz ? comparacaoJuiz(dados) : null
   return (
     <Flex direction="column" gap="3">
@@ -284,6 +289,15 @@ function Resultado({ dados, periodo, juiz }: { dados: RespostaConsulta; periodo:
       )}
       <GraficoDesfechos contagens={a.contagens} total={a.classificados} />
       <Text size="2">{textoResumo(a, periodo)}</Text>
+      {tempo && (
+        <div className="jurimetria-caso__tempo">
+          {textoTempo(tempo, idade).map((linha, i) => {
+            // Destaque pelo conteúdo (o aviso de amostra pequena pode vir antes e mudaria a posição).
+            const destaque = /^(Tempo até|Este processo|Amostra pequena)/.test(linha)
+            return <Text as="p" key={i} size={destaque ? '2' : '1'} color={destaque ? undefined : 'gray'}>{linha}</Text>
+          })}
+        </div>
+      )}
       <Text size="1" color="gray">
         {a.classificados} de {a.buscados} sentenças com desfecho identificado
         {a.cobertura !== null && a.cobertura < 0.6 ? ' (cobertura baixa: muitas decisões sem texto de dispositivo)' : ''}.
@@ -291,4 +305,12 @@ function Resultado({ dados, periodo, juiz }: { dados: RespostaConsulta; periodo:
       {(dados.avisos ?? []).map((aviso, i) => <Text key={i} size="1" color="gray">{aviso}</Text>)}
     </Flex>
   )
+}
+
+/** Cartões já calculados, com a análise de cada um, para a conta de provisão escolher a fonte da chance. */
+function fontesDeProvisao(consultas: Consulta[], estados: Partial<Record<Consulta['chave'], Estado>>) {
+  return consultas.flatMap(c => {
+    const e = estados[c.chave]
+    return e?.fase === 'ok' ? [{ chave: c.chave, titulo: c.titulo, analise: analisar(e.dados) }] : []
+  })
 }
