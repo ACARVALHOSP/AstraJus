@@ -1,0 +1,15 @@
+{
+  "id": "jurisprudencia",
+  "nome": "Jurisprudência",
+  "descricao": "Pesquisa de acórdãos e ementas do TJSP com destaque dos termos buscados.",
+  "versao": "1.0.0",
+  "ativo_por_padrao": true,
+  "aba": { "id": "jurisprudencia", "rotulo": "Jurisprudência", "grupo": "pesquisa", "icone": "BookOpen" },
+  "area_permissao": "pesquisa",
+  "permissoes": {},
+  "ferramentas": ["consultar_jurisprudencia_tjsp"],
+  "ferramentas_consulta": [],
+  "rotas_http": [],
+  "dependencias": [],
+  "tabelas": []
+}

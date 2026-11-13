@@ -1,6 +1,6 @@
-import { isoParaDdMmAaaa } from '../utils/formatadores'
-import CampoData from '../CampoData'
-import CabecalhoPagina from '../CabecalhoPagina'
+import { isoParaDdMmAaaa } from '../../utils/formatadores'
+import CampoData from '../../CampoData'
+import CabecalhoPagina from '../../CabecalhoPagina'
 import { useRef, useState, type FormEvent } from 'react'
 import { AlertTriangle, Info } from 'lucide-react'
 import {
@@ -16,11 +16,11 @@ import {
   TextField,
   Checkbox,
 } from '@radix-ui/themes'
-import { useCliente } from '../api/ClienteContext'
-import { ErroMCP } from '../api/mcpClient'
-import { CartaoJurisprudencia } from './jurisprudencia/CartaoJurisprudencia'
-import { SkeletonJurisprudencia } from './jurisprudencia/SkeletonJurisprudencia'
-import type { ResultadoJurisprudencia } from './jurisprudencia/tipos'
+import { useCliente } from '../../api/ClienteContext'
+import { ErroMCP } from '../../api/mcpClient'
+import { CartaoJurisprudencia } from './CartaoJurisprudencia'
+import { SkeletonJurisprudencia } from './SkeletonJurisprudencia'
+import type { ResultadoJurisprudencia } from './tipos'
 
 type BuscarEm = 'ementa' | 'inteiro_teor' | 'ambos'
 
