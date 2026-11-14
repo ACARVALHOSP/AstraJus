@@ -111,3 +111,28 @@ class DjenDebugTest(unittest.TestCase):
         self.assertEqual(status, 400)
         (status, corpo), _ = self._rodar('40164316020268260477', '', {'erro': 'HTTP 403 da API do DJEN'})
         self.assertEqual((status, corpo['erro']), (502, 'HTTP 403 da API do DJEN'))
+
+
+class AssuntoEClasseDoDjenTest(unittest.TestCase):
+    TEXTO = 'EXECUÇÃO DE TÍTULO EXTRAJUDICIAL Nº 4016431-60.2026.8.26.0477/SP\n\nAssunto: Mandato\n\nEXEQUENTE : JULIANA'
+
+    def test_extrai_assunto_escrito_no_texto_e_corrige_a_caixa(self):
+        import server
+        self.assertEqual(server._assunto_da_publicacao(self.TEXTO), 'Mandato')
+        self.assertIsNone(server._assunto_da_publicacao('Fica intimada. Assunto em discussão.'))
+        self.assertEqual(server._caixa_nome('EXECUçãO DE TíTULO EXTRAJUDICIAL'), 'Execução de Título Extrajudicial')
+
+    def test_unificado_leva_o_assunto_do_djen_e_montagem_prefere_o_datajud(self):
+        import server
+        djen = {'itens': [{'data_disponibilizacao': '2026-11-09', 'siglaTribunal': 'TJSP', 'nomeClasse': 'EXECUçãO DE TíTULO EXTRAJUDICIAL', 'texto': self.TEXTO}]}
+        with patch.object(server, 'consultar_processo_datajud', AsyncMock(return_value={'encontrado': False})), \
+                patch.object(server, 'consultar_publicacoes_djen', AsyncMock(return_value=djen)):
+            r = asyncio.run(server.consultar_processo_unificado('tjsp', '40164316020268260477'))
+        self.assertEqual(r['capa_djen']['assuntos'], ['Mandato'])
+        with patch.object(server, 'consultar_processo_unificado', AsyncMock(return_value=r)):
+            campos, erro = asyncio.run(server._montar_capa_via_tribunal('40164316020268260477', 'tjsp'))
+        self.assertEqual((campos['assuntos'], campos['classe']), (['Mandato'], 'Execução de Título Extrajudicial'))
+        r['instancias'] = [{'grau': 'G1', 'assuntos': ['Do DataJud']}]
+        with patch.object(server, 'consultar_processo_unificado', AsyncMock(return_value=r)):
+            campos, _ = asyncio.run(server._montar_capa_via_tribunal('40164316020268260477', 'tjsp'))
+        self.assertEqual(campos['assuntos'], ['Do DataJud'])
