@@ -20,6 +20,9 @@ _IGNORAR = {"de", "da", "do", "das", "dos", "e", "o", "a", "em", "no", "na", "fo
 _ABREVIACOES = {"v": ["vara"], "vc": ["vara", "civel"], "vcc": ["vara", "civel"], "faz": ["fazenda"], "publ": ["publica"],
                 "fam": ["familia"], "suc": ["sucessoes"], "crim": ["criminal"], "jec": ["juizado", "especial", "civel"]}
 
+# "UPJ da 1ª a 6ª Varas Cíveis": um órgão que reúne várias varas; nenhuma delas é "a" vara do processo.
+_VARIAS_VARAS = re.compile(r"\b\d+\s*a\s*\d+\s*varas\b")
+
 CONFIANCA_ALTA = 0.99
 CONFIANCA_MINIMA = 0.5
 
@@ -109,12 +112,14 @@ def resolver_vara(texto: str, foro: dict | None, arvore_vara: list[dict], limite
         "confianca": round(score, 2), "variantes": [n["id"] for n in nos[1:]],
     } for score, nos in ranking[:limite]]
     escolhido = None
+    varias = bool(_VARIAS_VARAS.search(sem_acento(texto)))
     if candidatos:
         unico = len(candidatos) == 1 or candidatos[0]["confianca"] - candidatos[1]["confianca"] >= 0.1
-        if candidatos[0]["confianca"] >= CONFIANCA_ALTA and unico:
+        if candidatos[0]["confianca"] >= CONFIANCA_ALTA and unico and not varias:
             escolhido = candidatos[0]
-        candidatos[0]["nivel"] = _classificar(candidatos[0]["confianca"], unico)
-    return {"candidatos": candidatos, "escolhido": escolhido, "confianca": candidatos[0]["confianca"] if candidatos else None}
+        candidatos[0]["nivel"] = "baixa" if varias else _classificar(candidatos[0]["confianca"], unico)
+    return {"candidatos": candidatos, "escolhido": escolhido, "confianca": candidatos[0]["confianca"] if candidatos else None,
+            **({"varias_varas": True} if varias else {})}
 
 
 def resolver_lista(texto: str, arvore: list[dict], limite: int = 6) -> dict:

@@ -26,6 +26,8 @@ class _Base(unittest.TestCase):
         self.banco = str(Path(tmp.name) / "t.db")
         con = sqlite3.connect(self.banco)
         con.execute("CREATE TABLE casos (id TEXT PRIMARY KEY)")
+        con.execute("CREATE TABLE caso_processo_capa (caso_id TEXT, numero_processo TEXT, id_orgao TEXT)")
+        con.execute("INSERT INTO caso_processo_capa VALUES ('c1', '40164316020268260477', '109638'), ('c2', '10018401920265020072', NULL)")
         con.executemany("INSERT INTO casos VALUES (?)", [("c1",), ("c2",)])
         con.commit()
         servico.migrar(con)
@@ -164,3 +166,25 @@ class ContratoDoModuloTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VaraPorIdOrgaoTest(_Base):
+    def resolver(self, id_orgao):
+        self.nucleo._query.return_value = [("numero", "1003325-11.2025.8.26.0100"), ("vara", "UPJ da 1ª a 6ª Varas"), ("id_orgao", id_orgao)]
+        self.enviados.clear()
+        with mock.patch.object(servico, "_garantir_arvore_cjpg", new=mock.AsyncMock()), \
+                mock.patch.object(servico, "_carregar_arvore_cjpg", side_effect=lambda c: ARVORES.get(c, [])):
+            asyncio.run(servico._arvore_resolver_http({}, None))
+        return self.enviados[0][1]
+
+    def test_vara_confirmada_vale_para_os_outros_processos_do_mesmo_idorgao(self):
+        self.assertIsNone(self.resolver("109638")["vara"]["escolhido"])  # ainda ninguém confirmou
+        self.chamar("PUT", "/jurimetria/caso/c1", ESCOLHA)  # c1 tem idOrgao 109638
+        vara = self.resolver("109638")["vara"]
+        self.assertEqual((vara["escolhido"]["id"], vara["escolhido"]["origem"], vara["confianca"]), ("100-12", "idOrgao", 1.0))
+        self.assertIsNone(self.resolver("999")["vara"]["escolhido"])  # outro órgão não é afetado
+
+    def test_caso_sem_idorgao_nao_grava_associacao(self):
+        self.chamar("PUT", "/jurimetria/caso/c2", ESCOLHA)
+        self.assertIsNone(servico._vara_do_orgao_ler(""))
+        self.assertIsNone(self.resolver("109638")["vara"]["escolhido"])

@@ -137,7 +137,7 @@ O frontend Radix (`/radix/`) é servido diretamente pelo Caddy a partir de `/srv
 | GET | `/cjpg-arvore/buscar` | Busca na árvore do CJPG |
 | GET | `/cjpg-arvore/resolver` | Casa `numero` (CNJ), `vara`, `classe` e `assunto` da capa com os códigos do CJPG: foro pelos 4 últimos dígitos do número, vara dentro do foro (variantes agrupadas), classe e assunto por nome com o ramo; devolve candidatos e `escolhido` só quando a confiança é alta e sem ambiguidade. Só TJSP (`{"tjsp": false}` nos demais). Aceita também `magistrado` (nome, casado com a lista do CJPG) |
 | GET | `/cjpg-arvore/nos` | Nome e caminho de nós pelo id: `?campo=vara\|classe\|assunto\|magistrado&ids=a,b` (até 20) |
-| GET, PUT, DELETE | `/jurimetria/caso/<id>` | Escolha de filtros (vara, classe, assunto, magistrado) guardada por processo, com quem confirmou e quando; PUT com tudo nulo ou DELETE apaga. Tabela `jurimetria_caso`; vale a permissão de Pesquisa (escrever exige edição) |
+| GET, PUT, DELETE | `/jurimetria/caso/<id>` | Escolha de filtros (vara, classe, assunto, magistrado) guardada por processo, com quem confirmou e quando; PUT com tudo nulo ou DELETE apaga. Tabela `jurimetria_caso`; ao gravar uma vara, ela também fica associada ao `idOrgao` do DJEN do processo (tabela `jurimetria_orgao`) e passa a ser a vara sugerida para os demais processos do mesmo órgão (`/cjpg-arvore/resolver?id_orgao=`); órgão com várias varas ("1ª a 6ª Varas") nunca é escolhido sozinho; vale a permissão de Pesquisa (escrever exige edição) |
 | GET | `/cjpg-arvore/magistrados` | Lista de magistrados do CJPG |
 
 ### 1.4 Administração (token administrativo)

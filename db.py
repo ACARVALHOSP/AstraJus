@@ -448,6 +448,8 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 conexao.execute(f"ALTER TABLE caso_processo_capa ADD COLUMN {campo} TEXT")
         if "orgao_julgador" not in {c[1] for c in conexao.execute("PRAGMA table_info(caso_processo_capa)")}:
             conexao.execute("ALTER TABLE caso_processo_capa ADD COLUMN orgao_julgador TEXT")
+        if "id_orgao" not in {c[1] for c in conexao.execute("PRAGMA table_info(caso_processo_capa)")}:
+            conexao.execute("ALTER TABLE caso_processo_capa ADD COLUMN id_orgao TEXT")  # idOrgao do DJEN
         _migrar_colunas_casos(conexao)
         _migrar_colunas_caso_atividades(conexao)
         if 'usuario' not in {r[1] for r in conexao.execute('PRAGMA table_info(atividade_agenda)')}:
@@ -1219,7 +1221,7 @@ class RegistroClientesCasos:
     _CAMPOS_CAPA = (
         "tribunal", "classe", "assuntos", "grau", "data_distribuicao", "nivel_sigilo", "nome_processo", "orgao_julgador",
         "area_direito", "magistrado", "tipo_justica", "cidade", "uf", "valor_causa", "fase", "status_processo",
-        "movimentos", "partes", "advogados", "datajud",
+        "movimentos", "partes", "advogados", "datajud", "id_orgao",
     )
 
     def salvar_datajud(self, numero: str, tribunal: str, instancias: list[dict]) -> None:

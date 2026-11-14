@@ -261,8 +261,13 @@ async def _arvore_resolver_http(scope, send) -> None:
     for campo in campos:
         await _garantir_arvore_cjpg(campo)
     arvores = {campo: _carregar_arvore_cjpg(campo) for campo in (*campos, "magistrado")}  # magistrado: lista do arquivo/semente
-    await nucleo._json(send, 200, _resolver.resolver(
-        numero, query.get("vara", ""), query.get("classe", ""), query.get("assunto", ""), arvores, query.get("magistrado", "")))
+    resultado = _resolver.resolver(
+        numero, query.get("vara", ""), query.get("classe", ""), query.get("assunto", ""), arvores, query.get("magistrado", ""))
+    conhecida = _vara_do_orgao_ler(query.get("id_orgao"))
+    if conhecida and resultado.get("tjsp"):  # vara já confirmada para este idOrgao: vale mais que a semelhança de nomes
+        candidato = {**conhecida, "confianca": 1.0, "nivel": "alta", "origem": "idOrgao"}
+        resultado["vara"] = {"candidatos": [candidato], "escolhido": candidato, "confianca": 1.0}
+    await nucleo._json(send, 200, resultado)
 
 
 async def _arvore_nos_http(scope, send) -> None:
@@ -331,6 +336,44 @@ def _escolha_gravar(caso_id: str, escolha: dict, usuario: str | None) -> None:
         con.close()
 
 
+def _id_orgao_do_caso(caso_id: str) -> str | None:
+    """idOrgao (DJEN) guardado na capa de qualquer processo do caso."""
+    con = sqlite3.connect(_BANCO_CAMINHO, timeout=10)
+    try:
+        linha = con.execute("SELECT id_orgao FROM caso_processo_capa WHERE caso_id = ? AND id_orgao IS NOT NULL LIMIT 1", (caso_id,)).fetchone()
+    except sqlite3.Error:
+        return None
+    finally:
+        con.close()
+    return linha[0] if linha else None
+
+
+def _vara_do_orgao_ler(id_orgao: str | None) -> dict | None:
+    if not id_orgao or not _BANCO_CAMINHO:
+        return None
+    con = sqlite3.connect(_BANCO_CAMINHO, timeout=10)
+    try:
+        linha = con.execute("SELECT vara FROM jurimetria_orgao WHERE id_orgao = ?", (str(id_orgao),)).fetchone()
+    except sqlite3.Error:
+        return None
+    finally:
+        con.close()
+    return json.loads(linha[0]) if linha else None
+
+
+def _vara_do_orgao_gravar(id_orgao: str | None, vara: dict | None, usuario: str | None) -> None:
+    """Quem confirma a vara de um processo ensina o órgão: os demais processos do mesmo idOrgao já a trazem."""
+    if not id_orgao or not vara:
+        return
+    con = sqlite3.connect(_BANCO_CAMINHO, timeout=10)
+    try:
+        with con:
+            con.execute("INSERT OR REPLACE INTO jurimetria_orgao (id_orgao, vara, atualizado_em, atualizado_por) VALUES (?, ?, ?, ?)",
+                        (str(id_orgao), json.dumps(vara, ensure_ascii=False), time.time(), usuario))
+    finally:
+        con.close()
+
+
 async def http_com_corpo(scope, receive, send, caminho: str) -> bool:
     """Rotas do módulo que precisam do corpo; as demais seguem em http()."""
     prefixo = "/jurimetria/caso/"
@@ -357,6 +400,7 @@ async def http_com_corpo(scope, receive, send, caminho: str) -> bool:
             await nucleo._json(send, 400, {"erro": str(exc) if not isinstance(exc, json.JSONDecodeError) else "JSON inválido."})
             return True
         _escolha_gravar(caso_id, escolha, scope.get("usuario"))
+        _vara_do_orgao_gravar(_id_orgao_do_caso(caso_id), escolha.get("vara"), scope.get("usuario"))
         await nucleo._json(send, 200, {"escolha": _escolha_ler(caso_id)})
     elif metodo == "DELETE":
         _escolha_gravar(caso_id, dict.fromkeys(_CAMPOS_ESCOLHA), None)
@@ -634,6 +678,9 @@ def migrar(conexao) -> None:
     conexao.execute(
         "CREATE TABLE IF NOT EXISTS jurimetria_caso ("
         "caso_id TEXT PRIMARY KEY, dados TEXT NOT NULL, atualizado_em REAL NOT NULL, atualizado_por TEXT)")
+    conexao.execute(
+        "CREATE TABLE IF NOT EXISTS jurimetria_orgao ("
+        "id_orgao TEXT PRIMARY KEY, vara TEXT NOT NULL, atualizado_em REAL NOT NULL, atualizado_por TEXT)")
     try:  # processo excluído leva a escolha junto (sem chave estrangeira: a tabela é do módulo)
         conexao.execute("DELETE FROM jurimetria_caso WHERE caso_id NOT IN (SELECT id FROM casos)")
     except sqlite3.Error:
