@@ -593,7 +593,9 @@ async def _cjpg_buscar_no_esaj(params: dict, paginas: int) -> tuple[int | None, 
 
         total_servidor = _cjpg_total_resultados(html)
         todos = _cjpg_parsear_resultados(html)
-        for p in range(2, paginas + 1):
+        # Sem resultados na 1ª página (ou todos já lidos), pedir a próxima só provoca 500 no e-SAJ.
+        ultima = 1 if not todos else (-(-total_servidor // len(todos)) if total_servidor else paginas)
+        for p in range(2, min(paginas, ultima) + 1):
             await asyncio.sleep(0.5)  # educado: não martelar o servidor
             try:
                 resp = await cliente.get(f"{CJPG_BASE_URL}/trocarDePagina.do", params={"pagina": p, "conversationId": ""})
