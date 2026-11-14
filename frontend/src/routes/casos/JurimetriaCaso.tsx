@@ -21,7 +21,7 @@ import ProvisaoJurimetria from './ProvisaoJurimetria'
 import { idadeDoProcesso, resumirTempo, textoTempo, type IdadeProcesso } from './jurimetriaTempo'
 import './jurimetria-caso.scss'
 
-type Capa = { classe?: string | null; orgao_julgador?: string | null; assuntos?: string[] | null; magistrado?: string | null; valor_causa?: number | null; data_distribuicao?: string | null }
+type Capa = { id_orgao?: string | null; classe?: string | null; orgao_julgador?: string | null; assuntos?: string[] | null; magistrado?: string | null; valor_causa?: number | null; data_distribuicao?: string | null }
 type Estado = { fase: 'carregando' } | { fase: 'erro'; mensagem: string } | { fase: 'ok'; dados: RespostaConsulta }
 
 const ROTULO: Record<CampoFiltro, string> = { vara: 'Vara', classe: 'Classe', assunto: 'Assunto', magistrado: 'Magistrado (opcional)' }
@@ -56,11 +56,11 @@ export default function JurimetriaCaso({ casoId }: { casoId: string }) {
     queryFn: ({ signal }) => buscarJson<{ escolha: EscolhaSalva | null }>(cliente, `/jurimetria/caso/${casoId}`, signal).then(r => r.escolha).catch(() => null),
   })
   const resolucao = useQuery({
-    queryKey: ['jurimetria-resolver', cliente?.token, numero, capa.data?.orgao_julgador ?? '', capa.data?.classe ?? '', assunto, magistrado],
+    queryKey: ['jurimetria-resolver', cliente?.token, numero, capa.data?.id_orgao ?? '', capa.data?.orgao_julgador ?? '', capa.data?.classe ?? '', assunto, magistrado],
     enabled: Boolean(cliente && numero && capa.data),
     staleTime: 5 * 60_000,
     queryFn: ({ signal }) => buscarJson<Resolucao>(cliente,
-      `/cjpg-arvore/resolver?numero=${encodeURIComponent(numero)}&vara=${encodeURIComponent(capa.data?.orgao_julgador ?? '')}`
+      `/cjpg-arvore/resolver?numero=${encodeURIComponent(numero)}&id_orgao=${encodeURIComponent(capa.data?.id_orgao ?? '')}&vara=${encodeURIComponent(capa.data?.orgao_julgador ?? '')}`
       + `&classe=${encodeURIComponent(capa.data?.classe ?? '')}&assunto=${encodeURIComponent(assunto)}&magistrado=${encodeURIComponent(magistrado)}`, signal),
   })
 

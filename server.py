@@ -744,6 +744,27 @@ def _extrair_publicacao_djen(item: dict) -> dict:
     }
 
 
+_PARTICULAS_NOME = {"de", "da", "do", "das", "dos", "e", "em", "a", "o", "na", "no", "para", "com"}
+
+
+def _caixa_nome(nome: str | None) -> str | None:
+    """"EXECUçãO DE TíTULO EXTRAJUDICIAL" (caixa quebrada do DJEN) -> "Execução de Título Extrajudicial"."""
+    if not nome or not nome.strip():
+        return nome
+    letras = [c for c in nome if c.isalpha()]
+    if sum(c.isupper() for c in letras) * 2 <= len(letras):  # já está em caixa mista: não mexe (siglas, nomes próprios)
+        return nome
+    palavras = nome.lower().split()
+    return " ".join(w if (i and w in _PARTICULAS_NOME) else w[:1].upper() + w[1:] for i, w in enumerate(palavras))
+
+
+def _assunto_da_publicacao(texto: str | None) -> str | None:
+    """Assunto que alguns tribunais (ex.: eproc do TJSP) escrevem no corpo da comunicação, numa linha
+    "Assunto: ...". Só devolve o que está escrito; não deduz nada."""
+    m = re.search(r"(?im)^[ \t]*Assunto:[ \t]*(\S.*?)[ \t]*$", texto or "")
+    return m.group(1) if m else None
+
+
 @mcp.tool()
 async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> dict:
     """Combina DataJud (capa + movimentos) e DJEN (partes e advogados) do mesmo processo em um
@@ -801,6 +822,11 @@ async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> d
                                     ("classe", "nomeClasse")):
                 if item.get(origem) and destino not in capa_djen:
                     capa_djen[destino] = item[origem]
+            if item.get("idOrgao") and "id_orgao" not in capa_djen:
+                capa_djen["id_orgao"] = str(item["idOrgao"])
+            assunto = _assunto_da_publicacao(item.get("texto"))
+            if assunto and "assuntos" not in capa_djen:
+                capa_djen["assuntos"] = [assunto]
 
         return {
             "capa_djen": capa_djen,
@@ -2960,8 +2986,10 @@ def _criar_caso_de_publicacao(gestao, publicacoes, publicacao, dados, usuario_pa
                          autores or None, reus or None, "; ".join(a.get("nome") or "" for a in advogados) or None)
     capa = {campo: d[campo] for campo in gestao._CAMPOS_CAPA if campo in d}
     capa.update({"tribunal": (d.get("siglaTribunal") or d.get("tribunal") or "").upper() or None,
-                 "classe": d.get("nomeClasse") or d.get("classe"), "nome_processo": nome,
+                 "classe": _caixa_nome(d.get("nomeClasse")) or d.get("classe"), "nome_processo": nome,
+                 **({"assuntos": [a]} if (a := _assunto_da_publicacao(d.get("texto"))) else {}),
                  "orgao_julgador": d.get("nomeOrgao") or d.get("orgao_julgador"),
+                 **({"id_orgao": str(d["idOrgao"])} if d.get("idOrgao") else {}),
                  "partes": partes, "advogados": advogados})
     gestao.salvar_capa_processo(caso["id"], numero, agora=lambda: datetime.now(timezone.utc), **capa)
     publicacoes.vincular_caso(publicacao["hash"], caso["id"])
@@ -3057,8 +3085,10 @@ async def _montar_capa_via_tribunal(numero: str, tribunal: str) -> tuple[dict | 
     campos = {
         **{k: v for k, v in automaticos.items() if v},
         "tribunal": instancia.get("tribunal") or capa_djen.get("tribunal") or tribunal.upper(),
-        "classe": instancia.get("classe") or capa_djen.get("classe"),
-        "assuntos": comuns["assuntos"], "grau": instancia.get("grau"),
+        "id_orgao": capa_djen.get("id_orgao"),
+        "classe": instancia.get("classe") or _caixa_nome(capa_djen.get("classe")),
+        # Assunto do DataJud tem precedência; o do texto do DJEN só entra quando o DataJud não traz.
+        "assuntos": comuns["assuntos"] or capa_djen.get("assuntos"), "grau": instancia.get("grau"),
         "data_distribuicao": instancia.get("dataAjuizamento"), "nivel_sigilo": comuns["nivel_sigilo"],
         **({"nome_processo": nome_processo} if nome_processo else {}),
         **localidade, "movimentos": movimentos, "partes": resultado.get("partes") or [],

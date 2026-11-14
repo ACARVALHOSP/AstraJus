@@ -20,6 +20,13 @@ function rotuloSigilo(valor?: string | number | null) {
   return Number.isInteger(n) && SIGILO[n] ? SIGILO[n] : String(valor)
 }
 
+// O DJEN manda classes em caixa quebrada ("EXECUçãO DE TíTULO"); nomes já em caixa mista ficam como estão.
+function caixaDaClasse(valor?: string | null) {
+  const letras = [...(valor ?? '')].filter(c => c.toLocaleLowerCase() !== c.toLocaleUpperCase())
+  const maiusculas = letras.filter(c => c === c.toLocaleUpperCase()).length
+  return letras.length && maiusculas * 2 > letras.length ? formatarNomeExibicao(valor) : (valor ?? '')
+}
+
 type Advogado = { nome?: string; numero_oab?: string; uf_oab?: string; advogado?: Omit<Advogado, 'advogado'> }
 type Movimento = { nome?: string; dataHora?: string }
 type Capa = {
@@ -140,7 +147,7 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
   const ultimo = [...(capa?.movimentos ?? [])].sort((a, b) => (b.dataHora ?? '').localeCompare(a.dataHora ?? ''))[0]
   const principais = [
     ['Tipo de justiça', capa?.tipo_justica, 1], ['Tribunal', capa?.tribunal, 1], ['Distribuição', dataCapa(capa?.data_distribuicao), 1],
-    ['Nome do processo', formatarNomeExibicao(capa?.nome_processo || caso.titulo), 2], ['Classe / ação', capa?.classe || caso.acao, 1],
+    ['Nome do processo', formatarNomeExibicao(capa?.nome_processo || caso.titulo), 2], ['Classe / ação', caixaDaClasse(capa?.classe || caso.acao), 1],
     ['Órgão julgador', capa?.orgao_julgador || caso.foro, 3],
   ] as const
   // Assunto, município e sigilo só vêm do DataJud; o DJEN não os informa.

@@ -95,6 +95,12 @@ class VaraTest(unittest.TestCase):
         self.assertIsNone(r["escolhido"])
         self.assertEqual({c["id"] for c in r["candidatos"]}, {"318-2", "318-4939"})
 
+    def test_orgao_com_varias_varas_nao_escolhe_sozinho(self):
+        r = self.vara("UPJ da 12ª a 14ª Varas Cíveis do Foro Central Cível")
+        self.assertIsNone(r["escolhido"])
+        self.assertTrue(r["varias_varas"])
+        self.assertNotIn("varias_varas", self.vara("12ª Vara Cível"))
+
     def test_sem_texto_ou_sem_foro(self):
         self.assertIsNone(self.vara("")["escolhido"])
         self.assertEqual(resolver.resolver("1003325-11.2025.8.26.9999", "1ª Vara", "", "", ARVORES)["vara"]["candidatos"], [])
