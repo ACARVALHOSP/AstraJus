@@ -59,3 +59,33 @@ class PaginacaoTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PeriodoLongoTest(unittest.TestCase):
+    def test_janelas_de_um_ano_sem_buracos_nem_sobreposicao(self):
+        j = servico._janelas_cjpg("15/11/2023", "13/11/2026")  # 36 meses
+        self.assertEqual(j, [("15/11/2023", "13/11/2024"), ("14/11/2024", "13/11/2025"), ("14/11/2025", "13/11/2026")])
+        self.assertEqual(servico._janelas_cjpg("14/11/2025", "13/11/2026"), [("14/11/2025", "13/11/2026")])
+        self.assertEqual(servico._janelas_cjpg("", ""), [("", "")])
+
+    def test_validacao_do_periodo_longo_e_opt_in(self):
+        v = servico._validar_periodo_cjpg
+        self.assertIn("até 1 ano", v("15/11/2023", "13/11/2026"))               # padrão: continua recusando
+        self.assertIsNone(v("15/11/2023", "13/11/2026", longo=True))            # 36 meses
+        self.assertIn("3 anos", v("01/01/2022", "13/11/2026", longo=True))      # mais que 3 anos
+
+    def test_soma_as_janelas_da_mais_recente_para_a_mais_antiga(self):
+        chamadas = []
+
+        async def janela(params, paginas, ignorar_cache=False):
+            chamadas.append(params["dadosConsulta.dtInicio"])
+            ini = params["dadosConsulta.dtInicio"]
+            if ini == "14/11/2024":
+                raise ValueError("e-SAJ fora do ar")
+            return 10, [{"numero_processo": ini}], [f"aviso {ini}"]
+        params = {"dadosConsulta.dtInicio": "15/11/2023", "dadosConsulta.dtFim": "13/11/2026"}
+        with mock.patch.object(servico, "_cjpg_executar_janela", janela):
+            total, todos, avisos = asyncio.run(servico._cjpg_executar_busca(params, 8))
+        self.assertEqual(sorted(chamadas), ["14/11/2024", "14/11/2025", "15/11/2023"])
+        self.assertEqual((total, [r["numero_processo"] for r in todos]), (20, ["14/11/2025", "15/11/2023"]))
+        self.assertTrue(any("14/11/2024" in a and "falhou" in a for a in avisos))

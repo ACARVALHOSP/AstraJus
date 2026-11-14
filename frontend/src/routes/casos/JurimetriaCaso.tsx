@@ -176,11 +176,11 @@ function Painel({ casoId, numero, capa, resolucao, salva }: { casoId: string; nu
               <CampoEscolha key={campo} campo={campo} resolucao={resolucao?.[campo]} escolha={escolha[campo]} onEscolher={v => trocar(campo, v)} />
             ))}
           </div>
-          <Text size="2" color="gray">Sentenças publicadas de {periodo.inicio} a {periodo.fim} (os últimos 12 meses, o máximo que o e-SAJ aceita por consulta).</Text>
+          <Text size="2" color="gray">Sentenças publicadas de {periodo.inicio} a {periodo.fim} (os últimos 36 meses; o e-SAJ aceita 12 por consulta, então a busca é feita em 3 janelas e somada).</Text>
           <Flex gap="3" align="center" wrap="wrap">
             <Button disabled={calculando || faltando.length > 0} onClick={() => void calcular()}>{calculando ? 'Consultando…' : calculadoCom ? 'Calcular de novo' : 'Calcular jurimetria'}</Button>
             {faltando.length > 0 && <Text size="2" color="gray">{faltando.join(' ')}</Text>}
-            {calculando && <Text size="2" color="gray" role="status">Consultando o e-SAJ; costuma levar de 5 a 20 segundos.</Text>}
+            {calculando && <Text size="2" color="gray" role="status">Consultando o e-SAJ; costuma levar de 10 a 40 segundos.</Text>}
           </Flex>
           <Flex gap="3" align="center" wrap="wrap" role="status">
             {lembrar === 'salvo' && <Text size="1" color="gray">Filtros lembrados para este processo{salva?.atualizado_por ? `, confirmados por ${nomePessoa(salva.atualizado_por)}${quando ? ` em ${quando}` : ''}` : ''}.</Text>}

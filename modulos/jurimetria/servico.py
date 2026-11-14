@@ -8,7 +8,7 @@ import sqlite3
 import statistics
 import time
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -586,8 +586,27 @@ def _cjpg_total_resultados(html: str) -> int | None:
 CJPG_PERIODO_MAX_DIAS = 364  # limite do e-SAJ: (fim - início) de no máximo 364 dias; 365 é recusado
 
 
-def _validar_periodo_cjpg(data_inicio: str | None, data_fim: str | None) -> str | None:
-    """Mensagem de erro se o período não serve ao e-SAJ (as duas datas ou nenhuma; no máximo ~1 ano)."""
+CJPG_PERIODO_LONGO_MAX_DIAS = 3 * 365 - 1  # 3 anos (1095 dias contando as duas pontas), feitos em janelas de até 365 dias
+
+
+def _janelas_cjpg(inicio: str | None, fim: str | None) -> list[tuple[str, str]]:
+    """Divide dd/mm/aaaa..dd/mm/aaaa em janelas seguidas de até 365 dias (o e-SAJ recusa mais de 364 dias
+    entre as pontas). Sem as duas datas, ou cabendo numa só janela, devolve uma janela só."""
+    try:
+        d_ini, d_fim = datetime.strptime(inicio or "", "%d/%m/%Y"), datetime.strptime(fim or "", "%d/%m/%Y")
+    except ValueError:
+        return [(inicio or "", fim or "")]
+    janelas, atual = [], d_ini
+    while atual <= d_fim:
+        ate = min(atual + timedelta(days=CJPG_PERIODO_MAX_DIAS), d_fim)
+        janelas.append((atual.strftime("%d/%m/%Y"), ate.strftime("%d/%m/%Y")))
+        atual = ate + timedelta(days=1)
+    return janelas or [(inicio or "", fim or "")]
+
+
+def _validar_periodo_cjpg(data_inicio: str | None, data_fim: str | None, longo: bool = False) -> str | None:
+    """Mensagem de erro se o período não serve ao e-SAJ (as duas datas ou nenhuma; no máximo ~1 ano,
+    ou ~3 anos com `longo`, que a busca divide em janelas de 1 ano)."""
     ini, fim = nucleo._data_tjsp(data_inicio), nucleo._data_tjsp(data_fim)
     if not ini and not fim:
         return None
@@ -600,7 +619,9 @@ def _validar_periodo_cjpg(data_inicio: str | None, data_fim: str | None) -> str 
         return "Datas inválidas: use o formato dd/mm/aaaa."
     if d_fim < d_ini:
         return "A data final é anterior à data inicial."
-    if (d_fim - d_ini).days > CJPG_PERIODO_MAX_DIAS:
+    if longo and (d_fim - d_ini).days > CJPG_PERIODO_LONGO_MAX_DIAS:
+        return "O período máximo é de 3 anos. Reduza o período."
+    if not longo and (d_fim - d_ini).days > CJPG_PERIODO_MAX_DIAS:
         return ("O e-SAJ só aceita períodos de até 1 ano (no máximo 364 dias entre a data inicial e a final). "
                 "Reduza o período ou faça mais de uma consulta.")
     return None
@@ -731,7 +752,35 @@ def _veio_do_cache(avisos: list[str]) -> bool:
 async def _cjpg_executar_busca(
     params: dict, paginas: int, ignorar_cache: bool = False
 ) -> tuple[int | None, list[dict], list[str]]:
-    """Como _cjpg_buscar_no_esaj, mas consulta/alimenta o cache. Devolve (total, resultados, avisos)."""
+    """Busca no CJPG. Período maior que o e-SAJ aceita (364 dias) vira várias janelas de 1 ano, buscadas
+    em paralelo (cada uma com `paginas` páginas e o seu cache); o resultado é a soma, da mais recente
+    para a mais antiga. Devolve (total, resultados, avisos)."""
+    janelas = _janelas_cjpg(params.get("dadosConsulta.dtInicio"), params.get("dadosConsulta.dtFim"))
+    if len(janelas) == 1:
+        return await _cjpg_executar_janela(params, paginas, ignorar_cache)
+    partes = await asyncio.gather(*(
+        _cjpg_executar_janela({**params, "dadosConsulta.dtInicio": ini, "dadosConsulta.dtFim": fim}, paginas, ignorar_cache)
+        for ini, fim in janelas), return_exceptions=True)
+    if all(isinstance(p, BaseException) for p in partes):
+        raise partes[0]
+    total: int | None = None
+    todos: list[dict] = []
+    avisos: list[str] = []
+    for (ini, fim), parte in reversed(list(zip(janelas, partes))):  # mais recente primeiro, como o e-SAJ
+        if isinstance(parte, BaseException):
+            avisos.append(f"Janela de {ini} a {fim} falhou ({parte}); resultado parcial.")
+            continue
+        t, itens, av = parte
+        total = (total or 0) + t if t is not None else total
+        todos.extend(itens)
+        avisos.extend(a for a in av if a not in avisos)
+    return total, todos, avisos
+
+
+async def _cjpg_executar_janela(
+    params: dict, paginas: int, ignorar_cache: bool = False
+) -> tuple[int | None, list[dict], list[str]]:
+    """Uma janela de até 364 dias: consulta/alimenta o cache."""
     chave = _cjpg_chave_cache(params, paginas)
     if not ignorar_cache:
         em_cache = _cjpg_cache_ler(chave)
@@ -763,6 +812,7 @@ async def consultar_jurimetria_cjpg(
     data_fim: str | None = None,
     paginas: int = 1,
     ignorar_cache: bool = False,
+    periodo_longo: bool = False,
 ) -> dict:
     """Busca julgados de 1º grau do TJSP (CJPG, scraping - sem API oficial, best-effort) e aplica
     heurísticas de jurimetria: classifica o desfecho de cada decisão e extrai o valor de condenação
@@ -786,6 +836,8 @@ async def consultar_jurimetria_cjpg(
       vez de descartado.
     - ignorar_cache: True força nova busca no e-SAJ. Por padrão, uma consulta idêntica feita nos
       últimos 7 dias é respondida do cache (com um aviso informando a data da consulta original).
+    - periodo_longo: True aceita períodos de até 3 anos; o e-SAJ só aceita 1 ano por consulta, então a
+      busca é dividida em janelas de 1 ano e somada (`paginas` vale por janela). Padrão False (até 1 ano).
 
     Limitações conhecidas:
     - O CJPG tem um teto de ~10.000 resultados por consulta (limite do índice de busca do TJSP);
@@ -796,7 +848,7 @@ async def consultar_jurimetria_cjpg(
     try:
         if paginas < 1 or paginas > CJPG_PAGINAS_MAX:
             return nucleo._erro(f"paginas deve ser entre 1 e {CJPG_PAGINAS_MAX}.")
-        erro_periodo = _validar_periodo_cjpg(data_inicio, data_fim)
+        erro_periodo = _validar_periodo_cjpg(data_inicio, data_fim, periodo_longo)
         if erro_periodo:
             return nucleo._erro(erro_periodo)
 
@@ -926,6 +978,7 @@ async def perfil_decisorio_magistrado(
     paginas: int = 1,
     ignorar_cache: bool = False,
     comparar_com_universo: bool = True,
+    periodo_longo: bool = False,
 ) -> dict:
     """Busca julgados de 1º grau do TJSP (CJPG, scraping - sem API oficial, best-effort) de um
     magistrado específico e monta um perfil decisório: taxa de procedência/improcedência/parcial,
@@ -950,6 +1003,8 @@ async def perfil_decisorio_magistrado(
       vez de descartado.
     - ignorar_cache: True força nova busca no e-SAJ. Por padrão, uma consulta idêntica feita nos
       últimos 7 dias é respondida do cache (com um aviso informando a data da consulta original).
+    - periodo_longo: True aceita períodos de até 3 anos; o e-SAJ só aceita 1 ano por consulta, então a
+      busca é dividida em janelas de 1 ano e somada (`paginas` vale por janela). Padrão False (até 1 ano).
     - comparar_com_universo: True (padrão) faz uma 2ª busca, sem o magistrado e com no máximo 5
       páginas, e devolve em `perfil.baseline` as taxas de todos os juízes com os mesmos filtros, para
       dar referência ao perfil. Só roda se houver termo, classe, assunto ou vara informados.
@@ -967,7 +1022,7 @@ async def perfil_decisorio_magistrado(
             return nucleo._erro("Informe magistrado_codigo ou magistrado_nome.")
         if paginas < 1 or paginas > CJPG_PAGINAS_MAX:
             return nucleo._erro(f"paginas deve ser entre 1 e {CJPG_PAGINAS_MAX}.")
-        erro_periodo = _validar_periodo_cjpg(data_inicio, data_fim)
+        erro_periodo = _validar_periodo_cjpg(data_inicio, data_fim, periodo_longo)
         if erro_periodo:
             return nucleo._erro(erro_periodo)
 
