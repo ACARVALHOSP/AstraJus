@@ -2974,6 +2974,35 @@ def _dados_comuns_das_instancias(instancias: list[dict]) -> dict:
     }
 
 
+_MUNICIPIOS_IBGE: dict[str, dict] | None = None
+
+
+def _localidade_por_codigo_ibge(codigo) -> dict:
+    """Cidade e UF a partir do codigoMunicipioIBGE que o DataJud informa no órgão julgador."""
+    global _MUNICIPIOS_IBGE
+    if _MUNICIPIOS_IBGE is None:
+        dados = json.loads((Path(__file__).parent / "static" / "municipios.json").read_text(encoding="utf-8"))["data"]
+        _MUNICIPIOS_IBGE = {str(m["Codigo"]): {"cidade": m["Nome"], "uf": m["Uf"]} for m in dados}
+    return dict(_MUNICIPIOS_IBGE.get(str(codigo or ""), {}))
+
+
+def _completar_capa_com_datajud(capa: dict) -> dict:
+    """Capas salvas antes (ou por outra fonte) podem ter assuntos, município e sigilo vazios, mas o
+    snapshot bruto do DataJud guardado na própria capa os traz. Só preenche o que está vazio."""
+    brutas = capa.get("datajud") or []
+    if not brutas:
+        return capa
+    instancias = [{
+        "grau": b.get("grau"), "nivelSigilo": b.get("nivelSigilo"),
+        "assuntos": [a.get("nome") for a in b.get("assuntos") or [] if isinstance(a, dict) and a.get("nome")],
+        "codigoMunicipioIBGE": (b.get("orgaoJulgador") or {}).get("codigoMunicipioIBGE"),
+    } for b in brutas if isinstance(b, dict)]
+    comuns = _dados_comuns_das_instancias(instancias)
+    candidatos = {"assuntos": comuns["assuntos"], "nivel_sigilo": comuns["nivel_sigilo"],
+                  **_localidade_por_codigo_ibge(comuns["codigo_municipio"])}
+    return {**capa, **{k: v for k, v in candidatos.items() if capa.get(k) in (None, "", []) and v not in (None, "", [])}}
+
+
 async def _montar_capa_via_tribunal(numero: str, tribunal: str) -> tuple[dict | None, dict | None]:
     """Consulta consultar_processo_unificado (DataJud + DJEN) e monta os campos de capa
     correspondentes. Usado tanto pelo botão "Atualizar capa" (acao=atualizar) quanto pelo job
@@ -2988,10 +3017,7 @@ async def _montar_capa_via_tribunal(numero: str, tribunal: str) -> tuple[dict | 
         return None, _erro("Nenhum dado encontrado no DataJud ou no DJEN. A capa anterior foi preservada.")
     comuns = _dados_comuns_das_instancias(instancias)
     instancia = comuns["principal"]
-    municipios = json.loads((Path(__file__).parent / "static" / "municipios.json").read_text(encoding="utf-8"))["data"]
-    codigo = comuns["codigo_municipio"]
-    municipio = next((m for m in municipios if str(m["Codigo"]) == codigo), None)
-    localidade = {"cidade": municipio["Nome"], "uf": municipio["Uf"]} if municipio else {}
+    localidade = _localidade_por_codigo_ibge(comuns["codigo_municipio"])
     movimentos = [{**m, "numero": numero, "grau": i.get("grau_descricao") or i.get("grau")}
                   for i in resultado.get("instancias") or [] for m in i.get("movimentos") or []]
     nome_processo = None
@@ -5445,7 +5471,7 @@ class _AutenticacaoBearer:
             capa = self.gestao.obter_capa_processo(caso_id, numero) or {campo: None for campo in (
                 *self.gestao._CAMPOS_CAPA, "atualizado_em"
             )}
-            await _json(send, 200, {**capa, "monitorando": self._processo_monitorando(scope, numero)})
+            await _json(send, 200, {**_completar_capa_com_datajud(capa), "monitorando": self._processo_monitorando(scope, numero)})
             return
         if metodo == "PATCH":
             corpo = await _ler_corpo(receive)
@@ -5461,7 +5487,7 @@ class _AutenticacaoBearer:
             capa = self.gestao.salvar_capa_processo(
                 caso_id, numero, agora=lambda: datetime.now(timezone.utc), **campos,
             )
-            await _json(send, 200, capa)
+            await _json(send, 200, _completar_capa_com_datajud(capa))
             return
         await _responder(send, 405, b"Metodo nao permitido")
 

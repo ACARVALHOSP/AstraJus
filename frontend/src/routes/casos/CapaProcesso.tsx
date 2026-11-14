@@ -1,7 +1,7 @@
 import { useAvisos } from '../../Avisos'
 import { useAlteracoesPendentes } from '../../AlteracoesPendentes'
 import Carregamento from '../../Carregamento'
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Badge, Button, Callout, Heading, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Check } from 'lucide-react'
 import { useCliente } from '../../api/ClienteContext'
@@ -143,10 +143,12 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
     ['Nome do processo', formatarNomeExibicao(capa?.nome_processo || caso.titulo), 2], ['Classe / ação', capa?.classe || caso.acao, 1],
     ['Órgão julgador', capa?.orgao_julgador || caso.foro, 3],
   ] as const
-  const mais = [
-    ['Assuntos', capa?.assuntos?.join('; ')], ['Município / UF', [capa?.cidade, capa?.uf].filter(Boolean).join(' / ')],
-    ['Grau', capa?.grau], ['Nível de sigilo', rotuloSigilo(capa?.nivel_sigilo)],
-  ]
+  // Assunto, município e sigilo só vêm do DataJud; o DJEN não os informa.
+  const semDatajud = 'Não informado pelo DataJud'
+  const secundarios = [
+    ['Assuntos', capa?.assuntos?.join('; '), 3], ['Município / UF', [capa?.cidade, capa?.uf].filter(Boolean).join(' / '), 1],
+    ['Grau', capa?.grau, 1], ['Nível de sigilo', rotuloSigilo(capa?.nivel_sigilo), 1],
+  ] as const
   return <section className="casos-resumo capa-processo" aria-label={`Capa do processo ${formatarNumeroCNJ(numero)}`} aria-busy={bloqueado}>
     <div className="casos-titulo-linha">
       <Heading as="h2" size="4">Capa do processo</Heading>
@@ -180,6 +182,11 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
               <dt>{rotulo}</dt><dd className={valor ? undefined : 'capa-vazio'}>{valor || 'Não informado'}</dd>
             </dl>
           ))}
+          {secundarios.map(([rotulo, valor, span]) => (
+            <dl key={rotulo} className={span > 1 ? `capa-campo capa-campo--span${span}` : 'capa-campo'}>
+              <dt>{rotulo}</dt><dd className={valor ? undefined : 'capa-vazio'}>{valor || semDatajud}</dd>
+            </dl>
+          ))}
         </div>
       </div>
 
@@ -208,8 +215,6 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
           </div>
         </div>
       </div>
-
-      <details className="capa-mais"><summary>Mais informações</summary><dl>{mais.map(([rotulo, valor]) => <Fragment key={rotulo}><dt>{rotulo}</dt><dd>{valor || 'Não informado'}</dd></Fragment>)}</dl></details>
 
       <div className="capa-secao">
         <p className="capa-secao-titulo">Dados do escritório</p>

@@ -72,3 +72,14 @@ class CapaVariasInstanciasTest(unittest.TestCase):
             self.assertEqual(c['nivel_sigilo'], 1)  # o maior
         vazio = server._dados_comuns_das_instancias([{'grau': 'G1'}])
         self.assertEqual((vazio['assuntos'], vazio['codigo_municipio'], vazio['nivel_sigilo']), ([], '', None))
+
+
+class CapaCompletadaPeloSnapshotTest(unittest.TestCase):
+    def test_preenche_vazios_com_o_snapshot_do_datajud(self):
+        import server
+        bruto = {'grau': 'G1', 'nivelSigilo': 0, 'assuntos': [{'codigo': 1, 'nome': 'Verbas rescisórias'}],
+                 'orgaoJulgador': {'nome': '72ª Vara', 'codigoMunicipioIBGE': 3550308}}
+        capa = server._completar_capa_com_datajud({'assuntos': [], 'nivel_sigilo': None, 'cidade': None, 'uf': None, 'datajud': [bruto]})
+        self.assertEqual((capa['assuntos'], capa['nivel_sigilo'], capa['cidade'], capa['uf']), (['Verbas rescisórias'], 0, 'São Paulo', 'SP'))
+        manual = server._completar_capa_com_datajud({'assuntos': ['X'], 'nivel_sigilo': 1, 'cidade': 'Outra', 'uf': 'RJ', 'datajud': [bruto]})
+        self.assertEqual((manual['assuntos'], manual['nivel_sigilo'], manual['cidade']), (['X'], 1, 'Outra'))

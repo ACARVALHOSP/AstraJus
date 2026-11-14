@@ -1,6 +1,6 @@
 # Jurimetria na ficha do processo
 
-Status: fases 0 e 1 no ar; fase 2 implementada (aguarda merge do backend em `main`); fase 3 em aberto.
+Status: fases 0, 1 e 2 no ar; fase 3 implementada (só frontend).
 
 Traz a jurimetria (hoje uma tela de pesquisa à parte, módulo `modulos/jurimetria`) para dentro do processo aberto:
 "nesta vara, para este assunto, X% das sentenças foram procedentes; valor mediano R$ Y". Serve de referência
@@ -88,6 +88,20 @@ Backend + frontend: o frontend sai direto na `astrajus-radix`; a rota nova e a c
   `GET /cjpg-arvore/nos` e pré-preenche; continua funcionando ao recarregar a página.
 - Contrato dos módulos: o núcleo passou a entregar `receive` ao módulo que define `http_com_corpo(scope, receive, send, caminho)`.
 
+## Fase 3 (implementada, só frontend)
+
+- **Tempo até a sentença (aproximado):** o CJPG não informa a data de distribuição, só o ano no número CNJ. A idade na sentença é estimada com a
+  distribuição no meio do ano do número (limitada à data da sentença) e cada tempo tem margem de cerca de 6 meses. Entram só decisões com
+  desfecho identificado e número CNJ válido. Mostra mediana e faixa de 25% a 75%; havendo a data de distribuição na capa, compara com a idade
+  exata do processo ("já saíram X% das sentenças com esse tempo; pela mediana faltariam Y meses"). Ressalva obrigatória na tela: a amostra só
+  tem processos já sentenciados, então o tempo real tende a ser maior.
+- **Exposição e provisão (estimativa):** valor × chance de alguma procedência × fator médio (procedente 100%, parcial = fator editável, padrão
+  50%). Premissas à vista e editáveis: perspectiva (réu: exposição; autor: expectativa de recebimento), fonte da chance (cartão da vara, do TJSP
+  ou do magistrado), valor-base (valor da causa da capa, mediana de condenação da amostra ou outro valor). A faixa vem do intervalo de 95% da
+  chance. Acordos e extinções contam zero; custas, honorários de sucumbência, juros e correção ficam de fora. O rótulo "perda provável /
+  possível / remota" usa 70% e 30% como referência usual (não é critério legal) e a tela diz que classificar é decisão do advogado e do contador.
+- Entrada de valores em pt-BR: com vírgula, ela é o decimal; sem vírgula, ponto seguido de 3 dígitos é milhar ("12.000" = doze mil).
+
 ## Testes
 
 - Python: resolvedor com árvores de exemplo (variantes de vara, homônimos de assunto, foro pelo CNJ, ambiguidade →
@@ -107,7 +121,7 @@ Backend + frontend: o frontend sai direto na `astrajus-radix`; a rota nova e a c
 
 - Escopo só de desfecho e valor, sem tempo exato nem recurso: assumido ao pedir a spec; **a confirmar**.
 - Período padrão: **12 meses**, por limite do e-SAJ (a proposta de 24 meses caiu).
-- Em aberto: posição (aba própria, recomendada) e a calculadora de provisão (fase 3).
+- Aba própria e calculadora de provisão: implementadas (a calculadora entrou na fase 3, com premissas editáveis e ressalvas); sem objeção registrada.
 - Fase 1: 8 páginas (80 sentenças) por consulta, as duas em paralelo (cerca de 8 s); período fixo de 364 dias terminando hoje.
 - Fase 1: o foro tem dois nós raiz com o mesmo id (a comarca, "Leme", e o foro, "Foro de Leme"); o resolvedor usa o nó "Foro ...".
 - Fase 1: outra sessão acrescentou o download automático das árvores quando faltam e uma semente de magistrados
