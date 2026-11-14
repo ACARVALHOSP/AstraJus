@@ -650,6 +650,29 @@ async def consultar_publicacoes_djen(
         return _erro(f"Erro inesperado ao consultar o DJEN: {exc}")
 
 
+async def _djen_debug_http(send, numero: str, query: str) -> None:
+    """GET /debug/djen/<numero>[?pagina=N&itens=N] (só administrador): devolve a resposta BRUTA do
+    DJEN para o processo, sem nenhuma transformação, para conferir o schema e depurar a capa."""
+    digitos = _so_digitos(numero)
+    if len(digitos) != 20:
+        await _json(send, 400, _erro(f"Número de processo inválido: esperados 20 dígitos, recebidos {len(digitos)}."))
+        return
+    q = dict(par.split("=", 1) for par in query.split("&") if "=" in par)
+    try:
+        pagina, itens = max(1, int(q.get("pagina", 1))), min(100, max(1, int(q.get("itens", 100))))
+    except ValueError:
+        await _json(send, 400, _erro("pagina e itens devem ser inteiros."))
+        return
+    params = {"numeroProcesso": digitos, "pagina": pagina, "itensPorPagina": itens}
+    resposta = await _djen_get_com_retry(DJEN_BASE_URL, params=params)
+    if isinstance(resposta, dict):  # erro já pronto (geo-bloqueio, timeout...)
+        await _json(send, 502, {"requisicao": {"url": DJEN_BASE_URL, "params": params}, **resposta})
+        return
+    dados, erro_json = _json_da_resposta(resposta)
+    await _json(send, 200, {"requisicao": {"url": DJEN_BASE_URL, "params": params, "http": resposta.status_code},
+                            "djen_bruto": dados, **({"erro_json": erro_json} if erro_json else {})})
+
+
 async def _djen_get_com_retry(url: str, params: dict | None = None):
     """GET no DJEN com timeout de 30s. Repete uma vez em timeout, erro de conexão ou HTTP
     500/502/503/504. HTTP 403 vira erro de geo-bloqueio.
@@ -3606,6 +3629,13 @@ class _AutenticacaoBearer:
                 "permissoes": usuarios_admin.permissoes_efetivas(perfil),
             }}, ensure_ascii=False).encode("utf-8"), tipo="application/json; charset=utf-8",
                 cabecalhos_extra=[(b"cache-control", b"no-store")])
+            return
+
+        if caminho.startswith("/debug/djen/") and scope.get("method") == "GET":
+            if scope.get("nivel_acesso") != "administrador":
+                await _json(send, 403, _erro("Rota de depuração restrita a administradores."))
+                return
+            await _djen_debug_http(send, caminho[len("/debug/djen/"):], (scope.get("query_string") or b"").decode("latin-1"))
             return
 
         if caminho == "/responsaveis" and scope.get("method") == "GET":

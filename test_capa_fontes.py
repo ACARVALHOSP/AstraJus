@@ -83,3 +83,31 @@ class CapaCompletadaPeloSnapshotTest(unittest.TestCase):
         self.assertEqual((capa['assuntos'], capa['nivel_sigilo'], capa['cidade'], capa['uf']), (['Verbas rescisórias'], 0, 'São Paulo', 'SP'))
         manual = server._completar_capa_com_datajud({'assuntos': ['X'], 'nivel_sigilo': 1, 'cidade': 'Outra', 'uf': 'RJ', 'datajud': [bruto]})
         self.assertEqual((manual['assuntos'], manual['nivel_sigilo'], manual['cidade']), (['X'], 1, 'Outra'))
+
+
+class DjenDebugTest(unittest.TestCase):
+    """GET /debug/djen/<numero>: devolve o JSON bruto do DJEN, sem transformar."""
+
+    def _rodar(self, numero, query='', resposta=None):
+        import server
+        enviados = []
+
+        async def json_(send, status, corpo):
+            enviados.append((status, corpo))
+        with patch.object(server, '_json', json_), patch.object(server, '_djen_get_com_retry', AsyncMock(return_value=resposta)) as chamada:
+            asyncio.run(server._djen_debug_http(None, numero, query))
+        return enviados[0], chamada
+
+    def test_devolve_o_json_bruto_com_a_requisicao(self):
+        bruto = {'status': 'success', 'count': 1, 'items': [{'id': 7, 'nomeClasse': 'Execução', 'codigoClasse': '159'}]}
+        resp = type('R', (), {'status_code': 200, 'json': lambda self: bruto, 'text': ''})()
+        (status, corpo), chamada = self._rodar('4016431-60.2026.8.26.0477', 'pagina=2&itens=5', resp)
+        self.assertEqual(status, 200)
+        self.assertEqual(corpo['djen_bruto'], bruto)
+        self.assertEqual(chamada.call_args.kwargs['params'], {'numeroProcesso': '40164316020268260477', 'pagina': 2, 'itensPorPagina': 5})
+
+    def test_numero_invalido_e_geobloqueio(self):
+        (status, _), _ = self._rodar('123')
+        self.assertEqual(status, 400)
+        (status, corpo), _ = self._rodar('40164316020268260477', '', {'erro': 'HTTP 403 da API do DJEN'})
+        self.assertEqual((status, corpo['erro']), (502, 'HTTP 403 da API do DJEN'))
