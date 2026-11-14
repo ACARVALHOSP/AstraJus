@@ -12,17 +12,19 @@ export type Escolha = { vara: Candidato | null; classe: Candidato | null; assunt
 export type EscolhaSalva = Escolha & { atualizado_em?: number; atualizado_por?: string | null }
 export type CampoFiltro = keyof Escolha
 
-/** Limite do e-SAJ: no máximo 364 dias entre a data inicial e a final. */
-export const DIAS_PERIODO = 364
+/** Limite do e-SAJ por consulta: no máximo 364 dias entre a data inicial e a final. */
+export const DIAS_JANELA = 364
+/** A ficha do processo olha 36 meses: o servidor divide em 3 janelas de 12 meses (periodo_longo) e soma. */
+export const DIAS_PERIODO = 3 * 365 - 1
 /** Abaixo disto taxas e percentis são pouco confiáveis (mesmo limite do backend, CJPG_AMOSTRA_MINIMA). */
 export const AMOSTRA_MINIMA = 30
-/** Páginas de 10 sentenças por consulta: cobre a vara típica (~75 por ano) em cerca de 8 s. */
+/** Páginas de 10 sentenças por janela de 12 meses: cobre a vara típica (~75 por ano) em cerca de 8 s. */
 export const PAGINAS = 8
 
 const dois = (n: number) => String(n).padStart(2, '0')
 const ddmmaaaa = (d: Date) => `${dois(d.getDate())}/${dois(d.getMonth() + 1)}/${d.getFullYear()}`
 
-/** Últimos 12 meses (364 dias, o máximo que o e-SAJ aceita), terminando em `hoje`. */
+/** Últimos 36 meses (3 janelas de 12 meses), terminando em `hoje`. */
 export function periodoPadrao(hoje: Date): { inicio: string; fim: string } {
   const ini = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - DIAS_PERIODO)
   return { inicio: ddmmaaaa(ini), fim: ddmmaaaa(hoje) }
@@ -53,7 +55,7 @@ export type Consulta = { chave: 'vara' | 'tjsp' | 'juiz'; ferramenta: 'consultar
 
 /** Até três consultas: a vara (vara + classe), o TJSP todo (classe + assunto) e o magistrado (magistrado + classe). Cada uma só existe se tiver filtro suficiente. */
 export function consultasDe(escolha: Escolha, periodo: { inicio: string; fim: string }): Consulta[] {
-  const base = { data_inicio: periodo.inicio, data_fim: periodo.fim, paginas: PAGINAS }
+  const base = { data_inicio: periodo.inicio, data_fim: periodo.fim, paginas: PAGINAS, periodo_longo: true }
   const saida: Consulta[] = []
   if (escolha.vara && escolha.classe) {
     saida.push({ chave: 'vara', ferramenta: 'consultar_jurimetria_cjpg', titulo: 'Nesta vara', descricao: `${escolha.vara.nome} · ${escolha.classe.nome}`,
@@ -152,7 +154,13 @@ export const isoDeDdMmAaaa = (v: string) => { const m = /^(\d{2})\/(\d{2})\/(\d{
 
 /** Parâmetros do link para a tela de Jurimetria (ids e datas, que cabem no endereço; os nomes a tela busca pelo id). */
 export function payloadParaTela(e: Escolha, periodo: { inicio: string; fim: string }): Record<string, string> {
-  const p: Record<string, string> = { inicio: isoDeDdMmAaaa(periodo.inicio), fim: isoDeDdMmAaaa(periodo.fim) }
+  // A tela de Jurimetria só aceita 12 meses por consulta: leva a janela mais recente do período.
+  const fim = isoDeDdMmAaaa(periodo.fim)
+  const [a, m, d] = fim.split('-').map(Number)
+  const ini12 = fim ? new Date(a, m - 1, d - DIAS_JANELA) : null
+  const inicio12 = ini12 ? `${ini12.getFullYear()}-${dois(ini12.getMonth() + 1)}-${dois(ini12.getDate())}` : ''
+  const inicioCompleto = isoDeDdMmAaaa(periodo.inicio)
+  const p: Record<string, string> = { inicio: inicioCompleto > inicio12 ? inicioCompleto : inicio12, fim }
   for (const c of ['vara', 'classe', 'assunto', 'magistrado'] as CampoFiltro[]) if (e[c]) p[c] = e[c]!.id
   return p
 }
