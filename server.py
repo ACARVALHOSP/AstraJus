@@ -3102,13 +3102,18 @@ async def _montar_capa_via_tribunal(numero: str, tribunal: str) -> tuple[dict | 
 
 def _classificador_triagem():
     """(classificador, modo). Configuração: CNJ_TRIAGEM_MODO = desligado (padrão) | simulado | jev;
-    no modo jev, a chave vem de TYPESAFE_API_KEY e o modelo de CNJ_TRIAGEM_MODELO (padrão jev-latest)."""
+    no modo jev, a chave vem de TYPESAFE_API_KEY e o modelo de CNJ_TRIAGEM_MODELO (padrão jev-latest);
+    no modo openrouter, a chave é a da integração OpenRouter e o modelo padrão é typesafe/jev-router."""
     modo = (_config_integracao("CNJ_TRIAGEM_MODO", "desligado") or "desligado").strip().lower()
     if modo not in triagem.MODOS:
         modo = "desligado"
     chave = (_config_integracao("TYPESAFE_API_KEY", "") or "").strip()
-    classificador = triagem.criar_classificador(modo, chave, (_config_integracao("CNJ_TRIAGEM_MODELO", "") or "jev-latest").strip())
-    if modo == "jev" and classificador is None:
+    chave_or = (_config_integracao("OPENROUTER_API_KEY", "") or "").strip()
+    modelo_cfg = (_config_integracao("CNJ_TRIAGEM_MODELO", "") or "").strip()
+    classificador = triagem.criar_classificador(
+        modo, chave, modelo_cfg or "jev-latest", chave_or,
+        modelo_cfg if modo == "openrouter" and "/" in modelo_cfg else triagem.MODELO_OPENROUTER)
+    if modo in ("jev", "openrouter") and classificador is None:
         modo = "sem_chave"
     return classificador, modo
 
@@ -5772,7 +5777,7 @@ class _AutenticacaoBearer:
             return
         classificador, modo = _classificador_triagem()
         if classificador is None:
-            mensagem = ("A triagem usa o Jev, mas a chave (TYPESAFE_API_KEY) não está configurada."
+            mensagem = ("A triagem usa o Jev, mas a chave (TYPESAFE_API_KEY ou integração OpenRouter) não está configurada."
                         if modo == "sem_chave" else "A triagem de publicações está desligada.")
             await _json(send, 409, _erro(mensagem))
             return

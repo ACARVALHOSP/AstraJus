@@ -45,12 +45,18 @@ Configuração (variáveis de ambiente ou integrações):
 
 | Variável | Valores |
 | --- | --- |
-| `CNJ_TRIAGEM_MODO` | `desligado` (padrão), `simulado` (demonstração por palavras-chave, sem enviar nada) ou `jev` |
+| `CNJ_TRIAGEM_MODO` | `desligado` (padrão), `simulado` (demonstração por palavras-chave, sem enviar nada), `jev` (API da TypeSafe) ou `openrouter` (Jev pelo OpenRouter) |
 | `TYPESAFE_API_KEY` | chave do Jev (obrigatória no modo `jev`), obtida em console.typesafe.ai/keys |
-| `CNJ_TRIAGEM_MODELO` | opcional; padrão `jev-latest` |
+| `CNJ_TRIAGEM_MODELO` | opcional; padrão `jev-latest` (modo `jev`) ou `typesafe/jev-router` (modo `openrouter`; só vale um id com `/`) |
 
 - **Sigilo:** o que sai para o Jev é o tipo, a classe, o órgão, o tribunal e o texto da publicação **sem** nomes de partes e advogados (inteiros e sobrenomes soltos), CPF, CNPJ, e-mail, telefone, OAB e números de processo (`triagem.anonimizar`). Antes de ligar o modo `jev`, leia o DPA e a política de privacidade da TypeSafe (typesafe.ai/legal) e avalie a LGPD: as docs não informam região de processamento nem prazos de retenção (há retenção zero para contas enterprise).
 - **Faixas:** acima de 90% de confiança a sugestão aparece em destaque; de 50% a 90% aparece como "revisar"; abaixo de 50% não aparece. Nunca há descarte.
 - **Custo:** cobrança por token de entrada (US$ 0,042 por milhão); as quatro perguntas vão numa chamada só por publicação, e o resultado fica guardado (`publicacao_triagem`), então cada publicação é classificada uma vez.
 - Uma rotina horária classifica as publicações novas não tratadas; o botão "Classificar esta página" faz o mesmo sob demanda.
 - O adaptador do Jev foi escrito pela documentação (`POST https://api.typesafe.ai/v1/systemone`) e testado com respostas simuladas; ainda não foi exercitado com uma chave real.
+
+### Triagem pelo OpenRouter
+
+Com `CNJ_TRIAGEM_MODO=openrouter` a triagem usa o Jev (`typesafe/jev-router`) pela conta OpenRouter, com a chave cadastrada e ativada em Administração › Integrações › OpenRouter; não precisa de `TYPESAFE_API_KEY`. A chamada é `POST https://openrouter.ai/api/v1/chat/completions` com as mesmas quatro perguntas, respondidas em JSON. O sigilo, as faixas de confiança, o resultado guardado e a regra de que nada é criado ou escondido por causa da sugestão são os mesmos.
+
+Diferença importante: as confianças vêm informadas pelo próprio modelo, não são probabilidades calibradas como as do `/v1/systemone`; trate-as como indicativas e mantenha a revisão humana. O custo do roteador varia por chamada: acompanhe no painel do OpenRouter. O adaptador foi testado só com respostas simuladas, ainda sem chave real.
