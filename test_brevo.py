@@ -94,6 +94,9 @@ class EnvioPelaApiTest(unittest.TestCase):
         destinos = [c.kwargs["json"]["to"][0]["email"] for c in post.call_args_list]
         self.assertEqual(destinos, ["ana@exemplo.com", "bia@exemplo.com", "cid@exemplo.com"])
         self.assertIn("TOKEN-XYZ", post.call_args_list[0].kwargs["json"]["textContent"])
+        self.assertIn("TOKEN-XYZ", post.call_args_list[0].kwargs["json"]["htmlContent"])     # versão HTML vai junto
+        self.assertIn("<!doctype html>", post.call_args_list[2].kwargs["json"]["htmlContent"])
+        self.assertNotIn("htmlContent", post.call_args_list[1].kwargs["json"])              # sem html, só texto
 
 
 class PrioridadeDaConfiguracaoTest(unittest.TestCase):

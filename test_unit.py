@@ -921,7 +921,7 @@ class CadastroPublicoTest(_RegistroTemporario):
         servidor.login.assert_called_once_with("usuario", "senha")
         mensagem = servidor.send_message.call_args[0][0]
         self.assertEqual(mensagem["To"], "ana@exemplo.com")
-        self.assertIn("TOKEN-XYZ", mensagem.get_content())
+        self.assertIn("TOKEN-XYZ", mensagem.get_body(("plain",)).get_content())
 
 
 class OAuthTest(_RegistroTemporario):
@@ -1400,7 +1400,7 @@ class CaptchaTest(_RegistroTemporario):
         with m.patch.object(server.smtplib, "SMTP") as smtp:
             servidor = smtp.return_value.__enter__.return_value
             server._enviar_token_por_email(cfg, "ana@exemplo.com", "TOKEN-XYZ")
-        texto = servidor.send_message.call_args[0][0].get_content()
+        texto = servidor.send_message.call_args[0][0].get_body(("plain",)).get_content()
         self.assertIn("não será mostrado novamente", texto)
 
 
