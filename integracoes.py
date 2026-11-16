@@ -25,6 +25,7 @@ PROVEDORES = {
     'drive': ('escritorio', set(), {'pasta_raiz'}),
     'zapsign': ('sistema', {'api_key'}, set()),
     'datajud': ('sistema', {'api_key'}, set()),
+    'openrouter': ('sistema', {'api_key'}, set()),
     'smtp': ('sistema', {'senha'}, {'host', 'porta', 'usuario', 'remetente'}),
     'recaptcha': ('sistema', {'secret'}, {'site_key'}),
     'google_oauth': ('sistema', {'client_secret'}, {'client_id'}),
@@ -40,6 +41,7 @@ VARIAVEIS = {
     'CNJ_RECAPTCHA_SECRET': ('recaptcha', 'secret'),
     'CNJ_RECAPTCHA_SITE_KEY': ('recaptcha', 'site_key'),
     'ZAPSIGN_API_KEY': ('zapsign', 'api_key'),
+    'OPENROUTER_API_KEY': ('openrouter', 'api_key'),
 }
 
 
@@ -341,13 +343,15 @@ async def testar(provedor, ambiente, dados, cliente, contexto=None):
     """Somente leitura; nunca devolve corpo, URL ou exceção do provedor."""
     contexto = contexto or {}
     try:
-        if provedor in ('asaas', 'zapsign', 'datajud'):
+        if provedor in ('asaas', 'zapsign', 'datajud', 'openrouter'):
             chave = dados.get('api_key')
             if not chave:
                 return False, 'Informe a chave da API.'
             if provedor == 'asaas':
                 base = 'https://api.asaas.com' if ambiente == 'producao' else 'https://api-sandbox.asaas.com'
                 r = await cliente.get(base + '/v3/customers', params={'limit': 1}, headers={'access_token': chave})
+            elif provedor == 'openrouter':
+                r = await cliente.get('https://openrouter.ai/api/v1/auth/key', headers={'Authorization': 'Bearer ' + chave})
             elif provedor == 'zapsign':
                 r = await cliente.get('https://api.zapsign.com.br/api/v1/docs/', params={'page': 1}, headers={'Authorization': 'Bearer ' + chave})
             else:

@@ -161,6 +161,7 @@ Duas visões:
 | **ViaCEP** | Endereço pelo CEP |
 | **TJSP** | Feriados forenses por comarca, jurisprudência e CJPG |
 | **ZapSign** | Configuração, teste e ativação da API (o envio para assinatura ainda não faz parte do sistema) |
+| **OpenRouter** | Configuração, teste e ativação da chave de API (nenhum recurso chama modelos por ela ainda) |
 | **TypeSafe AI (Jev)** | Triagem de publicações, opcional e experimental |
 | **SMTP** | E-mails de monitoramento e de alerta de prazo |
 
