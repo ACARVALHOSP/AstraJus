@@ -179,5 +179,7 @@ async def callback(app, scope, send, s):
         else:
             app.integracoes.google(fluxo['finalidade'], fluxo['dono']).salvar_conexao(dados['refresh_token'], lambda: datetime.now(timezone.utc), autor=fluxo['autor'])
         await s._responder(send, 200, '<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Google conectado</title><p>Autorização recebida. Volte à página de integrações para testar e ativar a configuração ou atualizar o estado da conexão.</p><a href="/app">Voltar ao painel</a></html>'.encode(), tipo='text/html; charset=utf-8')
-    except Exception:
+    except Exception as erro:
+        # Registra só o tipo e a mensagem (sem código, token ou segredo) para diagnosticar a falha.
+        s.log.warning('Callback Google (%s) falhou: %s: %s', fluxo.get('finalidade'), type(erro).__name__, str(erro)[:300])
         await s._responder(send, 502, b'Nao foi possivel concluir a autorizacao Google. Tente conectar novamente.')
