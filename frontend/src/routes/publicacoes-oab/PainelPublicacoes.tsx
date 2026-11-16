@@ -448,6 +448,18 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
           <Callout.Text>Triagem <strong>simulada</strong>: demonstração por palavras-chave, sem inteligência real. Os selos abaixo são só um exemplo de como a triagem aparecerá.</Callout.Text>
         </Callout.Root>
       )}
+      {infoTriagem?.modo === 'desligado' && (
+        <Callout.Root color="gray" size="1" role="status">
+          <Callout.Icon><Info size={14} /></Callout.Icon>
+          <Callout.Text>Triagem automática <strong>desligada</strong>. Para ligar, defina <code>CNJ_TRIAGEM_MODO</code> como <code>openrouter</code> no ambiente do servidor e recrie o container.</Callout.Text>
+        </Callout.Root>
+      )}
+      {infoTriagem?.modo === 'sem_chave' && (
+        <Callout.Root color="amber" size="1" role="status">
+          <Callout.Icon><Info size={14} /></Callout.Icon>
+          <Callout.Text>Triagem automática ligada, mas <strong>sem chave ativa</strong>. Em Administração › Integrações › OpenRouter, salve a chave, teste e clique em Ativar.</Callout.Text>
+        </Callout.Root>
+      )}
       {(infoTriagem?.modo === 'jev' || infoTriagem?.modo === 'openrouter') && (
         <Callout.Root color="gray" size="1" role="status">
           <Callout.Icon><Info size={14} /></Callout.Icon>
