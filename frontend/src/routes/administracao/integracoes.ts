@@ -64,12 +64,16 @@ export function estadoAtual(i: ItemIntegracao): string {
   return `Configuração ativa · versão ${i.versao} · ${teste}`
 }
 
+/** Integrações que podem ser ativadas sem um teste de conexão aprovado (o teste segue disponível). */
+export const SEM_TESTE_OBRIGATORIO = new Set(['datajud'])
+
 export function textoAjuda(provedor: string, origem: string): string {
   switch (provedor) {
     case 'google_oauth': return `Cadastre no Google a URL de retorno ${origem}/integracoes/google/callback. Autorize a conta, teste e ative.`
     case 'brevo': return 'O teste valida a chave e confere se o remetente está verificado no Brevo, sem enviar e-mails. Se o Brevo pedir IPs autorizados, libere o IP deste servidor. Depois de ativar, use "Enviar e-mail de teste".'
     case 'smtp': return 'O teste valida TLS e autenticação sem enviar e-mails. Ao alterar o servidor ou o usuário, informe a senha de novo.'
     case 'recaptcha': return 'O teste exige resolver o desafio na tela. Use o painel avançado para configurar o reCAPTCHA.'
+    case 'datajud': return 'Informe a chave da API e ative. O teste de conexão é opcional.'
     default: return 'O teste verifica a conexão sem criar cobranças, documentos nem enviar e-mails.'
   }
 }

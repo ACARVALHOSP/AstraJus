@@ -49,6 +49,10 @@ VARIAVEIS = {
 }
 
 
+# Integrações cuja ativação não exige teste de conexão aprovado (o teste continua disponível, mas opcional).
+SEM_TESTE_OBRIGATORIO = {'datajud'}
+
+
 class Conflito(ValueError):
     pass
 
@@ -204,8 +208,13 @@ class Cofre:
             r = c.execute('SELECT * FROM integracoes_config WHERE id=? AND autor=?', (identificador, autor)).fetchone()
             t = c.execute('SELECT * FROM integracoes_testes WHERE id=? AND config_id=? AND autor=?', (teste, identificador, autor)).fetchone()
             atual = c.execute("SELECT versao FROM integracoes_config WHERE provedor=? AND ambiente=? AND estado='ativo'", (r['provedor'], r['ambiente'])).fetchone() if r else None
-            if not r or r['estado'] != 'candidato' or not t or not t['aprovado'] or time.time()-t['criado_em'] > 600:
+            sem_teste = bool(r) and r['provedor'] in SEM_TESTE_OBRIGATORIO
+            if not r or r['estado'] != 'candidato':
+                falha = 'Candidato inexistente ou já utilizado.'
+            elif not sem_teste and (not t or not t['aprovado'] or time.time()-t['criado_em'] > 600):
                 falha = 'Teste aprovado ausente, expirado ou candidato já utilizado.'
+            elif sem_teste and not self.decifrar(r['segredo']).get('api_key'):
+                falha = 'Informe a chave da API antes de ativar.'
             elif r['base'] != (atual['versao'] if atual else 0):
                 falha = 'A configuração mudou. Crie e teste um novo candidato.'
             elif r['provedor'] == 'asaas' and r['ambiente'] == 'producao' and confirmar_producao is not True:
@@ -343,6 +352,10 @@ class GoogleRegistro:
             c.execute('UPDATE integracoes_google SET cursor=? WHERE finalidade=? AND dono=?', (token, self.finalidade, self.dono))
 
 
+def client_id_google_valido(valor):
+    return isinstance(valor, str) and valor.strip().endswith('.apps.googleusercontent.com') and len(valor.strip()) > 30
+
+
 async def testar(provedor, ambiente, dados, cliente, contexto=None):
     """Somente leitura; nunca devolve corpo, URL ou exceção do provedor."""
     contexto = contexto or {}
@@ -388,17 +401,33 @@ async def testar(provedor, ambiente, dados, cliente, contexto=None):
             conexao = contexto.get('drive')
             if not oauth.get('client_id') or not oauth.get('client_secret'):
                 return False, 'Configure e ative primeiro o aplicativo Google OAuth (Client ID e secret) na lista de serviços.'
+            if not client_id_google_valido(oauth['client_id']):
+                return False, 'O Client ID do Google deve terminar em .apps.googleusercontent.com. Confira se o navegador não preencheu o campo sozinho.'
             if not conexao:
                 return False, 'Autorize a conta Google para validar as credenciais OAuth e o acesso ao Drive.'
             token = await g.obter_access_token(cliente, oauth['client_id'], oauth['client_secret'], conexao['refresh_token'])
             from urllib.parse import quote
-            pasta = dados.get('pasta_raiz') or 'root'
+            pasta = dados.get('pasta_raiz') if provedor == 'drive' else None
+            if not pasta:
+                # Sem pasta informada, valida a conexão (about.get funciona com o escopo drive.file; files/root não).
+                r = await cliente.get('https://www.googleapis.com/drive/v3/about', params={'fields': 'user(emailAddress)'}, headers={'Authorization': 'Bearer ' + token})
+                ok = r.status_code == 200
+                return ok, 'Conexão com o Google Drive confirmada.' if ok else 'O Google recusou o acesso ao Drive (HTTP %s). Confira se a Google Drive API está ativada.' % r.status_code
             r = await cliente.get('https://www.googleapis.com/drive/v3/files/' + quote(pasta, safe=''), params={'fields': 'id,mimeType,capabilities(canAddChildren)'}, headers={'Authorization': 'Bearer ' + token})
             j = r.json()
             ok = r.status_code == 200 and j.get('mimeType') == 'application/vnd.google-apps.folder' and j.get('capabilities', {}).get('canAddChildren') is True
-            return ok, 'Acesso à pasta do Drive confirmado.' if ok else 'Pasta indisponível ou sem permissão de gravação.'
-    except Exception:
-        return False, 'Não foi possível validar a conexão. Verifique as credenciais, permissões e a rede.'
+            if ok:
+                return True, 'Acesso à pasta do Drive confirmado.'
+            dica = ' Com o escopo atual o sistema só enxerga pastas criadas por ele; deixe o campo vazio para ele criar a estrutura.' if r.status_code == 404 else ''
+            return False, 'Pasta indisponível ou sem permissão de gravação.' + dica
+    except Exception as erro:
+        import logging
+        import re
+        logging.getLogger('cnj-processual').warning('Teste de integração %s falhou: %s: %s', provedor, type(erro).__name__, str(erro)[:300])
+        # Só o código curto do erro do Google (ex.: invalid_client), nunca o corpo da resposta.
+        codigo = re.search(r'"(?:error|status)"\s*:\s*"([A-Za-z_]{3,40})"', str(erro))
+        detalhe = ' Código do Google: %s.' % codigo.group(1) if codigo else ''
+        return False, 'Não foi possível validar a conexão. Verifique as credenciais, permissões e a rede.' + detalhe
     return False, 'Serviço não suportado.'
 
 

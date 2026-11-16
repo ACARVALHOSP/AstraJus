@@ -29,7 +29,7 @@
     invalidate();$('fields').replaceChildren();$('titulo').textContent=names[selected.provedor];$('scope').textContent=selected.escopo==='sistema'?'Sistema':'Escritório';
     $('current-state').textContent=(selected.estado==='ativo'?'Configuração ativa · versão '+selected.versao+(selected.testado_em?' · Testada em '+new Date(selected.testado_em*1000).toLocaleString('pt-BR'):' · Não testada'):'Não configurado')+(selected.provedor==='asaas'?' · '+(selected.ambiente==='sandbox'?'Homologação':'Produção'):'');
     for(const [name,label,secret] of schema[selected.provedor]) {
-      const l=document.createElement('label');l.htmlFor='config-'+name;l.textContent=label;const input=document.createElement('input');input.id=l.htmlFor;input.name=name;input.type=secret?'password':'text';input.className='aj-input';input.autocomplete='off';input.maxLength=8192;input.value=secret?'':(selected.parametros[name]||'');
+      const l=document.createElement('label');l.htmlFor='config-'+name;l.textContent=label;const input=document.createElement('input');input.id=l.htmlFor;input.name=name;input.type=secret?'password':'text';input.className='aj-input';input.autocomplete=secret?'new-password':'off';input.setAttribute('data-lpignore','true');input.maxLength=8192;input.value=secret?'':(selected.parametros[name]||'');
       input.addEventListener('input',invalidate);$('fields').append(l,input);
       if(secret){const p=document.createElement('p');p.className='help';p.textContent=selected.segredos[name]?'Credencial atual: '+selected.segredos[name]+'. Deixe vazio para preservar.':'Nenhuma credencial cadastrada.';$('fields').append(p);}
     }

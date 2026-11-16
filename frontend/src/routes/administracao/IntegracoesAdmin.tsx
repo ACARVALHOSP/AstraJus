@@ -4,7 +4,7 @@ import { AlertDialog, Badge, Button, Callout, Card, Flex, Heading, Text, TextFie
 import Carregamento from '../../Carregamento'
 import { avisarDadosAlterados } from '../../api/rest'
 import {
-  CAMPOS, DESCRICOES, ENVIAM_EMAIL, PRECISAM_GOOGLE, SO_NO_PAINEL_AVANCADO, agruparCatalogo, chaveItem, ehAsaas, estadoAtual, linhaHistorico,
+  CAMPOS, DESCRICOES, ENVIAM_EMAIL, PRECISAM_GOOGLE, SEM_TESTE_OBRIGATORIO, SO_NO_PAINEL_AVANCADO, agruparCatalogo, chaveItem, ehAsaas, estadoAtual, linhaHistorico,
   mesmoConteudo, seloItem, textoAjuda, tituloItem, type EventoIntegracao, type ItemIntegracao,
 } from './integracoes'
 
@@ -24,7 +24,7 @@ async function api<T>(token: string, caminho: string, corpo?: unknown): Promise<
 }
 
 /** Configuração das integrações do escritório. As credenciais nunca voltam ao navegador: só aparecem mascaradas,
- *  e uma configuração nova só é ativada depois de um teste aprovado. */
+ *  e uma configuração nova só é ativada depois de um teste aprovado (exceto as de SEM_TESTE_OBRIGATORIO). */
 export default function IntegracoesAdmin({ token }: { token: string }) {
   const [dados, setDados] = useState<Dados | null>(null)
   const [carregando, setCarregando] = useState(true)
@@ -82,14 +82,22 @@ export default function IntegracoesAdmin({ token }: { token: string }) {
   const ativar = (i: ItemIntegracao) => {
     const producao = ehAsaas(i) && i.ambiente === 'producao'
     const fazer = () => executar(async () => {
-      if (!candidato || !teste || !mesmoConteudo(candidato.conteudo, valores)) { invalidar(); return }
-      await api(token, '/ativar', { candidato: candidato.id, teste, confirmar_producao: producao })
+      if (SEM_TESTE_OBRIGATORIO.has(i.provedor)) {
+        const id = await garantirCandidato(i)
+        await api(token, '/ativar', { candidato: id, confirmar_producao: false })
+      } else {
+        if (!candidato || !teste || !mesmoConteudo(candidato.conteudo, valores)) { invalidar(); return }
+        await api(token, '/ativar', { candidato: candidato.id, teste, confirmar_producao: producao })
+      }
       await carregar(true, chaveItem(i))
       setRetorno({ texto: 'Configuração ativada. As próximas chamadas usarão os novos valores.', tom: 'green' })
     })
     if (producao) setConfirmacao({ titulo: 'Ativar no ambiente de produção?', texto: 'Esta chave do Asaas passará a gerar cobranças reais.', rotulo: 'Ativar em produção', acao: fazer })
     else void fazer()
   }
+  const podeAtivar = (i: ItemIntegracao) => SEM_TESTE_OBRIGATORIO.has(i.provedor)
+    ? Boolean((valores.api_key ?? '').trim() || i.segredos.api_key)
+    : Boolean(teste && candidato && mesmoConteudo(candidato.conteudo, valores))
   const desativar = (i: ItemIntegracao) => setConfirmacao({
     titulo: `Desativar ${tituloItem(i)}?`, texto: 'O serviço ficará indisponível até uma nova configuração ser ativada.', rotulo: 'Desativar',
     acao: () => executar(async () => { await api(token, '/desativar', { provedor: i.provedor, ambiente: i.ambiente, base: i.versao, confirmar: true }); await carregar(true, chaveItem(i)); setRetorno({ texto: 'Integração desativada.', tom: 'gray' }) }),
@@ -141,7 +149,7 @@ export default function IntegracoesAdmin({ token }: { token: string }) {
         <Button variant="soft" size="2" disabled={ocupado || carregando} onClick={() => void carregar(false, selecionado)}>Atualizar</Button>
       </Flex>
       <Callout.Root color="gray" size="1">
-        <Callout.Text>Uma configuração nova só é ativada depois de um teste aprovado; campos de senha vazios preservam o valor atual. A conexão da <strong>agenda Google de cada pessoa</strong> fica em Meu perfil (menu da conta).</Callout.Text>
+        <Callout.Text>Uma configuração nova só é ativada depois de um teste aprovado (a chave do DataJud pode ser ativada direto); campos de senha vazios preservam o valor atual. A conexão da <strong>agenda Google de cada pessoa</strong> fica em Meu perfil (menu da conta).</Callout.Text>
       </Callout.Root>
 
       <div className="administracao__integracoes">
@@ -175,7 +183,7 @@ export default function IntegracoesAdmin({ token }: { token: string }) {
                 {campos.map(c => (
                   <div className="form-campo" key={c.nome}>
                     <label className="form-campo-label" htmlFor={`integ-${c.nome}`}>{c.rotulo}</label>
-                    <TextField.Root id={`integ-${c.nome}`} name={c.nome} type={c.segredo ? 'password' : 'text'} autoComplete="off" maxLength={8192}
+                    <TextField.Root id={`integ-${c.nome}`} name={c.nome} type={c.segredo ? 'password' : 'text'} autoComplete={c.segredo ? 'new-password' : 'off'} data-lpignore="true" maxLength={8192}
                       value={valores[c.nome] ?? ''} onChange={e => editar(c.nome, e.target.value)} />
                     {c.segredo && <Text size="1" color="gray">{item.segredos[c.nome] ? `Credencial atual: ${item.segredos[c.nome]}. Deixe vazio para preservar.` : 'Nenhuma credencial cadastrada.'}</Text>}
                   </div>
@@ -186,7 +194,7 @@ export default function IntegracoesAdmin({ token }: { token: string }) {
                 </div>
                 <Flex gap="2" wrap="wrap">
                   <Button type="submit" variant="soft" disabled={ocupado || soAvancado}>{ocupado ? 'Aguarde…' : 'Testar conexão'}</Button>
-                  <Button type="button" disabled={ocupado || !teste || !candidato || !mesmoConteudo(candidato.conteudo, valores)} onClick={() => ativar(item)}>Ativar configuração</Button>
+                  <Button type="button" disabled={ocupado || !podeAtivar(item)} onClick={() => ativar(item)}>Ativar configuração</Button>
                   {ENVIAM_EMAIL.has(item.provedor) && item.versao > 0 && <Button type="button" variant="soft" disabled={ocupado} onClick={() => void enviarEmailTeste()}>Enviar e-mail de teste</Button>}
                   {PRECISAM_GOOGLE.has(item.provedor) && <Button type="button" variant="soft" disabled={ocupado} onClick={() => void autorizarGoogle(item)}>{item.provedor === 'drive' ? 'Conectar conta Google' : 'Autorizar conta Google'}</Button>}
                   {ehAsaas(item) && item.versao > 0 && item.ambiente !== dados.asaas_ambiente && <Button type="button" variant="soft" disabled={ocupado} onClick={() => usarAmbiente(item)}>Usar este ambiente</Button>}

@@ -62,10 +62,18 @@ async def tratar(app, scope, receive, send):
             raise ValueError('Informe um objeto JSON.')
         if path in ('/admin/integracoes/testar', '/admin/integracoes/ativar') and (type(dados.get('candidato')) is not int or dados['candidato'] < 1):
             raise ValueError('Informe um candidato válido.')
-        if path == '/admin/integracoes/ativar' and not isinstance(dados.get('teste'), str):
+        if path == '/admin/integracoes/ativar' and dados.get('teste') is not None and not isinstance(dados.get('teste'), str):
             raise ValueError('Informe o teste de conexão.')
         if path == '/admin/integracoes/candidato':
             ident = cofre.candidato(dados.get('provedor'), dados.get('ambiente'), dados.get('dados'), dados.get('base'), autor)
+            if dados.get('provedor') == 'google_oauth':
+                # Se a tela foi recarregada depois do consentimento, reaproveita a autorização das mesmas credenciais.
+                impressao = _impressao_google(cofre.dados(cofre.obter_candidato(ident, autor)))
+                agora = time.time()
+                for antigo, pendente in list(app._integracoes_google_candidatos.items()):
+                    if len(pendente) > 2 and pendente[2] == impressao and pendente[1] > agora:
+                        app._integracoes_google_candidatos[ident] = pendente
+                        break
             await s._json(send, 201, {'candidato': ident})
         elif path == '/admin/integracoes/testar':
             r = cofre.obter_candidato(dados.get('candidato'), autor)
@@ -168,14 +176,27 @@ async def tratar(app, scope, receive, send):
             await s._json(send, 404, {'erro': 'Rota inexistente.'})
     except integracoes.Conflito as erro:
         await s._json(send, 409, {'erro': str(erro)})
-    except (ValueError, TypeError, KeyError):
-        await s._json(send, 400, {'erro': 'Configuração inválida. Revise os campos e a versão.'})
+    except (ValueError, TypeError, KeyError) as erro:
+        s.log.warning('Integrações %s %s recusada: %s: %s', method, path, type(erro).__name__, str(erro)[:300])
+        # Os ValueError levantados por este módulo trazem mensagens próprias, em português e sem dados sensíveis.
+        # Outros erros (JSON malformado, chave ausente etc.) mantêm a mensagem genérica.
+        texto = str(erro) if type(erro) is ValueError and str(erro) else 'Configuração inválida. Revise os campos e a versão.'
+        await s._json(send, 400, {'erro': texto})
+
+
+def _impressao_google(cfg):
+    """Identifica as credenciais OAuth (sem guardá-las): permite reaproveitar uma autorização já concedida
+    quando a tela é recarregada e o candidato muda de número."""
+    import hashlib
+    return hashlib.sha256(('%s\0%s' % (cfg.get('client_id', ''), cfg.get('client_secret', ''))).encode('utf-8')).hexdigest()
 
 
 async def iniciar_google(app, scope, send, s, finalidade, dono, config=None, candidato=None, autor=None):
     config = config or app.integracoes.ativo('google_oauth') or {}
     if not config.get('client_id') or not config.get('client_secret'):
         raise ValueError('Configure a aplicação OAuth Google primeiro.')
+    if not integracoes.client_id_google_valido(config['client_id']):
+        raise ValueError('O Client ID do Google deve terminar em .apps.googleusercontent.com. Confira se o navegador não preencheu o campo sozinho.')
     app._google_fluxos = {k: v for k, v in app._google_fluxos.items() if v['expira'] > time.time()}
     if len(app._google_fluxos) >= 100:
         raise ValueError('Muitas conexões pendentes. Aguarde.')
@@ -196,20 +217,41 @@ async def callback(app, scope, send, s):
     if fluxo['finalidade'] == 'calendar' and fluxo['dono'] not in app.registro.ativos():
         await s._responder(send, 403, b'Usuario sem acesso ativo.')
         return
+    etapa = 'preparação'
     try:
         cfg = app.integracoes.decifrar(fluxo['config'])
         async with s._cliente(20) as client:
+            etapa = 'troca do código por token'
             dados = await google_integracao.trocar_codigo_por_token(client, cfg['client_id'], cfg['client_secret'], s._base_publica(scope)+'/integracoes/google/callback', query['code'][0])
+            etapa = 'renovação do access token'
             token = await google_integracao.obter_access_token(client, cfg['client_id'], cfg['client_secret'], dados['refresh_token'])
             if fluxo['finalidade'] == 'calendar':
+                etapa = 'verificação do Google Agenda'
                 await google_integracao.calendario_principal(client, token)
             else:
-                r = await client.get('https://www.googleapis.com/drive/v3/files/root', params={'fields': 'id'}, headers={'Authorization': 'Bearer '+token})
-                r.raise_for_status()
+                etapa = 'verificação do Google Drive'
+                # about.get funciona com o escopo drive.file; files/root devolve 404 (o app só vê o que criou).
+                r = await client.get('https://www.googleapis.com/drive/v3/about', params={'fields': 'user(emailAddress)'}, headers={'Authorization': 'Bearer '+token})
+                if r.status_code != 200:
+                    raise google_integracao.ErroGoogle('Falha ao consultar o Drive (HTTP %s): %s' % (r.status_code, r.text[:300]))
         if fluxo['candidato']:
-            app._integracoes_google_candidatos[fluxo['candidato']] = (app.integracoes.cifrar({'refresh_token': dados['refresh_token']}), time.time()+600)
+            app._integracoes_google_candidatos[fluxo['candidato']] = (app.integracoes.cifrar({'refresh_token': dados['refresh_token']}), time.time()+1800, _impressao_google(cfg))
         else:
             app.integracoes.google(fluxo['finalidade'], fluxo['dono']).salvar_conexao(dados['refresh_token'], lambda: datetime.now(timezone.utc), autor=fluxo['autor'])
-        await s._responder(send, 200, '<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Google conectado</title><p>Autorização recebida. Volte à página de integrações para testar e ativar a configuração ou atualizar o estado da conexão.</p><a href="/app">Voltar ao painel</a></html>'.encode(), tipo='text/html; charset=utf-8')
-    except Exception:
-        await s._responder(send, 502, b'Nao foi possivel concluir a autorizacao Google. Tente conectar novamente.')
+        if fluxo['finalidade'] == 'calendar':
+            destino, orientacao = '/radix/', 'Abra Meu perfil (menu da conta) e clique em Verificar conexão para confirmar a sua agenda.'
+        else:
+            destino, orientacao = '/radix/#/administracao?aba=integracoes', 'Feche esta aba e volte à tela de Administração › Integrações que já estava aberta (sem recarregá-la) para testar e ativar a configuração.'
+        pagina = ('<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+                  '<title>Google conectado</title><body style="font-family:system-ui,sans-serif;max-width:32rem;margin:3rem auto;padding:0 1rem">'
+                  '<h1 style="font-size:1.25rem">Autorização recebida</h1><p>' + orientacao + '</p>'
+                  '<p><a href="' + destino + '">Voltar ao AstraJus</a></p></body></html>')
+        await s._responder(send, 200, pagina.encode('utf-8'), tipo='text/html; charset=utf-8')
+    except Exception as erro:
+        # Registra só o tipo e a mensagem (sem código, token ou segredo) para diagnosticar a falha.
+        s.log.warning('Callback Google (%s) falhou na etapa "%s": %s: %s', fluxo.get('finalidade'), etapa, type(erro).__name__, str(erro)[:300])
+        # Na tela, só a etapa e o código curto do Google (ex.: invalid_client), nunca o corpo da resposta.
+        codigo = re.search(r'"(?:error|status)"\s*:\s*"([A-Za-z_]{3,40})"', str(erro))
+        http = re.search(r'HTTP (\d{3})', str(erro))
+        detalhe = ' Etapa: %s.' % etapa + (' HTTP %s.' % http.group(1) if http else '') + (' Código do Google: %s.' % codigo.group(1) if codigo else '')
+        await s._responder(send, 502, ('Nao foi possivel concluir a autorizacao Google. Tente conectar novamente.' + detalhe).encode('utf-8'), tipo='text/plain; charset=utf-8')
