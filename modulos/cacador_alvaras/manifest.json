@@ -1,0 +1,15 @@
+{
+  "id": "cacador_alvaras",
+  "nome": "Caçador de Alvarás",
+  "descricao": "Varre as publicações recebidas atrás de alvarás (expedidos, determinados, pendentes de dados bancários ou indeferidos) e de levantamentos de valores. Usa o Jev pelo OpenRouter quando há integração ativa e, sem ela ou em caso de erro, cai para regras de texto (regex). O Jev recebe o texto sem nomes, CPF/CNPJ, contatos e números de processo. São só sugestões para leitura: nada é criado ou alterado.",
+  "versao": "1.0.0",
+  "ativo_por_padrao": true,
+  "aba": { "id": "cacador_alvaras", "rotulo": "Caçador de alvarás", "grupo": "trabalho", "icone": "Search" },
+  "area_permissao": "publicacoes_oab",
+  "permissoes": {},
+  "ferramentas": ["cacar_alvaras", "listar_alvaras"],
+  "ferramentas_consulta": ["listar_alvaras"],
+  "rotas_http": ["/alvaras/"],
+  "dependencias": [],
+  "tabelas": ["alvaras_cacados"]
+}
