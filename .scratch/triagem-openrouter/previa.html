@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prévia · OpenRouter e triagem</title>
+<style>
+  :root { --bg:#f4f4f4; --card:#fff; --tx:#161616; --mut:#6f6f6f; --bd:#e0e0e0; --az:#0f62fe; --vd:#198038; --am:#f1c21b; --vm:#da1e28; --cz:#8d8d8d; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161616; --card:#262626; --tx:#f4f4f4; --mut:#a8a8a8; --bd:#393939; --az:#78a9ff; --vd:#42be65; --am:#f1c21b; --vm:#ff8389; --cz:#a8a8a8; } }
+  * { box-sizing:border-box }
+  body { margin:0; font:14px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--tx); padding:24px 16px 48px }
+  .wrap { max-width:1000px; margin:0 auto }
+  h1 { font-size:20px; margin:0 0 4px } h2 { font-size:16px; margin:32px 0 4px } .sub { color:var(--mut); margin:0 0 16px }
+  .tela { background:var(--card); border:1px solid var(--bd); border-radius:4px; overflow:hidden }
+  .barra { padding:10px 16px; border-bottom:1px solid var(--bd); font-weight:600 }
+  .corpo { display:grid; grid-template-columns:260px 1fr }
+  @media (max-width:720px) { .corpo { grid-template-columns:1fr } }
+  .lista { border-right:1px solid var(--bd) } @media (max-width:720px){ .lista{ border-right:0; border-bottom:1px solid var(--bd)} }
+  .grupo { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--mut); padding:12px 16px 4px }
+  .item { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:9px 16px; border-left:3px solid transparent }
+  .item.sel { background:rgba(15,98,254,.1); border-left-color:var(--az); font-weight:600 }
+  .tag { font-size:11px; padding:1px 8px; border-radius:10px; white-space:nowrap }
+  .verde { background:rgba(25,128,56,.15); color:var(--vd) } .cinza { background:rgba(141,141,141,.2); color:var(--mut) }
+  .amarelo { background:rgba(241,194,27,.25); color:#8a6d00 } @media (prefers-color-scheme: dark){ .amarelo{color:var(--am)} }
+  .azul { background:rgba(15,98,254,.15); color:var(--az) } .verm { background:rgba(218,30,40,.15); color:var(--vm) }
+  .form { padding:16px 20px }
+  .form h3 { margin:0 0 2px; font-size:16px } .desc { color:var(--mut); margin:0 0 12px }
+  label { display:block; font-size:12px; color:var(--mut); margin:12px 0 4px }
+  .campo { width:100%; padding:9px 12px; border:1px solid var(--bd); border-bottom:1px solid var(--tx); background:var(--bg); color:var(--tx); font:inherit }
+  .estado { font-size:12px; color:var(--mut); margin:4px 0 0 }
+  .acoes { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px }
+  button { font:inherit; padding:9px 16px; border:1px solid var(--az); background:transparent; color:var(--az); border-radius:0; cursor:default }
+  button.p { background:var(--az); color:#fff } button[disabled] { opacity:.45 }
+  .ok { margin-top:12px; padding:8px 12px; border-left:3px solid var(--vd); background:rgba(25,128,56,.1) }
+  .aviso { margin:12px 16px; padding:8px 12px; border-left:3px solid var(--cz); background:rgba(141,141,141,.12); font-size:13px }
+  .pub { padding:12px 16px; border-top:1px solid var(--bd); display:grid; gap:6px }
+  .pub .topo { display:flex; flex-wrap:wrap; gap:6px; align-items:center } .pub small { color:var(--mut) }
+  .pub p { margin:0 }
+  .nota { margin-top:16px; color:var(--mut); font-size:13px }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Prévia: OpenRouter e triagem com o Jev</h1>
+  <p class="sub">Mockup estático das duas telas afetadas. Dados fictícios; nada aqui chama serviço algum.</p>
+
+  <h2>1. Administração › Integrações › OpenRouter</h2>
+  <p class="sub">Novo item no grupo "Sistema", com o campo da chave de API. A chave nunca volta ao navegador.</p>
+  <div class="tela">
+    <div class="barra">Integrações</div>
+    <div class="corpo">
+      <div class="lista">
+        <div class="grupo">Escritório · institucional</div>
+        <div class="item"><span>Asaas · Homologação</span><span class="tag azul">Configurado</span></div>
+        <div class="item"><span>Google Drive</span><span class="tag verde">Conta conectada</span></div>
+        <div class="grupo">Sistema · configurações gerais</div>
+        <div class="item"><span>ZapSign</span><span class="tag cinza">Não configurado</span></div>
+        <div class="item"><span>DataJud</span><span class="tag verde">Configurado</span></div>
+        <div class="item sel"><span>OpenRouter</span><span class="tag cinza">Não configurado</span></div>
+        <div class="item"><span>E-mail (SMTP)</span><span class="tag verde">Configurado</span></div>
+      </div>
+      <div class="form">
+        <h3>OpenRouter</h3>
+        <p class="desc">Acesso a modelos de IA pelo OpenRouter (openrouter.ai/keys).</p>
+        <p class="estado">Não configurado.</p>
+        <label for="k">Nova chave da API (sk-or-...)</label>
+        <input id="k" class="campo" type="password" value="sk-or-v1-••••••••••••••••" readonly>
+        <p class="estado">O teste verifica a conexão sem gerar texto nem gastar créditos.</p>
+        <div class="acoes"><button>Salvar rascunho</button><button class="p">Testar conexão</button><button disabled>Ativar</button></div>
+        <div class="ok">Autenticação de leitura confirmada. Agora você pode ativar esta versão.</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>2. Publicações OAB com a triagem em modo OpenRouter</h2>
+  <p class="sub">O aviso aparece no topo e cada publicação ganha selos de sugestão. Tudo é apoio à leitura: nada é criado ou arquivado sozinho.</p>
+  <div class="tela">
+    <div class="barra">Publicações recebidas</div>
+    <div class="aviso">Triagem automática (90%+ de confiança em destaque; entre 50% e 90% marcada como "revisar"). O texto é enviado sem nomes das partes. São apenas sugestões: nada é criado, tratado ou arquivado sozinho.</div>
+
+    <div class="pub">
+      <div class="topo"><strong>Intimação · 2ª Vara Cível de São Paulo</strong><span class="tag verm">Urgência 8/10</span><span class="tag verde">Exige manifestação · alta</span><span class="tag verde">Abre prazo · alta</span><span class="tag azul">Contestação · alta</span></div>
+      <p>Intime-se a parte requerida para apresentar contestação no prazo de 15 dias. Liminar deferida…</p>
+      <small>Sugestão do Jev (typesafe/jev-router). A data do prazo continua vindo só do cálculo de prazos.</small>
+    </div>
+    <div class="pub">
+      <div class="topo"><strong>Intimação · 5ª Vara Cível</strong><span class="tag amarelo">Urgência 5,5/10 · revisar</span><span class="tag amarelo">Despacho de expediente · revisar</span></div>
+      <p>Juntada de documentos pela parte contrária. Vista para ciência…</p>
+      <small>Confiança média: confira antes de agir.</small>
+    </div>
+    <div class="pub">
+      <div class="topo"><strong>Despacho · 3ª Vara de Família</strong><span class="tag cinza">Urgência 1/10</span><span class="tag verde">Só ciência · alta</span><span class="tag cinza">Sem prazo · alta</span></div>
+      <p>Tomar ciência do despacho. Nada a prover. Arquive-se.</p>
+    </div>
+    <div class="pub">
+      <div class="topo"><strong>Intimação · Juizado Especial</strong><small>Sem selos: confiança abaixo de 50% não aparece.</small></div>
+      <p>Aguarde-se…</p>
+    </div>
+  </div>
+
+  <p class="nota">Estados da triagem quando algo falta: "Triagem desligada" (modo desligado) e "A triagem usa o Jev, mas a chave não está configurada" (modo openrouter sem integração ativa).</p>
+</div>
+</body>
+</html>

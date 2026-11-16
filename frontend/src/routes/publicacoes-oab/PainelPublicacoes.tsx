@@ -360,7 +360,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
   const seloTipo = (p: PublicacaoOab) => p.dados?.tipoComunicacao
     ? <Badge color={corTipo(p.dados.tipoComunicacao)} variant="soft">{p.dados.tipoComunicacao}</Badge>
     : <Text size="1" color="gray">—</Text>
-  const triagemAtiva = infoTriagem?.modo === 'simulado' || infoTriagem?.modo === 'jev'
+  const triagemAtiva = infoTriagem?.modo === 'simulado' || infoTriagem?.modo === 'jev' || infoTriagem?.modo === 'openrouter'
   const rotuloPrazo = (id: string) => PRAZOS_PADRAO.find(x => x.id === id)?.rotulo ?? id
   async function classificarPagina() {
     const pendentes = publicacoes.filter(p => !p.triagem).map(p => p.hash)
@@ -448,7 +448,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
           <Callout.Text>Triagem <strong>simulada</strong>: demonstração por palavras-chave, sem inteligência real. Os selos abaixo são só um exemplo de como a triagem aparecerá.</Callout.Text>
         </Callout.Root>
       )}
-      {infoTriagem?.modo === 'jev' && (
+      {(infoTriagem?.modo === 'jev' || infoTriagem?.modo === 'openrouter') && (
         <Callout.Root color="gray" size="1" role="status">
           <Callout.Icon><Info size={14} /></Callout.Icon>
           <Callout.Text>Triagem automática ({pct(infoTriagem.limite_alto)}+ de confiança em destaque; entre {pct(infoTriagem.limite_baixo)} e {pct(infoTriagem.limite_alto)} marcada como "revisar"). O texto é enviado sem nomes das partes. São apenas sugestões: nada é criado, tratado ou arquivado sozinho.</Callout.Text>

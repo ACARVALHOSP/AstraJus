@@ -15,6 +15,7 @@ Há dois classificadores com a mesma interface: `ClassificadorSimulado` (palavra
 tela funcionando sem enviar nada a ninguém) e `ClassificadorJev` (API real).
 """
 import asyncio
+import json
 import re
 import unicodedata
 from typing import Any, Callable
@@ -24,7 +25,8 @@ import httpx
 LIMITE_ALTO = 0.90   # acima: sugestão em destaque
 LIMITE_BAIXO = 0.50  # abaixo: nenhuma sugestão é mostrada
 TAMANHO_MAX_TEXTO = 6000
-MODOS = ("desligado", "simulado", "jev")
+MODOS = ("desligado", "simulado", "jev", "openrouter")
+MODELO_OPENROUTER = "typesafe/jev-router"
 
 # Mesmos ids de frontend/src/routes/publicacoes-oab/prazos.ts (PRAZOS_PADRAO); há um teste que confere.
 PRAZOS_PADRAO = {
@@ -249,10 +251,123 @@ class ClassificadorJev:
         raise ErroTriagem(f"O Jev não respondeu ({ultimo}).")
 
 
-def criar_classificador(modo: str, chave: str = "", modelo: str = "jev-latest") -> ClassificadorSimulado | ClassificadorJev | None:
-    """None quando desligado ou quando o modo 'jev' está sem chave."""
+def _json_da_resposta(texto: str) -> dict:
+    """Extrai o objeto JSON da resposta do modelo, tolerando cerca de código (```json) e texto em volta."""
+    texto = (texto or "").strip()
+    inicio, fim = texto.find("{"), texto.rfind("}")
+    if inicio < 0 or fim <= inicio:
+        raise ErroTriagem("A resposta do modelo não contém JSON.")
+    try:
+        dados = json.loads(texto[inicio:fim + 1])
+    except ValueError as e:
+        raise ErroTriagem("A resposta do modelo não é um JSON válido.") from e
+    if not isinstance(dados, dict):
+        raise ErroTriagem("A resposta do modelo não é um objeto JSON.")
+    return dados
+
+
+def _instrucoes_openrouter() -> str:
+    def lista(criterios: dict) -> str:
+        return "\n".join(f"  - {k}: {v}" for k, v in criterios.items())
+    niveis = "\n".join(f"  - {i}: {t}" for i, t in enumerate(URGENCIA))
+    return (
+        "Você triage publicações do Diário de Justiça para um escritório de advocacia. O texto vem sem nomes, "
+        "CPF/CNPJ, telefones e números de processo. Responda SOMENTE com um objeto JSON, sem comentários, com as chaves:\n"
+        f"\"tipo\": um destes ids (o que a publicação exige de quem a recebe):\n{lista(TIPOS)}\n"
+        "\"tipo_confianca\": número de 0 a 1.\n"
+        "\"gera_prazo\": número de 0 a 1, a probabilidade de a publicação abrir prazo processual para a parte intimada.\n"
+        f"\"prazo_padrao\": um destes ids (o prazo que provavelmente abre; 'nenhum' se não abrir um destes):\n{lista(PRAZOS_PADRAO)}\n"
+        "\"prazo_padrao_confianca\": número de 0 a 1.\n"
+        f"\"urgencia\": inteiro de 0 a {len(URGENCIA) - 1}:\n{niveis}\n"
+        "\"urgencia_confianca\": número de 0 a 1.\n"
+        "Seja conservador na confiança: use valores baixos quando o texto for ambíguo ou curto. "
+        "Isto é apenas uma sugestão para leitura; um advogado revisa tudo."
+    )
+
+
+class ClassificadorOpenRouter:
+    """Jev (typesafe/jev-router) pelo OpenRouter: chat completions comum, com a mesma saída da triagem.
+    As confianças são as informadas pelo modelo (não são probabilidades calibradas como as do /v1/systemone),
+    por isso a tela continua tratando tudo como sugestão. Erros 429 e 5xx são repetidos com espera crescente."""
+
+    def __init__(self, chave: str, modelo: str = MODELO_OPENROUTER, base: str = "https://openrouter.ai/api/v1",
+                 cliente_http: Callable[[], httpx.AsyncClient] | None = None, tentativas: int = 3, espera_s: float = 1.0):
+        self.chave, self.modelo_pedido, self.base = chave, modelo, base.rstrip("/")
+        self._cliente = cliente_http or (lambda: httpx.AsyncClient(timeout=60.0))
+        self.tentativas, self.espera_s = tentativas, espera_s
+
+    @property
+    def modelo(self) -> str:
+        return self.modelo_pedido
+
+    @staticmethod
+    def _numero(valor: Any, nome: str) -> float:
+        try:
+            n = float(valor)
+        except (TypeError, ValueError) as e:
+            raise ErroTriagem(f"Campo '{nome}' inválido na resposta do modelo.") from e
+        return min(max(n, 0.0), 1.0)
+
+    def _respostas(self, dados: dict) -> dict:
+        tipo, prazo = dados.get("tipo"), dados.get("prazo_padrao")
+        if tipo not in TIPOS or prazo not in PRAZOS_PADRAO:
+            raise ErroTriagem("O modelo respondeu com uma opção que não existe na lista.")
+        try:
+            nivel = int(round(float(dados.get("urgencia"))))
+        except (TypeError, ValueError) as e:
+            raise ErroTriagem("Campo 'urgencia' inválido na resposta do modelo.") from e
+        nivel = min(max(nivel, 0), len(URGENCIA) - 1)
+        c_tipo, c_prazo = self._numero(dados.get("tipo_confianca"), "tipo_confianca"), self._numero(dados.get("prazo_padrao_confianca"), "prazo_padrao_confianca")
+        return {
+            "tipo": {"choice": tipo, "probabilities": {tipo: c_tipo}},
+            "gera_prazo": {"noul": self._numero(dados.get("gera_prazo"), "gera_prazo")},
+            "prazo_padrao": {"choice": prazo, "probabilities": {prazo: c_prazo}},
+            "urgencia": {"score": float(nivel), "confidence": self._numero(dados.get("urgencia_confianca"), "urgencia_confianca")},
+        }
+
+    async def classificar(self, estado: dict) -> dict:
+        corpo = {"model": self.modelo_pedido, "temperature": 0, "messages": [
+            {"role": "system", "content": _instrucoes_openrouter()},
+            {"role": "user", "content": json.dumps(estado, ensure_ascii=False)},
+        ]}
+        cabecalhos = {"Authorization": f"Bearer {self.chave}", "Content-Type": "application/json"}
+        ultimo = "sem resposta"
+        for tentativa in range(1, self.tentativas + 1):
+            try:
+                async with self._cliente() as http:
+                    resp = await http.post(f"{self.base}/chat/completions", json=corpo, headers=cabecalhos)
+            except httpx.HTTPError as e:
+                ultimo = f"falha de conexão: {e}"
+            else:
+                if resp.status_code == 200:
+                    try:
+                        dados = resp.json()
+                        texto = dados["choices"][0]["message"]["content"]
+                    except (ValueError, KeyError, IndexError, TypeError) as e:
+                        raise ErroTriagem("Resposta inesperada do OpenRouter.") from e
+                    resultado = interpretar(self._respostas(_json_da_resposta(texto)), str(dados.get("model") or self.modelo_pedido))
+                    return resultado
+                if resp.status_code in (401, 403):
+                    raise ErroTriagem(f"A chave do OpenRouter foi recusada ({resp.status_code}). Confira a integração OpenRouter.")
+                if resp.status_code == 402:
+                    raise ErroTriagem("Créditos insuficientes no OpenRouter (402).")
+                if resp.status_code in (400, 404, 413, 422):
+                    raise ErroTriagem(f"O OpenRouter recusou o pedido ({resp.status_code}).")
+                ultimo = f"HTTP {resp.status_code}"
+                if resp.status_code not in (408, 429, 500, 502, 503, 504, 529):
+                    break
+            if tentativa < self.tentativas:
+                await asyncio.sleep(self.espera_s * 2 ** (tentativa - 1))
+        raise ErroTriagem(f"O OpenRouter não respondeu ({ultimo}).")
+
+
+def criar_classificador(modo: str, chave: str = "", modelo: str = "jev-latest", chave_openrouter: str = "",
+                        modelo_openrouter: str = MODELO_OPENROUTER) -> ClassificadorSimulado | ClassificadorJev | ClassificadorOpenRouter | None:
+    """None quando desligado ou quando o modo escolhido está sem chave."""
     if modo == "simulado":
         return ClassificadorSimulado()
     if modo == "jev" and chave:
         return ClassificadorJev(chave, modelo or "jev-latest")
+    if modo == "openrouter" and chave_openrouter:
+        return ClassificadorOpenRouter(chave_openrouter, modelo_openrouter or MODELO_OPENROUTER)
     return None
