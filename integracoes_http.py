@@ -1,5 +1,6 @@
 """Rotas administrativas de integrações; segredos nunca retornam ao navegador."""
 import json
+import re
 import secrets
 import time
 from datetime import datetime, timezone
@@ -168,16 +169,22 @@ async def callback(app, scope, send, s):
     if fluxo['finalidade'] == 'calendar' and fluxo['dono'] not in app.registro.ativos():
         await s._responder(send, 403, b'Usuario sem acesso ativo.')
         return
+    etapa = 'preparação'
     try:
         cfg = app.integracoes.decifrar(fluxo['config'])
         async with s._cliente(20) as client:
+            etapa = 'troca do código por token'
             dados = await google_integracao.trocar_codigo_por_token(client, cfg['client_id'], cfg['client_secret'], s._base_publica(scope)+'/integracoes/google/callback', query['code'][0])
+            etapa = 'renovação do access token'
             token = await google_integracao.obter_access_token(client, cfg['client_id'], cfg['client_secret'], dados['refresh_token'])
             if fluxo['finalidade'] == 'calendar':
+                etapa = 'verificação do Google Agenda'
                 await google_integracao.calendario_principal(client, token)
             else:
+                etapa = 'verificação do Google Drive'
                 r = await client.get('https://www.googleapis.com/drive/v3/files/root', params={'fields': 'id'}, headers={'Authorization': 'Bearer '+token})
-                r.raise_for_status()
+                if r.status_code != 200:
+                    raise google_integracao.ErroGoogle('Falha ao consultar o Drive (HTTP %s): %s' % (r.status_code, r.text[:300]))
         if fluxo['candidato']:
             app._integracoes_google_candidatos[fluxo['candidato']] = (app.integracoes.cifrar({'refresh_token': dados['refresh_token']}), time.time()+600)
         else:
@@ -185,5 +192,9 @@ async def callback(app, scope, send, s):
         await s._responder(send, 200, '<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Google conectado</title><p>Autorização recebida. Volte à página de integrações para testar e ativar a configuração ou atualizar o estado da conexão.</p><a href="/app">Voltar ao painel</a></html>'.encode(), tipo='text/html; charset=utf-8')
     except Exception as erro:
         # Registra só o tipo e a mensagem (sem código, token ou segredo) para diagnosticar a falha.
-        s.log.warning('Callback Google (%s) falhou: %s: %s', fluxo.get('finalidade'), type(erro).__name__, str(erro)[:300])
-        await s._responder(send, 502, b'Nao foi possivel concluir a autorizacao Google. Tente conectar novamente.')
+        s.log.warning('Callback Google (%s) falhou na etapa "%s": %s: %s', fluxo.get('finalidade'), etapa, type(erro).__name__, str(erro)[:300])
+        # Na tela, só a etapa e o código curto do Google (ex.: invalid_client), nunca o corpo da resposta.
+        codigo = re.search(r'"(?:error|status)"\s*:\s*"([A-Za-z_]{3,40})"', str(erro))
+        http = re.search(r'HTTP (\d{3})', str(erro))
+        detalhe = ' Etapa: %s.' % etapa + (' HTTP %s.' % http.group(1) if http else '') + (' Código do Google: %s.' % codigo.group(1) if codigo else '')
+        await s._responder(send, 502, ('Nao foi possivel concluir a autorizacao Google. Tente conectar novamente.' + detalhe).encode('utf-8'), tipo='text/plain; charset=utf-8')
