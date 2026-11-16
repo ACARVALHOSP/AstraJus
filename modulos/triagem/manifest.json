@@ -1,0 +1,11 @@
+{
+  "id": "triagem",
+  "nome": "Triagem por IA",
+  "descricao": "Sugere, para cada publicação recebida, o tipo, se abre prazo, o prazo provável e a urgência, usando o Jev pelo OpenRouter. Exige a integração OpenRouter ativa. São só sugestões: nada é criado, tratado ou escondido por causa delas, e o texto sai sem nomes, CPF/CNPJ, contatos e números de processo.",
+  "versao": "1.0.0",
+  "ativo_por_padrao": false,
+  "area_permissao": "publicacoes_oab",
+  "ferramentas": [],
+  "dependencias": [],
+  "tabelas": []
+}

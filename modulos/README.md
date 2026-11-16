@@ -20,7 +20,7 @@ e o gerenciador (Configurações › Módulos) são montados a partir de `GET /m
 | `id` | igual ao nome da pasta |
 | `nome`, `descricao`, `versao` | exibidos no gerenciador |
 | `ativo_por_padrao` | estado inicial (padrão `true`) |
-| `aba` | `{id, rotulo, grupo, icone}`: onde aparece no menu (`grupo` = `trabalho`, `pesquisa`, `financeiro`, `configuracoes`; `icone` = nome lucide registrado em `frontend/src/modulos/registro.ts`) |
+| `aba` | opcional (módulo sem tela, só um interruptor, fica só em Configurações › Módulos). `{id, rotulo, grupo, icone}`: onde aparece no menu (`grupo` = `trabalho`, `pesquisa`, `financeiro`, `configuracoes`; `icone` = nome lucide registrado em `frontend/src/modulos/registro.ts`) |
 | `area_permissao` | área de permissão exigida (`pesquisa`, `casos`...). Área nova vai em `permissoes` |
 | `permissoes` | `{area: rótulo}` de áreas novas que o módulo cria |
 | `ferramentas` | nomes das ferramentas MCP (conferidos com o código na partida) |

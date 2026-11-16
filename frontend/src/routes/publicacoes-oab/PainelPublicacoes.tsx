@@ -360,7 +360,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
   const seloTipo = (p: PublicacaoOab) => p.dados?.tipoComunicacao
     ? <Badge color={corTipo(p.dados.tipoComunicacao)} variant="soft">{p.dados.tipoComunicacao}</Badge>
     : <Text size="1" color="gray">—</Text>
-  const triagemAtiva = infoTriagem?.modo === 'simulado' || infoTriagem?.modo === 'jev' || infoTriagem?.modo === 'openrouter'
+  const triagemAtiva = infoTriagem?.modo === 'openrouter'
   const rotuloPrazo = (id: string) => PRAZOS_PADRAO.find(x => x.id === id)?.rotulo ?? id
   async function classificarPagina() {
     const pendentes = publicacoes.filter(p => !p.triagem).map(p => p.hash)
@@ -442,25 +442,19 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
         </>}
       />
 
-      {infoTriagem?.modo === 'simulado' && (
-        <Callout.Root color="amber" size="1" role="status">
-          <Callout.Icon><Info size={14} /></Callout.Icon>
-          <Callout.Text>Triagem <strong>simulada</strong>: demonstração por palavras-chave, sem inteligência real. Os selos abaixo são só um exemplo de como a triagem aparecerá.</Callout.Text>
-        </Callout.Root>
-      )}
       {infoTriagem?.modo === 'desligado' && (
         <Callout.Root color="gray" size="1" role="status">
           <Callout.Icon><Info size={14} /></Callout.Icon>
-          <Callout.Text>Triagem automática <strong>desligada</strong>. Para ligar, defina <code>CNJ_TRIAGEM_MODO</code> como <code>openrouter</code> no ambiente do servidor e recrie o container.</Callout.Text>
+          <Callout.Text>Triagem por IA <strong>desligada</strong>. Um administrador liga em Configurações › Módulos (módulo "Triagem por IA").</Callout.Text>
         </Callout.Root>
       )}
       {infoTriagem?.modo === 'sem_chave' && (
         <Callout.Root color="amber" size="1" role="status">
           <Callout.Icon><Info size={14} /></Callout.Icon>
-          <Callout.Text>Triagem automática ligada, mas <strong>sem chave ativa</strong>. Em Administração › Integrações › OpenRouter, salve a chave, teste e clique em Ativar.</Callout.Text>
+          <Callout.Text>Triagem por IA ligada, mas <strong>sem chave ativa</strong>. Em Administração › Integrações › OpenRouter, salve a chave, teste e clique em Ativar.</Callout.Text>
         </Callout.Root>
       )}
-      {(infoTriagem?.modo === 'jev' || infoTriagem?.modo === 'openrouter') && (
+      {infoTriagem?.modo === 'openrouter' && (
         <Callout.Root color="gray" size="1" role="status">
           <Callout.Icon><Info size={14} /></Callout.Icon>
           <Callout.Text>Triagem automática ({pct(infoTriagem.limite_alto)}+ de confiança em destaque; entre {pct(infoTriagem.limite_baixo)} e {pct(infoTriagem.limite_alto)} marcada como "revisar"). O texto é enviado sem nomes das partes. São apenas sugestões: nada é criado, tratado ou arquivado sozinho.</Callout.Text>

@@ -100,8 +100,8 @@ function useGruposNavegacao(): Grupo[] {
     abas: [
       ...g.abas,
       ...modulos
-        .filter(m => m.ativo && m.aba.grupo === g.id && areaPermitida(m.area_permissao))
-        .map(m => ({ id: m.aba.id, label: m.aba.rotulo, icone: iconeDoModulo(m.aba.icone) })),
+        .flatMap(m => m.ativo && m.aba && m.aba.grupo === g.id && areaPermitida(m.area_permissao)
+          ? [{ id: m.aba.id, label: m.aba.rotulo, icone: iconeDoModulo(m.aba.icone) }] : []),
     ],
   })), [modulos, areaPermitida])
 }
@@ -155,7 +155,7 @@ function SemAcesso({ texto }: { texto: string }) {
 function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
   const { abaPermitida, areaPermitida } = usePerfil()
   const { modulos, carregado } = useModulos()
-  const modulo = modulos.find(m => m.aba.id === abaAtiva)
+  const modulo = modulos.find(m => m.aba?.id === abaAtiva)
   if (modulo) {
     if (!areaPermitida(modulo.area_permissao)) return <SemAcesso texto="Seu perfil não tem acesso a esta área. Peça ao administrador para liberar." />
     if (!modulo.ativo) return <SemAcesso texto={`O módulo ${modulo.nome} está desativado. Um administrador pode ativá-lo em Configurações › Módulos.`} />
@@ -374,7 +374,7 @@ function NavConteudo() {
   // Endereço de tela inexistente (link antigo ou digitado errado) vira o início, na URL também.
   // 'integracoes' e 'integracoes/admin' não estão no menu, mas seguem valendo como atalhos de links antigos.
   // Telas de módulo (mesmo desativado) só são conhecidas depois que o servidor responde.
-  const conhecida = ABAS_BASE.has(abaAtiva) || modulos.some(m => m.aba.id === abaAtiva)
+  const conhecida = ABAS_BASE.has(abaAtiva) || modulos.some(m => m.aba?.id === abaAtiva)
   useEffect(() => { if (carregado && !conhecida) window.location.replace('#/inicio') }, [abaAtiva, carregado, conhecida])
   return (
     <LimiteDeErro key={abaAtiva}>

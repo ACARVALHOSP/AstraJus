@@ -327,7 +327,7 @@ Todas as variáveis são opcionais; os valores padrão servem para desenvolvimen
 | `ASAAS_AMBIENTE`, `ASAAS_API_KEY`, `ASAAS_API_KEY_SANDBOX`, `ASAAS_WEBHOOK_TOKEN` | Cobranças (homologação ou produção) |
 | `CNJ_INTEGRACOES_CHAVE`, `CNJ_INTEGRACOES_CHAVES_ANTERIORES` | Chave mestra (Fernet) do cofre de credenciais e chaves em rotação |
 | `CNJ_RECAPTCHA_SITE_KEY`, `CNJ_RECAPTCHA_SECRET` | reCAPTCHA do autocadastro |
-| `CNJ_TRIAGEM_MODO`, `TYPESAFE_API_KEY`, `CNJ_TRIAGEM_MODELO` | Triagem de publicações: `desligado` (padrão), `simulado` ou `jev` |
+| `CNJ_TRIAGEM_MODELO` | Opcional: modelo da triagem por IA (id do OpenRouter, ex. `typesafe/jev-router`). A triagem em si liga em Configurações › Módulos |
 
 Gerenciamento de usuários:
 

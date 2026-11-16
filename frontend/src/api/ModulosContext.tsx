@@ -7,7 +7,8 @@ export type Modulo = {
   nome: string
   descricao: string
   versao: string
-  aba: { id: string; rotulo: string; grupo: string; icone: string }
+  /** Módulo sem tela própria (só um interruptor) não tem aba: aparece apenas no gerenciador. */
+  aba: { id: string; rotulo: string; grupo: string; icone: string } | null
   area_permissao: string
   dependencias: string[]
   dependentes_ativos: string[]
