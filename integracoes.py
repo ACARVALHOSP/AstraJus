@@ -339,6 +339,10 @@ class GoogleRegistro:
             c.execute('UPDATE integracoes_google SET cursor=? WHERE finalidade=? AND dono=?', (token, self.finalidade, self.dono))
 
 
+def client_id_google_valido(valor):
+    return isinstance(valor, str) and valor.strip().endswith('.apps.googleusercontent.com') and len(valor.strip()) > 30
+
+
 async def testar(provedor, ambiente, dados, cliente, contexto=None):
     """Somente leitura; nunca devolve corpo, URL ou exceção do provedor."""
     contexto = contexto or {}
@@ -382,6 +386,8 @@ async def testar(provedor, ambiente, dados, cliente, contexto=None):
             conexao = contexto.get('drive')
             if not oauth.get('client_id') or not oauth.get('client_secret'):
                 return False, 'Configure e ative primeiro o aplicativo Google OAuth (Client ID e secret) na lista de serviços.'
+            if not client_id_google_valido(oauth['client_id']):
+                return False, 'O Client ID do Google deve terminar em .apps.googleusercontent.com. Confira se o navegador não preencheu o campo sozinho.'
             if not conexao:
                 return False, 'Autorize a conta Google para validar as credenciais OAuth e o acesso ao Drive.'
             token = await g.obter_access_token(cliente, oauth['client_id'], oauth['client_secret'], conexao['refresh_token'])

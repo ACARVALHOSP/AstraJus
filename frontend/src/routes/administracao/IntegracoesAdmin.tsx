@@ -166,7 +166,7 @@ export default function IntegracoesAdmin({ token }: { token: string }) {
                 {campos.map(c => (
                   <div className="form-campo" key={c.nome}>
                     <label className="form-campo-label" htmlFor={`integ-${c.nome}`}>{c.rotulo}</label>
-                    <TextField.Root id={`integ-${c.nome}`} name={c.nome} type={c.segredo ? 'password' : 'text'} autoComplete="off" maxLength={8192}
+                    <TextField.Root id={`integ-${c.nome}`} name={c.nome} type={c.segredo ? 'password' : 'text'} autoComplete={c.segredo ? 'new-password' : 'off'} data-lpignore="true" maxLength={8192}
                       value={valores[c.nome] ?? ''} onChange={e => editar(c.nome, e.target.value)} />
                     {c.segredo && <Text size="1" color="gray">{item.segredos[c.nome] ? `Credencial atual: ${item.segredos[c.nome]}. Deixe vazio para preservar.` : 'Nenhuma credencial cadastrada.'}</Text>}
                   </div>
