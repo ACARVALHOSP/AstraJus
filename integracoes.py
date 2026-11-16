@@ -45,6 +45,10 @@ VARIAVEIS = {
 }
 
 
+# Integrações cuja ativação não exige teste de conexão aprovado (o teste continua disponível, mas opcional).
+SEM_TESTE_OBRIGATORIO = {'datajud'}
+
+
 class Conflito(ValueError):
     pass
 
@@ -200,8 +204,13 @@ class Cofre:
             r = c.execute('SELECT * FROM integracoes_config WHERE id=? AND autor=?', (identificador, autor)).fetchone()
             t = c.execute('SELECT * FROM integracoes_testes WHERE id=? AND config_id=? AND autor=?', (teste, identificador, autor)).fetchone()
             atual = c.execute("SELECT versao FROM integracoes_config WHERE provedor=? AND ambiente=? AND estado='ativo'", (r['provedor'], r['ambiente'])).fetchone() if r else None
-            if not r or r['estado'] != 'candidato' or not t or not t['aprovado'] or time.time()-t['criado_em'] > 600:
+            sem_teste = bool(r) and r['provedor'] in SEM_TESTE_OBRIGATORIO
+            if not r or r['estado'] != 'candidato':
+                falha = 'Candidato inexistente ou já utilizado.'
+            elif not sem_teste and (not t or not t['aprovado'] or time.time()-t['criado_em'] > 600):
                 falha = 'Teste aprovado ausente, expirado ou candidato já utilizado.'
+            elif sem_teste and not self.decifrar(r['segredo']).get('api_key'):
+                falha = 'Informe a chave da API antes de ativar.'
             elif r['base'] != (atual['versao'] if atual else 0):
                 falha = 'A configuração mudou. Crie e teste um novo candidato.'
             elif r['provedor'] == 'asaas' and r['ambiente'] == 'producao' and confirmar_producao is not True:
