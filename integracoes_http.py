@@ -136,8 +136,12 @@ async def tratar(app, scope, receive, send):
             await s._json(send, 404, {'erro': 'Rota inexistente.'})
     except integracoes.Conflito as erro:
         await s._json(send, 409, {'erro': str(erro)})
-    except (ValueError, TypeError, KeyError):
-        await s._json(send, 400, {'erro': 'Configuração inválida. Revise os campos e a versão.'})
+    except (ValueError, TypeError, KeyError) as erro:
+        s.log.warning('Integrações %s %s recusada: %s: %s', method, path, type(erro).__name__, str(erro)[:300])
+        # Os ValueError levantados por este módulo trazem mensagens próprias, em português e sem dados sensíveis.
+        # Outros erros (JSON malformado, chave ausente etc.) mantêm a mensagem genérica.
+        texto = str(erro) if type(erro) is ValueError and str(erro) else 'Configuração inválida. Revise os campos e a versão.'
+        await s._json(send, 400, {'erro': texto})
 
 
 async def iniciar_google(app, scope, send, s, finalidade, dono, config=None, candidato=None, autor=None):

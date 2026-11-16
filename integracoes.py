@@ -391,8 +391,14 @@ async def testar(provedor, ambiente, dados, cliente, contexto=None):
             j = r.json()
             ok = r.status_code == 200 and j.get('mimeType') == 'application/vnd.google-apps.folder' and j.get('capabilities', {}).get('canAddChildren') is True
             return ok, 'Acesso à pasta do Drive confirmado.' if ok else 'Pasta indisponível ou sem permissão de gravação.'
-    except Exception:
-        return False, 'Não foi possível validar a conexão. Verifique as credenciais, permissões e a rede.'
+    except Exception as erro:
+        import logging
+        import re
+        logging.getLogger('cnj-processual').warning('Teste de integração %s falhou: %s: %s', provedor, type(erro).__name__, str(erro)[:300])
+        # Só o código curto do erro do Google (ex.: invalid_client), nunca o corpo da resposta.
+        codigo = re.search(r'"(?:error|status)"\s*:\s*"([A-Za-z_]{3,40})"', str(erro))
+        detalhe = ' Código do Google: %s.' % codigo.group(1) if codigo else ''
+        return False, 'Não foi possível validar a conexão. Verifique as credenciais, permissões e a rede.' + detalhe
     return False, 'Serviço não suportado.'
 
 
