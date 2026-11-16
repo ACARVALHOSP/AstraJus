@@ -985,6 +985,21 @@ class OAuthTest(_RegistroTemporario):
         self.assertEqual(meta["code_challenge_methods_supported"], ["S256"])
         self.assertTrue(meta["token_endpoint"].endswith("/oauth/token"))
 
+    def test_autorizacao_chatgpt_volta_por_pagina_e_nao_por_302(self):
+        # O CSP form-action do proxy bloqueia o 302 para chatgpt.com; o retorno vai por meta refresh.
+        from urllib.parse import urlencode
+        redirect = "https://chatgpt.com/connector_platform_oauth_redirect"
+        corpo = json.dumps({"redirect_uris": [redirect], "client_name": "ChatGPT"}).encode()
+        _, resposta, _ = _chamar_asgi(self.mw, "POST", "/oauth/register", [], corpo)
+        cliente = json.loads(resposta)["client_id"]
+        form = urlencode(dict(self._params(client_id=cliente, redirect_uri=redirect), token=self.token_ana)).encode()
+        status, corpo, cab = _chamar_asgi(self.mw, "POST", "/oauth/authorize", [], form)
+        self.assertEqual(status, 200)
+        self.assertNotIn(b"location", dict(cab))
+        html = corpo.decode()
+        self.assertIn('http-equiv="refresh"', html)
+        self.assertIn("https://chatgpt.com/connector_platform_oauth_redirect?code=", html)
+
     def test_registro_recusa_redirect_de_outro_dominio(self):
         corpo = json.dumps({"redirect_uris": ["https://evil.example/callback"]}).encode()
         status, _, _ = _chamar_asgi(self.mw, "POST", "/oauth/register", [], corpo)

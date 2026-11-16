@@ -2400,6 +2400,8 @@ class CadastroPublico:
 
 _HOSTS_REDIRECT_CLAUDE = {"claude.ai", "claude.com", "chatgpt.com", "platform.openai.com"}
 _HOSTS_REDIRECT_LOCAIS = {"localhost", "127.0.0.1"}
+# Hosts que não constam no form-action do CSP do proxy: o retorno do OAuth vai por página, não por 302.
+_HOSTS_REDIRECT_VIA_PAGINA = {"chatgpt.com", "platform.openai.com"}
 
 
 def _redirect_permitido(uri: str) -> bool:
@@ -2637,6 +2639,19 @@ class ServidorOAuth:
         separador = "&" if "?" in params["redirect_uri"] else "?"
         destino = params["redirect_uri"] + separador + urlencode(
             {"code": codigo, "state": params.get("state", "")})
+        from urllib.parse import urlsplit
+
+        if urlsplit(destino).hostname in _HOSTS_REDIRECT_VIA_PAGINA:
+            # O CSP form-action do proxy só lista claude.ai/localhost; o navegador aplica essa regra também
+            # ao 302 que sai de um formulário e trava a página. Navegação por meta refresh/link não é afetada.
+            alvo = _escapar(destino)
+            pagina = (f'<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
+                      f'<meta http-equiv="refresh" content="0;url={alvo}"><title>Autorizado</title></head>'
+                      f'<body><p>Acesso autorizado. Voltando ao aplicativo…</p>'
+                      f'<p><a href="{alvo}">Clique aqui se não for redirecionado automaticamente.</a></p></body></html>')
+            await _responder(send, 200, pagina.encode("utf-8"), tipo="text/html; charset=utf-8",
+                             cabecalhos_extra=[(b"referrer-policy", b"no-referrer")])
+            return
         await _responder(send, 302, b"", cabecalhos_extra=[(b"location", destino.encode("utf-8"))])
 
     async def _token(self, receive, send) -> None:
