@@ -149,6 +149,8 @@ async def iniciar_google(app, scope, send, s, finalidade, dono, config=None, can
     config = config or app.integracoes.ativo('google_oauth') or {}
     if not config.get('client_id') or not config.get('client_secret'):
         raise ValueError('Configure a aplicação OAuth Google primeiro.')
+    if not integracoes.client_id_google_valido(config['client_id']):
+        raise ValueError('O Client ID do Google deve terminar em .apps.googleusercontent.com. Confira se o navegador não preencheu o campo sozinho.')
     app._google_fluxos = {k: v for k, v in app._google_fluxos.items() if v['expira'] > time.time()}
     if len(app._google_fluxos) >= 100:
         raise ValueError('Muitas conexões pendentes. Aguarde.')
