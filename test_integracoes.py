@@ -159,6 +159,20 @@ class CofreTest(unittest.TestCase):
             self.c.candidato('smtp','padrao',{'host':'smtp.outro.test','senha':''},1,self.ator)
         self.assertEqual('senha-preservada',self.c.ativo('smtp')['senha'])
 
+    def test_teste_openrouter_leitura_sem_retorno_sensivel(self):
+        chamadas=[]
+        def responder(req):
+            chamadas.append(req)
+            return httpx.Response(200,json={'data':{'label':'sk-or-segredo'}})
+        async def rodar():
+            async with httpx.AsyncClient(transport=httpx.MockTransport(responder)) as client:
+                return await i.testar('openrouter','padrao',{'api_key':'sk-or-v1-abc'},client)
+        ok,msg=asyncio.run(rodar())
+        self.assertTrue(ok);self.assertNotIn('segredo',msg)
+        self.assertEqual('GET',chamadas[0].method)
+        self.assertEqual('https://openrouter.ai/api/v1/auth/key',str(chamadas[0].url))
+        self.assertEqual('Bearer sk-or-v1-abc',chamadas[0].headers['authorization'])
+
     def test_teste_zapsign_leitura_sem_retorno_sensivel(self):
         chamadas=[]
         def responder(req):

@@ -9,7 +9,7 @@ export type EventoIntegracao = { instante: number; autor: string; provedor: stri
 export type CampoIntegracao = { nome: string; rotulo: string; segredo?: boolean }
 
 export const NOMES: Record<string, string> = {
-  drive: 'Google Drive', asaas: 'Asaas', zapsign: 'ZapSign', datajud: 'DataJud', smtp: 'E-mail (SMTP)',
+  drive: 'Google Drive', asaas: 'Asaas', zapsign: 'ZapSign', datajud: 'DataJud', openrouter: 'OpenRouter', smtp: 'E-mail (SMTP)',
   recaptcha: 'reCAPTCHA', google_oauth: 'Google OAuth',
 }
 export const DESCRICOES: Record<string, string> = {
@@ -17,6 +17,7 @@ export const DESCRICOES: Record<string, string> = {
   asaas: 'Cobranças e boletos (Financeiro › Pagamentos).',
   zapsign: 'Assinatura digital de documentos.',
   datajud: 'Consulta de processos no DataJud (CNJ).',
+  openrouter: 'Acesso a modelos de IA pelo OpenRouter (openrouter.ai/keys).',
   smtp: 'Servidor de e-mail dos avisos e do cadastro.',
   recaptcha: 'Proteção do cadastro público.',
   google_oauth: 'Aplicativo OAuth usado para conectar Google Drive e Agenda.',
@@ -26,6 +27,7 @@ export const CAMPOS: Record<string, CampoIntegracao[]> = {
   asaas: [{ nome: 'api_key', rotulo: 'Nova chave da API', segredo: true }],
   zapsign: [{ nome: 'api_key', rotulo: 'Nova chave da API', segredo: true }],
   datajud: [{ nome: 'api_key', rotulo: 'Nova chave da API', segredo: true }],
+  openrouter: [{ nome: 'api_key', rotulo: 'Nova chave da API (sk-or-...)', segredo: true }],
   smtp: [{ nome: 'host', rotulo: 'Servidor SMTP' }, { nome: 'porta', rotulo: 'Porta TLS (465 ou 587)' }, { nome: 'usuario', rotulo: 'Usuário' },
     { nome: 'senha', rotulo: 'Nova senha', segredo: true }, { nome: 'remetente', rotulo: 'E-mail remetente' }],
   recaptcha: [{ nome: 'site_key', rotulo: 'Site key' }, { nome: 'secret', rotulo: 'Nova secret key', segredo: true }],
