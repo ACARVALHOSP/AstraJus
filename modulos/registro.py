@@ -17,7 +17,7 @@ from modulos.nucleo import nucleo
 log = logging.getLogger("cnj-processual")
 RAIZ = Path(__file__).resolve().parent
 
-_OBRIGATORIOS = ("id", "nome", "versao", "aba", "area_permissao")
+_OBRIGATORIOS = ("id", "nome", "versao", "area_permissao")  # `aba` é opcional: módulo sem tela só aparece no gerenciador
 _ABA_OBRIGATORIA = ("id", "rotulo", "grupo", "icone")
 
 
@@ -29,8 +29,8 @@ def _validar(manifesto: dict, origem: str) -> dict:
     faltando = [c for c in _OBRIGATORIOS if not manifesto.get(c)]
     if faltando:
         raise ValueError(f"Manifesto {origem}: faltam campos {', '.join(faltando)}.")
-    aba = manifesto["aba"]
-    if not isinstance(aba, dict) or any(not aba.get(c) for c in _ABA_OBRIGATORIA):
+    aba = manifesto.get("aba")
+    if aba is not None and (not isinstance(aba, dict) or any(not aba.get(c) for c in _ABA_OBRIGATORIA)):
         raise ValueError(f"Manifesto {origem}: 'aba' precisa de {', '.join(_ABA_OBRIGATORIA)}.")
     if manifesto["id"] != Path(origem).parent.name:
         raise ValueError(f"Manifesto {origem}: 'id' deve ser igual ao nome da pasta.")
@@ -144,7 +144,7 @@ class RegistroModulos:
         m = self.manifestos[id_]
         return {
             "id": m["id"], "nome": m["nome"], "descricao": m.get("descricao", ""), "versao": m["versao"],
-            "aba": m["aba"], "area_permissao": m["area_permissao"], "dependencias": m["dependencias"],
+            "aba": m.get("aba"), "area_permissao": m["area_permissao"], "dependencias": m["dependencias"],
             "ferramentas": m["ferramentas"], "tabelas": m["tabelas"], "ativo": self.ativo(id_),
             "dependentes_ativos": self.dependentes_ativos(id_),
         }

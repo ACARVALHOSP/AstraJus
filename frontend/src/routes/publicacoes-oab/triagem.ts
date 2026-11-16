@@ -8,7 +8,7 @@ export type Triagem = {
   urgencia: { nota: number; confianca: number }
   faixas: { tipo: Faixa; gera_prazo: Faixa; prazo_padrao: Faixa; urgencia: Faixa }
 }
-export type InfoTriagem = { modo: 'desligado' | 'simulado' | 'jev' | 'openrouter' | 'sem_chave'; limite_alto: number; limite_baixo: number }
+export type InfoTriagem = { modo: 'desligado' | 'sem_chave' | 'openrouter'; limite_alto: number; limite_baixo: number }
 
 export const ROTULO_TIPO_TRIAGEM: Record<string, string> = {
   exige_manifestacao: 'Exige manifestação', ciencia: 'Só ciência', despacho_expediente: 'Despacho de expediente',

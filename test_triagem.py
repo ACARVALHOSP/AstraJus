@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 import re
 import tempfile
@@ -12,6 +13,7 @@ import httpx
 import db
 import server
 import triagem
+from modulos.registro import modulos
 
 PUBLICACAO = {
     "nome_pesquisado": "Ana Carolina Exemplo", "numero_processo": "10063142720238260005",
@@ -167,40 +169,62 @@ class TriagemServidorTest(unittest.TestCase):
             self.publicacoes.registrar(h, None, "Ana", None, dados, "nao_tratada", None, self.agora)
         self.mw = server._AutenticacaoBearer(None, self.registro, gestao=db.RegistroClientesCasos(self.caminho), publicacoes=self.publicacoes)
 
-    def chamar(self, modo, metodo, rota, dados=None):
-        config = {"CNJ_TRIAGEM_MODO": modo}
+    def _ambiente(self, estado):
+        """estado: 'desligado' (módulo off), 'sem_chave' (módulo on, sem OpenRouter) ou 'ligado' (módulo on e chave ativa;
+        o classificador simulado entra no lugar do OpenRouter para não sair da máquina)."""
+        modulos._estado["triagem"] = estado != "desligado"
+        self.addCleanup(modulos._estado.pop, "triagem", None)
+        config = {"OPENROUTER_API_KEY": "sk-or-teste"} if estado == "ligado" else {}
+        substituto = lambda *a, **k: triagem.ClassificadorSimulado() if k.get("chave_openrouter") else None
+        pilha = contextlib.ExitStack()
+        pilha.enter_context(mock.patch.object(server, "_config_integracao", lambda nome, padrao="": config.get(nome, padrao)))
+        pilha.enter_context(mock.patch.object(triagem, "criar_classificador", substituto))
+        return pilha
 
+    def chamar(self, estado, metodo, rota, dados=None):
         async def executar():
             http = httpx.AsyncClient(transport=httpx.ASGITransport(self.mw), base_url="http://t")
             r = await http.request(metodo, rota, json=dados, headers={"Authorization": "Bearer " + self.token})
             return r.status_code, r.json()
-        with mock.patch.object(server, "_config_integracao", lambda nome, padrao="": config.get(nome, padrao)):
+        with self._ambiente(estado):
             return asyncio.run(executar())
 
-    def test_desligado_nao_classifica_e_a_lista_informa_o_modo(self):
+    def test_modulo_desligado_ou_sem_chave_nao_classifica_e_a_lista_informa_o_modo(self):
         status, corpo = self.chamar("desligado", "POST", "/publicacoes-oab/triagem", {"hashes": ["h1"]})
         self.assertEqual(status, 409)
+        self.assertIn("Módulos", corpo["mensagem"] if "mensagem" in corpo else json.dumps(corpo, ensure_ascii=False))
         status, corpo = self.chamar("desligado", "GET", "/publicacoes-oab")
         self.assertEqual((corpo["triagem"]["modo"], corpo["publicacoes"][0]["triagem"]), ("desligado", None))
-        self.assertEqual(self.chamar("jev", "POST", "/publicacoes-oab/triagem", {"hashes": ["h1"]})[0], 409)    # sem chave
+        self.assertEqual(self.chamar("sem_chave", "POST", "/publicacoes-oab/triagem", {"hashes": ["h1"]})[0], 409)
+        self.assertEqual(self.chamar("sem_chave", "GET", "/publicacoes-oab")[1]["triagem"]["modo"], "sem_chave")
+        self.assertEqual(self.chamar("ligado", "GET", "/publicacoes-oab")[1]["triagem"]["modo"], "openrouter")
 
-    def test_simulado_classifica_guarda_e_ordena_por_urgencia(self):
-        self.assertEqual(self.chamar("simulado", "POST", "/publicacoes-oab/triagem", {"hashes": []})[0], 400)
-        status, corpo = self.chamar("simulado", "POST", "/publicacoes-oab/triagem", {"hashes": ["h1", "h2", "inexistente"]})
+    def test_ligado_classifica_guarda_e_ordena_por_urgencia(self):
+        self.assertEqual(self.chamar("ligado", "POST", "/publicacoes-oab/triagem", {"hashes": []})[0], 400)
+        status, corpo = self.chamar("ligado", "POST", "/publicacoes-oab/triagem", {"hashes": ["h1", "h2", "inexistente"]})
         self.assertEqual(status, 200)
         self.assertEqual(set(corpo["resultados"]), {"h1", "h2"})
         self.assertIn("inexistente", corpo["falhas"])
         self.assertEqual(corpo["resultados"]["h1"]["modelo"], "simulado")
-        _, lista = self.chamar("simulado", "GET", "/publicacoes-oab?ordem=urgencia_desc")
+        _, lista = self.chamar("ligado", "GET", "/publicacoes-oab?ordem=urgencia_desc")
         self.assertEqual([p["hash"] for p in lista["publicacoes"]], ["h1", "h2"])                  # a mais urgente primeiro
         self.assertGreater(lista["publicacoes"][0]["triagem"]["urgencia"]["nota"], lista["publicacoes"][1]["triagem"]["urgencia"]["nota"])
         self.assertEqual(self.publicacoes.hashes_sem_triagem(), [])
 
     def test_triagem_automatica_so_pega_as_novas(self):
-        with mock.patch.object(server, "_config_integracao", lambda nome, padrao="": {"CNJ_TRIAGEM_MODO": "simulado"}.get(nome, padrao)):
+        with self._ambiente("ligado"):
             self.assertTrue(asyncio.run(server._triagem_automatica(self.publicacoes, self.agora)))
             self.assertEqual(len(self.publicacoes.obter_triagens(["h1", "h2"])), 2)
             self.assertTrue(asyncio.run(server._triagem_automatica(self.publicacoes, self.agora)))   # nada novo: não refaz
+
+    def test_triagem_automatica_nao_classifica_com_o_modulo_desligado(self):
+        with self._ambiente("desligado"):
+            self.assertTrue(asyncio.run(server._triagem_automatica(self.publicacoes, self.agora)))
+        self.assertEqual(self.publicacoes.obter_triagens(["h1", "h2"]), {})
+
+    def test_modulo_vem_desligado_por_padrao_e_sem_aba(self):
+        self.assertFalse(modulos.manifestos["triagem"]["ativo_por_padrao"])
+        self.assertIsNone(modulos.descrever("triagem")["aba"])
 
 
 if __name__ == "__main__":

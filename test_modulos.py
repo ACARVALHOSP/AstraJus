@@ -26,7 +26,7 @@ def _raiz(*manifestos):
 
 class ManifestosTest(unittest.TestCase):
     def test_modulos_embutidos_descobertos(self):
-        self.assertEqual(set(modulos.manifestos), {"jurimetria", "jurisprudencia"})
+        self.assertEqual(set(modulos.manifestos), {"jurimetria", "jurisprudencia", "triagem"})
         self.assertEqual(modulos.manifestos["jurimetria"]["aba"]["grupo"], "pesquisa")
 
     def test_ferramentas_do_manifesto_estao_no_servidor_mcp(self):
@@ -134,7 +134,7 @@ class GerenciadorHttpTest(unittest.TestCase):
     def test_lista_e_alterna(self):
         status, dados = self._chamar("GET", "/modulos", nivel="consulta")
         self.assertEqual(status, 200)
-        self.assertEqual({m["id"] for m in dados["modulos"]}, {"jurimetria", "jurisprudencia"})
+        self.assertEqual({m["id"] for m in dados["modulos"]}, {"jurimetria", "jurisprudencia", "triagem"})
         status, dados = self._chamar("PATCH", "/modulos/jurimetria", b'{"ativo": false}')
         self.assertEqual(status, 200)
         self.assertFalse(dados["modulo"]["ativo"])

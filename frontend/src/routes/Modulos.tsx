@@ -40,7 +40,7 @@ export default function Modulos() {
       )}
       <Flex direction="column" gap="3">
         {modulos.map((m) => {
-          const Icone = iconeDoModulo(m.aba.icone)
+          const Icone = iconeDoModulo(m.aba?.icone ?? '')
           const bloqueio = m.ativo
             ? (m.dependentes_ativos.length ? `Necessário para: ${m.dependentes_ativos.join(', ')}.` : null)
             : (m.dependencias.length && !modulos.filter(o => m.dependencias.includes(o.id)).every(o => o.ativo)

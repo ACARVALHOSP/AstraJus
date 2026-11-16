@@ -41,22 +41,16 @@ A implementação local não configura automaticamente segredos ou publica códi
 
 Apoio à leitura da caixa de Publicações recebidas: para cada publicação sugere o tipo (exige manifestação, só ciência, despacho, sentença), se abre prazo, o prazo-padrão provável e uma urgência de 1 a 10, e permite ordenar pelas mais urgentes. São **sugestões**: nada é criado, tratado, arquivado ou escondido por causa delas, e a data de um prazo continua vindo só do cálculo de prazos.
 
-Configuração (variáveis de ambiente ou integrações):
+Configuração: o interruptor é o módulo **Triagem por IA**, em Configurações › Módulos (só administrador; vem **desligado**). Ligado, a triagem usa o Jev (`typesafe/jev-router`) pela integração OpenRouter, que precisa estar cadastrada, testada e **ativa** em Administração › Integrações. Não há variável de ambiente para ligar ou desligar: `CNJ_TRIAGEM_MODO` e `TYPESAFE_API_KEY` deixaram de ser usadas. Opcional: `CNJ_TRIAGEM_MODELO` troca o modelo por outro id do OpenRouter (precisa conter `/`).
 
-| Variável | Valores |
-| --- | --- |
-| `CNJ_TRIAGEM_MODO` | `desligado` (padrão), `simulado` (demonstração por palavras-chave, sem enviar nada), `jev` (API da TypeSafe) ou `openrouter` (Jev pelo OpenRouter) |
-| `TYPESAFE_API_KEY` | chave do Jev (obrigatória no modo `jev`), obtida em console.typesafe.ai/keys |
-| `CNJ_TRIAGEM_MODELO` | opcional; padrão `jev-latest` (modo `jev`) ou `typesafe/jev-router` (modo `openrouter`; só vale um id com `/`) |
+A tela de Publicações informa o estado: desligada (como ligar), ligada sem chave ativa (como ativar) ou ligada.
 
-- **Sigilo:** o que sai para o Jev é o tipo, a classe, o órgão, o tribunal e o texto da publicação **sem** nomes de partes e advogados (inteiros e sobrenomes soltos), CPF, CNPJ, e-mail, telefone, OAB e números de processo (`triagem.anonimizar`). Antes de ligar o modo `jev`, leia o DPA e a política de privacidade da TypeSafe (typesafe.ai/legal) e avalie a LGPD: as docs não informam região de processamento nem prazos de retenção (há retenção zero para contas enterprise).
+- **Sigilo:** o que sai para o Jev é o tipo, a classe, o órgão, o tribunal e o texto da publicação **sem** nomes de partes e advogados (inteiros e sobrenomes soltos), CPF, CNPJ, e-mail, telefone, OAB e números de processo (`triagem.anonimizar`). Antes de ligar o módulo, leia a política de privacidade e de retenção da TypeSafe e do OpenRouter e avalie a LGPD: confira região de processamento, retenção e uso para treinamento do modelo que o roteador escolher.
 - **Faixas:** acima de 90% de confiança a sugestão aparece em destaque; de 50% a 90% aparece como "revisar"; abaixo de 50% não aparece. Nunca há descarte.
-- **Custo:** cobrança por token de entrada (US$ 0,042 por milhão); as quatro perguntas vão numa chamada só por publicação, e o resultado fica guardado (`publicacao_triagem`), então cada publicação é classificada uma vez.
+- **Custo:** cobrança por token pelo OpenRouter (o roteador escolhe o modelo a cada chamada, então o preço varia; acompanhe no painel); as quatro perguntas vão numa chamada só por publicação, e o resultado fica guardado (`publicacao_triagem`), então cada publicação é classificada uma vez.
 - Uma rotina horária classifica as publicações novas não tratadas; o botão "Classificar esta página" faz o mesmo sob demanda.
-- O adaptador do Jev foi escrito pela documentação (`POST https://api.typesafe.ai/v1/systemone`) e testado com respostas simuladas; ainda não foi exercitado com uma chave real.
+- O adaptador foi testado só com respostas simuladas; ainda não foi exercitado com uma chave real.
 
-### Triagem pelo OpenRouter
+### Como funciona pelo OpenRouter
 
-Com `CNJ_TRIAGEM_MODO=openrouter` a triagem usa o Jev (`typesafe/jev-router`) pela conta OpenRouter, com a chave cadastrada e ativada em Administração › Integrações › OpenRouter; não precisa de `TYPESAFE_API_KEY`. A chamada é `POST https://openrouter.ai/api/v1/chat/completions` com as mesmas quatro perguntas, respondidas em JSON. O sigilo, as faixas de confiança, o resultado guardado e a regra de que nada é criado ou escondido por causa da sugestão são os mesmos.
-
-Diferença importante: as confianças vêm informadas pelo próprio modelo, não são probabilidades calibradas como as do `/v1/systemone`; trate-as como indicativas e mantenha a revisão humana. O custo do roteador varia por chamada: acompanhe no painel do OpenRouter. O adaptador foi testado só com respostas simuladas, ainda sem chave real.
+A chamada é `POST https://openrouter.ai/api/v1/chat/completions` com as quatro perguntas respondidas em JSON. As confianças vêm informadas pelo próprio modelo, não são probabilidades calibradas: trate-as como indicativas e mantenha a revisão humana. Respostas fora da lista ou JSON inválido viram falha da publicação, sem sugestão inventada.
