@@ -2398,7 +2398,7 @@ class CadastroPublico:
 
 # --- OAuth 2.1 (PKCE) para conectores personalizados do Claude ---------------
 
-_HOSTS_REDIRECT_CLAUDE = {"claude.ai", "claude.com"}
+_HOSTS_REDIRECT_CLAUDE = {"claude.ai", "claude.com", "chatgpt.com", "platform.openai.com"}
 _HOSTS_REDIRECT_LOCAIS = {"localhost", "127.0.0.1"}
 
 
