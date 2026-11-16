@@ -386,11 +386,19 @@ async def testar(provedor, ambiente, dados, cliente, contexto=None):
                 return False, 'Autorize a conta Google para validar as credenciais OAuth e o acesso ao Drive.'
             token = await g.obter_access_token(cliente, oauth['client_id'], oauth['client_secret'], conexao['refresh_token'])
             from urllib.parse import quote
-            pasta = dados.get('pasta_raiz') or 'root'
+            pasta = dados.get('pasta_raiz') if provedor == 'drive' else None
+            if not pasta:
+                # Sem pasta informada, valida a conexão (about.get funciona com o escopo drive.file; files/root não).
+                r = await cliente.get('https://www.googleapis.com/drive/v3/about', params={'fields': 'user(emailAddress)'}, headers={'Authorization': 'Bearer ' + token})
+                ok = r.status_code == 200
+                return ok, 'Conexão com o Google Drive confirmada.' if ok else 'O Google recusou o acesso ao Drive (HTTP %s). Confira se a Google Drive API está ativada.' % r.status_code
             r = await cliente.get('https://www.googleapis.com/drive/v3/files/' + quote(pasta, safe=''), params={'fields': 'id,mimeType,capabilities(canAddChildren)'}, headers={'Authorization': 'Bearer ' + token})
             j = r.json()
             ok = r.status_code == 200 and j.get('mimeType') == 'application/vnd.google-apps.folder' and j.get('capabilities', {}).get('canAddChildren') is True
-            return ok, 'Acesso à pasta do Drive confirmado.' if ok else 'Pasta indisponível ou sem permissão de gravação.'
+            if ok:
+                return True, 'Acesso à pasta do Drive confirmado.'
+            dica = ' Com o escopo atual o sistema só enxerga pastas criadas por ele; deixe o campo vazio para ele criar a estrutura.' if r.status_code == 404 else ''
+            return False, 'Pasta indisponível ou sem permissão de gravação.' + dica
     except Exception as erro:
         import logging
         import re

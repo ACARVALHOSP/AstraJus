@@ -182,7 +182,8 @@ async def callback(app, scope, send, s):
                 await google_integracao.calendario_principal(client, token)
             else:
                 etapa = 'verificação do Google Drive'
-                r = await client.get('https://www.googleapis.com/drive/v3/files/root', params={'fields': 'id'}, headers={'Authorization': 'Bearer '+token})
+                # about.get funciona com o escopo drive.file; files/root devolve 404 (o app só vê o que criou).
+                r = await client.get('https://www.googleapis.com/drive/v3/about', params={'fields': 'user(emailAddress)'}, headers={'Authorization': 'Bearer '+token})
                 if r.status_code != 200:
                     raise google_integracao.ErroGoogle('Falha ao consultar o Drive (HTTP %s): %s' % (r.status_code, r.text[:300]))
         if fluxo['candidato']:
