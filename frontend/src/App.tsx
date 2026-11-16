@@ -374,7 +374,7 @@ function NavConteudo() {
   // Endereço de tela inexistente (link antigo ou digitado errado) vira o início, na URL também.
   // 'integracoes' e 'integracoes/admin' não estão no menu, mas seguem valendo como atalhos de links antigos.
   // Telas de módulo (mesmo desativado) só são conhecidas depois que o servidor responde.
-  const conhecida = ABAS_BASE.has(abaAtiva) || modulos.some(m => m.aba.id === abaAtiva)
+  const conhecida = ABAS_BASE.has(abaAtiva) || modulos.some(m => m.aba?.id === abaAtiva)
   useEffect(() => { if (carregado && !conhecida) window.location.replace('#/inicio') }, [abaAtiva, carregado, conhecida])
   return (
     <LimiteDeErro key={abaAtiva}>
