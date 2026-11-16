@@ -61,7 +61,7 @@ async def tratar(app, scope, receive, send):
             raise ValueError('Informe um objeto JSON.')
         if path in ('/admin/integracoes/testar', '/admin/integracoes/ativar') and (type(dados.get('candidato')) is not int or dados['candidato'] < 1):
             raise ValueError('Informe um candidato válido.')
-        if path == '/admin/integracoes/ativar' and not isinstance(dados.get('teste'), str):
+        if path == '/admin/integracoes/ativar' and dados.get('teste') is not None and not isinstance(dados.get('teste'), str):
             raise ValueError('Informe o teste de conexão.')
         if path == '/admin/integracoes/candidato':
             ident = cofre.candidato(dados.get('provedor'), dados.get('ambiente'), dados.get('dados'), dados.get('base'), autor)
