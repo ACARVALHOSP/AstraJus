@@ -65,6 +65,14 @@ async def tratar(app, scope, receive, send):
             raise ValueError('Informe o teste de conexão.')
         if path == '/admin/integracoes/candidato':
             ident = cofre.candidato(dados.get('provedor'), dados.get('ambiente'), dados.get('dados'), dados.get('base'), autor)
+            if dados.get('provedor') == 'google_oauth':
+                # Se a tela foi recarregada depois do consentimento, reaproveita a autorização das mesmas credenciais.
+                impressao = _impressao_google(cofre.dados(cofre.obter_candidato(ident, autor)))
+                agora = time.time()
+                for antigo, pendente in list(app._integracoes_google_candidatos.items()):
+                    if len(pendente) > 2 and pendente[2] == impressao and pendente[1] > agora:
+                        app._integracoes_google_candidatos[ident] = pendente
+                        break
             await s._json(send, 201, {'candidato': ident})
         elif path == '/admin/integracoes/testar':
             r = cofre.obter_candidato(dados.get('candidato'), autor)
@@ -145,6 +153,13 @@ async def tratar(app, scope, receive, send):
         await s._json(send, 400, {'erro': texto})
 
 
+def _impressao_google(cfg):
+    """Identifica as credenciais OAuth (sem guardá-las): permite reaproveitar uma autorização já concedida
+    quando a tela é recarregada e o candidato muda de número."""
+    import hashlib
+    return hashlib.sha256(('%s\0%s' % (cfg.get('client_id', ''), cfg.get('client_secret', ''))).encode('utf-8')).hexdigest()
+
+
 async def iniciar_google(app, scope, send, s, finalidade, dono, config=None, candidato=None, autor=None):
     config = config or app.integracoes.ativo('google_oauth') or {}
     if not config.get('client_id') or not config.get('client_secret'):
@@ -189,13 +204,13 @@ async def callback(app, scope, send, s):
                 if r.status_code != 200:
                     raise google_integracao.ErroGoogle('Falha ao consultar o Drive (HTTP %s): %s' % (r.status_code, r.text[:300]))
         if fluxo['candidato']:
-            app._integracoes_google_candidatos[fluxo['candidato']] = (app.integracoes.cifrar({'refresh_token': dados['refresh_token']}), time.time()+600)
+            app._integracoes_google_candidatos[fluxo['candidato']] = (app.integracoes.cifrar({'refresh_token': dados['refresh_token']}), time.time()+1800, _impressao_google(cfg))
         else:
             app.integracoes.google(fluxo['finalidade'], fluxo['dono']).salvar_conexao(dados['refresh_token'], lambda: datetime.now(timezone.utc), autor=fluxo['autor'])
         if fluxo['finalidade'] == 'calendar':
             destino, orientacao = '/radix/', 'Abra Meu perfil (menu da conta) e clique em Verificar conexão para confirmar a sua agenda.'
         else:
-            destino, orientacao = '/radix/#/administracao?aba=integracoes', 'Volte a Administração › Integrações para testar e ativar a configuração.'
+            destino, orientacao = '/radix/#/administracao?aba=integracoes', 'Feche esta aba e volte à tela de Administração › Integrações que já estava aberta (sem recarregá-la) para testar e ativar a configuração.'
         pagina = ('<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
                   '<title>Google conectado</title><body style="font-family:system-ui,sans-serif;max-width:32rem;margin:3rem auto;padding:0 1rem">'
                   '<h1 style="font-size:1.25rem">Autorização recebida</h1><p>' + orientacao + '</p>'
