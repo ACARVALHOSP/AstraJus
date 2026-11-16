@@ -1469,6 +1469,61 @@ class ConfiguracaoSMTP:
     remetente: str
 
 
+@dataclass
+class ConfiguracaoBrevo:
+    """E-mail pela API HTTPS do Brevo (porta 443), para servidores que bloqueiam a porta SMTP."""
+    api_key: str
+    remetente: str
+    nome: str = ""
+
+
+BREVO_URL_ENVIO = "https://api.brevo.com/v3/smtp/email"
+
+
+def _motivo_brevo(r: "httpx.Response") -> str:
+    """Motivo curto da recusa do Brevo, sem a chave nem o corpo da mensagem enviada."""
+    try:
+        texto = str(r.json().get("message") or "")
+    except Exception:
+        texto = ""
+    dica = ""
+    if r.status_code in (401, 403):
+        dica = " Confira a chave e, se o Brevo exigir, autorize o IP deste servidor em Segurança › IPs autorizados."
+    elif r.status_code == 400 and "sender" in texto.lower():
+        dica = " O remetente precisa estar cadastrado e validado no Brevo."
+    return f"Brevo recusou o envio (HTTP {r.status_code}){': ' + texto[:160] if texto else ''}.{dica}"
+
+
+def _enviar_brevo(cfg: ConfiguracaoBrevo, mensagem: EmailMessage) -> None:
+    corpo = mensagem.get_body(preferencelist=("plain",))
+    carga = {
+        "sender": {"email": cfg.remetente, **({"name": cfg.nome} if cfg.nome else {})},
+        "to": [{"email": str(mensagem["To"])}],
+        "subject": str(mensagem["Subject"]),
+        "textContent": (corpo or mensagem).get_content(),
+    }
+    r = httpx.post(BREVO_URL_ENVIO, json=carga, headers={"api-key": cfg.api_key, "accept": "application/json"}, timeout=30)
+    if r.status_code not in (200, 201, 202):
+        raise RuntimeError(_motivo_brevo(r))
+
+
+def _entregar_email(cfg, mensagem: EmailMessage) -> None:
+    """Único ponto de saída de e-mail: Brevo (API) quando configurado; senão SMTP (465 com SSL, as demais com STARTTLS)."""
+    if isinstance(cfg, ConfiguracaoBrevo):
+        _enviar_brevo(cfg, mensagem)
+        return
+    contexto = ssl.create_default_context()
+    if cfg.porta == 465:
+        with smtplib.SMTP_SSL(cfg.host, cfg.porta, context=contexto, timeout=30) as servidor:
+            servidor.login(cfg.usuario, cfg.senha)
+            servidor.send_message(mensagem)
+    else:
+        with smtplib.SMTP(cfg.host, cfg.porta, timeout=30) as servidor:
+            servidor.starttls(context=contexto)
+            servidor.login(cfg.usuario, cfg.senha)
+            servidor.send_message(mensagem)
+
+
 def _enviar_token_por_email(cfg: ConfiguracaoSMTP, destino: str, token: str) -> None:
     """Envia o token ao e-mail do próprio usuário. Porta 465 usa SSL direto; as demais usam STARTTLS."""
     if _COFRE_INTEGRACOES:
@@ -1489,16 +1544,7 @@ def _enviar_token_por_email(cfg: ConfiguracaoSMTP, destino: str, token: str) -> 
         "Não compartilhe este token. Se você não pediu este e-mail, ignore-o: o token anterior\n"
         "só deixa de valer se você solicitar um novo.\n"
     )
-    contexto = ssl.create_default_context()
-    if cfg.porta == 465:
-        with smtplib.SMTP_SSL(cfg.host, cfg.porta, context=contexto, timeout=30) as servidor:
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
-    else:
-        with smtplib.SMTP(cfg.host, cfg.porta, timeout=30) as servidor:
-            servidor.starttls(context=contexto)
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
+    _entregar_email(cfg, mensagem)
 
 
 # --- Monitoramento: acompanhar processo/OAB e avisar por e-mail quando sai publicação nova -----
@@ -1644,16 +1690,7 @@ def _enviar_aviso_monitoramento(cfg: ConfiguracaoSMTP, destino: str, criterio: d
     mensagem["To"] = destino
     mensagem.set_content("\n".join(linhas))
 
-    contexto = ssl.create_default_context()
-    if cfg.porta == 465:
-        with smtplib.SMTP_SSL(cfg.host, cfg.porta, context=contexto, timeout=30) as servidor:
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
-    else:
-        with smtplib.SMTP(cfg.host, cfg.porta, timeout=30) as servidor:
-            servidor.starttls(context=contexto)
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
+    _entregar_email(cfg, mensagem)
 
 
 def _enviar_aviso_expiracao(cfg: ConfiguracaoSMTP, destino: str, criterio: dict, dias_restantes: int) -> None:
@@ -1676,16 +1713,7 @@ def _enviar_aviso_expiracao(cfg: ConfiguracaoSMTP, destino: str, criterio: dict,
         f"Para renová-lo, acesse: {link}\n\n"
         'Caso não queira mais receber estes avisos, remova o monitoramento em "Meus monitoramentos".\n'
     )
-    contexto = ssl.create_default_context()
-    if cfg.porta == 465:
-        with smtplib.SMTP_SSL(cfg.host, cfg.porta, context=contexto, timeout=30) as servidor:
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
-    else:
-        with smtplib.SMTP(cfg.host, cfg.porta, timeout=30) as servidor:
-            servidor.starttls(context=contexto)
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
+    _entregar_email(cfg, mensagem)
 
 
 def _enviar_aviso_atividade_delegada(cfg: ConfiguracaoSMTP, destino: str, atividade: dict) -> None:
@@ -1707,16 +1735,7 @@ def _enviar_aviso_atividade_delegada(cfg: ConfiguracaoSMTP, destino: str, ativid
     partes += ["", f"Veja os detalhes em: {link}"]
     mensagem.set_content("\n".join(partes))
 
-    contexto = ssl.create_default_context()
-    if cfg.porta == 465:
-        with smtplib.SMTP_SSL(cfg.host, cfg.porta, context=contexto, timeout=30) as servidor:
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
-    else:
-        with smtplib.SMTP(cfg.host, cfg.porta, timeout=30) as servidor:
-            servidor.starttls(context=contexto)
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
+    _entregar_email(cfg, mensagem)
 
 
 def _marcar_aviso_expiracao(dados: dict, id_monitoramento: str, agora_iso: str):
@@ -3165,16 +3184,7 @@ def _enviar_email_simples(cfg: "ConfiguracaoSMTP", destino: str, assunto: str, c
     mensagem = EmailMessage()
     mensagem["Subject"], mensagem["From"], mensagem["To"] = assunto, cfg.remetente, destino
     mensagem.set_content(corpo)
-    contexto = ssl.create_default_context()
-    if cfg.porta == 465:
-        with smtplib.SMTP_SSL(cfg.host, cfg.porta, context=contexto, timeout=30) as servidor:
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
-    else:
-        with smtplib.SMTP(cfg.host, cfg.porta, timeout=30) as servidor:
-            servidor.starttls(context=contexto)
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
+    _entregar_email(cfg, mensagem)
 
 
 async def _alertar_prazos(gestao: "RegistroClientesCasos", agora=lambda: datetime.now(timezone.utc), enviar=None) -> bool:
@@ -6562,8 +6572,14 @@ def _inteiro_env(nome: str, padrao: int) -> int:
         sys.exit(f"Erro: {nome} deve ser um número inteiro.")
 
 
-def _smtp_do_ambiente() -> ConfiguracaoSMTP | None:
-    """Resolve SMTP no cofre; modo legado usa CNJ_SMTP_*. Sem host, cadastro desligado."""
+def _smtp_do_ambiente() -> "ConfiguracaoBrevo | ConfiguracaoSMTP | None":
+    """Configuração de e-mail do escritório. O Brevo (API HTTPS) tem prioridade quando há chave e remetente; senão vale o
+    SMTP. O nome ficou por compatibilidade: todo o código chama isto e entrega pelo `_entregar_email`. Sem nenhum dos dois,
+    o envio de e-mail e o cadastro público ficam desligados."""
+    chave = _config_integracao("CNJ_BREVO_API_KEY", "").strip()
+    remetente_brevo = _config_integracao("CNJ_BREVO_REMETENTE", "").strip()
+    if chave and remetente_brevo:
+        return ConfiguracaoBrevo(api_key=chave, remetente=remetente_brevo, nome=_config_integracao("CNJ_BREVO_NOME_REMETENTE", "").strip())
     host = _config_integracao("CNJ_SMTP_HOST", "").strip()
     if not host:
         return None

@@ -5,11 +5,10 @@ import { analisar, AMOSTRA_MINIMA, comparacaoJuiz, consultasDe, ehTjsp, escolhaI
 const c = (id, nome) => ({ id, nome, caminho: nome, confianca: 1 })
 const PERIODO = { inicio: '14/11/2025', fim: '13/11/2026' }
 
-test('período padrão: 364 dias terminando hoje (o máximo do e-SAJ)', () => {
-  assert.deepEqual(periodoPadrao(new Date(2026, 10, 13)), PERIODO)
-  assert.deepEqual(periodoPadrao(new Date(2024, 11, 31)), { inicio: '02/01/2024', fim: '31/12/2024' }) // ano bissexto: ainda 364 dias
+test('período padrão: 36 meses (3 janelas de 364 dias no servidor) terminando hoje', () => {
+  assert.deepEqual(periodoPadrao(new Date(2026, 10, 13)), { inicio: '15/11/2023', fim: '13/11/2026' })
   const [d, m, a] = periodoPadrao(new Date(2026, 2, 1)).inicio.split('/').map(Number)
-  assert.equal(Math.round((new Date(2026, 2, 1) - new Date(a, m - 1, d)) / 86_400_000), 364)
+  assert.equal(Math.round((new Date(2026, 2, 1) - new Date(a, m - 1, d)) / 86_400_000), 3 * 365 - 1)
 })
 
 test('só números do TJSP', () => {
@@ -29,7 +28,7 @@ test('escolha inicial só pega o que a resolução escolheu sozinha', () => {
 test('consultas: vara usa vara + classe; TJSP usa assunto (+ classe)', () => {
   const todos = consultasDe({ vara: c('100-12', '12ª Vara Cível'), classe: c('8501', 'Procedimento Comum Cível'), assunto: c('10433', 'Indenização por Dano Moral') }, PERIODO)
   assert.deepEqual(todos.map(x => x.chave), ['vara', 'tjsp'])
-  assert.deepEqual(todos[0].params, { data_inicio: '14/11/2025', data_fim: '13/11/2026', paginas: 8, vara_codigo: '100-12', classe_codigo: '8501' })
+  assert.deepEqual(todos[0].params, { data_inicio: '14/11/2025', data_fim: '13/11/2026', paginas: 8, periodo_longo: true, vara_codigo: '100-12', classe_codigo: '8501' })
   assert.equal(todos[1].params.assunto_codigo, '10433')
   assert.equal(todos[1].params.classe_codigo, '8501')
   assert.equal(todos[1].descricao, 'Indenização por Dano Moral · Procedimento Comum Cível')
@@ -119,7 +118,7 @@ test('fase 2: consulta do magistrado exige magistrado e classe e usa a ferrament
   const juiz = todos[2]
   assert.equal(juiz.ferramenta, 'perfil_decisorio_magistrado')
   assert.equal(todos[0].ferramenta, 'consultar_jurimetria_cjpg')
-  assert.deepEqual(juiz.params, { data_inicio: '14/11/2025', data_fim: '13/11/2026', paginas: 8, magistrado_codigo: '7753', classe_codigo: '8501', comparar_com_universo: true })
+  assert.deepEqual(juiz.params, { data_inicio: '14/11/2025', data_fim: '13/11/2026', paginas: 8, periodo_longo: true, magistrado_codigo: '7753', classe_codigo: '8501', comparar_com_universo: true })
   assert.ok(!('vara_codigo' in juiz.params))
   assert.deepEqual(consultasDe(E({ classe: c('8501', 'x'), magistrado: null, assunto: null }), PERIODO), [])
   assert.deepEqual(consultasDe(E({ magistrado: c('1', 'J') }), PERIODO), []) // sem classe não há consulta do juiz

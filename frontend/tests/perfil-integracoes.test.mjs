@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { avaliarPerfil } from '../src/utils/perfil.ts'
 import { recorteQuadrado, validarArquivoFoto } from '../src/utils/foto.ts'
-import { agruparCatalogo, estadoAtual, linhaHistorico, mesmoConteudo, seloItem, textoAjuda, tituloItem } from '../src/routes/administracao/integracoes.ts'
+import { CAMPOS, DESCRICOES, ENVIAM_EMAIL, NOMES, agruparCatalogo, estadoAtual, linhaHistorico, mesmoConteudo, seloItem, textoAjuda, tituloItem } from '../src/routes/administracao/integracoes.ts'
 
 const atual = { nome: 'Ana Souza', email: 'ana@teste.com', foto: '' }
 
@@ -58,4 +58,17 @@ test('integrações: agrupa por escopo e compara conteúdo', () => {
   assert.equal(mesmoConteudo({ a: '1' }, { a: '1' }), true)
   assert.equal(mesmoConteudo({ a: '1' }, { a: '2' }), false)
   assert.match(textoAjuda('google_oauth', 'https://x.test'), /https:\/\/x\.test\/integracoes\/google\/callback/)
+})
+
+test('Brevo: nome, campos e botão de e-mail de teste', () => {
+  assert.equal(NOMES.brevo, 'E-mail (Brevo)')
+  assert.equal(tituloItem({ provedor: 'brevo', ambiente: 'padrao' }), 'E-mail (Brevo)')
+  assert.deepEqual(CAMPOS.brevo.map(c => [c.nome, Boolean(c.segredo)]), [['api_key', true], ['remetente', false], ['nome_remetente', false]])
+  assert.match(DESCRICOES.brevo, /prioridade sobre o SMTP/)
+  assert.deepEqual([...ENVIAM_EMAIL].sort(), ['brevo', 'smtp'])
+  assert.match(textoAjuda('brevo', ''), /IP deste servidor/)
+  assert.match(textoAjuda('brevo', ''), /Enviar e-mail de teste/)
+  const brevo = item({ provedor: 'brevo', escopo: 'sistema', estado: 'ativo', versao: 1 })
+  assert.equal(seloItem(brevo, 'sandbox', false).texto, 'Configurado')
+  assert.deepEqual(agruparCatalogo([brevo, item()]).map(g => g.chave), ['escritorio', 'sistema'])
 })

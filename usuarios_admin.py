@@ -438,7 +438,7 @@ async def _enviar_token_por_email(s, perfil, token):
         return {'enviado': False, 'destino': None, 'motivo': 'O usuário não tem um e-mail válido cadastrado (nem o login é um e-mail).'}
     cfg = s._smtp_do_ambiente()
     if cfg is None:
-        return {'enviado': False, 'destino': email, 'motivo': 'O envio de e-mail não está configurado no servidor (SMTP).'}
+        return {'enviado': False, 'destino': email, 'motivo': 'O envio de e-mail não está configurado no servidor (Brevo ou SMTP).'}
     base = (os.environ.get('CNJ_MCP_URL_PUBLICA') or '').rstrip('/')
     corpo = (f"Olá, {perfil.get('nome_completo') or perfil.get('login')}.\n\n"
              "Um administrador gerou um novo token de acesso ao AstraJus para você:\n\n"

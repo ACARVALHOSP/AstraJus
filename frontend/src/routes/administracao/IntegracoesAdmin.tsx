@@ -4,7 +4,7 @@ import { AlertDialog, Badge, Button, Callout, Card, Flex, Heading, Text, TextFie
 import Carregamento from '../../Carregamento'
 import { avisarDadosAlterados } from '../../api/rest'
 import {
-  CAMPOS, DESCRICOES, PRECISAM_GOOGLE, SO_NO_PAINEL_AVANCADO, agruparCatalogo, chaveItem, ehAsaas, estadoAtual, linhaHistorico,
+  CAMPOS, DESCRICOES, ENVIAM_EMAIL, PRECISAM_GOOGLE, SO_NO_PAINEL_AVANCADO, agruparCatalogo, chaveItem, ehAsaas, estadoAtual, linhaHistorico,
   mesmoConteudo, seloItem, textoAjuda, tituloItem, type EventoIntegracao, type ItemIntegracao,
 } from './integracoes'
 
@@ -100,6 +100,15 @@ export default function IntegracoesAdmin({ token }: { token: string }) {
     if (producao) setConfirmacao({ titulo: 'Usar produção nas próximas cobranças?', texto: 'As cobranças do Asaas passarão a ser reais.', rotulo: 'Usar produção', acao: fazer })
     else void fazer()
   }
+  // Envio real: é a prova de que o e-mail sai (o "Testar" do cofre só confere credenciais). Vai para o e-mail do próprio administrador.
+  const enviarEmailTeste = () => executar(async () => {
+    try {
+      const r = await api<{ enviado: boolean; destino: string; via: string }>(token, '/email-teste', {})
+      setRetorno({ texto: `E-mail de teste enviado para ${r.destino} pelo ${r.via}. Confira a caixa de entrada (e o spam).`, tom: 'green' })
+    } catch (e) {
+      setRetorno({ texto: (e as Error).message, tom: 'red' })
+    }
+  })
   const autorizarGoogle = (i: ItemIntegracao) => executar(async () => {
     const corpo = i.provedor === 'google_oauth' ? { candidato: await garantirCandidato(i) } : {}
     const r = await api<{ url: string }>(token, '/google', corpo)
@@ -178,6 +187,7 @@ export default function IntegracoesAdmin({ token }: { token: string }) {
                 <Flex gap="2" wrap="wrap">
                   <Button type="submit" variant="soft" disabled={ocupado || soAvancado}>{ocupado ? 'Aguarde…' : 'Testar conexão'}</Button>
                   <Button type="button" disabled={ocupado || !teste || !candidato || !mesmoConteudo(candidato.conteudo, valores)} onClick={() => ativar(item)}>Ativar configuração</Button>
+                  {ENVIAM_EMAIL.has(item.provedor) && item.versao > 0 && <Button type="button" variant="soft" disabled={ocupado} onClick={() => void enviarEmailTeste()}>Enviar e-mail de teste</Button>}
                   {PRECISAM_GOOGLE.has(item.provedor) && <Button type="button" variant="soft" disabled={ocupado} onClick={() => void autorizarGoogle(item)}>{item.provedor === 'drive' ? 'Conectar conta Google' : 'Autorizar conta Google'}</Button>}
                   {ehAsaas(item) && item.versao > 0 && item.ambiente !== dados.asaas_ambiente && <Button type="button" variant="soft" disabled={ocupado} onClick={() => usarAmbiente(item)}>Usar este ambiente</Button>}
                   {item.versao > 0 && <Button type="button" variant="ghost" color="red" disabled={ocupado} onClick={() => desativar(item)}>Desativar</Button>}

@@ -165,6 +165,7 @@ O frontend Radix (`/radix/`) é servido diretamente pelo Caddy a partir de `/srv
 | POST | `/admin/integracoes/candidato` | Cadastra credencial candidata |
 | POST | `/admin/integracoes/testar` | Testa credencial candidata |
 | POST | `/admin/integracoes/ativar` | Ativa credencial testada |
+| POST | `/admin/integracoes/email-teste` | Envia um e-mail de teste de verdade pelo Brevo ou SMTP ativo (só administrador, 1 a cada 10 s); `{destino?}`, padrão o e-mail do próprio administrador. Devolve o motivo real da falha |
 | POST | `/admin/integracoes/ambiente` | Alterna ambiente (ex.: Asaas sandbox/produção) |
 | POST | `/admin/integracoes/desativar` | Desativa integração |
 | POST | `/admin/integracoes/rotacionar` | Rotaciona a chave de criptografia do cofre |
@@ -324,5 +325,6 @@ sudo python3 frontend/deploy/configure_proxy.py                # provisionamento
 | `DATAJUD_API_KEY` | Chave do DataJud |
 | `ASAAS_API_KEY`, `ASAAS_API_KEY_SANDBOX`, `ASAAS_AMBIENTE` | Asaas |
 | `CNJ_GOOGLE_CLIENT_ID`, `CNJ_GOOGLE_CLIENT_SECRET`, `CNJ_GOOGLE_DRIVE_PASTA_RAIZ` | Google |
+| `CNJ_BREVO_API_KEY`, `CNJ_BREVO_REMETENTE`, `CNJ_BREVO_NOME_REMETENTE` | E-mail pela API HTTPS do Brevo (porta 443), para servidores com a porta SMTP bloqueada. Com chave e remetente, tem prioridade sobre o SMTP; o remetente precisa estar validado no Brevo |
 | `CNJ_SMTP_HOST`, `CNJ_SMTP_PORTA`, `CNJ_SMTP_USUARIO`, `CNJ_SMTP_SENHA`, `CNJ_SMTP_REMETENTE` | E-mail dos monitoramentos |
 | `CNJ_RECAPTCHA_SITE_KEY`, `CNJ_RECAPTCHA_SECRET`, `CNJ_CADASTRO_TEMPO_MINIMO_S` | Proteção do autocadastro |

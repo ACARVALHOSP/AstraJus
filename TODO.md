@@ -74,7 +74,8 @@ Restam ~26 arquivos com `buscarJson` direto. Ordem sugerida:
 - [x] **F** Valor por hora no cadastro do usuário (coluna na tabela e campo no diálogo; some se a conexão não for de administrador)
 - [x] **B+F** Novo token de um usuário (invalida o anterior) com envio opcional por e-mail; "Último acesso" logo abaixo do nome. Pendência: link de redefinição em vez do token no e-mail
 - [ ] **B+F** OAB por usuário, cadastrando a captura de publicações daquele advogado automaticamente
-- [ ] **B+F** Painel de saúde: disjuntores e cache do `/healthz`, resultado das rotinas (`/automacoes`) e botão "enviar e-mail de teste" para conferir o SMTP
+- [x] **B+F** E-mail pela API do Brevo (porta 443): provedor no cofre com teste da chave e do remetente, prioridade sobre o SMTP, um único ponto de envio para todos os e-mails e botão "Enviar e-mail de teste". Pendências: ver em produção se o IP do VPS precisa ser autorizado no Brevo; link de redefinição de token no lugar do token no e-mail
+- [ ] **B+F** Painel de saúde: disjuntores e cache do `/healthz`, resultado das rotinas (`/automacoes`) (o botão "Enviar e-mail de teste" já existe em Administração › Integrações, para Brevo e SMTP)
 - [ ] **B+F** Perfil do escritório (nome, CNPJ, OAB, e-mails, endereço, logo), base para assinatura de e-mail, cabeçalho de PDFs e recibos
 - [ ] **B** Backup agendado e restauração (hoje só download manual)
 - [x] **F** Integrações dentro da Administração (aba própria: lista de serviços, teste → ativação, desativar, ambiente do Asaas, Google; `#/integracoes` e a Central de risco levam para lá; "Minha agenda Google" foi para Meu perfil). Pendências: reCAPTCHA (desafio), reencriptação com a chave mestra e permissão de administrador de integrações continuam só no painel avançado `/admin/integracoes`; depois disso, aposentar o painel legado

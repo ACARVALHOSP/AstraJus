@@ -10,7 +10,7 @@ A interface administrativa fica em `/admin/integracoes`, também acessível pela
 4. Conferir `/healthz`, acesso administrativo, serviços gerais, Drive e ambiente Asaas preservado. A importação não afirma que as credenciais foram testadas. Configurar a URL de retorno Google `https://SEU_HOST/integracoes/google/callback` no console Google.
 5. Pelo token administrativo de recuperação, conceder a usuários ativos a permissão de administrar integrações. Usar o token individual de cada administrador no editor para auditoria nominal. O bootstrap é identificado como conta administrativa compartilhada persistente; não permite saber qual pessoa usou o segredo compartilhado.
 6. Testar e ativar novas versões pelo editor. Tokens existentes nunca retornam ao navegador. SMTP testa TLS/autenticação sem enviar e-mail. reCAPTCHA exige resolver um desafio da site key candidata; validar apenas formato não habilita ativação. ZapSign faz GET de leitura, sem criação de documentos. OpenRouter consulta `GET /api/v1/auth/key` (valida a chave sem gerar texto nem gastar créditos); a chave fica cifrada e só é guardada: nenhum recurso do sistema chama modelos de IA por ela ainda.
-7. Depois de validar a restauração com a chave externa e confirmar o funcionamento, remover do arquivo de ambiente as variáveis migradas: `ASAAS_API_KEY`, `ASAAS_API_KEY_SANDBOX`, `ASAAS_AMBIENTE`, `DATAJUD_API_KEY`, `CNJ_GOOGLE_CLIENT_ID`, `CNJ_GOOGLE_CLIENT_SECRET`, `CNJ_GOOGLE_DRIVE_PASTA_RAIZ`, `CNJ_SMTP_HOST`, `CNJ_SMTP_PORTA`, `CNJ_SMTP_USUARIO`, `CNJ_SMTP_SENHA`, `CNJ_SMTP_REMETENTE`, `CNJ_RECAPTCHA_SITE_KEY`, `CNJ_RECAPTCHA_SECRET`, `ZAPSIGN_API_KEY`, `OPENROUTER_API_KEY`. Recriar o container uma vez para também removê-las do ambiente do processo. A leitura em modo banco não depende delas depois da importação.
+7. Depois de validar a restauração com a chave externa e confirmar o funcionamento, remover do arquivo de ambiente as variáveis migradas: `ASAAS_API_KEY`, `ASAAS_API_KEY_SANDBOX`, `ASAAS_AMBIENTE`, `DATAJUD_API_KEY`, `CNJ_GOOGLE_CLIENT_ID`, `CNJ_GOOGLE_CLIENT_SECRET`, `CNJ_GOOGLE_DRIVE_PASTA_RAIZ`, `CNJ_BREVO_API_KEY`, `CNJ_BREVO_REMETENTE`, `CNJ_BREVO_NOME_REMETENTE`, `CNJ_SMTP_HOST`, `CNJ_SMTP_PORTA`, `CNJ_SMTP_USUARIO`, `CNJ_SMTP_SENHA`, `CNJ_SMTP_REMETENTE`, `CNJ_RECAPTCHA_SITE_KEY`, `CNJ_RECAPTCHA_SECRET`, `ZAPSIGN_API_KEY`, `OPENROUTER_API_KEY`. Recriar o container uma vez para também removê-las do ambiente do processo. A leitura em modo banco não depende delas depois da importação.
 8. Preservar no ambiente infraestrutura: chave mestra, chaves anteriores durante rotação, localização dos dados, token administrativo de recuperação, segredo de links assinados, URL pública, host/porta e demais parâmetros operacionais. Nunca retirar indiscriminadamente todo o `.env`.
 
 ## Drive e agendas
@@ -54,3 +54,18 @@ A tela de Publicações informa o estado: desligada (como ligar), ligada sem cha
 ### Como funciona pelo OpenRouter
 
 A chamada é `POST https://openrouter.ai/api/v1/chat/completions` com as quatro perguntas respondidas em JSON. As confianças vêm informadas pelo próprio modelo, não são probabilidades calibradas: trate-as como indicativas e mantenha a revisão humana. Respostas fora da lista ou JSON inválido viram falha da publicação, sem sugestão inventada.
+
+## E-mail pelo Brevo
+
+Todo e-mail do sistema (novo token, cadastro, alertas de prazo, monitoramentos) sai por um único ponto: pela **API do Brevo** quando há
+chave e remetente configurados; senão, pelo SMTP. Serve para servidores que bloqueiam a porta SMTP, porque a API usa HTTPS (443).
+
+1. No Brevo, valide o remetente em *Senders, Domains & IPs* (um domínio autenticado com SPF/DKIM melhora a entrega) e gere uma chave
+   de API em *SMTP & API*. Se a conta usar *Segurança › IPs autorizados*, libere o IP do servidor.
+2. Em Administração › Integrações › **E-mail (Brevo)**, informe a chave, o remetente (o mesmo e-mail validado) e, se quiser, o nome.
+3. **Testar conexão** confere a chave e se o remetente está ativo no Brevo, sem enviar nada. Depois de **Ativar**, use **Enviar e-mail de
+   teste**: ele manda uma mensagem de verdade ao e-mail do administrador e mostra o motivo real se falhar (chave, IP não autorizado,
+   remetente não validado).
+4. O SMTP continua cadastrável como reserva: sem o Brevo configurado, ele vale como antes.
+
+A chave fica cifrada no cofre e nunca é exibida de volta nem gravada em log.

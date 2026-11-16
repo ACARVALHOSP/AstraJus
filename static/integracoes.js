@@ -2,8 +2,8 @@
 (() => {
   const $ = id => document.getElementById(id);
   let token = '', catalogo = [], selected = null, candidato = null, teste = null, snapshot = null, busy = false, historico = [], ambienteAtivo = '', driveConectado = false, captchaWidget = null;
-  const names = {drive:'Google Drive',asaas:'Asaas',zapsign:'ZapSign',datajud:'DataJud',openrouter:'OpenRouter',smtp:'SMTP',recaptcha:'reCAPTCHA',google_oauth:'Google OAuth'};
-  const schema = {drive:[['pasta_raiz','ID da pasta institucional']],asaas:[['api_key','Nova chave da API',true]],zapsign:[['api_key','Nova chave da API',true]],datajud:[['api_key','Nova chave da API',true]],openrouter:[['api_key','Nova chave da API (sk-or-...)',true]],smtp:[['host','Servidor SMTP'],['porta','Porta TLS (465 ou 587)'],['usuario','Usuário'],['senha','Nova senha',true],['remetente','E-mail remetente']],recaptcha:[['site_key','Site key'],['secret','Nova secret key',true]],google_oauth:[['client_id','Client ID'],['client_secret','Novo client secret',true]]};
+  const names = {drive:'Google Drive',asaas:'Asaas',zapsign:'ZapSign',datajud:'DataJud',openrouter:'OpenRouter',brevo:'E-mail (Brevo)',smtp:'SMTP',recaptcha:'reCAPTCHA',google_oauth:'Google OAuth'};
+  const schema = {drive:[['pasta_raiz','ID da pasta institucional']],asaas:[['api_key','Nova chave da API',true]],zapsign:[['api_key','Nova chave da API',true]],datajud:[['api_key','Nova chave da API',true]],openrouter:[['api_key','Nova chave da API (sk-or-...)',true]],brevo:[['api_key','Nova chave da API do Brevo',true],['remetente','E-mail remetente (validado no Brevo)'],['nome_remetente','Nome do remetente (opcional)']],smtp:[['host','Servidor SMTP'],['porta','Porta TLS (465 ou 587)'],['usuario','Usuário'],['senha','Nova senha',true],['remetente','E-mail remetente']],recaptcha:[['site_key','Site key'],['secret','Nova secret key',true]],google_oauth:[['client_id','Client ID'],['client_secret','Novo client secret',true]]};
   function notify(text) { $('global-message').textContent = text; }
   function feedback(text) { $('feedback').hidden = !text; $('feedback').textContent = text; }
   async function api(path, data) {
