@@ -62,6 +62,7 @@ Duas visões:
 - **Criar ou vincular processo** direto da publicação: cria o processo e a pasta no Drive, preenche a capa e acompanha o andamento da operação.
 - **Criar atividade com prazo** a partir da publicação (veja [Atividades, prazos e agenda](#atividades-prazos-e-agenda)).
 - **Sem duplicadas:** além do identificador do DJEN, cada publicação tem uma identidade pelo conteúdo (processo, data, tribunal, tipo e texto); a mesma intimação que chega de novo com outro identificador não é gravada outra vez.
+- **Caçador de alvarás (módulo, ligado por padrão):** varre as publicações recebidas atrás de alvarás e levantamentos de valores e classifica a situação (expedido, determinado, aguarda dados da parte, indeferido, apenas citado), com valor e trecho do texto. Usa o Jev pelo OpenRouter quando há integração ativa (texto sem nomes, CPF/CNPJ, contatos e números de processo) e, sem ela ou se o Jev falhar, cai para regex. Só sugestões: nada é criado ou alterado. Modelo opcional em `CNJ_ALVARAS_MODELO`.
 - **Triagem opcional (experimental, desligada por padrão):** sugere tipo, "abre prazo", prazo provável e urgência (1 a 10), com selos de confiança e ordenação por urgência. O texto vai ao classificador **sem nomes**, CPF/CNPJ, e-mails, telefones, OAB e números de processo. Modos: `desligado`, `simulado` (demonstração) e `jev` (API da TypeSafe AI, ainda não exercitada com chave real). Veja [docs/integracoes.md](docs/integracoes.md).
 - **Monitoramentos** como segunda aba: acompanhamento de processo ou OAB no DJEN com aviso por e-mail.
 

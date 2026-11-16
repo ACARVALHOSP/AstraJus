@@ -765,6 +765,34 @@ def _assunto_da_publicacao(texto: str | None) -> str | None:
     return m.group(1) if m else None
 
 
+def _valor_causa_da_publicacao(texto: str | None) -> float | None:
+    """Valor da causa escrito no corpo da comunicação ("Valor da causa: R$ 1.234,56"). Só devolve o que
+    está escrito."""
+    m = re.search(r"(?i)valor\s+da\s+causa\s*[:\-]?\s*(?:R\$)?\s*(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+(?:,\d{1,2})?)", texto or "")
+    if not m:
+        return None
+    try:
+        return float(m.group(1).replace(".", "").replace(",", "."))
+    except ValueError:
+        return None
+
+
+def _magistrado_da_publicacao(texto: str | None) -> str | None:
+    """Magistrado citado no corpo da comunicação: linha "Magistrado: ...", "Juiz(a) de Direito: ..." ou
+    "Juiz: ...". Só devolve o que está escrito."""
+    m = re.search(r"(?im)^[ \t]*(?:Magistrad[oa](?:\(a\))?|Ju[ií]z(?:a)?(?:\(a\))?(?:\s+de\s+Direito)?|Relator(?:a)?(?:\(a\))?)[ \t]*:[ \t]*(\S.*?)[ \t]*$",
+                  texto or "")
+    return m.group(1) if m else None
+
+
+def _valor_causa_do_datajud(fonte: dict) -> float | None:
+    bruto = fonte.get("valorCausa") if fonte.get("valorCausa") is not None else fonte.get("valor_causa")
+    try:
+        return float(bruto) if bruto not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
 @mcp.tool()
 async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> dict:
     """Combina DataJud (capa + movimentos) e DJEN (partes e advogados) do mesmo processo em um
@@ -827,6 +855,12 @@ async def consultar_processo_unificado(tribunal: str, numero_processo: str) -> d
             assunto = _assunto_da_publicacao(item.get("texto"))
             if assunto and "assuntos" not in capa_djen:
                 capa_djen["assuntos"] = [assunto]
+            valor = _valor_causa_da_publicacao(item.get("texto"))
+            if valor is not None and "valor_causa" not in capa_djen:
+                capa_djen["valor_causa"] = valor
+            magistrado = _magistrado_da_publicacao(item.get("texto"))
+            if magistrado and "magistrado" not in capa_djen:
+                capa_djen["magistrado"] = magistrado
 
         return {
             "capa_djen": capa_djen,
@@ -2417,8 +2451,10 @@ class CadastroPublico:
 
 # --- OAuth 2.1 (PKCE) para conectores personalizados do Claude ---------------
 
-_HOSTS_REDIRECT_CLAUDE = {"claude.ai", "claude.com"}
+_HOSTS_REDIRECT_CLAUDE = {"claude.ai", "claude.com", "chatgpt.com", "platform.openai.com"}
 _HOSTS_REDIRECT_LOCAIS = {"localhost", "127.0.0.1"}
+# Hosts que não constam no form-action do CSP do proxy: o retorno do OAuth vai por página, não por 302.
+_HOSTS_REDIRECT_VIA_PAGINA = {"chatgpt.com", "platform.openai.com"}
 
 
 def _redirect_permitido(uri: str) -> bool:
@@ -2656,6 +2692,19 @@ class ServidorOAuth:
         separador = "&" if "?" in params["redirect_uri"] else "?"
         destino = params["redirect_uri"] + separador + urlencode(
             {"code": codigo, "state": params.get("state", "")})
+        from urllib.parse import urlsplit
+
+        if urlsplit(destino).hostname in _HOSTS_REDIRECT_VIA_PAGINA:
+            # O CSP form-action do proxy só lista claude.ai/localhost; o navegador aplica essa regra também
+            # ao 302 que sai de um formulário e trava a página. Navegação por meta refresh/link não é afetada.
+            alvo = _escapar(destino)
+            pagina = (f'<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
+                      f'<meta http-equiv="refresh" content="0;url={alvo}"><title>Autorizado</title></head>'
+                      f'<body><p>Acesso autorizado. Voltando ao aplicativo…</p>'
+                      f'<p><a href="{alvo}">Clique aqui se não for redirecionado automaticamente.</a></p></body></html>')
+            await _responder(send, 200, pagina.encode("utf-8"), tipo="text/html; charset=utf-8",
+                             cabecalhos_extra=[(b"referrer-policy", b"no-referrer")])
+            return
         await _responder(send, 302, b"", cabecalhos_extra=[(b"location", destino.encode("utf-8"))])
 
     async def _token(self, receive, send) -> None:
@@ -3007,6 +3056,8 @@ def _criar_caso_de_publicacao(gestao, publicacoes, publicacao, dados, usuario_pa
     capa.update({"tribunal": (d.get("siglaTribunal") or d.get("tribunal") or "").upper() or None,
                  "classe": _caixa_nome(d.get("nomeClasse")) or d.get("classe"), "nome_processo": nome,
                  **({"assuntos": [a]} if (a := _assunto_da_publicacao(d.get("texto"))) else {}),
+                 **({"valor_causa": v} if (v := _valor_causa_da_publicacao(d.get("texto"))) is not None else {}),
+                 **({"magistrado": m} if (m := _magistrado_da_publicacao(d.get("texto"))) else {}),
                  "orgao_julgador": d.get("nomeOrgao") or d.get("orgao_julgador"),
                  **({"id_orgao": str(d["idOrgao"])} if d.get("idOrgao") else {}),
                  "partes": partes, "advogados": advogados})
@@ -3108,6 +3159,9 @@ async def _montar_capa_via_tribunal(numero: str, tribunal: str) -> tuple[dict | 
         "classe": instancia.get("classe") or _caixa_nome(capa_djen.get("classe")),
         # Assunto do DataJud tem precedência; o do texto do DJEN só entra quando o DataJud não traz.
         "assuntos": comuns["assuntos"] or capa_djen.get("assuntos"), "grau": instancia.get("grau"),
+        "valor_causa": next((v for i in instancias if (v := _valor_causa_do_datajud(i.get("datajud") or {})) is not None),
+                            capa_djen.get("valor_causa")),
+        "magistrado": capa_djen.get("magistrado"),
         "data_distribuicao": instancia.get("dataAjuizamento"), "nivel_sigilo": comuns["nivel_sigilo"],
         **({"nome_processo": nome_processo} if nome_processo else {}),
         **localidade, "movimentos": movimentos, "partes": resultado.get("partes") or [],
