@@ -190,7 +190,15 @@ async def callback(app, scope, send, s):
             app._integracoes_google_candidatos[fluxo['candidato']] = (app.integracoes.cifrar({'refresh_token': dados['refresh_token']}), time.time()+600)
         else:
             app.integracoes.google(fluxo['finalidade'], fluxo['dono']).salvar_conexao(dados['refresh_token'], lambda: datetime.now(timezone.utc), autor=fluxo['autor'])
-        await s._responder(send, 200, '<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Google conectado</title><p>Autorização recebida. Volte à página de integrações para testar e ativar a configuração ou atualizar o estado da conexão.</p><a href="/app">Voltar ao painel</a></html>'.encode(), tipo='text/html; charset=utf-8')
+        if fluxo['finalidade'] == 'calendar':
+            destino, orientacao = '/radix/', 'Abra Meu perfil (menu da conta) e clique em Verificar conexão para confirmar a sua agenda.'
+        else:
+            destino, orientacao = '/radix/#/administracao?aba=integracoes', 'Volte a Administração › Integrações para testar e ativar a configuração.'
+        pagina = ('<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+                  '<title>Google conectado</title><body style="font-family:system-ui,sans-serif;max-width:32rem;margin:3rem auto;padding:0 1rem">'
+                  '<h1 style="font-size:1.25rem">Autorização recebida</h1><p>' + orientacao + '</p>'
+                  '<p><a href="' + destino + '">Voltar ao AstraJus</a></p></body></html>')
+        await s._responder(send, 200, pagina.encode('utf-8'), tipo='text/html; charset=utf-8')
     except Exception as erro:
         # Registra só o tipo e a mensagem (sem código, token ou segredo) para diagnosticar a falha.
         s.log.warning('Callback Google (%s) falhou na etapa "%s": %s: %s', fluxo.get('finalidade'), etapa, type(erro).__name__, str(erro)[:300])
