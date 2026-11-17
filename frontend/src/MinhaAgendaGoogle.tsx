@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Flex, Text } from '@radix-ui/themes'
 import { useCliente } from './api/ClienteContext'
+import { buscarJson, enviarJson } from './api/rest'
 
 type Resposta = { erro?: string; url?: string; conectado?: boolean; desconectado?: boolean }
 
@@ -14,10 +15,10 @@ export default function MinhaAgendaGoogle() {
     setOcupado(true)
     try {
       if (!cliente) throw new Error('Conecte-se na aba Acesso.')
-      const r = await fetch('/integracoes/calendar/' + a, { method: a === 'status' ? 'GET' : 'POST', headers: { Authorization: 'Bearer ' + cliente.token } })
-      const bruto: unknown = await r.json().catch(() => null)
+      const bruto: unknown = a === 'status'
+        ? await buscarJson<unknown>(cliente, '/integracoes/calendar/status')
+        : await enviarJson<unknown>(cliente, '/integracoes/calendar/' + a, {})
       const dados: Resposta | null = bruto && typeof bruto === 'object' ? (bruto as Resposta) : null
-      if (!r.ok) throw new Error(dados?.erro || 'Não foi possível atualizar a agenda.')
       if (!dados) throw new Error('Resposta inesperada do servidor. Tente novamente.')
       if (dados.url) {
         if (new URL(dados.url).origin !== 'https://accounts.google.com') throw new Error('URL de autorização inválida.')

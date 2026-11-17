@@ -1,6 +1,5 @@
 import { useAvisos } from '../Avisos'
-import { mensagemPorStatus } from '../api/mcpClient'
-import { avisarDadosAlterados } from '../api/rest'
+import { avisarDadosAlterados, requisitar, type OpcoesRequisicao } from '../api/rest'
 import CabecalhoPagina from '../CabecalhoPagina'
 import Carregamento from '../Carregamento'
 import TabelaResponsiva from '../TabelaResponsiva'
@@ -91,13 +90,7 @@ export default function Administracao() {
   ]
 
   async function requisicao(url: string, token: string, metodo = 'GET', corpo?: unknown) {
-    const r = await fetch(url, { method: metodo, cache: 'no-store', headers: {
-      Authorization: `Bearer ${token}`, ...(corpo === undefined ? {} : { 'Content-Type': 'application/json' }),
-    }, ...(corpo === undefined ? {} : { body: JSON.stringify(corpo) }) })
-    if (!r.ok) {
-      const e = await r.json().catch(() => ({}))
-      throw new Error(e.mensagem || e.erro || mensagemPorStatus(r.status))
-    }
+    const r = await requisitar({ token }, url, { metodo: metodo as OpcoesRequisicao['metodo'], corpo, cache: 'no-store' })
     if (metodo !== 'GET') avisarDadosAlterados()
     return r
   }

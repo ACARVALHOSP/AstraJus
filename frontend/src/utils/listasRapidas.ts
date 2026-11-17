@@ -1,3 +1,5 @@
+import { requisitar } from '../api/rest'
+
 const CHAVE_HISTORICO = 'cnj_historico'
 const CHAVE_FAVORITOS = 'cnj_favoritos'
 const CHAVE_FAVORITOS_CASOS = 'cnj_favoritos_casos'
@@ -39,11 +41,9 @@ function enviarAoServidor<T>(chave: string, lista: T[]) {
   if (!token || !nome) return
   window.clearTimeout(envios.get(chave))
   envios.set(chave, window.setTimeout(() => {
-    fetch(`/preferencias/${nome}`, {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ valor: lista }),
-    }).catch(() => { /* fica a cópia local; a próxima gravação tenta de novo */ })
+    // requisitar (e não enviarJson): sincronização em segundo plano não deve invalidar o cache das telas.
+    requisitar({ token }, `/preferencias/${nome}`, { metodo: 'PUT', corpo: { valor: lista } })
+      .catch(() => { /* fica a cópia local; a próxima gravação tenta de novo */ })
   }, 400))
 }
 
@@ -68,8 +68,7 @@ export async function sincronizarPreferencias(token: string | null): Promise<voi
   tokenServidor = token
   if (!token) return
   try {
-    const resposta = await fetch('/preferencias', { headers: { Authorization: `Bearer ${token}` } })
-    if (!resposta.ok) return
+    const resposta = await requisitar({ token }, '/preferencias')
     const { preferencias } = await resposta.json() as { preferencias?: Record<string, unknown> }
     for (const [chave, nome] of Object.entries(NOMES_SERVIDOR)) {
       const doServidor = preferencias?.[nome]

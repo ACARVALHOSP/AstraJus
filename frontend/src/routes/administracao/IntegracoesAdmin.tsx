@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { AlertDialog, Badge, Button, Callout, Card, Flex, Heading, Text, TextField } from '@radix-ui/themes'
 import Carregamento from '../../Carregamento'
-import { avisarDadosAlterados } from '../../api/rest'
+import { buscarJson, enviarJson } from '../../api/rest'
 import {
   CAMPOS, DESCRICOES, ENVIAM_EMAIL, PRECISAM_GOOGLE, SEM_TESTE_OBRIGATORIO, SO_NO_PAINEL_AVANCADO, agruparCatalogo, chaveItem, ehAsaas, estadoAtual, linhaHistorico,
   mesmoConteudo, seloItem, textoAjuda, tituloItem, type EventoIntegracao, type ItemIntegracao,
@@ -11,16 +11,11 @@ import {
 type Dados = { integracoes: ItemIntegracao[]; historico: EventoIntegracao[]; asaas_ambiente: string; drive_conectado: boolean; pode_gerir_administradores: boolean }
 type Confirmacao = { titulo: string; texto: string; rotulo: string; acao: () => Promise<void> }
 
-async function api<T>(token: string, caminho: string, corpo?: unknown): Promise<T> {
-  const r = await fetch('/admin/integracoes' + caminho, {
-    method: corpo === undefined ? 'GET' : 'POST', cache: 'no-store',
-    headers: { Authorization: `Bearer ${token}`, ...(corpo === undefined ? {} : { 'Content-Type': 'application/json' }) },
-    ...(corpo === undefined ? {} : { body: JSON.stringify(corpo) }),
-  })
-  const dados = await r.json().catch(() => ({})) as T & { erro?: string }
-  if (!r.ok) throw new Error(dados.erro || 'Não foi possível concluir a operação.')
-  if (corpo !== undefined) avisarDadosAlterados()
-  return dados
+function api<T>(token: string, caminho: string, corpo?: unknown): Promise<T> {
+  const credencial = { token }
+  return corpo === undefined
+    ? buscarJson<T>(credencial, '/admin/integracoes' + caminho, undefined, { cache: 'no-store' })
+    : enviarJson<T>(credencial, '/admin/integracoes' + caminho, corpo, 'POST', undefined, { cache: 'no-store' })
 }
 
 /** Configuração das integrações do escritório. As credenciais nunca voltam ao navegador: só aparecem mascaradas,

@@ -2,7 +2,6 @@ import Carregamento from './Carregamento'
 import { useState } from 'react'
 import { Badge, Button, Callout, Checkbox, Flex, Heading, IconButton, Popover, Text } from '@radix-ui/themes'
 import { AlertTriangle, Bell } from 'lucide-react'
-import BadgeMui from '@mui/material/Badge'
 import { useCliente } from './api/ClienteContext'
 import { useNavegacao } from './api/NavegacaoContext'
 import type { ClienteMCP } from './api/mcpClient'
@@ -44,9 +43,10 @@ function PainelNotificacoes({ cliente }: { cliente: ClienteMCP | null }) {
     <Popover.Root open={aberta} onOpenChange={setAberta}>
       <Popover.Trigger>
         <IconButton className="aj-ib" variant="ghost" aria-label={`Notificações: ${rotulo}`}>
-          <BadgeMui badgeContent={naoLidas ?? 0} max={99} color="error" overlap="circular" aria-hidden="true">
+          <span className="aj-sino" aria-hidden="true">
             <Bell size={17} />
-          </BadgeMui>
+            {(naoLidas ?? 0) > 0 && <span className="aj-sino__contagem">{(naoLidas ?? 0) > 99 ? '99+' : naoLidas}</span>}
+          </span>
         </IconButton>
       </Popover.Trigger>
       <Popover.Content width="380px" align="end">
