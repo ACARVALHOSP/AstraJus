@@ -40,6 +40,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from zoneinfo import ZoneInfo
 
 import cnj
+import tpu
 import asaas_integracao
 import agenda_atividades
 import financeiro_juridico
@@ -604,7 +605,10 @@ def _resumo_processo_busca(fonte: dict) -> dict:
         "grau_descricao": _DESCRICAO_GRAU.get(fonte.get("grau") or "", fonte.get("grau")),
         "classe": (fonte.get("classe") or {}).get("nome"),
         "classe_codigo": (fonte.get("classe") or {}).get("codigo"),
-        "assuntos": [{"codigo": a.get("codigo"), "nome": a.get("nome")} for a in fonte.get("assuntos") or [] if a],
+        # Hierarquia pela TPU (ex.: "Processo de Conhecimento > Procedimento de Conhecimento"); o DataJud só traz o nível do código.
+        "classe_caminho": [i["nome"] for i in tpu.caminho("classes", (fonte.get("classe") or {}).get("codigo"))[:-1]],
+        "assuntos": [{"codigo": a.get("codigo"), "nome": a.get("nome"),
+                      "area": tpu.grupo("assuntos", a.get("codigo"), 0)} for a in fonte.get("assuntos") or [] if a],
         "orgaoJulgador": (fonte.get("orgaoJulgador") or {}).get("nome"),
         "orgao_julgador_codigo": (fonte.get("orgaoJulgador") or {}).get("codigo"),
         "dataAjuizamento": fonte.get("dataAjuizamento"),
@@ -764,7 +768,8 @@ async def consultar_movimentos_datajud(tribunal: str, numero_processo: str, desd
         for hit in dados["hits"].get("hits") or []:
             fonte = hit.get("_source") or {}
             todos = fonte.get("movimentos") or []
-            novos = _movimentos_desde(todos, limite)
+            novos = [{**m, "categoria": " > ".join(i["nome"] for i in tpu.caminho("movimentos", m.get("codigo"))[:-1]) or None}
+                     for m in _movimentos_desde(todos, limite)]
             instancias.append({
                 "grau": fonte.get("grau"),
                 "grau_descricao": _DESCRICAO_GRAU.get(fonte.get("grau") or "", fonte.get("grau")),
@@ -794,6 +799,44 @@ async def _datajud_tem_movimento_novo(tribunal: str, numero: str, movimentos_con
     # `movimentos_conhecidos` junta todos os graus; compara com a soma dos graus devolvidos.
     total_remoto = sum(i["total_movimentos"] for i in resposta["instancias"])
     return resposta["total_novos"] > 0 or total_remoto != len(movimentos_conhecidos or [])
+
+
+@mcp.tool()
+async def consultar_tpu(tabela: str, busca: str | None = None, codigo: int | None = None, limite: int = 20) -> dict:
+    """Consulta as Tabelas Processuais Unificadas (TPU) do CNJ, que dão código, nome e hierarquia padronizados
+    de classes, assuntos e movimentos. Serve para descobrir o código a usar nos filtros de
+    buscar_processos_datajud (classe_codigo, assunto_codigo) e para traduzir códigos em nomes.
+
+    Parâmetros (informe `busca` OU `codigo`):
+    - tabela: "classes", "assuntos" ou "movimentos".
+    - busca: texto do nome, sem acento nem caixa ("procedimento comum", "dano moral"); todas as palavras
+      precisam aparecer. Um número busca pelo código exato.
+    - codigo: código exato; devolve o item e o caminho completo da raiz até ele.
+    - limite: máximo de itens na busca (1 a 50, padrão 20).
+
+    Retorno: "itens" (codigo, nome e "caminho" dos ancestrais) e "versao_tabelas" (data da versão do CNJ
+    embutida no servidor, que não consulta o CNJ a cada chamada).
+    """
+    try:
+        if tabela not in tpu.TABELAS:
+            return _erro(f"tabela inválida: use {', '.join(tpu.TABELAS)}.")
+        if not isinstance(limite, int) or not 1 <= limite <= 50:
+            return _erro("limite inválido: use um inteiro de 1 a 50.")
+        if codigo is not None:
+            trilha = tpu.caminho(tabela, codigo)
+            if not trilha:
+                return {"encontrado": False, "itens": [], "versao_tabelas": tpu.versao(),
+                        "mensagem": f"Código {codigo} não existe na tabela de {tabela} (versão {tpu.versao()})."}
+            return {"encontrado": True, "versao_tabelas": tpu.versao(), "itens": [{
+                "codigo": trilha[-1]["codigo"], "nome": trilha[-1]["nome"],
+                "caminho": " > ".join(i["nome"] for i in trilha[:-1]), "hierarquia": trilha}]}
+        if not (busca or "").strip():
+            return _erro("Informe `busca` (texto ou número) ou `codigo`.")
+        itens = tpu.buscar(tabela, busca or "", limite)
+        return {"encontrado": bool(itens), "versao_tabelas": tpu.versao(), "itens": itens}
+    except Exception as exc:
+        log.exception("Falha inesperada em consultar_tpu")
+        return _erro(f"Erro inesperado ao consultar a TPU: {exc}")
 
 
 # --- Tool 2: DJEN ------------------------------------------------------------

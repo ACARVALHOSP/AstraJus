@@ -185,6 +185,7 @@ Servidor MCP `cnj-processual` (FastMCP), via `stdio` ou `http` (`/mcp`).
 | `consultar_processo_datajud` | `tribunal`, `numero_processo` | Capa e movimentações no DataJud (CNJ) |
 | `buscar_processos_datajud` | `tribunal`, `classe_codigo`, `orgao_julgador_codigo`, `assunto_codigo`, `ajuizamento_inicio/fim`, `grau`, `tamanho`, `search_after` | Busca paginada (resumo dos processos); `proximo_cursor` vai em `search_after` na página seguinte |
 | `consultar_movimentos_datajud` | `tribunal`, `numero_processo`, `desde` | Movimentações do processo, só as posteriores a `desde`; sem cache. O job de movimentos usa essa consulta para pular a atualização completa quando nada mudou |
+| `consultar_tpu` | `tabela`, `busca` ou `codigo`, `limite` | Consulta offline às TPU do CNJ (`tpu_dados/`, gerado por `scripts/gerar_tpu.py`): nome, código e caminho na hierarquia. Dá o código para os filtros de `buscar_processos_datajud` |
 | `consultar_publicacoes_djen` | `numero_processo`, `sigla_tribunal`, `numero_oab`, `uf_oab`, `data_disponibilizacao_inicio`, `data_disponibilizacao_fim`, `pagina`, `itens_por_pagina` | Publicações e intimações no DJEN |
 | `consultar_processo_unificado` | `tribunal`, `numero_processo` | DataJud (capa + movimentos) + DJEN (partes e advogados) |
 | `buscar_feriados_forenses` | `municipio`, `ano`, `tribunal` | Feriados forenses por comarca/ano, para cálculo de prazos |
@@ -330,3 +331,16 @@ sudo python3 frontend/deploy/configure_proxy.py                # provisionamento
 | `CNJ_BREVO_API_KEY`, `CNJ_BREVO_REMETENTE`, `CNJ_BREVO_NOME_REMETENTE` | E-mail pela API HTTPS do Brevo (porta 443), para servidores com a porta SMTP bloqueada. Com chave e remetente, tem prioridade sobre o SMTP; o remetente precisa estar validado no Brevo |
 | `CNJ_SMTP_HOST`, `CNJ_SMTP_PORTA`, `CNJ_SMTP_USUARIO`, `CNJ_SMTP_SENHA`, `CNJ_SMTP_REMETENTE` | E-mail dos monitoramentos |
 | `CNJ_RECAPTCHA_SITE_KEY`, `CNJ_RECAPTCHA_SECRET`, `CNJ_CADASTRO_TEMPO_MINIMO_S` | Proteção do autocadastro |
+
+
+## Tabelas Processuais Unificadas (TPU)
+
+`tpu.py` lê `tpu_dados/{classes,assuntos,movimentos}.json` (classes ~850, assuntos ~5,6 mil, movimentos ~980; cada item é
+`código: [nome, código do pai]`). Os arquivos são gerados por `python3 scripts/gerar_tpu.py` a partir do SGT do CNJ
+(pesquisa por nome, que devolve a tabela inteira) e ficam no repositório, então o servidor não depende do CNJ em tempo de
+execução. Para atualizar quando o CNJ publicar uma versão nova (`getDataUltimaVersao` do SGT; a embutida está em
+`consultar_tpu` -> `versao_tabelas`): rode o script, confira o diff e faça commit. O endpoint SOAP usado está marcado como
+depreciado pelo CNJ (sucessor `https://sgt.cloud.cnj.jus.br/api/v1/soap`); se parar de responder, ajuste o script.
+
+A TPU enriquece `buscar_processos_datajud` (`classe_caminho` e `area` de cada assunto) e `consultar_movimentos_datajud`
+(`categoria` de cada movimento). Código fora da tabela não quebra nada: o campo vem vazio.

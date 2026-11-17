@@ -178,6 +178,7 @@ O endpoint `/mcp` (Streamable HTTP) e o modo `stdio` expõem estas ferramentas a
 | `consultar_processo_datajud` | Metadados e movimentações de um processo no DataJud |
 | `buscar_processos_datajud` | Busca por classe, órgão julgador, assunto e data de ajuizamento em um tribunal, paginada por `search_after` |
 | `consultar_movimentos_datajud` | Só as movimentações de um processo, opcionalmente apenas as posteriores a uma data |
+| `consultar_tpu` | Tabelas Processuais Unificadas do CNJ (classes, assuntos e movimentos): busca por nome para achar o código, e hierarquia de um código |
 | `consultar_publicacoes_djen` | Publicações e intimações no DJEN por OAB ou número de processo |
 | `consultar_processo_unificado` | DataJud e DJEN combinados, com partes e advogados |
 | `baixar_certidao_djen` | Certidão em PDF de uma publicação |

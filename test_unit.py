@@ -2011,7 +2011,7 @@ class RegistroDeToolsTest(unittest.TestCase):
             "monitorar_publicacoes", "listar_monitoramentos", "remover_monitoramento",
             "buscar_feriados_forenses", "consultar_jurimetria_cjpg",
             "perfil_decisorio_magistrado", "status_apis", "consultar_processo_unificado", "renovar_monitoramento",
-            "buscar_processos_datajud", "consultar_movimentos_datajud",
+            "buscar_processos_datajud", "consultar_movimentos_datajud", "consultar_tpu",
             "cacar_alvaras", "listar_alvaras", "consultar_jurisprudencia_tjsp",
         })
 
