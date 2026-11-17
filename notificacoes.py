@@ -46,10 +46,18 @@ _VISIVEL = """
        (e.caso_id IS NULL AND p.caso_id IS NULL)
        OR (c.id IS NOT NULL AND p.caso_id=e.caso_id)
    ))
-   OR (e.tipo='movimento_processual' AND c.id IS NOT NULL)
+   OR (e.tipo IN ('movimento_processual', 'processo_parado') AND c.id IS NOT NULL)
    OR (e.tipo IN ('prazo_vencendo', 'prazo_escalonado') AND a.id IS NOT NULL AND c.id IS NOT NULL AND a.status IN ('pendente', 'em_andamento', 'aguardando'))
  )
 """
+
+
+def _data_br(iso):
+    """'2026-09-15' vira '15/09/2026'; qualquer outra coisa volta como veio."""
+    try:
+        return datetime.fromisoformat(str(iso)[:10]).strftime("%d/%m/%Y")
+    except ValueError:
+        return str(iso)
 
 
 _BRASILIA = timezone(timedelta(hours=-3))
@@ -115,6 +123,30 @@ class Repositorio:
                     f"SELECT nome FROM usuarios WHERE nivel_acesso='administrador' AND status='ativo' AND ({ativo})")]
             for usuario in destinatarios:
                 registrar_evento(c, usuario, "movimento_processual", chave, caso_id=caso_id, agora=self.agora())
+
+    def registrar_processo_parado(self, caso_id, chave):
+        """Avisa o responsável pelo processo (ou, sem responsável ativo, os administradores) de que ele
+        está parado. A chave (processo, data do último movimento, rodada) dá um aviso por período de
+        inatividade. Devolve quem ainda não tinha o aviso, para o e-mail sair uma vez só."""
+        novos = []
+        with self.transacao() as c:
+            caso = c.execute("SELECT responsavel FROM casos WHERE id=?", (caso_id,)).fetchone()
+            if not caso:
+                return novos
+            ativo = "json_extract(dados, '$.revogado') IS NULL OR json_extract(dados, '$.revogado')=0"
+            destinatarios = [r[0] for r in c.execute(
+                f"SELECT nome FROM usuarios WHERE nome=? AND ({ativo})", (caso[0],))] if caso[0] else []
+            if not destinatarios:
+                destinatarios = [r[0] for r in c.execute(
+                    f"SELECT nome FROM usuarios WHERE nivel_acesso='administrador' AND status='ativo' AND ({ativo})")]
+            for usuario in destinatarios:
+                cursor = c.execute(
+                    "INSERT OR IGNORE INTO notificacao_eventos (usuario, tipo, chave, caso_id, criado_em) VALUES (?, ?, ?, ?, ?)",
+                    (usuario, "processo_parado", chave, caso_id, instante(self.agora())),
+                )
+                if cursor.rowcount:
+                    novos.append(usuario)
+        return novos
 
     def registrar_alerta_prazo(self, caso_id, atividade_id, faixa, destinatarios):
         """Um aviso por pessoa e faixa (5, 2, 1 dia, hoje, atrasado). Devolve os destinatários que
@@ -199,7 +231,7 @@ class Repositorio:
             if estado == "nao_lidas":
                 query += " AND n.lida_em IS NULL"
             linhas = c.execute(
-                "SELECT e.id, e.tipo, e.caso_id, e.atividade_id, e.criado_em, n.lida_em, a.titulo, a.responsavel, c.titulo AS caso_titulo, a.data AS ativ_data, a.hora AS ativ_hora, a.tipo AS ativ_tipo, ci.confirmado_em AS ciente_em" + query
+                "SELECT e.id, e.tipo, e.caso_id, e.atividade_id, e.criado_em, n.lida_em, a.titulo, a.responsavel, c.titulo AS caso_titulo, a.data AS ativ_data, a.hora AS ativ_hora, a.tipo AS ativ_tipo, ci.confirmado_em AS ciente_em, e.chave AS chave" + query
                 + " ORDER BY e.criado_em DESC, e.id DESC LIMIT ?", [*argumentos, limite + 1],
             ).fetchall()
             mais = len(linhas) > limite
@@ -224,6 +256,15 @@ class Repositorio:
                                   "criado_em": linha["criado_em"], "lida_em": linha["lida_em"],
                                   "exige_ciencia": linha["ativ_tipo"] == "prazo", "ciente": linha["ciente_em"] is not None,
                                   "destino": {"tipo": "atividade", "caso_id": linha["caso_id"], "atividade_id": linha["atividade_id"]}})
+                    continue
+                if linha["tipo"] == "processo_parado":
+                    # chave = "<caso>:<data do último movimento>:<rodada>"
+                    desde = linha["chave"].split(":")[1] if linha["chave"].count(":") >= 2 else ""
+                    itens.append({"id": str(linha["id"]), "tipo": linha["tipo"], "titulo": "Processo sem movimentação",
+                                  "mensagem": f"{linha['caso_titulo'] or 'Processo'}: sem movimentação desde {_data_br(desde)}. "
+                                              "Vale conferir o andamento.",
+                                  "criado_em": linha["criado_em"], "lida_em": linha["lida_em"],
+                                  "destino": {"tipo": "movimentos_processo", "caso_id": linha["caso_id"]}})
                     continue
                 if linha["tipo"] == "movimento_processual":
                     itens.append({"id": str(linha["id"]), "tipo": linha["tipo"], "titulo": "Novo andamento no processo",
@@ -266,7 +307,7 @@ class Repositorio:
                               (usuario, identificador, corte)).fetchone()
             if not linha:
                 return None
-            if linha["tipo"] == "movimento_processual":
+            if linha["tipo"] in ("movimento_processual", "processo_parado"):
                 return {"tipo": "movimentos_processo", "caso_id": linha["caso_id"]}
             if linha["tipo"] in ("atividade_delegada", "prazo_vencendo", "prazo_escalonado"):
                 return {"tipo": "atividade", "caso_id": linha["caso_id"], "atividade_id": linha["atividade_id"]}

@@ -36,8 +36,8 @@ O que as seis automações compartilham e que não existe hoje:
 
 **Objetivo:** avisar quando um processo ativo fica N dias sem movimentação, para ninguém descobrir tarde que ele travou.
 
-**Rotina:** diária, 07:00. Reaproveita os movimentos que `_atualizar_movimentos_processos` já guarda a cada 12 h na capa do
-processo; **não faz consulta nova ao tribunal**.
+**Rotina:** a cada 24 h (o agendador é por intervalo, sem horário fixo). Reaproveita a última movimentação que o sistema já conhece
+(andamentos que `_atualizar_movimentos_processos` guarda a cada 12 h, ou publicação vinculada); **não faz consulta nova ao tribunal**.
 
 **Regra:**
 - Considera cada processo vinculado a um caso com status ativo e com histórico de movimentos na capa.
