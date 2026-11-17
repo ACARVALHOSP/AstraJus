@@ -43,6 +43,7 @@ import asaas_integracao
 import agenda_atividades
 import financeiro_juridico
 import triagem
+import emails_html
 import notificacoes
 import modelos_prazo
 import horas
@@ -1503,6 +1504,63 @@ class ConfiguracaoSMTP:
     remetente: str
 
 
+@dataclass
+class ConfiguracaoBrevo:
+    """E-mail pela API HTTPS do Brevo (porta 443), para servidores que bloqueiam a porta SMTP."""
+    api_key: str
+    remetente: str
+    nome: str = ""
+
+
+BREVO_URL_ENVIO = "https://api.brevo.com/v3/smtp/email"
+
+
+def _motivo_brevo(r: "httpx.Response") -> str:
+    """Motivo curto da recusa do Brevo, sem a chave nem o corpo da mensagem enviada."""
+    try:
+        texto = str(r.json().get("message") or "")
+    except Exception:
+        texto = ""
+    dica = ""
+    if r.status_code in (401, 403):
+        dica = " Confira a chave e, se o Brevo exigir, autorize o IP deste servidor em Segurança › IPs autorizados."
+    elif r.status_code == 400 and "sender" in texto.lower():
+        dica = " O remetente precisa estar cadastrado e validado no Brevo."
+    return f"Brevo recusou o envio (HTTP {r.status_code}){': ' + texto[:160] if texto else ''}.{dica}"
+
+
+def _enviar_brevo(cfg: ConfiguracaoBrevo, mensagem: EmailMessage) -> None:
+    corpo = mensagem.get_body(preferencelist=("plain",))
+    html = mensagem.get_body(preferencelist=("html",))
+    carga = {
+        "sender": {"email": cfg.remetente, **({"name": cfg.nome} if cfg.nome else {})},
+        "to": [{"email": str(mensagem["To"])}],
+        "subject": str(mensagem["Subject"]),
+        "textContent": (corpo or mensagem).get_content(),
+        **({"htmlContent": html.get_content()} if html is not None else {}),
+    }
+    r = httpx.post(BREVO_URL_ENVIO, json=carga, headers={"api-key": cfg.api_key, "accept": "application/json"}, timeout=30)
+    if r.status_code not in (200, 201, 202):
+        raise RuntimeError(_motivo_brevo(r))
+
+
+def _entregar_email(cfg, mensagem: EmailMessage) -> None:
+    """Único ponto de saída de e-mail: Brevo (API) quando configurado; senão SMTP (465 com SSL, as demais com STARTTLS)."""
+    if isinstance(cfg, ConfiguracaoBrevo):
+        _enviar_brevo(cfg, mensagem)
+        return
+    contexto = ssl.create_default_context()
+    if cfg.porta == 465:
+        with smtplib.SMTP_SSL(cfg.host, cfg.porta, context=contexto, timeout=30) as servidor:
+            servidor.login(cfg.usuario, cfg.senha)
+            servidor.send_message(mensagem)
+    else:
+        with smtplib.SMTP(cfg.host, cfg.porta, timeout=30) as servidor:
+            servidor.starttls(context=contexto)
+            servidor.login(cfg.usuario, cfg.senha)
+            servidor.send_message(mensagem)
+
+
 def _enviar_token_por_email(cfg: ConfiguracaoSMTP, destino: str, token: str) -> None:
     """Envia o token ao e-mail do próprio usuário. Porta 465 usa SSL direto; as demais usam STARTTLS."""
     if _COFRE_INTEGRACOES:
@@ -1523,16 +1581,18 @@ def _enviar_token_por_email(cfg: ConfiguracaoSMTP, destino: str, token: str) -> 
         "Não compartilhe este token. Se você não pediu este e-mail, ignore-o: o token anterior\n"
         "só deixa de valer se você solicitar um novo.\n"
     )
-    contexto = ssl.create_default_context()
-    if cfg.porta == 465:
-        with smtplib.SMTP_SSL(cfg.host, cfg.porta, context=contexto, timeout=30) as servidor:
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
-    else:
-        with smtplib.SMTP(cfg.host, cfg.porta, timeout=30) as servidor:
-            servidor.starttls(context=contexto)
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
+    mensagem.add_alternative(emails_html.montar(
+        "Seu token de acesso",
+        ["Este é o seu token de acesso ao servidor cnj-processual. Anote-o agora: ele não será mostrado novamente."],
+        codigo=token,
+        notas=["Use-o no cabeçalho Authorization: Bearer <token> da configuração do seu cliente MCP. "
+               "Se perder, peça um novo em /cadastro; o anterior deixa de valer.",
+               "Não compartilhe este token. Se você não pediu este e-mail, ignore-o: o token anterior "
+               "só deixa de valer se você solicitar um novo."],
+        preheader="Seu token de acesso ao cnj-processual está neste e-mail.",
+        rodape="AstraJus · Mensagem automática, não é preciso responder.",
+    ), subtype="html")
+    _entregar_email(cfg, mensagem)
 
 
 # --- Monitoramento: acompanhar processo/OAB e avisar por e-mail quando sai publicação nova -----
@@ -1677,17 +1737,20 @@ def _enviar_aviso_monitoramento(cfg: ConfiguracaoSMTP, destino: str, criterio: d
     mensagem["From"] = cfg.remetente
     mensagem["To"] = destino
     mensagem.set_content("\n".join(linhas))
+    mensagem.add_alternative(emails_html.montar(
+        f"{len(itens)} publicação(ões) nova(s) para {descricao}",
+        ["Olá,", "O monitoramento encontrou o que segue. O texto completo está no painel."],
+        linhas=[(emails_html.data_br(i.get("data_disponibilizacao", "?")),
+                 f"{i.get('siglaTribunal', '?')} · {i.get('tipoComunicacao') or i.get('tipoDocumento') or 'Publicação'}")
+                for i in itens[:10]],
+        botao=("Abrir publicações", link),
+        notas=([f"Mostrando 10 de {len(itens)}."] if len(itens) > 10 else [])
+              + ['Para parar de receber estes avisos, remova o monitoramento em "Meus monitoramentos".'],
+        preheader=f"{len(itens)} publicação(ões) nova(s) para {descricao}.",
+        rodape="AstraJus · Aviso de monitoramento.",
+    ), subtype="html")
 
-    contexto = ssl.create_default_context()
-    if cfg.porta == 465:
-        with smtplib.SMTP_SSL(cfg.host, cfg.porta, context=contexto, timeout=30) as servidor:
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
-    else:
-        with smtplib.SMTP(cfg.host, cfg.porta, timeout=30) as servidor:
-            servidor.starttls(context=contexto)
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
+    _entregar_email(cfg, mensagem)
 
 
 def _enviar_aviso_expiracao(cfg: ConfiguracaoSMTP, destino: str, criterio: dict, dias_restantes: int) -> None:
@@ -1710,16 +1773,16 @@ def _enviar_aviso_expiracao(cfg: ConfiguracaoSMTP, destino: str, criterio: dict,
         f"Para renová-lo, acesse: {link}\n\n"
         'Caso não queira mais receber estes avisos, remova o monitoramento em "Meus monitoramentos".\n'
     )
-    contexto = ssl.create_default_context()
-    if cfg.porta == 465:
-        with smtplib.SMTP_SSL(cfg.host, cfg.porta, context=contexto, timeout=30) as servidor:
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
-    else:
-        with smtplib.SMTP(cfg.host, cfg.porta, timeout=30) as servidor:
-            servidor.starttls(context=contexto)
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
+    mensagem.add_alternative(emails_html.montar(
+        f"Monitoramento de {descricao} expira em {dias_restantes} dia(s)",
+        ["Olá,", "Para continuar recebendo avisos de publicações novas, renove o monitoramento antes que ele expire."],
+        linhas=[("Monitoramento", descricao), ("Expira em", f"{dias_restantes} dia(s)", "atencao")],
+        botao=("Renovar monitoramento", link),
+        notas=['Caso não queira mais receber estes avisos, remova o monitoramento em "Meus monitoramentos".'],
+        preheader=f"O monitoramento de {descricao} expira em {dias_restantes} dia(s).",
+        rodape="AstraJus · Aviso de monitoramento.",
+    ), subtype="html")
+    _entregar_email(cfg, mensagem)
 
 
 def _enviar_aviso_atividade_delegada(cfg: ConfiguracaoSMTP, destino: str, atividade: dict) -> None:
@@ -1740,17 +1803,17 @@ def _enviar_aviso_atividade_delegada(cfg: ConfiguracaoSMTP, destino: str, ativid
         partes.append(f"Data: {atividade['data']}" + (f" {atividade['hora']}" if atividade.get("hora") else ""))
     partes += ["", f"Veja os detalhes em: {link}"]
     mensagem.set_content("\n".join(partes))
+    quando = emails_html.data_br(atividade["data"]) + (f" às {atividade['hora'][:5]}" if atividade.get("hora") else "") if atividade.get("data") else ""
+    mensagem.add_alternative(emails_html.montar(
+        "Nova atividade delegada para você",
+        ["Olá,", "Uma atividade foi delegada para você."],
+        linhas=[("Atividade", atividade.get("titulo", ""))] + ([("Quando", quando)] if quando else []),
+        botao=("Abrir atividade", link),
+        preheader=f"Atividade delegada: {atividade.get('titulo', '')}",
+        rodape="AstraJus · Aviso de atividade.",
+    ), subtype="html")
 
-    contexto = ssl.create_default_context()
-    if cfg.porta == 465:
-        with smtplib.SMTP_SSL(cfg.host, cfg.porta, context=contexto, timeout=30) as servidor:
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
-    else:
-        with smtplib.SMTP(cfg.host, cfg.porta, timeout=30) as servidor:
-            servidor.starttls(context=contexto)
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
+    _entregar_email(cfg, mensagem)
 
 
 def _marcar_aviso_expiracao(dados: dict, id_monitoramento: str, agora_iso: str):
@@ -3215,20 +3278,13 @@ def _faixa_alerta_prazo(dias_faltando: int) -> str:
     return str(next(f for f in ALERTAS_PRAZO_FAIXAS if dias_faltando <= f))
 
 
-def _enviar_email_simples(cfg: "ConfiguracaoSMTP", destino: str, assunto: str, corpo: str) -> None:
+def _enviar_email_simples(cfg: "ConfiguracaoSMTP", destino: str, assunto: str, corpo: str, html: str | None = None) -> None:
     mensagem = EmailMessage()
     mensagem["Subject"], mensagem["From"], mensagem["To"] = assunto, cfg.remetente, destino
     mensagem.set_content(corpo)
-    contexto = ssl.create_default_context()
-    if cfg.porta == 465:
-        with smtplib.SMTP_SSL(cfg.host, cfg.porta, context=contexto, timeout=30) as servidor:
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
-    else:
-        with smtplib.SMTP(cfg.host, cfg.porta, timeout=30) as servidor:
-            servidor.starttls(context=contexto)
-            servidor.login(cfg.usuario, cfg.senha)
-            servidor.send_message(mensagem)
+    if html:
+        mensagem.add_alternative(html, subtype="html")
+    _entregar_email(cfg, mensagem)
 
 
 async def _alertar_prazos(gestao: "RegistroClientesCasos", agora=lambda: datetime.now(timezone.utc), enviar=None) -> bool:
@@ -3253,13 +3309,13 @@ async def _alertar_prazos(gestao: "RegistroClientesCasos", agora=lambda: datetim
     base = (os.environ.get("CNJ_MCP_URL_PUBLICA") or "").rstrip("/")
     falhou = False
 
-    async def mandar_email(usuario, assunto, corpo):
+    async def mandar_email(usuario, assunto, corpo, html=None):
         nonlocal falhou
         email = usuarios[usuario].get("email")
         if not (cfg and email):
             return
         try:
-            await asyncio.to_thread((enviar or _enviar_email_simples), cfg, email, assunto, corpo)
+            await asyncio.to_thread((enviar or _enviar_email_simples), cfg, email, assunto, corpo, html=html)
         except Exception:
             falhou = True
             log.exception("Alerta de prazo: falha ao enviar e-mail para %s", usuario)
@@ -3269,6 +3325,7 @@ async def _alertar_prazos(gestao: "RegistroClientesCasos", agora=lambda: datetim
         faixa = _faixa_alerta_prazo((datetime.fromisoformat(a["data"][:10]).date() - hoje).days)
         tipo = "Audiência" if a["tipo"] == "audiencia" else "Prazo"
         quando = {"atrasado": "VENCEU", "0": "vence HOJE", "1": "vence amanhã"}.get(faixa, f"vence em até {faixa} dias")
+        tom = "urgente" if faixa in ("atrasado", "0") else "atencao" if faixa in ("1", "2") else ""
         detalhe = (f"Data: {a['data'][:10]}{' às ' + a['hora'][:5] if a.get('hora') else ''}\n"
                    f"Processo: {a['caso_titulo'] or '(sem título)'}\n")
         link = f"{base}/radix/#/casos?id={a['caso_id']}&aba=atividades&atividadeId={a['id']}" if base else ""
@@ -3278,7 +3335,15 @@ async def _alertar_prazos(gestao: "RegistroClientesCasos", agora=lambda: datetim
                      + (f"\nAbrir o {tipo.lower()}"
                         f"{' e confirmar a ciência' if a['tipo'] == 'prazo' else ''}: {link}\n" if link else "")
                      + (f"Abrir a agenda: {base}/radix/#/agenda\n" if base else ""))
-            await mandar_email(usuario, f"{tipo} {quando}: {a['titulo']}", corpo)
+            html = emails_html.montar(
+                f"{tipo} {quando}", [a["titulo"]],
+                linhas=[("Data", emails_html.data_br(a["data"]) + (f" às {a['hora'][:5]}" if a.get("hora") else ""), tom),
+                        ("Processo", a["caso_titulo"] or "(sem título)")],
+                botao=(f"Abrir o {tipo.lower()}" + (" e confirmar a ciência" if a["tipo"] == "prazo" else ""), link),
+                notas=[f"Ver a agenda: {base}/radix/#/agenda"] if base else [],
+                preheader=f"{tipo} {quando}: {a['titulo']}",
+                rodape="AstraJus · Alerta de prazos e audiências.")
+            await mandar_email(usuario, f"{tipo} {quando}: {a['titulo']}", corpo, html)
         # Escalonamento: o primeiro aviso da faixa já saiu numa execução anterior e ninguém confirmou ciência.
         if a["tipo"] == "prazo" and faixa in ("1", "0", "atrasado") and not a.get("ciencia_em") and not novos:
             reserva = [u for u in administradores if u not in destinatarios]
@@ -3287,7 +3352,16 @@ async def _alertar_prazos(gestao: "RegistroClientesCasos", agora=lambda: datetim
                          f"Responsável: {a['responsavel'] or a['caso_responsavel'] or 'não definido'}\n"
                          "Ninguém confirmou ciência deste prazo desde o primeiro aviso.\n"
                          + (f"\nAbrir o prazo: {link}\n" if link else ""))
-                await mandar_email(usuario, f"Prazo sem confirmação de ciência: {a['titulo']}", corpo)
+                html = emails_html.montar(
+                    "Prazo sem confirmação de ciência", [a["titulo"], "Ninguém confirmou ciência deste prazo desde o primeiro aviso."],
+                    linhas=[("Situação", quando, tom),
+                            ("Data", emails_html.data_br(a["data"]) + (f" às {a['hora'][:5]}" if a.get("hora") else "")),
+                            ("Processo", a["caso_titulo"] or "(sem título)"),
+                            ("Responsável", a["responsavel"] or a["caso_responsavel"] or "não definido")],
+                    botao=("Abrir o prazo", link),
+                    preheader=f"Prazo sem confirmação de ciência: {a['titulo']}",
+                    rodape="AstraJus · Escalonamento para administradores.")
+                await mandar_email(usuario, f"Prazo sem confirmação de ciência: {a['titulo']}", corpo, html)
     return not falhou
 
 
@@ -6616,8 +6690,14 @@ def _inteiro_env(nome: str, padrao: int) -> int:
         sys.exit(f"Erro: {nome} deve ser um número inteiro.")
 
 
-def _smtp_do_ambiente() -> ConfiguracaoSMTP | None:
-    """Resolve SMTP no cofre; modo legado usa CNJ_SMTP_*. Sem host, cadastro desligado."""
+def _smtp_do_ambiente() -> "ConfiguracaoBrevo | ConfiguracaoSMTP | None":
+    """Configuração de e-mail do escritório. O Brevo (API HTTPS) tem prioridade quando há chave e remetente; senão vale o
+    SMTP. O nome ficou por compatibilidade: todo o código chama isto e entrega pelo `_entregar_email`. Sem nenhum dos dois,
+    o envio de e-mail e o cadastro público ficam desligados."""
+    chave = _config_integracao("CNJ_BREVO_API_KEY", "").strip()
+    remetente_brevo = _config_integracao("CNJ_BREVO_REMETENTE", "").strip()
+    if chave and remetente_brevo:
+        return ConfiguracaoBrevo(api_key=chave, remetente=remetente_brevo, nome=_config_integracao("CNJ_BREVO_NOME_REMETENTE", "").strip())
     host = _config_integracao("CNJ_SMTP_HOST", "").strip()
     if not host:
         return None

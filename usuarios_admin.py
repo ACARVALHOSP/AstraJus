@@ -1,5 +1,6 @@
 """Perfis estruturados e administração de usuários, compatíveis com dados legados."""
 import asyncio
+import emails_html
 import hmac
 import json
 import os
@@ -438,15 +439,24 @@ async def _enviar_token_por_email(s, perfil, token):
         return {'enviado': False, 'destino': None, 'motivo': 'O usuário não tem um e-mail válido cadastrado (nem o login é um e-mail).'}
     cfg = s._smtp_do_ambiente()
     if cfg is None:
-        return {'enviado': False, 'destino': email, 'motivo': 'O envio de e-mail não está configurado no servidor (SMTP).'}
+        return {'enviado': False, 'destino': email, 'motivo': 'O envio de e-mail não está configurado no servidor (Brevo ou SMTP).'}
     base = (os.environ.get('CNJ_MCP_URL_PUBLICA') or '').rstrip('/')
     corpo = (f"Olá, {perfil.get('nome_completo') or perfil.get('login')}.\n\n"
              "Um administrador gerou um novo token de acesso ao AstraJus para você:\n\n"
              f"{token}\n\n"
              "O token anterior deixou de funcionar. Cole este token na tela de Acesso"
              + (f" ({base}/radix/#/acesso)" if base else "") + " e guarde-o em um local seguro: ele funciona como uma senha.\n")
+    acesso = f'{base}/radix/#/acesso' if base else ''
+    html = emails_html.montar(
+        'Seu novo token de acesso',
+        [f"Olá, {perfil.get('nome_completo') or perfil.get('login')}.",
+         'Um administrador gerou um novo token de acesso ao AstraJus para você. O token anterior deixou de funcionar.'],
+        codigo=token, botao=('Abrir a tela de Acesso', acesso),
+        notas=['Cole este token na tela de Acesso e guarde-o em um local seguro: ele funciona como uma senha.'],
+        preheader='Um administrador gerou um novo token de acesso para você.',
+        rodape='AstraJus · Mensagem automática, não é preciso responder.')
     try:
-        await asyncio.to_thread(s._enviar_email_simples, cfg, email, 'Seu novo token de acesso ao AstraJus', corpo)
+        await asyncio.to_thread(s._enviar_email_simples, cfg, email, 'Seu novo token de acesso ao AstraJus', corpo, html=html)
     except Exception as e:
         s.log.error('Falha ao enviar o novo token por e-mail para o usuário %s: %s: %s', perfil.get('login'), type(e).__name__, e)
         detalhe = f' ({type(e).__name__}: {str(e)[:120]})' if str(e) else f' ({type(e).__name__})'

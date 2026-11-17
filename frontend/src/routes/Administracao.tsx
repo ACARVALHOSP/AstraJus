@@ -21,7 +21,7 @@ import {
   TextField,
 } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
-import { useNavegacao } from '../api/NavegacaoContext'
+import { lerHash } from '../api/hash'
 import { AREAS, usePerfil } from '../api/PerfilContext'
 import { formatarMoeda } from '../utils/formatadores'
 import { NIVEIS, PERFIS, aplicarPerfil, grauPadrao, perfilDe, type Grau } from './administracao/perfis'
@@ -77,10 +77,10 @@ export default function Administracao() {
   const [alvoApagar, setAlvoApagar] = useState<AlvoApagar | null>(null)
   const [autoCarregando, setAutoCarregando] = useState(false)
   const [esperouPerfil, setEsperouPerfil] = useState(false)
-  const { consumirPayload } = useNavegacao()
-  // Links como #/administracao?aba=integracoes abrem direto na aba pedida.
+  // Links como #/administracao?aba=integracoes abrem direto na aba pedida. Lê o endereço (e não o payload da navegação,
+  // que se apaga ao ser lido): numa carga nova a tela chega a montar duas vezes e a segunda não encontraria o pedido.
   const [abaAdmin, setAbaAdmin] = useState(() => {
-    const pedida = consumirPayload<{ aba?: string }>('administracao')?.aba
+    const pedida = lerHash(window.location.hash, '').parametros.aba
     return pedida && ['usuarios', 'integracoes', 'banco', 'historico'].includes(pedida) ? pedida : 'usuarios'
   })
   const tentouAuto = useRef(false)

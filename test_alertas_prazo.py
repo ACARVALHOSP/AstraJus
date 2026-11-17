@@ -107,15 +107,15 @@ class AlertasPrazoTest(_Base):
         cfg = server.ConfiguracaoSMTP("smtp.teste", 587, "u", "s", "avisos@teste.com")
         enviados = []
         self.prazo("2026-11-10", titulo="Réplica")
-        self.alertar("2026-11-09", enviar=lambda c, d, a, corpo: enviados.append((d, a, corpo)), smtp=cfg)
-        self.alertar("2026-11-09", hora=21, enviar=lambda c, d, a, corpo: enviados.append((d, a, corpo)), smtp=cfg)
+        self.alertar("2026-11-09", enviar=lambda c, d, a, corpo, html=None: enviados.append((d, a, corpo)), smtp=cfg)
+        self.alertar("2026-11-09", hora=21, enviar=lambda c, d, a, corpo, html=None: enviados.append((d, a, corpo)), smtp=cfg)
         self.assertEqual(len(enviados), 1)
         destino, assunto, corpo = enviados[0]
         self.assertEqual(destino, "ana@teste.com")
         self.assertIn("vence amanhã: Réplica", assunto)
         self.assertIn("Processo: Ação A", corpo)
 
-        def quebrado(*_):
+        def quebrado(*_, **__):
             raise OSError("smtp fora do ar")
         self.prazo("2026-11-10", titulo="Outra")
         self.assertFalse(self.alertar("2026-11-09", enviar=quebrado, smtp=cfg))   # registra a falha, mas o aviso no sino existe
@@ -195,7 +195,7 @@ class CienciaEEscalonamentoTest(_Base):
     def test_escalonamento_sai_por_email_para_os_administradores(self):
         cfg = server.ConfiguracaoSMTP("smtp.teste", 587, "u", "s", "avisos@teste.com")
         enviados = []
-        registrar = lambda c, d, a, corpo: enviados.append((d, a, corpo))
+        registrar = lambda c, d, a, corpo, html=None: enviados.append((d, a, corpo))
         self.prazo("2026-11-10", titulo="Réplica")
         self.alertar("2026-11-09", enviar=registrar, smtp=cfg)
         self.assertEqual([d for d, *_ in enviados], ["ana@teste.com"])

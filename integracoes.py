@@ -26,6 +26,8 @@ PROVEDORES = {
     'zapsign': ('sistema', {'api_key'}, set()),
     'datajud': ('sistema', {'api_key'}, set()),
     'openrouter': ('sistema', {'api_key'}, set()),
+    # E-mail pela API HTTPS do Brevo (porta 443): serve onde a porta SMTP é bloqueada. Tem prioridade sobre o SMTP.
+    'brevo': ('sistema', {'api_key'}, {'remetente', 'nome_remetente'}),
     'smtp': ('sistema', {'senha'}, {'host', 'porta', 'usuario', 'remetente'}),
     'recaptcha': ('sistema', {'secret'}, {'site_key'}),
     'google_oauth': ('sistema', {'client_secret'}, {'client_id'}),
@@ -38,6 +40,8 @@ VARIAVEIS = {
     'CNJ_SMTP_HOST': ('smtp', 'host'), 'CNJ_SMTP_PORTA': ('smtp', 'porta'),
     'CNJ_SMTP_USUARIO': ('smtp', 'usuario'), 'CNJ_SMTP_SENHA': ('smtp', 'senha'),
     'CNJ_SMTP_REMETENTE': ('smtp', 'remetente'),
+    'CNJ_BREVO_API_KEY': ('brevo', 'api_key'), 'CNJ_BREVO_REMETENTE': ('brevo', 'remetente'),
+    'CNJ_BREVO_NOME_REMETENTE': ('brevo', 'nome_remetente'),
     'CNJ_RECAPTCHA_SECRET': ('recaptcha', 'secret'),
     'CNJ_RECAPTCHA_SITE_KEY': ('recaptcha', 'site_key'),
     'ZAPSIGN_API_KEY': ('zapsign', 'api_key'),
@@ -376,6 +380,8 @@ async def testar(provedor, ambiente, dados, cliente, contexto=None):
             if r.status_code == 429 or r.status_code >= 500:
                 return False, 'O provedor está instável ou limitando acessos (HTTP %s). A chave não foi avaliada; tente novamente em instantes.' % r.status_code
             return False, 'O provedor recusou a verificação (HTTP %s).' % r.status_code
+        if provedor == 'brevo':
+            return await _testar_brevo(dados, cliente)
         if provedor == 'smtp':
             from email.utils import parseaddr
             if not dados.get('usuario') or not dados.get('senha') or '@' not in parseaddr(dados.get('remetente', ''))[1]:
@@ -423,6 +429,37 @@ async def testar(provedor, ambiente, dados, cliente, contexto=None):
         detalhe = ' Código do Google: %s.' % codigo.group(1) if codigo else ''
         return False, 'Não foi possível validar a conexão. Verifique as credenciais, permissões e a rede.' + detalhe
     return False, 'Serviço não suportado.'
+
+
+async def _testar_brevo(dados, cliente):
+    """Valida a chave (GET /v3/account) e confere se o remetente está entre os remetentes ativos do Brevo
+    (GET /v3/senders). Nada é enviado. Nunca devolve corpo, URL ou exceção do provedor."""
+    from email.utils import parseaddr
+    chave = (dados.get('api_key') or '').strip()
+    remetente = parseaddr(dados.get('remetente', ''))[1].strip()
+    if not chave:
+        return False, 'Informe a chave da API do Brevo.'
+    if '@' not in remetente:
+        return False, 'Informe um e-mail remetente válido.'
+    cabecalhos = {'api-key': chave, 'accept': 'application/json'}
+    r = await cliente.get('https://api.brevo.com/v3/account', headers=cabecalhos)
+    if r.status_code in (401, 403):
+        return False, ('Chave rejeitada pelo Brevo (HTTP %s). Confira a chave e, se o Brevo exigir, autorize o IP deste '
+                       'servidor em Segurança › IPs autorizados.' % r.status_code)
+    if r.status_code == 429 or r.status_code >= 500:
+        return False, 'O Brevo está instável ou limitando acessos (HTTP %s). A chave não foi avaliada; tente novamente em instantes.' % r.status_code
+    if r.status_code != 200:
+        return False, 'O Brevo recusou a verificação (HTTP %s).' % r.status_code
+    s = await cliente.get('https://api.brevo.com/v3/senders', headers=cabecalhos)
+    if s.status_code != 200:
+        return True, 'Chave confirmada, mas não foi possível conferir o remetente. Nenhum e-mail enviado; use "Enviar e-mail de teste" para validar.'
+    remetentes = {str(x.get('email', '')).lower(): x for x in (s.json().get('senders') or []) if isinstance(x, dict)}
+    achado = remetentes.get(remetente.lower())
+    if not achado:
+        return False, 'O remetente %s não está cadastrado no Brevo. Cadastre e valide em Senders, Domains & IPs.' % remetente
+    if achado.get('active') is False:
+        return False, 'O remetente %s está cadastrado, mas ainda não foi validado no Brevo (confirme o e-mail de verificação).' % remetente
+    return True, 'Chave e remetente confirmados no Brevo. Nenhum e-mail enviado.'
 
 
 def _testar_smtp(dados):

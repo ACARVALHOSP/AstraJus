@@ -1,4 +1,5 @@
 """Rotas administrativas de integrações; segredos nunca retornam ao navegador."""
+import asyncio
 import json
 import re
 import secrets
@@ -141,6 +142,36 @@ async def tratar(app, scope, receive, send):
             with cofre.abrir() as c:
                 cofre.auditar(c, autor, 'permissao_administrativa', 'acesso', 'padrao', resultado='habilitado' if dados['habilitado'] else 'revogado')
             await s._json(send, 200, {'atualizado': True})
+        elif path == '/admin/integracoes/email-teste':
+            # Envio real, só para quem administra: é a prova de que o e-mail sai (o "Testar" do cofre não envia nada).
+            cfg = s._smtp_do_ambiente()
+            if cfg is None:
+                await s._json(send, 400, {'erro': 'Nenhum envio de e-mail está configurado (Brevo ou SMTP). Ative um deles e tente de novo.'})
+                return
+            destino = str(dados.get('destino') or (registros.get(usuario, {}).get('email') if usuario else '') or '').strip()
+            if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', destino) or len(destino) > 254:
+                await s._json(send, 400, {'erro': 'Informe um e-mail de destino válido.'})
+                return
+            chave = ('email-teste', autor)
+            if app._integracoes_limites.get(chave, 0) > time.time():
+                await s._json(send, 429, {'erro': 'Aguarde alguns segundos antes de enviar outro e-mail de teste.'})
+                return
+            app._integracoes_limites[chave] = time.time() + 10
+            via = 'Brevo' if isinstance(cfg, s.ConfiguracaoBrevo) else 'SMTP'
+            corpo = ('Este é um e-mail de teste do AstraJus, enviado por um administrador para conferir o envio de e-mails.\n\n'
+                     'Se você recebeu esta mensagem, o envio está funcionando. Nenhuma ação é necessária.\n')
+            try:
+                await asyncio.to_thread(s._enviar_email_simples, cfg, destino, 'Teste de e-mail do AstraJus', corpo)
+            except Exception as erro:
+                s.log.error('Falha no e-mail de teste (%s): %s: %s', via, type(erro).__name__, erro)
+                with cofre.abrir() as c:
+                    cofre.auditar(c, autor, 'email_teste', 'brevo' if via == 'Brevo' else 'smtp', 'padrao', resultado='falhou')
+                detalhe = str(erro)[:240] if isinstance(erro, RuntimeError) else f'{type(erro).__name__}: {str(erro)[:160]}'
+                await s._json(send, 502, {'erro': f'Não foi possível enviar pelo {via}. {detalhe}'.strip()})
+                return
+            with cofre.abrir() as c:
+                cofre.auditar(c, autor, 'email_teste', 'brevo' if via == 'Brevo' else 'smtp', 'padrao')
+            await s._json(send, 200, {'enviado': True, 'destino': destino, 'via': via})
         else:
             await s._json(send, 404, {'erro': 'Rota inexistente.'})
     except integracoes.Conflito as erro:

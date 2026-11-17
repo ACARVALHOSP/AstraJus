@@ -228,7 +228,7 @@ class ApagarUsuarioTest(_Base):
         def alertar(dia):
             with mock.patch.object(server, "_smtp_do_ambiente", return_value=server.ConfiguracaoSMTP("h", 587, "u", "s", "r@x.com")):
                 asyncio.run(server._alertar_prazos(self.gestao, lambda: datetime(2026, 11, dia, 15, tzinfo=timezone.utc),
-                                                   enviar=lambda cfg, d, a, corpo: enviados.append((d, a))))
+                                                   enviar=lambda cfg, d, a, corpo, html=None: enviados.append((d, a))))
 
         alertar(30)                                          # o prazo "Atividade da Bia" vence amanhã
         destinos = {d for d, a in enviados if "Atividade da Bia" in a}

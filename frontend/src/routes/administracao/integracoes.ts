@@ -9,7 +9,7 @@ export type EventoIntegracao = { instante: number; autor: string; provedor: stri
 export type CampoIntegracao = { nome: string; rotulo: string; segredo?: boolean }
 
 export const NOMES: Record<string, string> = {
-  drive: 'Google Drive', asaas: 'Asaas', zapsign: 'ZapSign', datajud: 'DataJud', openrouter: 'OpenRouter', smtp: 'E-mail (SMTP)',
+  drive: 'Google Drive', asaas: 'Asaas', zapsign: 'ZapSign', datajud: 'DataJud', openrouter: 'OpenRouter', brevo: 'E-mail (Brevo)', smtp: 'E-mail (SMTP)',
   recaptcha: 'reCAPTCHA', google_oauth: 'Google OAuth',
 }
 export const DESCRICOES: Record<string, string> = {
@@ -18,7 +18,8 @@ export const DESCRICOES: Record<string, string> = {
   zapsign: 'Assinatura digital de documentos.',
   datajud: 'Consulta de processos no DataJud (CNJ).',
   openrouter: 'Acesso a modelos de IA pelo OpenRouter (openrouter.ai/keys).',
-  smtp: 'Servidor de e-mail dos avisos e do cadastro.',
+  brevo: 'Envio de e-mails pela API do Brevo (porta 443). Quando configurado, tem prioridade sobre o SMTP.',
+  smtp: 'Servidor de e-mail dos avisos e do cadastro (reserva do Brevo).',
   recaptcha: 'Proteção do cadastro público.',
   google_oauth: 'Aplicativo OAuth usado para conectar Google Drive e Agenda.',
 }
@@ -28,11 +29,15 @@ export const CAMPOS: Record<string, CampoIntegracao[]> = {
   zapsign: [{ nome: 'api_key', rotulo: 'Nova chave da API', segredo: true }],
   datajud: [{ nome: 'api_key', rotulo: 'Nova chave da API', segredo: true }],
   openrouter: [{ nome: 'api_key', rotulo: 'Nova chave da API (sk-or-...)', segredo: true }],
+  brevo: [{ nome: 'api_key', rotulo: 'Chave da API do Brevo', segredo: true }, { nome: 'remetente', rotulo: 'E-mail remetente (já validado no Brevo)' }, { nome: 'nome_remetente', rotulo: 'Nome do remetente (opcional)' }],
   smtp: [{ nome: 'host', rotulo: 'Servidor SMTP' }, { nome: 'porta', rotulo: 'Porta TLS (465 ou 587)' }, { nome: 'usuario', rotulo: 'Usuário' },
     { nome: 'senha', rotulo: 'Nova senha', segredo: true }, { nome: 'remetente', rotulo: 'E-mail remetente' }],
   recaptcha: [{ nome: 'site_key', rotulo: 'Site key' }, { nome: 'secret', rotulo: 'Nova secret key', segredo: true }],
   google_oauth: [{ nome: 'client_id', rotulo: 'Client ID' }, { nome: 'client_secret', rotulo: 'Novo client secret', segredo: true }],
 }
+/** Serviços que enviam e-mail: ganham o botão "Enviar e-mail de teste" (envio real, só para administradores). */
+export const ENVIAM_EMAIL = new Set(['brevo', 'smtp'])
+
 /** Serviços cujo teste exige resolver um desafio no navegador: ficam no painel avançado. */
 export const SO_NO_PAINEL_AVANCADO = new Set(['recaptcha'])
 export const PRECISAM_GOOGLE = new Set(['drive', 'google_oauth'])
@@ -65,6 +70,7 @@ export const SEM_TESTE_OBRIGATORIO = new Set(['datajud'])
 export function textoAjuda(provedor: string, origem: string): string {
   switch (provedor) {
     case 'google_oauth': return `Cadastre no Google a URL de retorno ${origem}/integracoes/google/callback. Autorize a conta, teste e ative.`
+    case 'brevo': return 'O teste valida a chave e confere se o remetente está verificado no Brevo, sem enviar e-mails. Se o Brevo pedir IPs autorizados, libere o IP deste servidor. Depois de ativar, use "Enviar e-mail de teste".'
     case 'smtp': return 'O teste valida TLS e autenticação sem enviar e-mails. Ao alterar o servidor ou o usuário, informe a senha de novo.'
     case 'recaptcha': return 'O teste exige resolver o desafio na tela. Use o painel avançado para configurar o reCAPTCHA.'
     case 'datajud': return 'Informe a chave da API e ative. O teste de conexão é opcional.'

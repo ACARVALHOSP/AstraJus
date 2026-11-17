@@ -322,6 +322,7 @@ Todas as variáveis são opcionais; os valores padrão servem para desenvolvimen
 | `CNJ_MCP_SEGREDO` | Segredo dos links assinados de certidão |
 | `CNJ_MCP_ADMIN_TOKEN` | Token administrativo de recuperação |
 | `DATAJUD_API_KEY` | Chave do DataJud (há uma chave pública do CNJ como padrão) |
+| `CNJ_BREVO_API_KEY`, `CNJ_BREVO_REMETENTE`, `CNJ_BREVO_NOME_REMETENTE` | E-mail pela API HTTPS do Brevo (porta 443), para servidores com a porta SMTP bloqueada. Com chave e remetente, tem prioridade sobre o SMTP; o remetente precisa estar validado no Brevo |
 | `CNJ_SMTP_HOST`, `CNJ_SMTP_PORTA`, `CNJ_SMTP_USUARIO`, `CNJ_SMTP_SENHA`, `CNJ_SMTP_REMETENTE` | E-mails de monitoramento e de alerta de prazo |
 | `CNJ_GOOGLE_CLIENT_ID`, `CNJ_GOOGLE_CLIENT_SECRET` | OAuth do Google (Drive e Agenda) |
 | `CNJ_GOOGLE_DRIVE_PASTA_RAIZ`, `CNJ_GOOGLE_DRIVE_PASTA_CLIENTES` | Pasta raiz do Drive e pasta `CLIENTES` já existente |
