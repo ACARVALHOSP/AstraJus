@@ -8,8 +8,9 @@ import { pathToFileURL } from 'node:url'
 
 const saida = mkdtempSync(join(tmpdir(), 'prazos-'))
 execFileSync('frontend/node_modules/.bin/tsc', ['--outDir', saida, '--module', 'esnext', '--target', 'es2022', '--skipLibCheck',
-  'frontend/src/routes/publicacoes-oab/prazos.ts'], { stdio: 'inherit' })
-const { calcularPrazo, cruzaRecesso, sugerirPrazoPadrao, PRAZOS_PADRAO } = await import(pathToFileURL(join(saida, 'prazos.js')).href)
+  'frontend/src/routes/publicacoes-oab/prazos.ts', 'frontend/src/routes/publicacoes-oab/prazosCatalogo.ts'], { stdio: 'inherit' })
+const { calcularPrazo, cruzaRecesso, sugerirPrazoPadrao, leituraTacita, PRAZOS_PADRAO } = await import(pathToFileURL(join(saida, 'prazos.js')).href)
+const { PRAZOS_CATALOGO } = await import(pathToFileURL(join(saida, 'prazosCatalogo.js')).href)
 
 const feriado = (d, descricao = 'Feriado') => ({ inicio: d, fim: d, descricao })
 const cal = (...datas) => ({ municipio: 'São Paulo', tribunal: 'tjsp', anos: [2026, 2027], fonte: 'teste', consultadoEm: '', completo: true, impedimentos: datas.map(d => feriado(d)) })
@@ -94,5 +95,40 @@ caso('entradas inválidas são recusadas', () => {
   assert.throws(() => calcularPrazo('2026-13-40', 15, 'dje', cal(), false))
   assert.throws(() => calcularPrazo('2026-11-06', 0, 'dje', cal(), false))
   assert.throws(() => calcularPrazo('2026-11-06', 15, 'xyz', cal(), false))
+})
+caso('leitura tácita: o dia do envio é o 1º dos 10 dias corridos (Lei 11.419/2006, art. 5º, §3º)', () => {
+  assert.equal(leituraTacita('2026-07-07'), '2026-07-16')
+})
+caso('portal sem consulta: intimação no 10º dia e prazo a partir do dia útil seguinte', () => {
+  const r = calcularPrazo('2026-07-07', 15, 'portal', cal(), false)
+  assert.equal(r.leituraTacita, true)
+  assert.equal(r.termoInicial, '2026-07-17')
+  assert.equal(r.dataFinal, '2026-08-06')
+})
+caso('portal com consulta no 3º dia: intimação na consulta', () => {
+  const r = calcularPrazo('2026-07-07', 15, 'portal', cal(), false, { consulta: '2026-07-10' })
+  assert.equal(r.leituraTacita, false)
+  assert.equal(r.termoInicial, '2026-07-13')
+  assert.equal(r.dataFinal, '2026-07-31')
+})
+caso('portal: consulta em domingo vale no dia útil seguinte (art. 5º, §2º)', () => {
+  const r = calcularPrazo('2026-07-07', 15, 'portal', cal(), false, { consulta: '2026-07-12' })
+  assert.equal(r.termoInicial, '2026-07-14')
+})
+caso('portal: consulta depois dos 10 dias não desloca nada, a tácita já ocorreu', () => {
+  const r = calcularPrazo('2026-07-07', 15, 'portal', cal(), false, { consulta: '2026-07-20' })
+  assert.equal(r.leituraTacita, true)
+  assert.equal(r.dataFinal, '2026-08-06')
+})
+caso('portal: consulta com data inválida é recusada', () => {
+  assert.throws(() => calcularPrazo('2026-07-07', 15, 'portal', cal(), false, { consulta: '2026-99-99' }))
+})
+caso('catálogo: ids únicos, dias válidos e contagem por ramo (CPP em dias corridos)', () => {
+  assert.equal(new Set(PRAZOS_CATALOGO.map(p => p.id)).size, PRAZOS_CATALOGO.length)
+  for (const p of PRAZOS_CATALOGO) assert.ok(p.dias >= 1 && p.dias <= 999 && p.base && p.rotulo && p.grupo)
+  for (const ramo of ['cpc', 'clt', 'cpp']) assert.ok(PRAZOS_CATALOGO.some(p => p.ramo === ramo), ramo)
+  assert.ok(PRAZOS_CATALOGO.filter(p => p.ramo === 'cpp').every(p => p.contagem === 'corridos'))
+  assert.ok(PRAZOS_CATALOGO.filter(p => p.ramo !== 'cpp').every(p => p.contagem === 'uteis'))
+  assert.equal(PRAZOS_CATALOGO.find(p => p.ramo === 'clt' && p.rotulo === 'Recurso ordinário contra decisão da Vara').dias, 8)
 })
 console.log(`\n${n} casos passaram`)

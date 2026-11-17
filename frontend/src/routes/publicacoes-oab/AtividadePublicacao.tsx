@@ -10,11 +10,23 @@ import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
 import { numeroPublicacao, type PublicacaoOab } from './dados'
 import BuscaProcesso from '../../BuscaProcesso'
 import { calcularPrazo, cruzaRecesso, dataValida, detectarDias, PRAZOS_PADRAO, REGRAS_PRAZO, sugerirPrazoPadrao, type CalendarioForense, type Contagem, type ProvedorCalendario, type RegraPrazo } from './prazos'
+import { buscarPrazo } from './prazosBusca'
+import { PRAZOS_CATALOGO, ROTULO_RAMO, type RamoPrazo } from './prazosCatalogo'
 import { imprimirDemonstrativoPrazo } from './impressaoPrazo'
 
 type CasoOpcao = { id: string; titulo?: string | null; processos?: string[] }
 const SEM_CASOS: CasoOpcao[] = []
 const SEM_RESPONSAVEIS: string[] = []
+// Prazos das tabelas do CPC, da CLT e do CPP, agrupados por ramo e fase do processo.
+const GRUPOS_CATALOGO = (() => {
+  const mapa = new Map<string, { chave: string; ramo: RamoPrazo; grupo: string; itens: typeof PRAZOS_CATALOGO[number][] }>()
+  for (const p of PRAZOS_CATALOGO) {
+    const chave = `${p.ramo}|${p.grupo}`
+    if (!mapa.has(chave)) mapa.set(chave, { chave, ramo: p.ramo, grupo: p.grupo, itens: [] })
+    mapa.get(chave)!.itens.push(p)
+  }
+  return [...mapa.values()]
+})()
 
 /** Calcula um prazo processual e cria a atividade. Com `publicacao`, parte dos dados dela e marca a
  *  publicação como tratada ao salvar; sem ela (calculadora avulsa da Agenda), pede o processo. */
@@ -37,6 +49,8 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
   const [dias, setDias] = useState(String(diasExplicitos ?? sugestao?.dias ?? ''))
   const [contagem, setContagem] = useState<Contagem>('uteis')
   const [emDobro, setEmDobro] = useState(false)
+  const [ramo, setRamo] = useState<RamoPrazo>('cpc')
+  const [consulta, setConsulta] = useState('')
   const [base, setBase] = useState(publicacao?.dados?.data_disponibilizacao?.slice(0, 10) || dataBaseInicial || '')
   const [regra, setRegra] = useState<RegraPrazo>(publicacao || !dataBaseInicial ? 'dje' : 'dje')
   const [municipio, setMunicipio] = useState('')
@@ -109,7 +123,7 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
         for (let passo = 0; ; passo++) {
           if (passo > 12) throw new Error('Intervalo de calendário não suportado.')
           calendarioAtual = await provedor({ municipio: municipio.trim(), tribunal: tribunal.trim().toLowerCase(), anos })
-          calculo = calcularPrazo(base, Number(dias), regra, calendarioAtual, suspensaoCpc, { contagem, emDobro })
+          calculo = calcularPrazo(base, Number(dias), regra, calendarioAtual, suspensaoCpc, { contagem, emDobro, consulta: regra === 'portal' && consulta ? consulta : undefined })
           const anoFinal = Number(calculo.dataFinal.slice(0, 4))
           if (anos.includes(anoFinal)) break
           anos = Array.from({ length: anoFinal - anoBase + 1 }, (_, i) => anoBase + i)
@@ -119,7 +133,7 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
       } catch (e) { if (ativo) setErroCalculo((e as Error).message) } finally { if (ativo) setCalculando(false) }
     }, 350)
     return () => { ativo = false; clearTimeout(temporizador) }
-  }, [cliente, base, dias, municipio, tribunal, regra, suspensaoCpc, contagem, emDobro, carregandoContexto, provedorCalendario])
+  }, [cliente, base, dias, municipio, tribunal, regra, consulta, suspensaoCpc, contagem, emDobro, carregandoContexto, provedorCalendario])
 
   async function salvar() {
     if (trava.current || calculando || carregandoContexto) return
@@ -180,12 +194,22 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
             <label className="form-campo-label" htmlFor="oab-prazo-padrao">Tipo de prazo</label>
             <Select.Root value={prazoPadrao} disabled={bloqueado} onValueChange={(v) => {
               setPrazoPadrao(v)
-              const p = PRAZOS_PADRAO.find(x => x.id === v)
-              if (p) { setDias(String(p.dias)); setContagem('uteis'); if (!publicacao && !titulo.trim()) setTitulo(`Prazo: ${p.rotulo}`) }
+              const p = buscarPrazo(v)
+              if (p) { setDias(String(p.dias)); setContagem(p.contagem); setRamo(p.ramo); if (!publicacao && !titulo.trim()) setTitulo(`Prazo: ${p.rotulo}`) }
             }}>
               <Select.Trigger id="oab-prazo-padrao" style={{ width: '100%' }} />
               <Select.Content>
-                {PRAZOS_PADRAO.map(p => <Select.Item key={p.id} value={p.id}>{p.rotulo} — {p.dias} dias úteis ({p.base})</Select.Item>)}
+                <Select.Group>
+                  <Select.Label>Mais usados (CPC e Juizado Especial)</Select.Label>
+                  {PRAZOS_PADRAO.map(p => <Select.Item key={p.id} value={p.id}>{p.rotulo} — {p.dias} dias úteis ({p.base})</Select.Item>)}
+                </Select.Group>
+                {GRUPOS_CATALOGO.map(g => (
+                  <Select.Group key={g.chave}>
+                    <Select.Label>{ROTULO_RAMO[g.ramo]}: {g.grupo}</Select.Label>
+                    {g.itens.map(p => <Select.Item key={p.id} value={p.id}>{p.rotulo} — {p.dias} dias {p.contagem === 'uteis' ? 'úteis' : 'corridos'} ({p.base})</Select.Item>)}
+                  </Select.Group>
+                ))}
+                <Select.Separator />
                 <Select.Item value="outro">Outro (informar os dias)</Select.Item>
               </Select.Content>
             </Select.Root>
@@ -199,9 +223,16 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
           </div>
           <div className="aj-form-grade">
             <div className="form-campo">
-              <label className="form-campo-label" htmlFor="oab-prazo-base">{regra === 'dje' ? 'Data de disponibilização DJEN' : 'Termo inicial informado'}</label>
+              <label className="form-campo-label" htmlFor="oab-prazo-base">{regra === 'dje' ? 'Data de disponibilização DJEN' : regra === 'portal' ? 'Data de envio da intimação no portal' : 'Termo inicial informado'}</label>
               <CampoData id="oab-prazo-base" value={base} disabled={bloqueado} onChange={v => setBase(v)} />
             </div>
+            {regra === 'portal' && (
+              <div className="form-campo">
+                <label className="form-campo-label" htmlFor="oab-prazo-consulta">Data da consulta (opcional)</label>
+                <CampoData id="oab-prazo-consulta" value={consulta} disabled={bloqueado} onChange={v => setConsulta(v)} />
+                <Text size="1" color="gray">Deixe vazio se ninguém abriu a intimação: vale a leitura tácita no 10º dia corrido.</Text>
+              </div>
+            )}
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="oab-prazo-dias">Quantidade de dias</label>
               <TextField.Root id="oab-prazo-dias" type="number" min={1} max={999} value={dias} disabled={bloqueado} onChange={e => { setDias(e.target.value); setPrazoPadrao('outro') }} />
@@ -231,8 +262,8 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
               <Select.Root value={contagem} disabled={bloqueado} onValueChange={(v) => setContagem(v as Contagem)}>
                 <Select.Trigger id="oab-prazo-contagem" style={{ width: '100%' }} />
                 <Select.Content>
-                  <Select.Item value="uteis">Dias úteis (CPC art. 219)</Select.Item>
-                  <Select.Item value="corridos">Dias corridos (prorroga para dia útil)</Select.Item>
+                  <Select.Item value="uteis">Dias úteis ({ramo === 'clt' ? 'CLT art. 775' : 'CPC art. 219'})</Select.Item>
+                  <Select.Item value="corridos">Dias corridos ({ramo === 'cpp' ? 'CPP art. 798; ' : ''}prorroga para dia útil)</Select.Item>
                 </Select.Content>
               </Select.Root>
             </div>
@@ -246,7 +277,7 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
           <Text as="label" size="2">
             <Flex gap="2" align="center">
               <Checkbox checked={suspensaoCpc} disabled={bloqueado} onCheckedChange={(checked) => setSuspensaoCpc(Boolean(checked))} />
-              Aplicar suspensão de 20/12 a 20/01 (CPC, art. 220)
+              Aplicar suspensão de 20/12 a 20/01 ({ramo === 'cpp' ? 'CPP, art. 798-A, que tem exceções, como réu preso' : ramo === 'clt' ? 'CLT, art. 775-A' : 'CPC, art. 220'})
             </Flex>
           </Text>
           {calculando && <Text as="p" size="2" role="status">Consultando calendário e calculando prazo…</Text>}
@@ -256,8 +287,11 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
               <Callout.Text>{revisado ? 'A data final será salva conforme sua revisão. A cobertura automática de suspensões e provimentos permanece incompleta.' : erroCalculo || 'A cobertura de feriados municipais, suspensões e provimentos precisa ser revisada. Sem confirmação, a atividade será salva sem vencimento.'}</Callout.Text>
             </Callout.Root>
             {resultado && <Text as="p" size="2" mt="2">Termo inicial: {formatarDataSimples(resultado.termoInicial)} · {resultado.diasContados} dias {resultado.contagem === 'corridos' ? 'corridos' : 'úteis'}{resultado.emDobro ? ` (${dias} em dobro)` : ''} · Data final sugerida: {formatarDataSimples(resultado.dataFinal)}{resultado.prorrogado ? ' (prorrogada para o primeiro dia útil)' : ''}</Text>}
+            {resultado?.leituraTacita && regra === 'portal' && (
+              <Text as="p" size="2" color="amber">Sem consulta nos 10 dias corridos do envio, a intimação se considera realizada no 10º dia (Lei 11.419/2006, art. 5º, §3º). Se o advogado consultou antes, informe a data da consulta.</Text>
+            )}
             {resultado && !suspensaoCpc && cruzaRecesso(base, resultado.dataFinal) && (
-              <Text as="p" size="2" color="amber" role="alert">A contagem passa pelo período de 20/12 a 20/01. Se a suspensão do CPC (art. 220) se aplica a este processo, marque a opção acima: a data final muda.</Text>
+              <Text as="p" size="2" color="amber" role="alert">A contagem passa pelo período de 20/12 a 20/01. Se a suspensão de fim de ano se aplica a este processo, marque a opção acima: a data final muda.</Text>
             )}
             {calendario && <Text as="p" size="2">Município consultado: {calendario.municipio}. Fonte: {calendario.fonte}.</Text>}
           </div>

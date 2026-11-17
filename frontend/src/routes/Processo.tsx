@@ -10,6 +10,7 @@ import { TRIBUNAIS } from '../api/tribunais'
 import { formatarDataSimples, formatarNumeroCNJ } from '../utils/formatadores'
 import { adicionarHistorico, alternarFavorito, ehFavorito } from '../utils/listasRapidas'
 import { siglaTribunalPorNumero } from '../utils/tribunalPorNumero'
+import { analisarNumeroCnj } from '../utils/numeroCnj'
 
 type Movimento = {
   nome?: string
@@ -109,6 +110,8 @@ export default function Processo() {
 
   function aoEnviar(evento: FormEvent) {
     evento.preventDefault()
+    const analise = analisarNumeroCnj(numero)
+    if (!analise.valido) { setErro(`Número CNJ inválido: ${analise.motivo}`); return }
     const escolhido = tribunal || deduzir(numero) || ''
     if (!escolhido) {
       setErro('Não foi possível identificar o tribunal pelo número. Escolha o tribunal na lista.')
@@ -116,6 +119,8 @@ export default function Processo() {
     }
     consultar(escolhido, numero)
   }
+
+  const analiseNumero = numero.trim() ? analisarNumeroCnj(numero) : null
 
   return (
     <Flex direction="column" gap="6">
@@ -136,7 +141,11 @@ export default function Processo() {
                 value={numero}
                 onChange={(e) => aoDigitarNumero(e.target.value)}
               />
-              <Text size="1" color="gray">20 dígitos, com ou sem pontuação. O tribunal é identificado pelo número.</Text>
+              {analiseNumero && analiseNumero.digitos.length === 20
+                ? <Text size="1" color={analiseNumero.valido ? 'green' : 'red'} role={analiseNumero.valido ? 'status' : 'alert'}>
+                    {analiseNumero.valido ? `Dígito verificador conferido: ${analiseNumero.sigla!.toUpperCase()} (${analiseNumero.justica}).` : analiseNumero.motivo}
+                  </Text>
+                : <Text size="1" color="gray">20 dígitos, com ou sem pontuação. O tribunal é identificado pelo número.</Text>}
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="tribunal">Tribunal</label>

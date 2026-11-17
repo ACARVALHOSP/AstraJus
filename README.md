@@ -69,6 +69,7 @@ Duas visões:
 ### Processos
 
 - Lista com busca, filtros (responsável, tribunal, situação), atalhos (em andamento, publicação a revisar, prazo atrasado, parado, encerrados, favoritos), ordenação por coluna, escolha de colunas, paginação e **exportação em CSV**.
+- **Número CNJ conferido:** o cadastro e a consulta validam o dígito verificador (Res. CNJ 65/2008), o ano e o código do tribunal, e mostram o tribunal identificado pelo número.
 - **Cadastro** com cliente principal e adicionais, responsável, ação, foro, partes, desfecho e pasta. O cliente é escolhido por busca de nome ou CPF/CNPJ.
 - **Capa do processo** (DataJud + DJEN): tribunal, classe, assuntos, grau, distribuição, órgão julgador, município e UF, nível de sigilo, partes e advogados. Considera todas as instâncias (assuntos de todas, município do 1º grau, maior sigilo). Atualização manual e automática.
 - **Posição do cliente no processo:** parte ativa, passiva ou terceiro, deduzida da capa e das publicações e corrigível no cabeçalho do processo. Aparece também na ficha do contato.
@@ -85,6 +86,8 @@ Duas visões:
   - 15 prazos-padrão do CPC e da Lei 9.099/95 com a base legal (contestação, réplica, apelação, embargos de declaração, agravos, cumprimento de sentença e outros);
   - contagem em **dias úteis** ou **corridos** (com prorrogação para o primeiro dia útil), **prazo em dobro** (CPC arts. 180, 183, 186 e 229), publicação no primeiro dia útil seguinte à disponibilização e suspensão de 20/12 a 20/01 (art. 220);
   - feriados nacionais e estaduais, e municipais do TJSP;
+  - **catálogo ampliado:** além dos 15 mais usados, mais de 300 prazos fixados em dias nas tabelas do CPC, da CLT e do CPP, agrupados por fase, com a contagem de cada ramo (CPC e CLT em dias úteis; processo penal em dias corridos, prorrogados para o dia útil);
+  - **intimação pelo portal e leitura tácita** (Lei 11.419/2006, art. 5º): informe o envio e, se houver, a data da consulta; sem consulta, a intimação vale no 10º dia corrido e o prazo começa no dia útil seguinte (CPC, art. 231, V);
   - demonstrativo dia a dia com impressão/PDF e **revisão obrigatória** antes de confirmar a data.
 - **Alertas de vencimento:** prazos e audiências a 5, 2 e 1 dia, no dia e, para prazos, até 3 dias depois de vencer, no sino e por e-mail (com SMTP configurado). Cada aviso sai uma vez por pessoa e some quando a atividade é concluída.
 - **Horas por processo:** em Trabalho › Horas, lançamento manual ("1:30", "1h30", "45min", "1,5") ou cronômetro individual que só conta enquanto está ligado, com filtros por período, pessoa, processo e situação, totais (tempo total, faturável, a faturar, faturado) e exportação em CSV. O valor por hora é definido pelo administrador para cada pessoa e fica gravado em cada lançamento (mudar o valor depois não altera horas antigas); também pode ser informado à mão. Horas faturáveis, de um só processo, viram **um lançamento de honorário** no Financeiro com um clique; depois disso ficam travadas, e as horas são reservadas antes de criar o lançamento, então duas pessoas faturando ao mesmo tempo nunca cobram a mesma hora duas vezes. Excluir o lançamento no Financeiro libera as horas.
