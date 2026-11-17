@@ -16,11 +16,14 @@
   background: var(--accent-a3); border: 1px solid var(--accent-a6);
 }
 .oab-tabela {
-  .oab-col-data { inline-size: 7rem; }
-  .oab-col-processo { inline-size: 14rem; }
-  :is(th, td).tabela-controle, :is(th, td).oab-col-seta { inline-size: 1.5rem; padding-inline: 0; text-align: center; }
-  .oab-col-situacao { inline-size: 12rem; }
-  .oab-col-acoes { inline-size: 7rem; }
+  // Larguras do conteúdo (o padding das células é somado). O seletor duplo vence as regras de
+  // largura do modo compacto em tabelas.scss, que têm três classes.
+  &.tabela-fluida .oab-col-data { inline-size: 5.5rem; }
+  &.tabela-fluida .oab-col-processo { inline-size: 12rem; }
+  &.tabela-fluida :is(th, td).tabela-controle, &.tabela-fluida :is(th, td).oab-col-seta { inline-size: 1.5rem; padding-inline: 0; text-align: center; }
+  &.tabela-fluida .oab-col-triagem { inline-size: 10rem; }
+  &.tabela-fluida .oab-col-situacao { inline-size: 9.5rem; }
+  &.tabela-fluida .oab-col-acoes { inline-size: 5rem; }
 }
 .oab-linha-selecionada > td { background: var(--accent-a2); }
 .oab-data { font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -74,7 +77,6 @@
 }
 
 .oab-triagem { max-inline-size: 16rem; }
-.oab-col-triagem { inline-size: 14.75rem; }
 .oab-situacao-selos { display: flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; }
 .oab-ordenar--urgencia::after { content: ' ↓ urgência'; }
 
