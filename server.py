@@ -3939,7 +3939,7 @@ class _AutenticacaoBearer:
             # acesso por link assinado e temporário (sem token de usuário)
             await _servir_certidao(scope, send)
             return
-        if caminho.startswith('/admin/usuarios/') or caminho.startswith('/admin/banco/'):
+        if caminho.startswith('/admin/usuarios/') or caminho.startswith('/admin/banco/') or caminho.startswith('/admin/automacoes/'):
             import usuarios_admin
             await usuarios_admin.tratar(self, scope, receive, send, sys.modules[__name__])
             return

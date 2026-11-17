@@ -1,8 +1,10 @@
 """Perfis estruturados e administração de usuários, compatíveis com dados legados."""
 import asyncio
+import automacoes
 import emails_html
 import hmac
 import json
+import monitoramento_runtime
 import os
 import re
 import secrets
@@ -554,6 +556,23 @@ async def tratar(app, scope, receive, send, s):
                     origem.backup(copia)
                 await s._responder(send, 200, destino.read_bytes(), tipo='application/octet-stream',
                     cabecalhos_extra=[(b'content-disposition', b'attachment; filename="cnj-backup.db"'), (b'cache-control', b'no-store')])
+        elif path == '/admin/automacoes/api' and method == 'GET':
+            repo_auto = automacoes.Repositorio(app.registro.caminho)
+            execucoes = monitoramento_runtime.Repositorio(app.registro.caminho).historico
+            await s._json(send, 200, {'rotinas': repo_auto.listar(lambda chave: execucoes(chave, 1)),
+                                      'historico': repo_auto.historico()})
+        elif path.startswith('/admin/automacoes/api/') and method == 'PUT':
+            chave = unquote(path[len('/admin/automacoes/api/'):])
+            raw = await s._ler_corpo(receive)
+            if raw is None:
+                await s._json(send, 413, {'mensagem': 'Corpo da requisição grande demais.'})
+                return
+            pedido = json.loads(raw or b'{}')
+            if not isinstance(pedido, dict):
+                raise ValueError('Informe um objeto JSON.')
+            repo_auto = automacoes.Repositorio(app.registro.caminho)
+            estado = repo_auto.definir(chave, ator, ativo=pedido.get('ativo'), parametros=pedido.get('parametros'))
+            await s._json(send, 200, {'chave': chave, **estado})
         elif path.startswith('/admin/usuarios/api/') and path.endswith('/vinculos') and method == 'GET':
             alvo = unquote(path[len('/admin/usuarios/api/'):-len('/vinculos')])
             await s._json(send, 200, {'usuario': alvo, 'vinculos': vinculos(app.registro, alvo)})
