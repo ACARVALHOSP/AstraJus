@@ -60,6 +60,10 @@ Restam ~26 arquivos com `buscarJson` direto. Ordem sugerida:
 - [ ] **B+F** Radar legislativo: listas de palavras-chave sobre Câmara e Senado, com itens pendentes e revisados
 - [ ] **B+F** CRM de triagem: atendimento inicial (dados, parte contrária, área e honorários) com pendentes, convertidos e arquivados, antes de virar cliente ou processo
 
+### Planejados a partir de módulos de referência (análise feita, sem código)
+- [ ] **B+F** Módulo **Calculadoras** com liquidação de sentença (atualização monetária, juros, multa, honorários e memorial de cálculo): plano em `.scratch/liquidacao-sentenca/spec.md`. Referência: `mcp-dir/liquidacao-de-sentenca-mcp` (só manifestos e docs; servidor proprietário, então implementar nativamente)
+- [ ] **B+F** **Jurisprudência multitribunal** (súmulas, inteiro teor e outros tribunais além do TJSP): plano em `.scratch/jurisprudencia-multitribunal/spec.md`. Referência: `mcp-dir/jurisprudencia-mcp` (só manifestos e docs)
+
 ### Prioridade baixa
 - [ ] **B+F** Portal do cliente e explicação dos andamentos em linguagem simples (IA, sempre com revisão do advogado)
 - [ ] **B+F** Cofre de documentos com hash e marca d'água; documentos por link (estende `/certidoes/<arquivo>`)
