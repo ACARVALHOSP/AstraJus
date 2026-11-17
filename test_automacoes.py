@@ -31,9 +31,16 @@ class RepositorioTest(_Base):
         self.assertEqual(self.repo.estado("rotina_a"), {"ativo": True, "parametros": {"dias": 60}})
         self.assertTrue(self.repo.ativa("rotina_b"))
 
-    def test_catalogo_real_traz_as_cinco_rotinas_do_agendador(self):
+    def test_catalogo_real_traz_as_rotinas_do_agendador(self):
         self.assertEqual(set(automacoes.CATALOGO),
-                         {"monitoramentos", "captura_oab", "movimentos", "alertas_prazo", "triagem_publicacoes"})
+                         {"monitoramentos", "captura_oab", "movimentos", "alertas_prazo", "triagem_publicacoes", "processo_parado"})
+
+    def test_rotinas_antigas_nascem_ligadas_e_as_novas_desligadas(self):
+        repo = automacoes.Repositorio(self.caminho)
+        for chave in ("monitoramentos", "captura_oab", "movimentos", "alertas_prazo", "triagem_publicacoes"):
+            self.assertTrue(repo.ativa(chave), chave)
+        self.assertFalse(repo.ativa("processo_parado"))
+        self.assertEqual(repo.estado("processo_parado")["parametros"], {"dias": 60})
 
     def test_desligar_persiste_e_entra_no_historico(self):
         depois = self.repo.definir("rotina_a", "usuario:ana", ativo=False)
@@ -169,7 +176,7 @@ class RotasAdministrativasTest(unittest.TestCase):
             status, corpo = self.run_("/admin/automacoes/api", token)
             self.assertEqual(status, 200)
             self.assertEqual({r["chave"] for r in corpo["rotinas"]}, set(automacoes.CATALOGO))
-            self.assertTrue(all(r["ativo"] for r in corpo["rotinas"]))
+            self.assertEqual({r["chave"] for r in corpo["rotinas"] if not r["ativo"]}, {"processo_parado"})
             self.assertEqual(corpo["historico"], [])
 
     def test_desligar_pela_rota_grava_historico_com_ator(self):
@@ -187,6 +194,10 @@ class RotasAdministrativasTest(unittest.TestCase):
         self.assertEqual(self.run_("/admin/automacoes/api/alertas_prazo", self.admin, "PUT", {"ativo": "sim"})[0], 400)
         self.assertEqual(self.run_("/admin/automacoes/api/alertas_prazo", self.admin, "PUT", {"parametros": {"x": 1}})[0], 400)
         self.assertEqual(self.run_("/admin/automacoes/api/alertas_prazo", self.admin, "PUT", [1])[0], 400)
+        # parâmetro da rotina nova: dentro e fora da faixa 15-365
+        self.assertEqual(self.run_("/admin/automacoes/api/processo_parado", self.admin, "PUT", {"parametros": {"dias": 14}})[0], 400)
+        status, corpo = self.run_("/admin/automacoes/api/processo_parado", self.admin, "PUT", {"ativo": True, "parametros": {"dias": 90}})
+        self.assertEqual((status, corpo["ativo"], corpo["parametros"]), (200, True, {"dias": 90}))
         self.assertTrue(automacoes.Repositorio(self.caminho).ativa("alertas_prazo"))
 
     def test_ultima_execucao_aparece_na_listagem(self):

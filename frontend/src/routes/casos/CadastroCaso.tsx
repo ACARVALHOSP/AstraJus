@@ -12,6 +12,7 @@ import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarNumeroCNJ } from '../../utils/formatadores'
 import type { Caso } from './ListaCasos'
 import CapaProcesso from './CapaProcesso'
+import AvisoProcessoParadoOpcao from './AvisoProcessoParado'
 
 const SEM_RESPONSAVEIS: string[] = []
 
@@ -158,6 +159,7 @@ export default function CadastroCaso({
           </Select.Root>
           <Text size="1" color="gray">Classificação interna; não altera as permissões do sistema.</Text>
         </div>
+        {caso && <AvisoProcessoParadoOpcao casoId={caso.id} />}
       </div>
       <div className="casos-acoes-cadastro">
         <Button size="2" onClick={salvar} loading={salvando}>

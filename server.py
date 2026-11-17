@@ -42,6 +42,7 @@ from zoneinfo import ZoneInfo
 import cnj
 import tpu
 import asaas_integracao
+import automacoes
 import agenda_atividades
 import financeiro_juridico
 import triagem
@@ -3571,6 +3572,18 @@ async def _triagem_automatica(publicacoes: "RegistroPublicacoesOAB", agora=lambd
     return not falhas
 
 
+async def _avisar_processos_parados(gestao: "RegistroClientesCasos", agora=lambda: datetime.now(timezone.utc)) -> bool:
+    """Rotina diária "Processo parado" (desligada até um administrador ligar em Administração › Automações)."""
+    cfg = _smtp_do_ambiente()
+
+    async def enviar(destino, assunto, corpo, html):
+        await asyncio.to_thread(_enviar_email_simples, cfg, destino, assunto, corpo, html=html)
+
+    return await automacoes.avisar_processos_parados(
+        gestao, agora=agora, enviar_email=enviar if cfg else None,
+        base_url=(os.environ.get("CNJ_MCP_URL_PUBLICA") or "").rstrip("/"))
+
+
 ALERTAS_PRAZO_FAIXAS = (0, 1, 2, 5)  # dias que faltam: o aviso sai ao entrar em cada faixa
 
 
@@ -4128,6 +4141,9 @@ class _AutenticacaoBearer:
         rota_modelos = re.fullmatch(r"/casos/([^/]+)/modelos-prazo(?:/(.*))?", caminho)
         if rota_modelos and self.gestao is not None:
             await self._modelos_do_caso(scope, receive, send, rota_modelos[1], (rota_modelos[2] or "").strip("/"))
+            return
+        if caminho.startswith("/casos/") and caminho.endswith("/aviso-processo-parado") and self.gestao is not None:
+            await self._aviso_processo_parado(scope, receive, send, caminho[len("/casos/"):-len("/aviso-processo-parado")].rstrip("/"), usuario)
             return
         if caminho.startswith("/casos/") and caminho.endswith("/polos") and self.gestao is not None:
             await self._caso_polos(scope, receive, send, caminho[len("/casos/"):-len("/polos")].rstrip("/"))
@@ -5179,6 +5195,29 @@ class _AutenticacaoBearer:
                                             else f"{sobraram} atividade(s) ficaram criadas; confira o processo antes de tentar de novo.")))
             return
         await _json(send, 200, {"atividades": criadas})
+
+    async def _aviso_processo_parado(self, scope, receive, send, caso_id: str, usuario: str | None) -> None:
+        """GET/PUT /casos/<id>/aviso-processo-parado: se a rotina "Processo parado" avisa sobre este processo.
+        PUT {silenciado: true|false} liga ou desliga o silêncio (reversível); qualquer pessoa com acesso ao processo pode."""
+        metodo = scope.get("method")
+        if metodo not in ("GET", "PUT"):
+            await _json(send, 405, _erro("Método não permitido."))
+            return
+        if self.gestao.obter_caso(caso_id) is None:
+            await _json(send, 404, _erro("Processo não encontrado."))
+            return
+        config = automacoes.Repositorio(self.gestao.caminho)
+        if metodo == "PUT":
+            dados = await self._corpo_json(receive, send)
+            if dados is None:
+                return
+            if not isinstance(dados.get("silenciado"), bool):
+                await _json(send, 400, _erro("Informe silenciado como verdadeiro ou falso."))
+                return
+            config.silenciar("processo_parado", caso_id, usuario or "", dados["silenciado"])
+        estado = config.estado("processo_parado")
+        await _json(send, 200, {"silenciado": caso_id in config.silenciados("processo_parado"),
+                                "rotina_ativa": estado["ativo"], "dias": estado["parametros"]["dias"]})
 
     async def _caso_polos(self, scope, receive, send, caso_id: str) -> None:
         """PUT /casos/<id>/polos: {cliente_id, polo}. Corrige o polo de um cliente no processo
@@ -7066,6 +7105,7 @@ def _montar_agendador(
         ('movimentos', 12, _atualizar_movimentos_processos, [gestao], {}),
         ('alertas_prazo', 6, _alertar_prazos, [gestao], {}),
         ('triagem_publicacoes', 1, _triagem_automatica, [publicacoes], {}),
+        ('processo_parado', 24, _avisar_processos_parados, [gestao], {}),
     ):
         agendador.add_job(repo.executar, 'interval', minutes=5, id=nome,
             args=[nome, horas, funcao, args, kwargs], next_run_time=datetime.now(timezone.utc),
