@@ -16,12 +16,11 @@
   background: var(--accent-a3); border: 1px solid var(--accent-a6);
 }
 .oab-tabela {
-  .oab-col-data { inline-size: 7.5rem; }
-  .oab-col-processo { inline-size: 14.5rem; }
-  .oab-col-tipo { inline-size: 7rem; }
+  .oab-col-data { inline-size: 7rem; }
+  .oab-col-processo { inline-size: 14rem; }
   :is(th, td).tabela-controle, :is(th, td).oab-col-seta { inline-size: 2rem; padding-inline: 0.125rem; }
-  .oab-col-situacao { inline-size: 10rem; }
-  .oab-col-acoes { inline-size: 11rem; }
+  .oab-col-situacao { inline-size: 12rem; }
+  .oab-col-acoes { inline-size: 9rem; }
 }
 .oab-linha-selecionada > td { background: var(--accent-a2); }
 .oab-data { font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -75,7 +74,8 @@
 }
 
 .oab-triagem { max-inline-size: 16rem; }
-.oab-col-triagem { inline-size: 14rem; }
+.oab-col-triagem { inline-size: 14.75rem; }
+.oab-situacao-selos { display: flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; }
 .oab-ordenar--urgencia::after { content: ' ↓ urgência'; }
 
 // Publicação destinada a cliente: faixa vermelha à esquerda para não passar despercebida.

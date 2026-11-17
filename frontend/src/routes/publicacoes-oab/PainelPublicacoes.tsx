@@ -617,7 +617,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
             })}
           </ul>
         ) : (
-          <TabelaResponsiva principais={triagemAtiva ? ['Processo', 'Partes', 'Triagem', 'Situação'] : ['Processo', 'Partes', 'Situação']}>
+          <TabelaResponsiva principais={triagemAtiva ? ['Processo', 'Partes', 'Triagem', 'Situação/Tipo'] : ['Processo', 'Partes', 'Situação/Tipo']} larguraCompacta={triagemAtiva ? 1000 : 860}>
             <table aria-label="Publicações recebidas" className="oab-tabela">
               <thead>
                 <tr>
@@ -638,11 +638,10 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
                   <th className="oab-col-processo">Processo</th>
                   <th>Partes</th>
                   {opcionais.map(c => <th key={c.key}>{c.header}</th>)}
-                  <th className="oab-col-tipo">Tipo</th>
                   {triagemAtiva && (
                     <th className="oab-col-triagem">Triagem</th>
                   )}
-                  <th className="oab-col-situacao">Situação</th>
+                  <th className="oab-col-situacao">Situação/Tipo</th>
                   <th className="tabela-acoes oab-col-acoes">Ações</th>
                 </tr>
               </thead>
@@ -673,10 +672,9 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
                         </td>
                         <td>{nomePublicacao(p)}{p.destino && <div className="oab-destino-linha">{seloDestino(p)}</div>}</td>
                         {opcionais.map(c => <td key={c.key}>{c.valor(p)}</td>)}
-                        <td>{seloTipo(p)}</td>
                         {triagemAtiva && <td>{seloTriagem(p)}</td>}
                         <td>
-                          {seloStatus(p)}
+                          <div className="oab-situacao-selos">{seloStatus(p)}{p.dados?.tipoComunicacao && seloTipo(p)}</div>
                           <div className="oab-vinculo-linha">{vinculo(p)}</div>
                         </td>
                         <td className="tabela-acoes">
@@ -688,7 +686,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
                       </tr>
                       {aberta && (
                         <tr id={`oab-detalhes-${p.hash}`}>
-                          <td colSpan={8 + opcionais.length + (triagemAtiva ? 1 : 0)} className="oab-detalhes-celula">{detalhes(p)}</td>
+                          <td colSpan={7 + opcionais.length + (triagemAtiva ? 1 : 0)} className="oab-detalhes-celula">{detalhes(p)}</td>
                         </tr>
                       )}
                     </Fragment>
