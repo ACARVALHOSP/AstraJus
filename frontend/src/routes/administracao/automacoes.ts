@@ -1,14 +1,17 @@
 // Tela "Automações" da Administração: rótulos, estado resumido e validação, sem React (testado em
 // tests/automacoes.test.mjs). O servidor é quem valida de verdade; aqui só se evita o ida-e-volta óbvio.
 
-export type ParametroDefinido = { tipo: 'int'; rotulo: string; minimo: number; maximo: number; padrao: number }
+export type ParametroInt = { tipo: 'int'; rotulo: string; minimo: number; maximo: number; padrao: number }
+export type ParametroLista = { tipo: 'lista_int'; rotulo: string; minimo: number; maximo: number; min_itens: number; max_itens: number; padrao: number[] }
+export type ParametroDefinido = ParametroInt | ParametroLista
+export type ValorParametro = number | number[]
 export type ExecucaoAuto = { inicio: string; fim: string | null; estado: string; erro: string | null }
 export type RotinaAuto = {
   chave: string; nome: string; descricao: string; ativo: boolean
-  parametros: Record<string, number>; parametros_definidos: Record<string, ParametroDefinido>
+  parametros: Record<string, ValorParametro>; parametros_definidos: Record<string, ParametroDefinido>
   ultima_execucao: ExecucaoAuto | null
 }
-export type EstadoAuto = { ativo: boolean; parametros: Record<string, number> }
+export type EstadoAuto = { ativo: boolean; parametros: Record<string, ValorParametro> }
 export type AlteracaoAuto = { ocorrido_em: string; ator: string; chave: string; antes: EstadoAuto; depois: EstadoAuto }
 
 export type SeloAuto = { texto: string; cor: 'gray' | 'green' | 'red' | 'amber' }
@@ -47,11 +50,31 @@ export function descreverAlteracao(a: AlteracaoAuto, nomes: Record<string, strin
   return `${quem} alterou os parâmetros de "${nome}"`
 }
 
+/** Valor mostrado no campo: número, ou a lista separada por vírgula ("15, 5, 1, 0"). */
+export function textoDoValor(valor: ValorParametro): string {
+  return Array.isArray(valor) ? valor.join(', ') : String(valor)
+}
+
+/** Lê o texto digitado. Devolve o valor (lista em ordem decrescente, como o servidor guarda) ou a mensagem de erro. */
+export function lerParametro(def: ParametroDefinido, texto: string): { valor: ValorParametro; erro: '' } | { valor: null; erro: string } {
+  const fim = (erro: string) => ({ valor: null, erro }) as const
+  if (def.tipo === 'int') {
+    const t = texto.trim()
+    if (!/^-?\d+$/.test(t)) return fim(`${def.rotulo}: informe um número inteiro.`)
+    const n = Number(t)
+    if (n < def.minimo || n > def.maximo) return fim(`${def.rotulo}: informe um valor entre ${def.minimo} e ${def.maximo}.`)
+    return { valor: n, erro: '' }
+  }
+  const partes = texto.split(/[\s,;]+/).filter(Boolean)
+  if (partes.some(p => !/^\d+$/.test(p))) return fim(`${def.rotulo}: informe números inteiros separados por vírgula.`)
+  const lista = partes.map(Number)
+  if (lista.length < def.min_itens || lista.length > def.max_itens) return fim(`${def.rotulo}: informe de ${def.min_itens} a ${def.max_itens} valores.`)
+  if (new Set(lista).size !== lista.length) return fim(`${def.rotulo}: há valores repetidos.`)
+  if (lista.some(v => v < def.minimo || v > def.maximo)) return fim(`${def.rotulo}: cada valor deve estar entre ${def.minimo} e ${def.maximo}.`)
+  return { valor: [...lista].sort((x, y) => y - x), erro: '' }
+}
+
 /** Mensagem de erro para o valor digitado, ou '' se estiver valendo. */
 export function erroDoParametro(def: ParametroDefinido, texto: string): string {
-  const valor = texto.trim()
-  if (!/^-?\d+$/.test(valor)) return `${def.rotulo}: informe um número inteiro.`
-  const n = Number(valor)
-  if (n < def.minimo || n > def.maximo) return `${def.rotulo}: informe um valor entre ${def.minimo} e ${def.maximo}.`
-  return ''
+  return lerParametro(def, texto).erro
 }

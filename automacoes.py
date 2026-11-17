@@ -19,7 +19,7 @@ import notificacoes
 
 log = logging.getLogger("cnj-processual")
 
-# Cada parâmetro: {"tipo": "int", "rotulo", "minimo", "maximo", "padrao"}. `ativo_por_padrao` (omitido = ligada):
+# Cada parâmetro: {"tipo": "int", "rotulo", "minimo", "maximo", "padrao"} ou {"tipo": "lista_int", ..., "min_itens", "max_itens"}. `ativo_por_padrao` (omitido = ligada):
 # as rotinas que já existiam seguem ligadas; as novas nascem desligadas até um administrador ligar.
 CATALOGO: dict[str, dict] = {
     "monitoramentos": {
@@ -39,8 +39,14 @@ CATALOGO: dict[str, dict] = {
     },
     "alertas_prazo": {
         "nome": "Alertas de prazos e audiências",
-        "descricao": "Avisa responsáveis a 5, 2 e 1 dia, no dia e após o vencimento; escala aos administradores se ninguém confirma ciência.",
-        "parametros": {},
+        "descricao": "Avisa o responsável quando faltam os dias configurados, no dia e após o vencimento (prazos); escala aos "
+                     "administradores se ninguém confirma ciência do prazo. Cada faixa avisa uma vez, ao entrar nela.",
+        "parametros": {
+            "faixas_prazo": {"tipo": "lista_int", "rotulo": "Avisar prazos quando faltarem (dias)",
+                             "minimo": 0, "maximo": 30, "min_itens": 1, "max_itens": 6, "padrao": [5, 2, 1, 0]},
+            "faixas_audiencia": {"tipo": "lista_int", "rotulo": "Avisar audiências quando faltarem (dias)",
+                                 "minimo": 0, "maximo": 30, "min_itens": 1, "max_itens": 6, "padrao": [15, 5, 1, 0]},
+        },
     },
     "triagem_publicacoes": {
         "nome": "Triagem de publicações",
@@ -79,7 +85,17 @@ def _validar_parametros(catalogo_rotina: dict, enviados) -> dict:
                 raise ValueError(f"{rotulo}: informe um número inteiro.")
             if not regra["minimo"] <= valor <= regra["maximo"]:
                 raise ValueError(f"{rotulo}: informe um valor entre {regra['minimo']} e {regra['maximo']}.")
-        else:  # pragma: no cover - só "int" existe por enquanto
+        elif regra["tipo"] == "lista_int":
+            if not isinstance(valor, list) or any(isinstance(v, bool) or not isinstance(v, int) for v in valor):
+                raise ValueError(f"{rotulo}: informe uma lista de números inteiros.")
+            if not regra["min_itens"] <= len(valor) <= regra["max_itens"]:
+                raise ValueError(f"{rotulo}: informe de {regra['min_itens']} a {regra['max_itens']} valores.")
+            if len(set(valor)) != len(valor):
+                raise ValueError(f"{rotulo}: há valores repetidos.")
+            if any(not regra["minimo"] <= v <= regra["maximo"] for v in valor):
+                raise ValueError(f"{rotulo}: cada valor deve estar entre {regra['minimo']} e {regra['maximo']}.")
+            valor = sorted(valor, reverse=True)  # forma única: maior para o menor
+        else:  # pragma: no cover - só "int" e "lista_int" existem por enquanto
             raise ValueError(f"{rotulo}: tipo de parâmetro não suportado.")
         resultado[nome] = valor
     return resultado
@@ -94,6 +110,8 @@ class Repositorio:
                 CREATE TABLE IF NOT EXISTS automacoes_config (
                     chave TEXT PRIMARY KEY, ativo INTEGER NOT NULL DEFAULT 1,
                     parametros TEXT NOT NULL DEFAULT '{}', atualizado_em TEXT NOT NULL, atualizado_por TEXT);
+                CREATE TABLE IF NOT EXISTS automacoes_vigencia (
+                    chave TEXT NOT NULL, parametro TEXT NOT NULL, desde TEXT NOT NULL, PRIMARY KEY (chave, parametro));
                 CREATE TABLE IF NOT EXISTS automacoes_silenciados (
                     rotina TEXT NOT NULL, caso_id TEXT NOT NULL, criado_em TEXT NOT NULL, criado_por TEXT,
                     PRIMARY KEY (rotina, caso_id));
@@ -114,7 +132,8 @@ class Repositorio:
     def _padrao(self, chave: str) -> dict:
         definicao = self.catalogo[chave]
         return {"ativo": definicao.get("ativo_por_padrao", True),
-                "parametros": {n: r["padrao"] for n, r in definicao["parametros"].items()}}
+                "parametros": {n: list(r["padrao"]) if isinstance(r["padrao"], list) else r["padrao"]
+                               for n, r in definicao["parametros"].items()}}
 
     def estado(self, chave: str) -> dict:
         """Estado efetivo da rotina: o gravado sobre o padrão do catálogo."""
@@ -134,8 +153,9 @@ class Repositorio:
             return True
         return self.estado(chave)["ativo"]
 
-    def definir(self, chave: str, ator: str, ativo=None, parametros=None) -> dict:
-        """Liga/desliga e/ou altera parâmetros. Só registra (e grava histórico) quando algo muda de fato."""
+    def definir(self, chave: str, ator: str, ativo=None, parametros=None, agora: datetime | None = None) -> dict:
+        """Liga/desliga e/ou altera parâmetros. Só registra (e grava histórico) quando algo muda de fato.
+        Cada parâmetro que mudou guarda desde quando vale o valor novo (`vigencia`)."""
         if chave not in self.catalogo:
             raise LookupError("Rotina desconhecida.")
         if ativo is not None and not isinstance(ativo, bool):
@@ -145,16 +165,29 @@ class Repositorio:
         depois = {"ativo": antes["ativo"] if ativo is None else ativo, "parametros": {**antes["parametros"], **novos}}
         if depois == antes:
             return antes
-        agora = _agora()
+        instante = (agora or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+        # Só o que difere do padrão do catálogo é gravado: se o padrão mudar no código, quem não mexeu acompanha.
+        padrao = self._padrao(chave)["parametros"]
+        alterados = {n: v for n, v in depois["parametros"].items() if v != padrao[n]}
         with self._abrir() as c:
+            for nome, valor in depois["parametros"].items():
+                if valor != antes["parametros"].get(nome):
+                    c.execute("INSERT INTO automacoes_vigencia (chave, parametro, desde) VALUES (?,?,?) "
+                              "ON CONFLICT(chave, parametro) DO UPDATE SET desde=excluded.desde", (chave, nome, instante))
             c.execute(
                 "INSERT INTO automacoes_config (chave, ativo, parametros, atualizado_em, atualizado_por) VALUES (?,?,?,?,?) "
                 "ON CONFLICT(chave) DO UPDATE SET ativo=excluded.ativo, parametros=excluded.parametros, "
                 "atualizado_em=excluded.atualizado_em, atualizado_por=excluded.atualizado_por",
-                (chave, int(depois["ativo"]), json.dumps(depois["parametros"], ensure_ascii=False), agora, ator))
+                (chave, int(depois["ativo"]), json.dumps(alterados, ensure_ascii=False), instante, ator))
             c.execute("INSERT INTO automacoes_config_historico (ocorrido_em, ator, chave, antes, depois) VALUES (?,?,?,?,?)",
-                      (agora, ator, chave, json.dumps(antes, ensure_ascii=False), json.dumps(depois, ensure_ascii=False)))
+                      (instante, ator, chave, json.dumps(antes, ensure_ascii=False), json.dumps(depois, ensure_ascii=False)))
         return depois
+
+    def vigencia(self, chave: str, parametro: str) -> datetime | None:
+        """Quando o valor atual do parâmetro passou a valer; None se nunca foi alterado (vale o padrão desde sempre)."""
+        with self._abrir() as c:
+            linha = c.execute("SELECT desde FROM automacoes_vigencia WHERE chave=? AND parametro=?", (chave, parametro)).fetchone()
+        return datetime.fromisoformat(linha[0]) if linha else None
 
     def silenciados(self, rotina: str) -> set[str]:
         """Processos em que a pessoa pediu para a rotina não avisar."""

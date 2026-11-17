@@ -96,6 +96,52 @@ class RepositorioTest(_Base):
         self.assertEqual(itens["rotina_a"]["parametros_definidos"]["dias"]["padrao"], 60)
 
 
+class ListaEVigenciaTest(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.caminho = Path(tmp.name) / "teste.db"
+        self.repo = automacoes.Repositorio(self.caminho)
+
+    def test_padroes_das_faixas(self):
+        parametros = self.repo.estado("alertas_prazo")["parametros"]
+        self.assertEqual(parametros, {"faixas_prazo": [5, 2, 1, 0], "faixas_audiencia": [15, 5, 1, 0]})
+
+    def test_lista_valida_e_guardada_do_maior_para_o_menor(self):
+        depois = self.repo.definir("alertas_prazo", "x", parametros={"faixas_prazo": [3, 10, 0]})
+        self.assertEqual(depois["parametros"]["faixas_prazo"], [10, 3, 0])
+        self.assertEqual(self.repo.estado("alertas_prazo")["parametros"]["faixas_prazo"], [10, 3, 0])
+
+    def test_lista_invalida_e_recusada(self):
+        for lista in ([], [1] * 2, [5, 5], [31], [-1], list(range(7)), "5,2", [1.5], [True], [None]):
+            with self.assertRaises(ValueError, msg=str(lista)):
+                self.repo.definir("alertas_prazo", "x", parametros={"faixas_prazo": lista})
+        self.assertEqual(self.repo.historico(), [])
+
+    def test_so_o_que_difere_do_padrao_e_gravado(self):
+        self.repo.definir("alertas_prazo", "x", ativo=False)  # só desliga: nenhum parâmetro vai para o banco
+        with self.repo._abrir() as c:
+            self.assertEqual(c.execute("SELECT parametros FROM automacoes_config WHERE chave='alertas_prazo'").fetchone()[0], "{}")
+        self.repo.definir("alertas_prazo", "x", parametros={"faixas_prazo": [10, 3]})
+        with self.repo._abrir() as c:
+            self.assertEqual(json.loads(c.execute("SELECT parametros FROM automacoes_config WHERE chave='alertas_prazo'").fetchone()[0]),
+                             {"faixas_prazo": [10, 3]})
+
+    def test_vigencia_so_muda_quando_o_valor_muda(self):
+        from datetime import datetime, timezone
+        d1 = datetime(2026, 11, 10, 12, tzinfo=timezone.utc)
+        d2 = datetime(2026, 11, 12, 12, tzinfo=timezone.utc)
+        self.assertIsNone(self.repo.vigencia("alertas_prazo", "faixas_prazo"))
+        self.repo.definir("alertas_prazo", "x", parametros={"faixas_prazo": [10, 3]}, agora=d1)
+        self.assertEqual(self.repo.vigencia("alertas_prazo", "faixas_prazo"), d1)
+        self.assertIsNone(self.repo.vigencia("alertas_prazo", "faixas_audiencia"))      # outro parâmetro não é afetado
+        self.repo.definir("alertas_prazo", "x", ativo=False, agora=d2)                  # desligar não mexe na vigência
+        self.repo.definir("alertas_prazo", "x", parametros={"faixas_prazo": [3, 10]}, agora=d2)  # mesmo valor: nada muda
+        self.assertEqual(self.repo.vigencia("alertas_prazo", "faixas_prazo"), d1)
+        self.repo.definir("alertas_prazo", "x", parametros={"faixas_prazo": [7]}, agora=d2)
+        self.assertEqual(self.repo.vigencia("alertas_prazo", "faixas_prazo"), d2)
+
+
 class ExecucaoRespeitaInterruptorTest(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()

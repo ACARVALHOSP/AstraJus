@@ -3587,11 +3587,27 @@ async def _avisar_processos_parados(gestao: "RegistroClientesCasos", agora=lambd
 ALERTAS_PRAZO_FAIXAS = (0, 1, 2, 5)  # dias que faltam: o aviso sai ao entrar em cada faixa
 
 
-def _faixa_alerta_prazo(dias_faltando: int) -> str:
-    """'atrasado' se já venceu; senão a menor faixa (0, 1, 2 ou 5 dias) que cobre o que falta."""
+def _faixa_alerta_prazo(dias_faltando: int, faixas=ALERTAS_PRAZO_FAIXAS) -> str:
+    """'atrasado' se já venceu; senão a menor faixa configurada que cobre o que falta (ou "" se falta mais
+    que a maior faixa: ainda não é hora de avisar). `faixas` vem em ordem crescente."""
     if dias_faltando < 0:
         return "atrasado"
-    return str(next(f for f in ALERTAS_PRAZO_FAIXAS if dias_faltando <= f))
+    return str(next((f for f in faixas if dias_faltando <= f), ""))
+
+
+def _faixa_ainda_vale(faixa: str, data_alvo, criado_em: str | None, vigente_desde, brasilia) -> bool:
+    """Sem aviso retroativo: uma faixa configurada depois só avisa atividades que ainda não a tinham ultrapassado
+    quando a configuração mudou. A faixa F foi "entrada" em `data_alvo - F dias`; atividades criadas depois da
+    mudança sempre recebem a faixa em que nascem. Sem mudança registrada (`vigente_desde` None), vale tudo."""
+    if vigente_desde is None or faixa == "atrasado":
+        return True
+    desde = vigente_desde.astimezone(brasilia).date()
+    entrada = data_alvo - timedelta(days=int(faixa))
+    try:
+        criada = datetime.fromisoformat(criado_em).astimezone(brasilia).date()
+    except (TypeError, ValueError):
+        criada = entrada  # sem data de criação: só a entrada na faixa conta
+    return max(entrada, criada) >= desde
 
 
 def _enviar_email_simples(cfg: "ConfiguracaoSMTP", destino: str, assunto: str, corpo: str, html: str | None = None) -> None:
@@ -3604,16 +3620,24 @@ def _enviar_email_simples(cfg: "ConfiguracaoSMTP", destino: str, assunto: str, c
 
 
 async def _alertar_prazos(gestao: "RegistroClientesCasos", agora=lambda: datetime.now(timezone.utc), enviar=None) -> bool:
-    """Avisa quem é responsável por prazos e audiências que estão a 5, 2 ou 1 dia de vencer, vencem hoje
-    ou venceram há até 3 dias (só prazos). Cada pessoa recebe cada faixa uma vez, no sino e, havendo
+    """Avisa quem é responsável por prazos e audiências quando faltam os dias configurados (padrão: prazos 5, 2, 1
+    e 0; audiências 15, 5, 1 e 0), e por prazos que venceram há até 3 dias. Cada pessoa recebe cada faixa uma vez, no sino e, havendo
     SMTP e e-mail cadastrado, também por e-mail. O aviso some quando a atividade é concluída.
     O destinatário é o responsável da atividade; sem ele, o do processo; sem ele, os administradores.
 
     Escalonamento (só prazos): se faltando 1 dia, no dia ou já vencido ninguém confirmou ciência até a
     execução seguinte ao primeiro aviso daquela faixa, os administradores que ainda não foram avisados
     recebem um aviso de "prazo sem confirmação de ciência", uma vez por prazo."""
-    hoje = agora().astimezone(timezone(timedelta(hours=-3))).date()  # data de Brasília
-    itens = gestao.atividades_para_alerta(hoje.isoformat(), (hoje + timedelta(days=5)).isoformat(), (hoje - timedelta(days=3)).isoformat())
+    brasilia = timezone(timedelta(hours=-3))
+    hoje = agora().astimezone(brasilia).date()  # data de Brasília
+    # Faixas por tipo (Administração › Automações); em ordem crescente para achar "a menor que cobre o que falta".
+    config = automacoes.Repositorio(gestao.caminho)
+    parametros = config.estado("alertas_prazo")["parametros"]
+    faixas = {"prazo": sorted(parametros["faixas_prazo"]), "audiencia": sorted(parametros["faixas_audiencia"])}
+    vigencias = {"prazo": config.vigencia("alertas_prazo", "faixas_prazo"),
+                 "audiencia": config.vigencia("alertas_prazo", "faixas_audiencia")}
+    itens = gestao.atividades_para_alerta(hoje.isoformat(), (hoje + timedelta(days=max(max(f) for f in faixas.values()))).isoformat(),
+                                          (hoje - timedelta(days=3)).isoformat())
     if not itens:
         return True
     registro = RegistroUsuarios(gestao.caminho)
@@ -3638,7 +3662,11 @@ async def _alertar_prazos(gestao: "RegistroClientesCasos", agora=lambda: datetim
 
     for a in itens:
         destinatarios = [u for u in (a["responsavel"], a["caso_responsavel"]) if u in ativos][:1] or administradores
-        faixa = _faixa_alerta_prazo((datetime.fromisoformat(a["data"][:10]).date() - hoje).days)
+        tipo_faixa = "audiencia" if a["tipo"] == "audiencia" else "prazo"
+        data_alvo = datetime.fromisoformat(a["data"][:10]).date()
+        faixa = _faixa_alerta_prazo((data_alvo - hoje).days, faixas[tipo_faixa])
+        if not faixa or not _faixa_ainda_vale(faixa, data_alvo, a.get("criado_em"), vigencias[tipo_faixa], brasilia):
+            continue
         tipo = "Audiência" if a["tipo"] == "audiencia" else "Prazo"
         quando = {"atrasado": "VENCEU", "0": "vence HOJE", "1": "vence amanhã"}.get(faixa, f"vence em até {faixa} dias")
         tom = "urgente" if faixa in ("atrasado", "0") else "atencao" if faixa in ("1", "2") else ""
@@ -3661,7 +3689,7 @@ async def _alertar_prazos(gestao: "RegistroClientesCasos", agora=lambda: datetim
                 rodape="AstraJus · Alerta de prazos e audiências.")
             await mandar_email(usuario, f"{tipo} {quando}: {a['titulo']}", corpo, html)
         # Escalonamento: o primeiro aviso da faixa já saiu numa execução anterior e ninguém confirmou ciência.
-        if a["tipo"] == "prazo" and faixa in ("1", "0", "atrasado") and not a.get("ciencia_em") and not novos:
+        if a["tipo"] == "prazo" and (data_alvo - hoje).days <= 1 and not a.get("ciencia_em") and not novos:
             reserva = [u for u in administradores if u not in destinatarios]
             for usuario in repo.registrar_escalonamento(a["caso_id"], a["id"], reserva):
                 corpo = (f"Prazo sem confirmação de ciência: {a['titulo']} ({quando})\n{detalhe}"

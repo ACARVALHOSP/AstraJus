@@ -48,3 +48,26 @@ test('validação do parâmetro numérico', () => {
   assert.match(erroDoParametro(def, ''), /número inteiro/)
   assert.match(erroDoParametro(def, 'abc'), /número inteiro/)
 })
+
+test('lista de dias: texto, validação e ordem', async () => {
+  const { lerParametro, textoDoValor } = await import('../src/routes/administracao/automacoes.ts')
+  const def = { tipo: 'lista_int', rotulo: 'Faixas', minimo: 0, maximo: 30, min_itens: 1, max_itens: 6, padrao: [5, 2, 1, 0] }
+  assert.equal(textoDoValor([15, 5, 1, 0]), '15, 5, 1, 0')
+  assert.equal(textoDoValor(60), '60')
+  assert.deepEqual(lerParametro(def, '5, 2, 1, 0'), { valor: [5, 2, 1, 0], erro: '' })
+  assert.deepEqual(lerParametro(def, '0 1 15;5').valor, [15, 5, 1, 0])        // separadores livres, sai do maior para o menor
+  assert.match(lerParametro(def, '').erro, /de 1 a 6 valores/)
+  assert.match(lerParametro(def, '1,2,3,4,5,6,7').erro, /de 1 a 6 valores/)
+  assert.match(lerParametro(def, '5, 5').erro, /repetidos/)
+  assert.match(lerParametro(def, '31').erro, /entre 0 e 30/)
+  assert.match(lerParametro(def, '-1').erro, /inteiros/)
+  assert.match(lerParametro(def, '5, abc').erro, /inteiros/)
+  assert.equal(lerParametro(def, '1,5').erro, '')
+})
+
+test('parâmetro numérico continua igual', async () => {
+  const { lerParametro } = await import('../src/routes/administracao/automacoes.ts')
+  const def = { tipo: 'int', rotulo: 'Dias', minimo: 15, maximo: 365, padrao: 60 }
+  assert.deepEqual(lerParametro(def, ' 90 '), { valor: 90, erro: '' })
+  assert.match(lerParametro(def, '14').erro, /entre 15 e 365/)
+})
