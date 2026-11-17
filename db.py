@@ -18,6 +18,7 @@ remover/renomear o arquivo enquanto o processo estivesse de pé.
 
 import calendar
 import hashlib
+import cnj as _cnj
 import polos as _polos
 import json
 import sqlite3
@@ -532,9 +533,9 @@ def normalizar_numero_processo(numeros: list[str]) -> list[str]:
             continue
         if any(c not in "0123456789.- " for c in numero):
             raise ValueError("Número CNJ inválido: informe 20 dígitos.")
-        digitos = ''.join(c for c in numero if c in "0123456789")
-        if len(digitos) != 20:
-            raise ValueError("Número CNJ inválido: informe 20 dígitos.")
+        digitos, erro_cnj = _cnj.validar_cnj(numero)
+        if erro_cnj:
+            raise ValueError(erro_cnj)
         resultado.append(digitos)
     return resultado
 

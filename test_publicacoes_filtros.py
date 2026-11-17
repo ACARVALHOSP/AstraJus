@@ -45,12 +45,12 @@ class PublicacoesFiltrosTest(unittest.TestCase):
         self.pubs = db.RegistroPublicacoesOAB(caminho)
         agora = lambda: datetime(2026, 11, 7, 8, tzinfo=timezone.utc)
         cliente = self.gestao.criar_cliente("Maria Teste", None, None, agora)
-        self.caso = self.gestao.criar_caso(cliente["id"], "Execução de Título", "ana", ["10056789020268260100"], agora)
+        self.caso = self.gestao.criar_caso(cliente["id"], "Execução de Título", "ana", ["10056786220268260100"], agora)
         registros = [
-            ("h1", "10012345620268260100", _dados("2026-11-07", "Intimação", ["Maria Aparecida"], "manifestar sobre 100% do valor"), "nao_tratada", None),
-            ("h2", "10056789020268260100", _dados("2026-11-06", "Citação", ["Construtora Exemplo"]), "nao_tratada", self.caso["id"]),
-            ("h3", "00123456720255020001", _dados("2026-11-05", "Intimação", ["Carla Souza"], orgao="TRT2"), "tratada", None),
-            ("h4", "10033334420238260100", _dados("2026-11-01", "Edital", ["Interessados"]), "arquivada", None),
+            ("h1", "10012348320268260100", _dados("2026-11-07", "Intimação", ["Maria Aparecida"], "manifestar sobre 100% do valor"), "nao_tratada", None),
+            ("h2", "10056786220268260100", _dados("2026-11-06", "Citação", ["Construtora Exemplo"]), "nao_tratada", self.caso["id"]),
+            ("h3", "00123454220255020001", _dados("2026-11-05", "Intimação", ["Carla Souza"], orgao="TRT2"), "tratada", None),
+            ("h4", "10033333120238260100", _dados("2026-11-01", "Edital", ["Interessados"]), "arquivada", None),
         ]
         for h, numero, dados, status, caso_id in registros:
             self.pubs.registrar(h, None, "Ana Exemplo", numero, dados, status, caso_id, agora)
@@ -66,7 +66,7 @@ class PublicacoesFiltrosTest(unittest.TestCase):
         self.assertEqual(self.hashes(tipo="intimação"), ["h1", "h3"])
         self.assertEqual(self.hashes(desde="2026-11-05", ate="2026-11-06"), ["h2", "h3"])
         self.assertEqual(self.hashes(busca="construtora"), ["h2"])
-        self.assertEqual(self.hashes(busca="1005678-90.2026"), ["h2"])
+        self.assertEqual(self.hashes(busca="1005678-62.2026"), ["h2"])
         self.assertEqual(self.hashes(busca="trt2"), ["h3"])
         # Curingas do LIKE são literais e nomes de campos do JSON não casam.
         self.assertEqual(self.hashes(busca="100%"), ["h1"])

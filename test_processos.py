@@ -19,7 +19,7 @@ class ProcessosTest(unittest.TestCase):
         self.agora = lambda: datetime(2026, 1, 1)
         self.cliente = self.gestao.criar_cliente('Cliente', None, None, self.agora)['id']
         self.n1 = '10063142720238260005'
-        self.n2 = '10063142720238260006'
+        self.n2 = '10063150920238260006'
 
     def criar(self, numeros):
         return self.gestao.criar_caso(self.cliente, 'Processo', None, numeros, self.agora)
