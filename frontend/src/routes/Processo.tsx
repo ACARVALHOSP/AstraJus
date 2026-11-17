@@ -1,7 +1,7 @@
 import CabecalhoPagina from '../CabecalhoPagina'
 import Carregamento from '../Carregamento'
 import { useEffect, useState, type FormEvent } from 'react'
-import { Badge, Button, Callout, Card, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes'
+import { Badge, Button, Callout, Card, Flex, Heading, Select, Tabs, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Info, Star } from 'lucide-react'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
@@ -10,6 +10,7 @@ import { TRIBUNAIS } from '../api/tribunais'
 import { formatarDataSimples, formatarNumeroCNJ } from '../utils/formatadores'
 import { adicionarHistorico, alternarFavorito, ehFavorito } from '../utils/listasRapidas'
 import { erroNumeroCnj, siglaTribunalPorNumero } from '../utils/tribunalPorNumero'
+import BuscaProcessos from './processo/BuscaProcessos'
 
 type Movimento = {
   nome?: string
@@ -48,6 +49,7 @@ export default function Processo() {
   const [consultando, setConsultando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [resultado, setResultado] = useState<RespostaConsulta | null>(null)
+  const [modo, setModo] = useState('numero')
 
   async function consultar(tribunalValor: string, numeroValor: string) {
     if (!cliente) {
@@ -107,6 +109,15 @@ export default function Processo() {
     }
   }
 
+  /** Vindo da busca por classe/órgão/assunto: preenche o formulário e consulta o processo escolhido. */
+  function abrirDaBusca(tribunalValor: string, numeroValor: string) {
+    setModo('numero')
+    setTribunal(tribunalValor)
+    setTribunalAutomatico(false)
+    setNumero(numeroValor)
+    consultar(tribunalValor, numeroValor)
+  }
+
   function aoEnviar(evento: FormEvent) {
     evento.preventDefault()
     const erroCnj = erroNumeroCnj(numero)
@@ -126,8 +137,15 @@ export default function Processo() {
     <Flex direction="column" gap="6">
       <CabecalhoPagina
         titulo="Consultar processo"
-        descricao="Consulta a capa e as movimentações de um processo no DataJud (CNJ)."
+        descricao="Consulta a capa e as movimentações de um processo no DataJud (CNJ), ou busca processos por classe, órgão julgador e assunto."
       />
+      <Tabs.Root value={modo} onValueChange={setModo}>
+        <Tabs.List aria-label="Forma de consulta">
+          <Tabs.Trigger value="numero">Por número</Tabs.Trigger>
+          <Tabs.Trigger value="busca">Por classe, órgão ou assunto</Tabs.Trigger>
+        </Tabs.List>
+      </Tabs.Root>
+      {modo === 'busca' ? <BuscaProcessos onAbrir={abrirDaBusca} /> : (<>
       <form onSubmit={aoEnviar}>
         <Flex direction="column" gap="5">
           <div className="aj-form-grade">
@@ -197,6 +215,7 @@ export default function Processo() {
           </Flex>
         )}
       </div>
+      </>)}
     </Flex>
   )
 }
