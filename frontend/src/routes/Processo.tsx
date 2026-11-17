@@ -9,7 +9,7 @@ import { ErroMCP } from '../api/mcpClient'
 import { TRIBUNAIS } from '../api/tribunais'
 import { formatarDataSimples, formatarNumeroCNJ } from '../utils/formatadores'
 import { adicionarHistorico, alternarFavorito, ehFavorito } from '../utils/listasRapidas'
-import { siglaTribunalPorNumero } from '../utils/tribunalPorNumero'
+import { erroNumeroCnj, siglaTribunalPorNumero } from '../utils/tribunalPorNumero'
 
 type Movimento = {
   nome?: string
@@ -109,6 +109,11 @@ export default function Processo() {
 
   function aoEnviar(evento: FormEvent) {
     evento.preventDefault()
+    const erroCnj = erroNumeroCnj(numero)
+    if (erroCnj) {
+      setErro(erroCnj)
+      return
+    }
     const escolhido = tribunal || deduzir(numero) || ''
     if (!escolhido) {
       setErro('Não foi possível identificar o tribunal pelo número. Escolha o tribunal na lista.')

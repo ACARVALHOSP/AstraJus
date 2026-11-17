@@ -1,31 +1,46 @@
-const TRIBUNAL_MAP: Record<string, string> = {
-  '100': 'stf', '300': 'stj', '700': 'stm',
-  '401': 'trf1', '402': 'trf2', '403': 'trf3', '404': 'trf4', '405': 'trf5', '406': 'trf6',
-  '501': 'trt1', '502': 'trt2', '503': 'trt3', '504': 'trt4', '505': 'trt5',
-  '506': 'trt6', '507': 'trt7', '508': 'trt8', '509': 'trt9', '510': 'trt10',
-  '511': 'trt11', '512': 'trt12', '513': 'trt13', '514': 'trt14', '515': 'trt15',
-  '516': 'trt16', '517': 'trt17', '518': 'trt18', '519': 'trt19', '520': 'trt20',
-  '521': 'trt21', '522': 'trt22', '523': 'trt23', '524': 'trt24',
-  '601': 'treac', '602': 'treal', '603': 'treap', '604': 'tream', '605': 'treba',
-  '606': 'trece', '607': 'tredf', '608': 'trees', '609': 'trego', '610': 'trema',
-  '611': 'tremt', '612': 'trems', '613': 'tremg', '614': 'trepa', '615': 'trepb',
-  '616': 'trepr', '617': 'trepe', '618': 'trepi', '619': 'trerj', '620': 'trern',
-  '621': 'trers', '622': 'trero', '623': 'trerr', '624': 'tresc', '625': 'trese',
-  '626': 'tresp', '627': 'treto',
-  '801': 'tjac', '802': 'tjal', '803': 'tjap', '804': 'tjam', '805': 'tjba',
-  '806': 'tjce', '807': 'tjdft', '808': 'tjes', '809': 'tjgo', '810': 'tjma',
-  '811': 'tjmt', '812': 'tjms', '813': 'tjmg', '814': 'tjpa', '815': 'tjpb',
-  '816': 'tjpr', '817': 'tjpe', '818': 'tjpi', '819': 'tjrj', '820': 'tjrn',
-  '821': 'tjrs', '822': 'tjro', '823': 'tjrr', '824': 'tjsc', '825': 'tjse',
-  '826': 'tjsp', '827': 'tjto',
-  '913': 'tjmmg', '921': 'tjmrs', '926': 'tjmsp',
+// Espelha cnj.py (regra única no backend): análise do número CNJ, dígito verificador e sigla do
+// índice da API pública do DataJud (api_publica_<sigla>). Mantenha as duas versões iguais.
+const UFS = 'ac al ap am ba ce df es go ma mt ms mg pa pb pr pe pi rj rn rs ro rr sc se sp to'.split(' ')
+const TJM: Record<number, string> = { 13: 'tjmmg', 21: 'tjmrs', 26: 'tjmsp' }
+const SUPERIORES: Record<string, string> = { '3': 'stj', '5': 'tst', '6': 'tse', '7': 'stm' }
+
+function soDigitos(numero: string): string {
+  return numero.replace(/\D/g, '')
+}
+
+/** Dígito verificador esperado (módulo 97): 98 - (NNNNNNNAAAAJTROOOO00 mod 97). */
+export function dvCnjEsperado(numero: string): string | null {
+  const d = soDigitos(numero)
+  if (d.length !== 20) return null
+  const base = d.slice(0, 7) + d.slice(9, 20) + '00'
+  let resto = 0
+  for (const c of base) resto = (resto * 10 + Number(c)) % 97
+  return String(98 - resto).padStart(2, '0')
+}
+
+export function dvCnjValido(numero: string): boolean {
+  const d = soDigitos(numero)
+  return d.length === 20 && dvCnjEsperado(d) === d.slice(7, 9)
+}
+
+/** Mensagem de erro para o número informado; '' se estiver válido. */
+export function erroNumeroCnj(numero: string): string {
+  const d = soDigitos(numero)
+  if (d.length !== 20) return `Número de processo inválido: esperados 20 dígitos, recebidos ${d.length}.`
+  if (!dvCnjValido(d)) return `Número de processo inválido: dígito verificador incorreto (esperado ${dvCnjEsperado(d)}).`
+  return ''
 }
 
 export function siglaTribunalPorNumero(numero: string): string | null {
-  const digitos = numero.replace(/\D/g, '')
-  if (digitos.length === 20) {
-    const cod = digitos.substring(13, 16)
-    return TRIBUNAL_MAP[cod] ?? null
-  }
+  const d = soDigitos(numero)
+  if (d.length !== 20) return null
+  const j = d[13]
+  const tr = Number(d.slice(14, 16))
+  if (tr === 0) return SUPERIORES[j] ?? null
+  if (j === '8' && tr >= 1 && tr <= 27) return tr === 7 ? 'tjdft' : `tj${UFS[tr - 1]}`
+  if (j === '4' && tr >= 1 && tr <= 6) return `trf${tr}`
+  if (j === '5' && tr >= 1 && tr <= 24) return `trt${tr}`
+  if (j === '6' && tr >= 1 && tr <= 27) return `tre-${UFS[tr - 1]}`
+  if (j === '9') return TJM[tr] ?? null
   return null
 }

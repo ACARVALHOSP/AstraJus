@@ -43,7 +43,7 @@ class CompletoTest(unittest.TestCase):
     def test_capa_migracao_e_candidatos_sem_capa_ou_so_monitorados(self):
         c = self.g.criar_cliente('Cliente', None, None, self.agora)
         caso = self.g.criar_caso(c['id'], 'Processo', None, [NUMERO], self.agora)
-        outro = '10063142720238260006'
+        outro = '10063150920238260006'
         db.RegistroMonitoramentos(self.path).salvar({'m': {'criterio': {'numero_processo': outro}}})
         self.assertEqual(set(self.g.processos_datajud_pendentes()), {(NUMERO, None), (outro, None)})
         self.g.salvar_capa_processo(caso['id'], NUMERO, self.agora, tribunal='TJSP', datajud=[FONTE], valor_causa=10)

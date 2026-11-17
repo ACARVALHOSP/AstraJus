@@ -2715,12 +2715,12 @@ class CapasVinculadasTest(unittest.TestCase):
         agora = lambda: datetime(2026, 1, 1)
         cliente = gestao.criar_cliente("Cliente", None, None, agora)
         caso = gestao.criar_caso(cliente["id"], "Caso", None, ["10063142720238260005"], agora)
-        outro_caso = gestao.criar_caso(cliente["id"], "Outro caso", None, ["20063142720238260006"], agora)
+        outro_caso = gestao.criar_caso(cliente["id"], "Outro caso", None, ["20063140720238260006"], agora)
         gestao.salvar_capa_processo(caso["id"], "10063142720238260005", agora, tribunal="TJSP")
         self.assertEqual(gestao.capas_vinculadas(), [
             {"caso_id": caso["id"], "numero_processo": "10063142720238260005", "tribunal": "TJSP"},
         ])
-        self.assertIsNone(gestao.obter_capa_processo(outro_caso["id"], "20063142720238260006"))
+        self.assertIsNone(gestao.obter_capa_processo(outro_caso["id"], "20063140720238260006"))
 
 
 class AtualizarMovimentosProcessosTest(unittest.TestCase):
@@ -2769,8 +2769,8 @@ class AtualizarMovimentosProcessosTest(unittest.TestCase):
         registro = db.RegistroUsuarios(self.tmp)
         _, _, _ = server._criar_usuario_core(registro, "resp@teste.com")
         caso = self.gestao.criar_caso(self.gestao.criar_cliente("C2", None, None, self.agora)["id"], "Caso Aviso",
-                                      "resp@teste.com", ["20063142720238260006"], self.agora)
-        numero = "20063142720238260006"
+                                      "resp@teste.com", ["20063140720238260006"], self.agora)
+        numero = "20063140720238260006"
         mov1 = {"codigo": "1", "nome": "Distribuição", "dataHora": "2023-01-01T00:00:00Z"}
         mov2 = {"codigo": "2", "nome": "Juntada", "dataHora": "2026-01-01T00:00:00Z"}
         retorno = lambda movs: {"instancias": [{"tribunal": "TJSP", "movimentos": movs}], "partes": [], "advogados": []}

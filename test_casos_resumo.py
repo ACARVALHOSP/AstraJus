@@ -16,7 +16,7 @@ class CasosResumoTest(unittest.TestCase):
         self.pubs = db.RegistroPublicacoesOAB(caminho)
         self.agora = lambda: datetime(2026, 11, 7, 8, tzinfo=timezone.utc)
         cliente = self.gestao.criar_cliente("Maria Teste", None, None, self.agora)
-        self.numero = "10012345620268260100"
+        self.numero = "10012348320268260100"
         self.caso = self.gestao.criar_caso(cliente["id"], "Ação de Obrigação de Fazer", "ana", [self.numero], self.agora)
         self.vazio = self.gestao.criar_caso(cliente["id"], "Sem nada", "ana", [], self.agora)
 
