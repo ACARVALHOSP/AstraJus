@@ -1691,7 +1691,7 @@ class RegistroClientesCasos:
         with _abrir(self.caminho) as conexao:
             linhas = conexao.execute(
                 "SELECT a.id, a.caso_id, a.tipo, a.titulo, a.data, a.hora, a.responsavel, c.titulo, c.responsavel, "
-                "ci.usuario, ci.confirmado_em "
+                "ci.usuario, ci.confirmado_em, a.criado_em "
                 "FROM caso_atividades a JOIN casos c ON c.id = a.caso_id "
                 "LEFT JOIN atividade_ciencia ci ON ci.atividade_id = a.id AND ci.data_prazo = substr(a.data, 1, 10) "
                 f"WHERE a.tipo IN ('prazo', 'audiencia') AND a.status IN ({abertos}) AND a.data IS NOT NULL "
@@ -1701,7 +1701,7 @@ class RegistroClientesCasos:
                 (*self._STATUS_ATIVIDADE_ABERTOS, ate, hoje, atrasadas_desde),
             ).fetchall()
         chaves = ("id", "caso_id", "tipo", "titulo", "data", "hora", "responsavel", "caso_titulo", "caso_responsavel",
-                  "ciencia_por", "ciencia_em")
+                  "ciencia_por", "ciencia_em", "criado_em")
         return [dict(zip(chaves, linha)) for linha in linhas]
 
     def confirmar_ciencia(self, caso_id: str, atividade_id: int, usuario: str, agora) -> dict | None:

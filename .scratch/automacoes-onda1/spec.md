@@ -77,7 +77,7 @@ definidas em `ALERTAS_PRAZO_FAIXAS`.
 - O escalonamento por falta de ciência (administradores) continua só para prazos, sem alteração.
 - Mudar a configuração não reenvia nada já enviado.
 
-**Aceite:** com audiência a 15 dias, sai um aviso na faixa 15 e nenhum repetido nas execuções seguintes; alterar faixas não
+**Aceite:** com audiência a 15 dias, sai um aviso na faixa 15 e nenhum repetido nas execuções seguintes (a vigência da faixa é guardada por parâmetro: ver ticket 03); alterar faixas não
 duplica avisos; faixa inválida (fora de 0–30, repetida) é recusada na tela com mensagem clara.
 
 ## 3. Resumo diário das publicações (ticket 04)

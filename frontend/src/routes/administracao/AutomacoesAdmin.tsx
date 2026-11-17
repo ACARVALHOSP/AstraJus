@@ -4,8 +4,8 @@ import { AlertDialog, Badge, Button, Callout, Card, Flex, Heading, Switch, Text,
 import Carregamento from '../../Carregamento'
 import { buscarJson, enviarJson } from '../../api/rest'
 import {
-  descreverAlteracao, erroDoParametro, quandoBrasilia, seloRotina,
-  type AlteracaoAuto, type RotinaAuto,
+  descreverAlteracao, lerParametro, quandoBrasilia, seloRotina, textoDoValor,
+  type AlteracaoAuto, type RotinaAuto, type ValorParametro,
 } from './automacoes'
 
 type Dados = { rotinas: RotinaAuto[]; historico: AlteracaoAuto[] }
@@ -31,7 +31,7 @@ export default function AutomacoesAdmin({ token }: { token: string }) {
   }, [token])
   useEffect(() => { void carregar() }, [carregar])
 
-  async function salvar(r: RotinaAuto, corpo: { ativo?: boolean; parametros?: Record<string, number> }, mensagem: string) {
+  async function salvar(r: RotinaAuto, corpo: { ativo?: boolean; parametros?: Record<string, ValorParametro> }, mensagem: string) {
     if (ocupado) return
     setOcupado(true)
     try {
@@ -43,10 +43,11 @@ export default function AutomacoesAdmin({ token }: { token: string }) {
 
   function salvarParametro(r: RotinaAuto, nome: string) {
     const def = r.parametros_definidos[nome]
-    const texto = rascunhos[`${r.chave}.${nome}`] ?? String(r.parametros[nome])
-    const erro = erroDoParametro(def, texto)
-    if (erro) { setRetorno({ texto: erro, tom: 'red' }); return }
-    void salvar(r, { parametros: { [nome]: Number(texto) } }, `${def.rotulo} atualizado.`)
+    const texto = rascunhos[`${r.chave}.${nome}`] ?? textoDoValor(r.parametros[nome])
+    const lido = lerParametro(def, texto)
+    if (lido.valor === null) { setRetorno({ texto: lido.erro, tom: 'red' }); return }
+    void salvar(r, { parametros: { [nome]: lido.valor } }, `${def.rotulo} atualizado.`)
+    setRascunhos(v => { const { [`${r.chave}.${nome}`]: _descartado, ...resto } = v; return resto })
   }
 
   if (carregando && !dados) return <Carregamento tipo="cartoes" descricao="Carregando automações…" />
@@ -105,14 +106,18 @@ export default function AutomacoesAdmin({ token }: { token: string }) {
                   const id = `auto-${r.chave}-${nome}`
                   return (
                     <Flex key={nome} align="end" gap="2" wrap="wrap">
-                      <div className="form-campo">
+                      <div className="form-campo" style={{ minWidth: def.tipo === 'int' ? undefined : 300 }}>
                         <label className="form-campo-label" htmlFor={id}>{def.rotulo}</label>
-                        <TextField.Root id={id} inputMode="numeric" size="2" style={{ width: 120 }} disabled={ocupado}
-                          value={rascunhos[`${r.chave}.${nome}`] ?? String(r.parametros[nome])}
+                        <TextField.Root id={id} inputMode={def.tipo === 'int' ? 'numeric' : 'text'} size="2" style={{ width: def.tipo === 'int' ? 120 : 200 }} disabled={ocupado}
+                          value={rascunhos[`${r.chave}.${nome}`] ?? textoDoValor(r.parametros[nome])}
                           onChange={e => setRascunhos(v => ({ ...v, [`${r.chave}.${nome}`]: e.target.value }))} />
                       </div>
                       <Button size="2" variant="soft" disabled={ocupado} onClick={() => salvarParametro(r, nome)}>Salvar</Button>
-                      <Text size="1" color="gray">Entre {def.minimo} e {def.maximo}.</Text>
+                      <Text size="1" color="gray">
+                        {def.tipo === 'int'
+                          ? `Entre ${def.minimo} e ${def.maximo}.`
+                          : `De ${def.min_itens} a ${def.max_itens} valores, de ${def.minimo} a ${def.maximo}, separados por vírgula.`}
+                      </Text>
                     </Flex>
                   )
                 })}

@@ -2,11 +2,12 @@ import asyncio
 import json
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
 import db
+import automacoes
 import notificacoes
 import server
 from test_publicacoes_filtros import _chamar_asgi
@@ -231,3 +232,87 @@ class CienciaEEscalonamentoTest(_Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FaixasConfiguraveisTest(_Base):
+    """Faixas de aviso por tipo (Administração › Automações), sem avisar de novo nem retroativamente."""
+
+    def configurar(self, dia, **parametros):
+        automacoes.Repositorio(self.caminho).definir("alertas_prazo", "bootstrap", parametros=parametros, agora=instante(dia))
+
+    def avisos(self, dia, usuario="ana@teste.com"):
+        return [n for n in self.feed(usuario, dia)["notificacoes"] if n["tipo"] == "prazo_vencendo"]
+
+    def test_padrao_de_audiencia_avisa_a_15_dias_e_nao_repete(self):
+        self.prazo("2026-11-30", tipo="audiencia", titulo="Instrução")
+        self.alertar("2026-11-14")                              # 16 dias: cedo demais
+        self.assertEqual(self.avisos("2026-11-14"), [])
+        self.alertar("2026-11-15")                              # 15 dias: faixa 15
+        self.alertar("2026-11-15", hora=21)                     # mesma rodada de novo
+        self.alertar("2026-11-20")                              # 10 dias: ainda a faixa 15
+        self.assertEqual(len(self.avisos("2026-11-20")), 1)
+        self.alertar("2026-11-25")                              # 5 dias: faixa nova
+        self.assertEqual(len(self.avisos("2026-11-25")), 2)
+
+    def test_prazo_continua_com_5_2_1_0_por_padrao(self):
+        self.prazo("2026-11-30")
+        self.alertar("2026-11-15")                              # 15 dias antes: prazo não avisa
+        self.alertar("2026-11-24")                              # 6 dias: ainda não
+        self.assertEqual(self.avisos("2026-11-24"), [])
+        self.alertar("2026-11-25")                              # 5 dias
+        self.assertEqual(len(self.avisos("2026-11-25")), 1)
+
+    def test_faixas_proprias_do_prazo(self):
+        self.configurar("2026-11-01", faixas_prazo=[10, 3])
+        self.prazo("2026-11-30")
+        for dia in ("2026-11-19", "2026-11-20", "2026-11-25", "2026-11-26", "2026-11-28"):
+            self.alertar(dia)
+        # 11 dias: nada; 10: faixa 10; 5: ainda a 10; 4: ainda a 10; 2: faixa 3
+        mensagens = [n["mensagem"] for n in self.avisos("2026-11-28")]
+        self.assertEqual(len(mensagens), 2)
+
+    def test_mudar_a_configuracao_nao_reenvia_o_que_ja_foi_avisado(self):
+        self.prazo("2026-11-30", tipo="audiencia", titulo="Instrução")
+        self.alertar("2026-11-15")
+        self.assertEqual(len(self.avisos("2026-11-15")), 1)
+        self.configurar("2026-11-15", faixas_audiencia=[20, 15, 5, 1, 0])
+        self.alertar("2026-11-15", hora=21)
+        self.assertEqual(len(self.avisos("2026-11-15")), 1)
+
+    def test_faixa_acrescentada_nao_avisa_retroativamente(self):
+        self.prazo("2026-11-30", tipo="audiencia", titulo="Instrução")   # criada em 01/11
+        self.configurar("2026-11-20", faixas_audiencia=[25, 15, 5, 1, 0])
+        self.alertar("2026-11-20")                              # faltam 10: a faixa 15 já foi ultrapassada
+        self.assertEqual(self.avisos("2026-11-20"), [])
+        self.alertar("2026-11-25")                              # faltam 5: a próxima faixa vale
+        self.assertEqual(len(self.avisos("2026-11-25")), 1)
+
+    def test_atividade_criada_depois_da_mudanca_recebe_a_faixa_em_que_nasce(self):
+        self.configurar("2026-11-20", faixas_audiencia=[25, 15, 5, 1, 0])
+        nova = self.gestao.criar_atividade(self.caso["id"], "audiencia", "Nova", "2026-11-30", None, None,
+                                           lambda: instante("2026-11-21"), responsavel="ana@teste.com")
+        self.alertar("2026-11-21")                              # faltam 9: faixa 15 ainda não passou para ela
+        self.assertEqual(len(self.avisos("2026-11-21")), 1)
+        self.assertEqual(nova["titulo"], "Nova")
+
+    def test_escalonamento_vale_com_qualquer_faixa(self):
+        import usuarios_admin
+        usuarios_admin.alterar(self.registro, {"nivel_acesso": "administrador"}, "bootstrap", "bia@teste.com")
+        self.configurar("2026-11-01", faixas_prazo=[3, 0])
+        self.prazo("2026-11-10", titulo="Contestação")
+        self.alertar("2026-11-07")                              # faltam 3: primeiro aviso
+        self.alertar("2026-11-09")                              # falta 1: sem a faixa "1", o escalonamento ainda ocorre
+        escalonados = [n for n in self.feed("bia@teste.com", "2026-11-09")["notificacoes"] if n["tipo"] == "prazo_escalonado"]
+        self.assertEqual(len(escalonados), 1)
+
+    def test_faixa_ainda_vale_regras(self):
+        brasilia = timezone(timedelta(hours=-3))
+        data = date(2026, 11, 30)
+        desde = instante("2026-11-20")
+        vale = lambda faixa, criado, vigente=desde: server._faixa_ainda_vale(faixa, data, criado, vigente, brasilia)
+        self.assertTrue(vale("15", "2026-11-01T12:00:00+00:00", None))      # sem mudança registrada: vale
+        self.assertFalse(vale("15", "2026-11-01T12:00:00+00:00"))           # entrou em 15/11, criada antes da mudança
+        self.assertTrue(vale("5", "2026-11-01T12:00:00+00:00"))             # entra em 25/11, depois da mudança
+        self.assertTrue(vale("15", "2026-11-21T12:00:00+00:00"))            # criada depois da mudança
+        self.assertTrue(vale("atrasado", "2026-11-01T12:00:00+00:00"))      # atraso não depende da configuração
+        self.assertFalse(vale("15", None))                                  # sem data de criação: só a entrada conta
