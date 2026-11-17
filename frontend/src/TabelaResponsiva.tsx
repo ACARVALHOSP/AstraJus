@@ -57,7 +57,7 @@ export default function TabelaResponsiva({ children, principais = [], larguraCom
   const cabeca = partes.find(parte => parte.type === 'thead')
   const linhaCabecalho = elementos(cabeca?.props.children)[0]
   const colunas: Coluna[] = elementos(linhaCabecalho?.props.children).map(cabecalho => {
-    const rotulo = texto(cabecalho.props.children).trim() || cabecalho.props['aria-label'] || ''
+    const rotulo = texto(cabecalho.props.children).replace(/\s+/g, ' ').trim() || cabecalho.props['aria-label'] || ''
     // Cabeçalhos sem texto (seleção, expansão, favorito) são colunas de controle estreitas.
     const controle = rotulo === 'Favorito' || rotulo === 'Detalhes' || !texto(cabecalho.props.children).trim() || /\btabela-controle\b/.test(cabecalho.props.className ?? '')
     const monetaria = /^(Valor|Parcela)$/.test(rotulo)
