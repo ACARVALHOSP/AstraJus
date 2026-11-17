@@ -679,7 +679,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
                         </td>
                         <td className="tabela-acoes">
                           <Flex gap="1" justify="end" align="center">
-                            {acaoPrincipal(p)}
+                            {p.status !== 'nao_tratada' && acaoPrincipal(p)}
                             {menuAcoes(p)}
                           </Flex>
                         </td>

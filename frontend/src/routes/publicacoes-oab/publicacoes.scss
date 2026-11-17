@@ -18,9 +18,9 @@
 .oab-tabela {
   .oab-col-data { inline-size: 7rem; }
   .oab-col-processo { inline-size: 14rem; }
-  :is(th, td).tabela-controle, :is(th, td).oab-col-seta { inline-size: 2rem; padding-inline: 0.125rem; }
+  :is(th, td).tabela-controle, :is(th, td).oab-col-seta { inline-size: 1.5rem; padding-inline: 0; text-align: center; }
   .oab-col-situacao { inline-size: 12rem; }
-  .oab-col-acoes { inline-size: 9rem; }
+  .oab-col-acoes { inline-size: 7rem; }
 }
 .oab-linha-selecionada > td { background: var(--accent-a2); }
 .oab-data { font-weight: 600; font-variant-numeric: tabular-nums; }
