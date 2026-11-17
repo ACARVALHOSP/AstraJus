@@ -39,6 +39,7 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 from zoneinfo import ZoneInfo
 
+import cnj
 import asaas_integracao
 import agenda_atividades
 import financeiro_juridico
@@ -399,12 +400,9 @@ async def consultar_processo_datajud(tribunal: str, numero_processo: str) -> dic
         if not re.fullmatch(r"[a-z0-9]+(?:-[a-z]{2})?", tribunal_norm):
             return _erro("Tribunal inválido. Use a sigla minúscula, como 'tjsp', 'trf1' ou 'stj'.")
 
-        numero = _so_digitos(numero_processo)
-        if len(numero) != 20:
-            return _erro(
-                f"Número de processo inválido: esperados 20 dígitos, recebidos {len(numero)}. "
-                "Formato CNJ: NNNNNNN-DD.AAAA.J.TR.OOOO."
-            )
+        numero, erro_cnj = cnj.validar_cnj(numero_processo)
+        if erro_cnj:
+            return _erro(erro_cnj)
 
         chave_cache = f"v2:{tribunal_norm}:{numero}"
         if _CACHE_DATAJUD is not None:
@@ -588,11 +586,9 @@ async def consultar_publicacoes_djen(
     - Se a API responder HTTP 403, o IP de saída está fora do Brasil (geo-bloqueio).
     """
     try:
-        numero = _so_digitos(numero_processo) if numero_processo else None
-        if numero_processo and len(numero) != 20:
-            return _erro(
-                f"Número de processo inválido: esperados 20 dígitos, recebidos {len(numero)}."
-            )
+        numero, erro_cnj = cnj.validar_cnj(numero_processo) if numero_processo else (None, None)
+        if erro_cnj:
+            return _erro(erro_cnj)
 
         oab = (numero_oab or "").strip() or None
         if not numero and not oab:
@@ -654,9 +650,9 @@ async def consultar_publicacoes_djen(
 async def _djen_debug_http(send, numero: str, query: str) -> None:
     """GET /debug/djen/<numero>[?pagina=N&itens=N] (só administrador): devolve a resposta BRUTA do
     DJEN para o processo, sem nenhuma transformação, para conferir o schema e depurar a capa."""
-    digitos = _so_digitos(numero)
-    if len(digitos) != 20:
-        await _json(send, 400, _erro(f"Número de processo inválido: esperados 20 dígitos, recebidos {len(digitos)}."))
+    digitos, erro_cnj = cnj.validar_cnj(numero)
+    if erro_cnj:
+        await _json(send, 400, _erro(erro_cnj))
         return
     q = dict(par.split("=", 1) for par in query.split("&") if "=" in par)
     try:
@@ -1602,9 +1598,9 @@ def _normalizar_criterio_monitoramento(
     nome: str | None = None,
 ) -> tuple[dict | None, dict | None]:
     """Mesma validação de consultar_publicacoes_djen. Devolve (criterio, None) ou (None, erro)."""
-    numero = _so_digitos(numero_processo) if numero_processo else None
-    if numero_processo and len(numero) != 20:
-        return None, _erro(f"Número de processo inválido: esperados 20 dígitos, recebidos {len(numero)}.")
+    numero, erro_cnj = cnj.validar_cnj(numero_processo) if numero_processo else (None, None)
+    if erro_cnj:
+        return None, _erro(erro_cnj)
 
     oab = (numero_oab or "").strip() or None
     if not numero and not oab:
@@ -3373,19 +3369,8 @@ def _movimentos_novos(antigos: list[dict] | None, novos: list[dict] | None) -> l
 
 
 def _tribunal_do_numero(numero: str) -> str | None:
-    """Resolve segmentos CNJ atendidos pela API pública; não presume tribunal."""
-    if len(numero) != 20 or not numero.isdigit():
-        return None
-    segmento, regiao = numero[13], int(numero[14:16])
-    if segmento == "8" and 1 <= regiao <= 27:
-        return "tjdft" if regiao == 7 else "tj" + ("ac al ap am ba ce df es go ma mt ms mg pa pb pr pe pi rj rn rs ro rr sc se sp to".split()[regiao - 1])
-    if segmento == "4" and 1 <= regiao <= 6:
-        return f"trf{regiao}"
-    if segmento == "5" and 1 <= regiao <= 24:
-        return f"trt{regiao}"
-    if segmento == "6" and 1 <= regiao <= 27:
-        return "tre-" + ("ac al ap am ba ce df es go ma mt ms mg pa pb pr pe pi rj rn rs ro rr sc se sp to".split()[regiao - 1])
-    return {"3": "stj", "7": "stm"}.get(segmento) if regiao == 0 else None
+    """Sigla do índice DataJud deduzida do J.TR do número (regra única em cnj.py); None se não houver."""
+    return cnj.tribunal_do_numero(numero)
 
 
 async def _atualizar_movimentos_processos(gestao: "RegistroClientesCasos", agora=lambda: datetime.now(timezone.utc)) -> None:

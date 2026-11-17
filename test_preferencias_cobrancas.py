@@ -52,7 +52,7 @@ class PreferenciasCobrancasTest(unittest.TestCase):
     def test_preferencias_por_usuario(self):
         status, corpo = _chamar(self.mw, "GET", "/preferencias", self.auth)
         self.assertEqual((status, json.loads(corpo)["preferencias"]), (200, {}))
-        lista = [{"tribunal": "tjsp", "numero": "10012345620268260100"}]
+        lista = [{"tribunal": "tjsp", "numero": "10012348320268260100"}]
         status, _ = _chamar(self.mw, "PUT", "/preferencias/favoritos_consultas", self.auth,
                             json.dumps({"valor": lista}).encode())
         self.assertEqual(status, 200)

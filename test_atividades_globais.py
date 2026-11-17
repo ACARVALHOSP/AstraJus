@@ -20,8 +20,8 @@ class AtividadesGlobaisTest(unittest.TestCase):
         self.gestao = db.RegistroClientesCasos(self.tmp / "teste.db")
         agora = lambda: datetime(2026, 11, 7, 8, tzinfo=timezone.utc)
         cliente = self.gestao.criar_cliente("Maria Teste", None, None, agora)
-        self.c1 = self.gestao.criar_caso(cliente["id"], "Ação de Obrigação de Fazer", "ana", ["10012345620268260100"], agora)
-        self.c2 = self.gestao.criar_caso(cliente["id"], "Execução de Título", "carlos", ["10056789020268260100"], agora)
+        self.c1 = self.gestao.criar_caso(cliente["id"], "Ação de Obrigação de Fazer", "ana", ["10012348320268260100"], agora)
+        self.c2 = self.gestao.criar_caso(cliente["id"], "Execução de Título", "carlos", ["10056786220268260100"], agora)
         criar = self.gestao.criar_atividade
         self.a_prazo = criar(self.c1["id"], "prazo", "Réplica à contestação", "2026-11-04", None, None, agora, responsavel="ana")
         self.a_aud = criar(self.c2["id"], "audiencia", "Audiência de instrução", "2026-11-10", "09:30", None, agora, responsavel="carlos")
@@ -36,7 +36,7 @@ class AtividadesGlobaisTest(unittest.TestCase):
         itens = self.gestao.listar_atividades_globais()
         self.assertEqual([a["titulo"] for a in itens], ["Réplica à contestação", "Audiência de instrução", "Solicitar certidão"])
         self.assertEqual(itens[0]["caso"], {"id": self.c1["id"], "titulo": "Ação de Obrigação de Fazer",
-                                            "responsavel": "ana", "processos": ["10012345620268260100"]})
+                                            "responsavel": "ana", "processos": ["10012348320268260100"]})
         self.assertEqual(self.titulos(situacao="concluidas"), ["Tarefa antiga"])
 
     def test_periodo_de_ate(self):
@@ -51,7 +51,7 @@ class AtividadesGlobaisTest(unittest.TestCase):
         self.assertEqual(self.titulos(sem_responsavel=True), ["Solicitar certidão"])
         self.assertEqual(self.titulos(responsavel_processo="carlos"), ["Audiência de instrução", "Solicitar certidão"])
         self.assertEqual(self.titulos(busca="execução"), ["Audiência de instrução", "Solicitar certidão"])
-        self.assertEqual(self.titulos(busca="1001234-56"), ["Réplica à contestação"])
+        self.assertEqual(self.titulos(busca="1001234-83"), ["Réplica à contestação"])
         self.assertEqual(self.titulos(busca="100%"), [])
 
     def test_todas_com_checklist(self):
