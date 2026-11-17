@@ -17,7 +17,8 @@ export type ResumoProcesso = {
   grau_descricao?: string
   classe?: string
   classe_codigo?: number
-  assuntos?: { codigo?: number; nome?: string }[]
+  classe_caminho?: string[]
+  assuntos?: { codigo?: number; nome?: string; area?: string | null }[]
   orgaoJulgador?: string
   orgao_julgador_codigo?: number
   dataAjuizamento?: string
@@ -54,4 +55,15 @@ export function montarArgsBusca(f: FiltrosBusca, cursor?: unknown[] | null, tama
 export function juntarPaginas(atuais: ResumoProcesso[], novas: ResumoProcesso[]): ResumoProcesso[] {
   const vistos = new Set(atuais.map(p => `${p.numeroProcesso}|${p.grau}`))
   return [...atuais, ...novas.filter(p => !vistos.has(`${p.numeroProcesso}|${p.grau}`))]
+}
+
+/** Item das Tabelas Processuais Unificadas devolvido pela tool consultar_tpu. */
+export type ItemTpu = { codigo: number; nome: string; caminho?: string }
+
+/** Complemento da opção na lista: código e, se houver, onde o item fica na hierarquia. */
+export function rotuloItemTpu(item: ItemTpu): string {
+  const trilha = (item.caminho ?? '').split(' > ').filter(Boolean)
+  // Só os dois últimos níveis: a árvore completa não cabe numa linha.
+  const resumo = trilha.slice(-2).join(' › ')
+  return resumo ? `${item.codigo} · ${resumo}` : String(item.codigo)
 }

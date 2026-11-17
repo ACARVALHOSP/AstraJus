@@ -39,3 +39,12 @@ test('juntar páginas não repete número e grau', () => {
   const b = [{ numeroProcesso: '2', grau: 'G1' }, { numeroProcesso: '2', grau: 'G2' }, { numeroProcesso: '3', grau: 'G1' }]
   assert.deepEqual(juntarPaginas(a, b).map(p => `${p.numeroProcesso}${p.grau}`), ['1G1', '2G1', '2G2', '3G1'])
 })
+
+import { rotuloItemTpu } from '../src/routes/processo/buscaProcessos.ts'
+
+test('rótulo da opção da TPU mostra o código e só os dois últimos níveis da hierarquia', () => {
+  assert.equal(rotuloItemTpu({ codigo: 7, nome: 'Procedimento Comum Cível', caminho: 'PROCESSO CÍVEL > Processo de Conhecimento > Procedimento de Conhecimento' }),
+    '7 · Processo de Conhecimento › Procedimento de Conhecimento')
+  assert.equal(rotuloItemTpu({ codigo: 2, nome: 'Raiz' }), '2')
+  assert.equal(rotuloItemTpu({ codigo: 3, nome: 'Item', caminho: 'Só um' }), '3 · Só um')
+})

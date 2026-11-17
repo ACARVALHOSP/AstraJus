@@ -8,7 +8,8 @@ import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
 import { TRIBUNAIS } from '../../api/tribunais'
 import { formatarDataSimples, formatarNumeroCNJ } from '../../utils/formatadores'
-import { FILTROS_VAZIOS, juntarPaginas, montarArgsBusca, type FiltrosBusca, type ResumoProcesso } from './buscaProcessos'
+import CampoTpu from './CampoTpu'
+import { FILTROS_VAZIOS, juntarPaginas, montarArgsBusca, type FiltrosBusca, type ItemTpu, type ResumoProcesso } from './buscaProcessos'
 
 type Resposta = {
   erro?: boolean
@@ -31,6 +32,9 @@ export default function BuscaProcessos({ onAbrir }: { onAbrir: (tribunal: string
   const [cursor, setCursor] = useState<unknown[] | null>(null)
   // Tribunal da última busca concluída: "Abrir" e "Carregar mais" valem para ele, mesmo que o formulário mude.
   const [tribunalBuscado, setTribunalBuscado] = useState('')
+  // Nomes dos itens escolhidos nas tabelas do CNJ (o filtro guarda só o código).
+  const [classeTpu, setClasseTpu] = useState<ItemTpu | null>(null)
+  const [assuntoTpu, setAssuntoTpu] = useState<ItemTpu | null>(null)
   const mudar = (parcial: Partial<FiltrosBusca>) => setF(atual => ({ ...atual, ...parcial }))
 
   async function buscar(mais: boolean) {
@@ -86,9 +90,9 @@ export default function BuscaProcessos({ onAbrir }: { onAbrir: (tribunal: string
               </Select.Root>
             </div>
             <div className="form-campo">
-              <label className="form-campo-label" htmlFor="busca-classe">Classe (código)</label>
-              <TextField.Root id="busca-classe" inputMode="numeric" placeholder="ex.: 7 (Procedimento Comum Cível)" autoComplete="off"
-                value={f.classe} onChange={e => mudar({ classe: e.target.value })} />
+              <label className="form-campo-label" htmlFor="busca-classe">Classe</label>
+              <CampoTpu id="busca-classe" tabela="classes" valor={f.classe} escolhido={classeTpu}
+                onChange={(classe, item) => { mudar({ classe }); setClasseTpu(item) }} />
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="busca-orgao">Órgão julgador (código)</label>
@@ -96,9 +100,9 @@ export default function BuscaProcessos({ onAbrir }: { onAbrir: (tribunal: string
                 value={f.orgao} onChange={e => mudar({ orgao: e.target.value })} />
             </div>
             <div className="form-campo">
-              <label className="form-campo-label" htmlFor="busca-assunto">Assunto (código)</label>
-              <TextField.Root id="busca-assunto" inputMode="numeric" autoComplete="off"
-                value={f.assunto} onChange={e => mudar({ assunto: e.target.value })} />
+              <label className="form-campo-label" htmlFor="busca-assunto">Assunto</label>
+              <CampoTpu id="busca-assunto" tabela="assuntos" valor={f.assunto} escolhido={assuntoTpu}
+                onChange={(assunto, item) => { mudar({ assunto }); setAssuntoTpu(item) }} />
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="busca-inicio">Ajuizado a partir de</label>
@@ -110,8 +114,9 @@ export default function BuscaProcessos({ onAbrir }: { onAbrir: (tribunal: string
             </div>
           </div>
           <Text size="1" color="gray">
-            Use os códigos das tabelas processuais do CNJ. Informe ao menos um filtro. A busca é feita em um tribunal por vez e
-            não traz as partes (o DataJud não as divulga).
+            Classe e assunto vêm das Tabelas Processuais Unificadas do CNJ: digite o nome e escolha na lista. O órgão julgador
+            ainda é pelo código. Informe ao menos um filtro. A busca é feita em um tribunal por vez e não traz as partes
+            (o DataJud não as divulga).
           </Text>
           <div>
             <Button size="2" type="submit" disabled={buscando}>Buscar processos</Button>
@@ -153,7 +158,7 @@ export default function BuscaProcessos({ onAbrir }: { onAbrir: (tribunal: string
                         {formatarNumeroCNJ(p.numeroProcesso) || 'não informado'}{' '}
                         <Badge color="purple" size="1">{p.grau ?? '?'}</Badge>
                       </td>
-                      <td>{p.classe ?? 'não informada'}</td>
+                      <td>{p.classe ?? 'não informada'}{p.classe_caminho?.length ? <Text as="div" size="1" color="gray">{p.classe_caminho.slice(-2).join(' › ')}</Text> : null}</td>
                       <td>{p.orgaoJulgador ?? 'não informado'}</td>
                       <td>{formatarDataSimples(p.dataAjuizamento)}</td>
                       <td className="tabela-acoes">
