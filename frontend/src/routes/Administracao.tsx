@@ -1,6 +1,5 @@
 import { useAvisos } from '../Avisos'
-import { mensagemPorStatus } from '../api/mcpClient'
-import { avisarDadosAlterados } from '../api/rest'
+import { avisarDadosAlterados, requisitar, type OpcoesRequisicao } from '../api/rest'
 import CabecalhoPagina from '../CabecalhoPagina'
 import Carregamento from '../Carregamento'
 import TabelaResponsiva from '../TabelaResponsiva'
@@ -27,6 +26,7 @@ import { formatarMoeda } from '../utils/formatadores'
 import { NIVEIS, PERFIS, aplicarPerfil, grauPadrao, perfilDe, type Grau } from './administracao/perfis'
 import { descreverCampos, haQuanto, lerValorHora, listarEmFrase, resumoVinculos, rotuloAcao, type Vinculos } from './administracao/formatos'
 import IntegracoesAdmin from './administracao/IntegracoesAdmin'
+import AutomacoesAdmin from './administracao/AutomacoesAdmin'
 import './administracao.scss'
 
 type Usuario = {
@@ -81,7 +81,7 @@ export default function Administracao() {
   // que se apaga ao ser lido): numa carga nova a tela chega a montar duas vezes e a segunda não encontraria o pedido.
   const [abaAdmin, setAbaAdmin] = useState(() => {
     const pedida = lerHash(window.location.hash, '').parametros.aba
-    return pedida && ['usuarios', 'integracoes', 'banco', 'historico'].includes(pedida) ? pedida : 'usuarios'
+    return pedida && ['usuarios', 'integracoes', 'automacoes', 'banco', 'historico'].includes(pedida) ? pedida : 'usuarios'
   })
   const tentouAuto = useRef(false)
   const CATEGORIAS_LIMPEZA: [string, string][] = [
@@ -91,13 +91,7 @@ export default function Administracao() {
   ]
 
   async function requisicao(url: string, token: string, metodo = 'GET', corpo?: unknown) {
-    const r = await fetch(url, { method: metodo, cache: 'no-store', headers: {
-      Authorization: `Bearer ${token}`, ...(corpo === undefined ? {} : { 'Content-Type': 'application/json' }),
-    }, ...(corpo === undefined ? {} : { body: JSON.stringify(corpo) }) })
-    if (!r.ok) {
-      const e = await r.json().catch(() => ({}))
-      throw new Error(e.mensagem || e.erro || mensagemPorStatus(r.status))
-    }
+    const r = await requisitar({ token }, url, { metodo: metodo as OpcoesRequisicao['metodo'], corpo, cache: 'no-store' })
     if (metodo !== 'GET') avisarDadosAlterados()
     return r
   }
@@ -252,6 +246,7 @@ export default function Administracao() {
         <Tabs.List aria-label="Administração">
           <Tabs.Trigger value="usuarios">Usuários</Tabs.Trigger>
           <Tabs.Trigger value="integracoes">Integrações</Tabs.Trigger>
+          <Tabs.Trigger value="automacoes">Automações</Tabs.Trigger>
           <Tabs.Trigger value="banco">Banco de dados</Tabs.Trigger>
           <Tabs.Trigger value="historico">Histórico administrativo</Tabs.Trigger>
         </Tabs.List>
@@ -303,6 +298,9 @@ export default function Administracao() {
         </Tabs.Content>
         <Tabs.Content value="integracoes">
           <IntegracoesAdmin token={sessao} />
+        </Tabs.Content>
+        <Tabs.Content value="automacoes">
+          <AutomacoesAdmin token={sessao} />
         </Tabs.Content>
         <Tabs.Content value="banco">
           <Heading as="h2" size="4" mt="4">Banco de dados</Heading>

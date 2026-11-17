@@ -1,3 +1,5 @@
+import { dataCurta, diasEntreDatas, isoLocal } from '../../utils/formatadores.ts'
+export { dataCurta, isoLocal }
 /** Regras compartilhadas das telas de atividades (lista global e aba do processo). */
 export type AtividadeComData = { data?: string | null; hora?: string | null }
 
@@ -12,28 +14,16 @@ export const TITULO_GRUPO: Record<Grupo, string> = { atrasadas: 'Atrasadas', hoj
 export const ORDEM_GRUPOS: Grupo[] = ['atrasadas', 'hoje', 'semana', 'depois', 'sem_data']
 const SEMANA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado']
 
-export function isoLocal(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-function diasEntre(deIso: string, ateIso: string) {
-  const [a, b] = [deIso, ateIso].map(v => { const [y, m, d] = v.split('-').map(Number); return Date.UTC(y, m - 1, d) })
-  return Math.round((b - a) / 86_400_000)
-}
 export function grupoDe(a: AtividadeComData, hoje: string): Grupo {
   if (!a.data) return 'sem_data'
-  const dias = diasEntre(hoje, a.data.slice(0, 10))
+  const dias = diasEntreDatas(hoje, a.data.slice(0, 10))
   if (dias < 0) return 'atrasadas'
   if (dias === 0) return 'hoje'
   return dias <= 7 ? 'semana' : 'depois'
 }
-export function dataCurta(iso?: string | null) {
-  if (!iso) return '—'
-  const [y, m, d] = iso.slice(0, 10).split('-')
-  return `${d}/${m}/${y}`
-}
 export function quandoRelativo(a: AtividadeComData, hoje: string): string {
   if (!a.data) return 'definir data'
-  const dias = diasEntre(hoje, a.data.slice(0, 10))
+  const dias = diasEntreDatas(hoje, a.data.slice(0, 10))
   const hora = a.hora ? a.hora.slice(0, 5) : ''
   if (dias < -1) return `há ${-dias} dias`
   if (dias === -1) return 'ontem'

@@ -10,6 +10,8 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
+import automacoes
+
 
 def utc(valor=None):
     valor = valor or datetime.now(timezone.utc)
@@ -105,7 +107,10 @@ class Repositorio:
         return [dict(zip(('inicio', 'fim', 'estado', 'erro'), r)) for r in rows]
 
     async def executar(self, rotina, horas, funcao, args, kwargs=None):
-        """Lease renovável entre processos + execução imediata apenas se estiver atrasada."""
+        """Lease renovável entre processos + execução imediata apenas se estiver atrasada.
+        Rotina desligada em Administração › Automações não executa (e não conta como falha)."""
+        if not automacoes.Repositorio(self.caminho).ativa(rotina):
+            return
         dono, agora = uuid.uuid4().hex, utc()
         with self.abrir() as c:
             c.execute('BEGIN IMMEDIATE')

@@ -1,4 +1,4 @@
-import { mensagemPorStatus } from '../../api/mcpClient'
+import { enviarJson } from '../../api/rest'
 import { useRef, useState } from 'react'
 import { AlertDialog, Button, Flex, Link } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
@@ -51,13 +51,7 @@ export default function AgendaAtividade({
         corpo = { vinculo_id: agenda?.id, versao: agenda?.versao, ...(comando ? { comando } : {}) }
       }
       if (!cliente) return
-      await fetch(`/casos/${casoId}/atividades/${atividadeId}/agenda`, {
-        method: metodo,
-        headers: { Authorization: `Bearer ${cliente.token}`, 'Content-Type': 'application/json', ...cabecalhos },
-        body: JSON.stringify(corpo),
-      }).then(async (r) => {
-        if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.mensagem || mensagemPorStatus(r.status))
-      })
+      await enviarJson(cliente, `/casos/${casoId}/atividades/${atividadeId}/agenda`, corpo, metodo, undefined, { cabecalhos })
       onAtualizado()
     } catch {
       onAtualizado()

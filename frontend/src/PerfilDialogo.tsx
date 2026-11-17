@@ -4,6 +4,7 @@ import { ACCENTS, type AccentColor } from './aparencia'
 import { AlertTriangle, Camera } from 'lucide-react'
 import { useAvisos } from './Avisos'
 import { useCliente } from './api/ClienteContext'
+import { enviarJson } from './api/rest'
 import { AREAS, usePerfil, type Grau } from './api/PerfilContext'
 import MinhaAgendaGoogle from './MinhaAgendaGoogle'
 import { reduzirFoto } from './utils/foto'
@@ -38,14 +39,12 @@ export default function PerfilDialogo({ onClose, accent, setAccent }: { onClose:
     if (!cliente) { setErro('Conecte-se na aba Acesso.'); return }
     setSalvando(true); setErro('')
     try {
-      const r = await fetch('/responsaveis/me', { method: 'PATCH', cache: 'no-store', headers: { Authorization: `Bearer ${cliente.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(mudancas) })
-      const dados = await r.json().catch(() => ({})) as { mensagem?: string; usuario?: { nome_completo?: string; email?: string; foto?: string } }
-      if (!r.ok) throw new Error(dados.mensagem || 'Não foi possível salvar o perfil. Tente de novo.')
+      const dados = await enviarJson<{ usuario?: { nome_completo?: string; email?: string; foto?: string } }>(cliente, '/responsaveis/me', mudancas, 'PATCH')
       atualizarPerfil({ nome: dados.usuario?.nome_completo ?? nome.trim(), email: dados.usuario?.email ?? email.trim(), foto: dados.usuario?.foto ?? foto })
       avisar({ texto: 'Perfil atualizado.', tipo: 'sucesso' })
       onClose()
     } catch (e) {
-      setErro(e instanceof TypeError ? 'Não foi possível falar com o servidor. Confira sua conexão.' : (e as Error).message)
+      setErro((e as Error).message)
     } finally { setSalvando(false) }
   }
 

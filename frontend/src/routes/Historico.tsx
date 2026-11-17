@@ -27,7 +27,7 @@ import {
   type Favorito,
   type ItemHistorico,
 } from '../utils/listasRapidas'
-import { formatarNomeExibicao, formatarNumeroCNJ } from '../utils/formatadores'
+import { dataCurta, diasEntreDatas, isoLocal, formatarNomeExibicao, formatarNumeroCNJ } from '../utils/formatadores'
 import { useEstreita } from '../utils/useEstreita'
 import './casos/lista-casos.scss'
 import './historico/historico.scss'
@@ -40,23 +40,11 @@ const SEM_CASOS: Caso[] = []
 const SEM_CLIENTES: Cliente[] = []
 const DIAS_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
 
-function isoLocal(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-function diasEntre(deIso: string, ateIso: string) {
-  const [a, b] = [deIso, ateIso].map(v => { const [y, m, d] = v.split('-').map(Number); return Date.UTC(y, m - 1, d) })
-  return Math.round((b - a) / 86_400_000)
-}
-function dataCurta(iso?: string | null) {
-  if (!iso) return '—'
-  const [y, m, d] = iso.slice(0, 10).split('-')
-  return `${d}/${m}/${y}`
-}
 function normalizar(texto: string) {
   return texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 }
 function haQuanto(iso: string, hoje: string) {
-  const dias = diasEntre(iso.slice(0, 10), hoje)
+  const dias = diasEntreDatas(iso.slice(0, 10), hoje)
   if (dias <= 0) return 'hoje'
   if (dias === 1) return 'ontem'
   return `há ${dias} dias`
@@ -124,7 +112,7 @@ export default function Historico() {
     const ordem = ['Hoje', 'Ontem', 'Esta semana', 'Mais antigas']
     const mapa = new Map<string, ItemHistorico[]>()
     for (const item of historicoVisivel) {
-      const dias = diasEntre(isoLocal(new Date(item.quando)), hoje)
+      const dias = diasEntreDatas(isoLocal(new Date(item.quando)), hoje)
       const grupo = dias <= 0 ? 'Hoje' : dias === 1 ? 'Ontem' : dias < 7 ? 'Esta semana' : 'Mais antigas'
       mapa.set(grupo, [...(mapa.get(grupo) ?? []), item])
     }
@@ -135,7 +123,7 @@ export default function Historico() {
     const d = new Date(item.quando)
     if (Number.isNaN(d.getTime())) return '—'
     const hora = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-    const dias = diasEntre(isoLocal(d), hoje)
+    const dias = diasEntreDatas(isoLocal(d), hoje)
     if (dias <= 1) return hora
     if (dias < 7) return `${DIAS_SEMANA[d.getDay()]} ${hora}`
     return `${dataCurta(isoLocal(d)).slice(0, 5)} ${hora}`

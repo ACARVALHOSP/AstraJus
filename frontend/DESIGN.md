@@ -58,6 +58,13 @@ No tema escuro a barra superior usa superfície neutra (`--gray-2`); no claro, `
 - **Ícones:** `lucide-react`, um ícone distinto por item de navegação. Não usar emojis ou caracteres Unicode como ícones.
 - **Movimento:** transições curtas (≤ 200 ms) que comuniquem estado; respeitar `prefers-reduced-motion`.
 
+## Estilos (onde cada coisa vai)
+
+1. **Global** (`index.scss`, `interface.scss`, `app-radix.css`): tokens, reset e componentes compartilhados (tabelas, avisos, cabeçalhos). Nada específico de uma tela.
+2. **Por área**: um único arquivo ao lado das telas (`routes/<área>/<área>.scss`), importado pela tela raiz da área. Classes prefixadas pela área (`fin-`, `ativ-`, `pub-`) para não colidir.
+3. **Inline `style={{}}`**: só para ajuste de layout de uma linha em componente Radix (`width: '100%'`, `marginLeft: 'auto'`, `alignSelf`, `flex`). Cor, fonte, espaçamento de tema e qualquer estilo repetido em 3 lugares ou mais vão para o arquivo da área, usando tokens Radix (`var(--space-4)`, `var(--gray-a11)`).
+4. **Novo arquivo de estilo**: preferir `.scss` da área; `.css` puro só onde já existe (`*-radix.css`). Não criar um terceiro formato para a mesma área.
+
 ## Do's and Don'ts
 
 - Do usar tokens Radix e os componentes compartilhados (`CabecalhoPagina`, `CampoData`, `TabelaResponsiva`, `AcoesTabela`).
