@@ -35,14 +35,16 @@ export default function BuscaProcessos({ onAbrir }: { onAbrir: (tribunal: string
   // Nomes dos itens escolhidos nas tabelas do CNJ (o filtro guarda só o código).
   const [classeTpu, setClasseTpu] = useState<ItemTpu | null>(null)
   const [assuntoTpu, setAssuntoTpu] = useState<ItemTpu | null>(null)
+  // Nome do órgão julgador escolhido na tabela de resultados (o filtro guarda só o código).
+  const [orgaoNome, setOrgaoNome] = useState('')
   const mudar = (parcial: Partial<FiltrosBusca>) => setF(atual => ({ ...atual, ...parcial }))
 
-  async function buscar(mais: boolean) {
+  async function buscar(mais: boolean, filtros: FiltrosBusca = f) {
     if (!cliente) {
       setErro('Informe o seu token na aba Acesso e clique em Conectar antes de consultar.')
       return
     }
-    const montado = montarArgsBusca(mais ? { ...f, tribunal: tribunalBuscado } : f, mais ? cursor : null)
+    const montado = montarArgsBusca(mais ? { ...filtros, tribunal: tribunalBuscado } : filtros, mais ? cursor : null)
     if ('erro' in montado) {
       setErro(montado.erro)
       return
@@ -67,6 +69,16 @@ export default function BuscaProcessos({ onAbrir }: { onAbrir: (tribunal: string
     }
   }
 
+  /** Clique no órgão julgador de um resultado: filtra pelo código dele, no tribunal da busca, e busca de novo. */
+  function filtrarPorOrgao(codigo: number, nome: string) {
+    const novos = { ...f, tribunal: tribunalBuscado, orgao: String(codigo) }
+    setF(novos)
+    setOrgaoNome(nome)
+    setItens(null)
+    setCursor(null)
+    buscar(false, novos)
+  }
+
   function aoEnviar(evento: FormEvent) {
     evento.preventDefault()
     setItens(null)
@@ -81,7 +93,7 @@ export default function BuscaProcessos({ onAbrir }: { onAbrir: (tribunal: string
           <div className="aj-form-grade">
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="busca-tribunal">Tribunal</label>
-              <Select.Root value={f.tribunal || '__none__'} onValueChange={v => mudar({ tribunal: v === '__none__' ? '' : v })}>
+              <Select.Root value={f.tribunal || '__none__'} onValueChange={v => { mudar({ tribunal: v === '__none__' ? '' : v, ...(v !== f.tribunal ? { orgao: '' } : {}) }); if (v !== f.tribunal) setOrgaoNome('') }}>
                 <Select.Trigger id="busca-tribunal" placeholder="Escolha o tribunal" style={{ width: '100%' }} />
                 <Select.Content>
                   <Select.Item value="__none__">Escolha o tribunal</Select.Item>
@@ -95,9 +107,16 @@ export default function BuscaProcessos({ onAbrir }: { onAbrir: (tribunal: string
                 onChange={(classe, item) => { mudar({ classe }); setClasseTpu(item) }} />
             </div>
             <div className="form-campo">
-              <label className="form-campo-label" htmlFor="busca-orgao">Órgão julgador (código)</label>
-              <TextField.Root id="busca-orgao" inputMode="numeric" autoComplete="off"
-                value={f.orgao} onChange={e => mudar({ orgao: e.target.value })} />
+              <label className="form-campo-label" htmlFor="busca-orgao">Órgão julgador</label>
+              {f.orgao && orgaoNome ? (
+                <Flex align="center" justify="between" gap="3" className="aj-busca-escolhido">
+                  <Text size="2" weight="medium">{orgaoNome} ({f.orgao})</Text>
+                  <Button type="button" variant="ghost" size="1" onClick={() => { mudar({ orgao: '' }); setOrgaoNome('') }}>Trocar</Button>
+                </Flex>
+              ) : (
+                <TextField.Root id="busca-orgao" inputMode="numeric" autoComplete="off" placeholder="Código, ou clique no órgão de um resultado"
+                  value={f.orgao} onChange={e => mudar({ orgao: e.target.value })} />
+              )}
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="busca-assunto">Assunto</label>
@@ -114,8 +133,8 @@ export default function BuscaProcessos({ onAbrir }: { onAbrir: (tribunal: string
             </div>
           </div>
           <Text size="1" color="gray">
-            Classe e assunto vêm das Tabelas Processuais Unificadas do CNJ: digite o nome e escolha na lista. O órgão julgador
-            ainda é pelo código. Informe ao menos um filtro. A busca é feita em um tribunal por vez e não traz as partes
+            Classe e assunto vêm das Tabelas Processuais Unificadas do CNJ: digite o nome e escolha na lista. Para filtrar por órgão julgador,
+            clique no nome dele em um resultado. Informe ao menos um filtro. A busca é feita em um tribunal por vez e não traz as partes
             (o DataJud não as divulga).
           </Text>
           <div>
@@ -159,7 +178,17 @@ export default function BuscaProcessos({ onAbrir }: { onAbrir: (tribunal: string
                         <Badge color="purple" size="1">{p.grau ?? '?'}</Badge>
                       </td>
                       <td>{p.classe ?? 'não informada'}{p.classe_caminho?.length ? <Text as="div" size="1" color="gray">{p.classe_caminho.slice(-2).join(' › ')}</Text> : null}</td>
-                      <td>{p.orgaoJulgador ?? 'não informado'}</td>
+                      <td>
+                        {p.orgaoJulgador && p.orgao_julgador_codigo
+                          ? (
+                            <Button type="button" variant="ghost" size="1" disabled={buscando}
+                              title="Filtrar por este órgão julgador" onClick={() => filtrarPorOrgao(p.orgao_julgador_codigo as number, p.orgaoJulgador as string)}>
+                              {p.orgaoJulgador}
+                            </Button>
+                          )
+                          : (p.orgaoJulgador ?? 'não informado')}
+                        {p.orgao_julgador_codigo ? <Text as="div" size="1" color="gray">código {p.orgao_julgador_codigo}</Text> : null}
+                      </td>
                       <td>{formatarDataSimples(p.dataAjuizamento)}</td>
                       <td className="tabela-acoes">
                         {p.numeroProcesso && (
