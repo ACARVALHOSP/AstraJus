@@ -6,9 +6,10 @@ export type CalendarioForense = {
 }
 export type ContextoCalendario = { municipio: string; tribunal: string; anos: number[] }
 export type ProvedorCalendario = (contexto: ContextoCalendario) => Promise<CalendarioForense>
-export type RegraPrazo = 'dje' | 'inicio'
+export type RegraPrazo = 'dje' | 'portal' | 'inicio'
 export const REGRAS_PRAZO: Record<RegraPrazo, string> = {
   dje: 'Disponibilização DJEN → publicação no 1º dia útil seguinte → início da contagem no dia útil seguinte',
+  portal: 'Portal do tribunal (Lei 11.419/2006, art. 5º): intimação na consulta ou, sem consulta, na leitura tácita de 10 dias corridos',
   inicio: 'Termo inicial informado: conta como primeiro dia se for dia útil',
 }
 export function dataValida(iso: string): boolean {
@@ -25,10 +26,17 @@ export function detectarDias(texto: string): number | null {
   return unicos.length === 1 && unicos[0] > 0 ? unicos[0] : null
 }
 export type Contagem = 'uteis' | 'corridos'
-export type OpcoesPrazo = { contagem?: Contagem; emDobro?: boolean }
+export type OpcoesPrazo = { contagem?: Contagem; emDobro?: boolean; consulta?: string }
+
+/** Leitura tácita (Lei 11.419/2006, art. 5º, §3º): 10 dias corridos contados do envio, que é o 1º dia. */
+export function leituraTacita(envio: string): string {
+  let d = envio
+  for (let i = 0; i < 9; i++) d = somar(d)
+  return d
+}
 
 export function calcularPrazo(base: string, dias: number, regra: RegraPrazo, calendario: CalendarioForense, suspensaoCpc: boolean, opcoes: OpcoesPrazo = {}) {
-  if (!dataValida(base) || !Number.isInteger(dias) || dias < 1 || dias > 999 || !REGRAS_PRAZO[regra]) throw new Error('Informe data, regra e prazo entre 1 e 999 dias.')
+  if (!dataValida(base) || (opcoes.consulta && !dataValida(opcoes.consulta)) || !Number.isInteger(dias) || dias < 1 || dias > 999 || !REGRAS_PRAZO[regra]) throw new Error('Informe data, regra e prazo entre 1 e 999 dias.')
   const contagem: Contagem = opcoes.contagem ?? 'uteis'
   const emDobro = Boolean(opcoes.emDobro)
   // Prazo em dobro (CPC arts. 180, 183, 186 e 229) multiplica a quantidade de dias.
@@ -45,7 +53,7 @@ export function calcularPrazo(base: string, dias: number, regra: RegraPrazo, cal
     if (contagemUtil && emRecesso(iso)) return 'Suspensão de 20/12 a 20/01 (regra CPC selecionada)'
     return calendario.impedimentos.find(i => (contagemUtil || i.tipo !== 'suspensao') && iso >= i.inicio && iso <= i.fim)?.descricao || null
   }
-  let atual = base, passos = 0
+  let atual = base, passos = 0, intimadoPorLeituraTacita = false
   function proximoUtil(incluir: boolean, contagemUtil = true) {
     if (!incluir) atual = somar(atual)
     while (impedimento(atual, contagemUtil)) {
@@ -64,6 +72,23 @@ export function calcularPrazo(base: string, dias: number, regra: RegraPrazo, cal
   if (regra === 'dje') {
     linhas.push({ data: base, evento: 'Disponibilização DJEN', dia: null })
     proximoUtil(false, false); linhas.push({ data: atual, evento: 'Publicação', dia: null }); proximoUtil(false)
+  } else if (regra === 'portal') {
+    // Intimação pelo portal: vale a data da consulta (§1º) se feita nos 10 dias corridos do envio;
+    // sem consulta nesse prazo, a intimação se dá no 10º dia (§3º). O prazo começa no dia útil seguinte (CPC, art. 231, V).
+    const tacita = leituraTacita(base)
+    const consulta = opcoes.consulta && dataValida(opcoes.consulta) && opcoes.consulta >= base && opcoes.consulta <= tacita ? opcoes.consulta : null
+    intimadoPorLeituraTacita = !consulta
+    linhas.push({ data: base, evento: 'Envio da intimação no portal (1º dos 10 dias corridos)', dia: null })
+    if (consulta) {
+      atual = consulta
+      // §2º: consulta em dia sem expediente considera-se realizada no primeiro dia útil seguinte.
+      if (impedimento(atual)) proximoUtil(true)
+      linhas.push({ data: atual, evento: 'Intimação realizada pela consulta (Lei 11.419/2006, art. 5º, §§1º e 2º)', dia: null })
+    } else {
+      atual = tacita
+      linhas.push({ data: atual, evento: 'Leitura tácita: intimação realizada no 10º dia corrido (art. 5º, §3º)', dia: null })
+    }
+    proximoUtil(false)
   } else proximoUtil(true)
   const termoInicial = atual
   for (let dia = 1; dia <= total; dia++) {
@@ -80,7 +105,7 @@ export function calcularPrazo(base: string, dias: number, regra: RegraPrazo, cal
   }
   const anos = [...new Set(linhas.map(l => Number(l.data.slice(0, 4))))]
   return {
-    termoInicial, dataFinal: atual, linhas, contagem, emDobro, diasContados: total, prorrogado,
+    termoInicial, dataFinal: atual, linhas, contagem, emDobro, leituraTacita: intimadoPorLeituraTacita, diasContados: total, prorrogado,
     pendenteRevisao: !calendario.completo || anos.some(a => !calendario.anos.includes(a)),
   }
 }

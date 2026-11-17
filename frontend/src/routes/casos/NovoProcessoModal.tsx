@@ -1,5 +1,5 @@
 import { confirmarSaida, useAlteracoesPendentes } from '../../AlteracoesPendentes'
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Button, Callout, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { AlertTriangle } from 'lucide-react'
 import { useAvisos } from '../../Avisos'
@@ -8,6 +8,7 @@ import { ErroMCP } from '../../api/mcpClient'
 import { enviarJson } from '../../api/rest'
 import { formatarNomeExibicao } from '../../utils/formatadores'
 import type { Caso } from './ListaCasos'
+import { erroNumeroCnj, siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
 
 type ClienteOpcao = { id: string; nome: string; cpf_cnpj?: string }
 
@@ -78,8 +79,16 @@ export default function NovoProcessoModal({
         || (digitosCliente.length >= 3 && (c.cpf_cnpj ?? '').replace(/\D/g, '').includes(digitosCliente))).slice(0, 8)
     : []
 
+  // Número CNJ: confere o dígito verificador (Res. CNJ 65/2008) e identifica o tribunal pelo código J.TR.
+  const analiseNumeros = useMemo(() => processos.split(',').map(t => t.trim()).filter(Boolean).map(texto => {
+    const digitos = texto.replace(/\D/g, '')
+    return { texto, digitos, erro: erroNumeroCnj(texto), sigla: siglaTribunalPorNumero(texto) }
+  }), [processos])
+  const numeroInvalido = analiseNumeros.find(a => a.erro)
+
   async function cadastrar() {
     if (!clienteSelecionado) { setErro('Escolha o cliente na lista: busque pelo nome ou CPF/CNPJ.'); return }
+    if (numeroInvalido) { setErro(numeroInvalido.erro); return }
     setEnviando(true)
     setErro(null)
     try {
@@ -169,7 +178,13 @@ export default function NovoProcessoModal({
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="caso-processos">Número CNJ (opcional)</label>
               <TextField.Root id="caso-processos" placeholder="1006314-27.2023.8.26.0005" autoComplete="off" value={processos} onChange={(e) => setProcessos(e.target.value)} />
-              <Text size="1" color="gray">Informe um único número ou deixe em branco.</Text>
+              {analiseNumeros.length === 0
+                ? <Text size="1" color="gray">Informe um único número ou deixe em branco. O tribunal é identificado pelo número.</Text>
+                : analiseNumeros.map((a, i) => (
+                  <Text key={i} size="1" color={!a.erro ? 'green' : a.digitos.length < 20 ? 'gray' : 'red'} role={!a.erro ? 'status' : a.digitos.length < 20 ? undefined : 'alert'}>
+                    {a.erro ? a.erro : `Dígito verificador conferido${a.sigla ? `: ${a.sigla.toUpperCase()}` : ''}.`}
+                  </Text>
+                ))}
             </div>
           </div>
           {erro && (
