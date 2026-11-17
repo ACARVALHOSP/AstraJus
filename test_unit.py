@@ -2011,6 +2011,8 @@ class RegistroDeToolsTest(unittest.TestCase):
             "monitorar_publicacoes", "listar_monitoramentos", "remover_monitoramento",
             "buscar_feriados_forenses", "consultar_jurimetria_cjpg",
             "perfil_decisorio_magistrado", "status_apis", "consultar_processo_unificado", "renovar_monitoramento",
+            "buscar_processos_datajud", "consultar_movimentos_datajud",
+            "cacar_alvaras", "listar_alvaras", "consultar_jurisprudencia_tjsp",
         })
 
 
@@ -2734,6 +2736,35 @@ class AtualizarMovimentosProcessosTest(unittest.TestCase):
         cliente = self.gestao.criar_cliente("Cliente Teste", None, None, self.agora)
         self.numero = "10063142720238260005"
         self.caso = self.gestao.criar_caso(cliente["id"], "Caso Teste", None, [self.numero], self.agora)
+        # Sem rede: a verificação barata devolve "não sei" e o job faz a atualização completa.
+        verificacao = mock.patch.object(server, "_datajud_tem_movimento_novo", new=mock.AsyncMock(return_value=None))
+        self.verificacao = verificacao.start()
+        self.addCleanup(verificacao.stop)
+
+    def test_sem_movimento_novo_pula_a_atualizacao_completa(self):
+        self.gestao.salvar_capa_processo(
+            self.caso["id"], self.numero, self.agora, tribunal="TJSP",
+            movimentos=[{"codigo": "1", "nome": "Distribuição", "dataHora": "2023-01-01T00:00:00Z"}],
+        )
+        self.verificacao.return_value = False
+        with mock.patch.object(server, "consultar_processo_unificado") as completo:
+            asyncio.run(server._atualizar_movimentos_processos(self.gestao, self.agora))
+        self.verificacao.assert_awaited_once()
+        completo.assert_not_called()
+
+    def test_com_movimento_novo_faz_a_atualizacao_completa(self):
+        self.gestao.salvar_capa_processo(
+            self.caso["id"], self.numero, self.agora, tribunal="TJSP",
+            movimentos=[{"codigo": "1", "nome": "Distribuição", "dataHora": "2023-01-01T00:00:00Z"}],
+        )
+        self.verificacao.return_value = True
+        retorno = {"instancias": [{"tribunal": "TJSP", "movimentos": [
+            {"codigo": "1", "nome": "Distribuição", "dataHora": "2023-01-01T00:00:00Z"},
+            {"codigo": "2", "nome": "Juntada", "dataHora": "2026-01-01T00:00:00Z"}]}], "partes": [], "advogados": []}
+        with mock.patch.object(server, "consultar_processo_unificado", return_value=retorno) as completo:
+            asyncio.run(server._atualizar_movimentos_processos(self.gestao, self.agora))
+        completo.assert_called_once()
+        self.assertEqual(len(self.gestao.obter_capa_processo(self.caso["id"], self.numero)["movimentos"]), 2)
 
     def test_sem_capa_vinculada_consulta_datajud(self):
         fonte = {"numeroProcesso": self.numero, "tribunal": "TJSP", "grau": "G1"}

@@ -532,6 +532,270 @@ def _extrair_processo_datajud(fonte: dict) -> dict:
     }
 
 
+# --- Busca por classe/órgão/assunto e movimentos incrementais (DataJud) ------
+
+_TAMANHO_BUSCA_MAX = 100
+_CAMPOS_BUSCA = [
+    "numeroProcesso", "tribunal", "grau", "classe", "assuntos", "orgaoJulgador",
+    "dataAjuizamento", "dataHoraUltimaAtualizacao", "nivelSigilo",
+]
+_CAMPOS_MOVIMENTOS = ["numeroProcesso", "tribunal", "grau", "movimentos", "dataHoraUltimaAtualizacao"]
+
+
+def _tribunal_valido(tribunal: str | None) -> tuple[str | None, dict | None]:
+    sigla = (tribunal or "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9]+(?:-[a-z]{2})?", sigla):
+        return None, _erro("Tribunal inválido. Use a sigla minúscula, como 'tjsp', 'trf1' ou 'stj'.")
+    return sigla, None
+
+
+def _codigo_positivo(nome: str, valor: Any) -> tuple[int | None, str | None]:
+    if valor is None or valor == "":
+        return None, None
+    try:
+        codigo = int(str(valor).strip())
+    except ValueError:
+        codigo = 0
+    if codigo <= 0:
+        return None, f"{nome} inválido: informe o código numérico da tabela do CNJ (recebido '{valor}')."
+    return codigo, None
+
+
+def _corpo_busca_datajud(*, classe_codigo: int | None = None, orgao_julgador_codigo: int | None = None,
+                         assunto_codigo: int | None = None, ajuizamento_inicio: str | None = None,
+                         ajuizamento_fim: str | None = None, grau: str | None = None, tamanho: int = 20,
+                         search_after: list | None = None, mais_recentes_primeiro: bool = True) -> dict:
+    """Corpo Elasticsearch da busca paginada. A ordem é por data de ajuizamento com @timestamp como
+    desempate, que é o que torna o `search_after` estável entre as páginas."""
+    filtros: list[dict] = []
+    if classe_codigo is not None:
+        filtros.append({"match": {"classe.codigo": classe_codigo}})
+    if orgao_julgador_codigo is not None:
+        filtros.append({"match": {"orgaoJulgador.codigo": orgao_julgador_codigo}})
+    if assunto_codigo is not None:
+        filtros.append({"match": {"assuntos.codigo": assunto_codigo}})
+    if grau:
+        filtros.append({"match": {"grau": grau}})
+    if ajuizamento_inicio or ajuizamento_fim:
+        faixa = {}
+        if ajuizamento_inicio:
+            faixa["gte"] = f"{ajuizamento_inicio}T00:00:00"
+        if ajuizamento_fim:
+            faixa["lte"] = f"{ajuizamento_fim}T23:59:59"
+        filtros.append({"range": {"dataAjuizamento": faixa}})
+    corpo: dict = {
+        "size": tamanho,
+        "_source": _CAMPOS_BUSCA,
+        "track_total_hits": True,
+        "query": {"bool": {"filter": filtros}},
+        "sort": [{"dataAjuizamento": {"order": "desc" if mais_recentes_primeiro else "asc"}},
+                 {"@timestamp": {"order": "asc"}}],
+    }
+    if search_after:
+        corpo["search_after"] = search_after
+    return corpo
+
+
+def _resumo_processo_busca(fonte: dict) -> dict:
+    return {
+        "numeroProcesso": fonte.get("numeroProcesso"),
+        "tribunal": fonte.get("tribunal"),
+        "grau": fonte.get("grau"),
+        "grau_descricao": _DESCRICAO_GRAU.get(fonte.get("grau") or "", fonte.get("grau")),
+        "classe": (fonte.get("classe") or {}).get("nome"),
+        "classe_codigo": (fonte.get("classe") or {}).get("codigo"),
+        "assuntos": [{"codigo": a.get("codigo"), "nome": a.get("nome")} for a in fonte.get("assuntos") or [] if a],
+        "orgaoJulgador": (fonte.get("orgaoJulgador") or {}).get("nome"),
+        "orgao_julgador_codigo": (fonte.get("orgaoJulgador") or {}).get("codigo"),
+        "dataAjuizamento": fonte.get("dataAjuizamento"),
+        "dataHoraUltimaAtualizacao": fonte.get("dataHoraUltimaAtualizacao"),
+        "nivelSigilo": fonte.get("nivelSigilo"),
+    }
+
+
+@mcp.tool()
+async def buscar_processos_datajud(
+    tribunal: str,
+    classe_codigo: int | None = None,
+    orgao_julgador_codigo: int | None = None,
+    assunto_codigo: int | None = None,
+    ajuizamento_inicio: str | None = None,
+    ajuizamento_fim: str | None = None,
+    grau: str | None = None,
+    tamanho: int = 20,
+    search_after: list | None = None,
+    mais_recentes_primeiro: bool = True,
+) -> dict:
+    """Busca processos no DataJud por classe, órgão julgador e/ou assunto (códigos das Tabelas
+    Processuais Unificadas do CNJ), em UM tribunal, com paginação estável por `search_after`.
+
+    Parâmetros (informe ao menos um filtro):
+    - tribunal: sigla minúscula ("tjsp", "trf1", "stj"...). A busca nacional não existe no DataJud.
+    - classe_codigo / orgao_julgador_codigo / assunto_codigo: códigos numéricos (ex.: classe 7 =
+      Procedimento Comum Cível). Não aceita nomes.
+    - ajuizamento_inicio / ajuizamento_fim: YYYY-MM-DD, limites inclusivos da data de ajuizamento.
+    - grau: "G1", "G2", "JE", "TR"... (opcional).
+    - tamanho: itens por página, de 1 a 100 (padrão 20).
+    - search_after: o `proximo_cursor` devolvido pela página anterior (passe a lista como veio).
+    - mais_recentes_primeiro: ordem por data de ajuizamento (padrão: mais recentes primeiro).
+
+    Retorno: "total" (total que casa com o filtro), "processos" (resumo: número, classe, assuntos,
+    órgão julgador, grau, datas; sem movimentações, use consultar_processo_datajud para o detalhe),
+    "proximo_cursor" (None na última página) e "tem_mais".
+
+    Limitações: a API não expõe partes; é lenta (timeout 70s com nova tentativa); processos em
+    segredo de justiça não aparecem.
+    """
+    try:
+        sigla, erro = _tribunal_valido(tribunal)
+        if erro:
+            return erro
+        classe, e1 = _codigo_positivo("classe_codigo", classe_codigo)
+        orgao, e2 = _codigo_positivo("orgao_julgador_codigo", orgao_julgador_codigo)
+        assunto, e3 = _codigo_positivo("assunto_codigo", assunto_codigo)
+        for mensagem in (e1, e2, e3, _validar_data("ajuizamento_inicio", ajuizamento_inicio),
+                         _validar_data("ajuizamento_fim", ajuizamento_fim)):
+            if mensagem:
+                return _erro(mensagem)
+        if (ajuizamento_inicio and ajuizamento_fim) and ajuizamento_inicio > ajuizamento_fim:
+            return _erro("ajuizamento_inicio não pode ser posterior a ajuizamento_fim.")
+        if not any([classe, orgao, assunto, ajuizamento_inicio, ajuizamento_fim]):
+            return _erro("Informe ao menos um filtro: classe_codigo, orgao_julgador_codigo, assunto_codigo ou datas de ajuizamento.")
+        grau_norm = (grau or "").strip().upper() or None
+        if grau_norm and not re.fullmatch(r"[A-Z0-9]{1,4}", grau_norm):
+            return _erro("grau inválido: use códigos como G1, G2, JE ou TR.")
+        if not isinstance(tamanho, int) or not 1 <= tamanho <= _TAMANHO_BUSCA_MAX:
+            return _erro(f"tamanho inválido: use um inteiro de 1 a {_TAMANHO_BUSCA_MAX}.")
+        if search_after is not None and (
+                not isinstance(search_after, list) or not 1 <= len(search_after) <= 4
+                or any(isinstance(v, (dict, list, bool)) or v is None for v in search_after)):
+            return _erro("search_after inválido: passe o 'proximo_cursor' da página anterior, sem alterar.")
+
+        corpo = _corpo_busca_datajud(
+            classe_codigo=classe, orgao_julgador_codigo=orgao, assunto_codigo=assunto,
+            ajuizamento_inicio=ajuizamento_inicio, ajuizamento_fim=ajuizamento_fim, grau=grau_norm,
+            tamanho=tamanho, search_after=search_after, mais_recentes_primeiro=mais_recentes_primeiro)
+        url = f"{DATAJUD_BASE_URL}/api_publica_{sigla}/_search"
+        headers = {"Authorization": f"APIKey {_datajud_api_key()}", "Content-Type": "application/json"}
+        resposta = await _datajud_post_com_retry(url, headers, corpo)
+        if isinstance(resposta, dict):
+            return resposta
+        dados, erro_json = _json_da_resposta(resposta)
+        if erro_json:
+            return erro_json
+        if not isinstance(dados, dict) or not isinstance(dados.get("hits"), dict):
+            return _erro(f"Resposta inesperada da API DataJud (sem 'hits'): {str(dados)[:300]}")
+        hits = dados["hits"]
+        itens = hits.get("hits") or []
+        processos = [_resumo_processo_busca(h.get("_source") or {}) for h in itens]
+        cursor = itens[-1].get("sort") if itens and len(itens) == tamanho else None
+        return {
+            "encontrado": bool(processos),
+            "total": _total_hits(hits),
+            "processos": processos,
+            "proximo_cursor": cursor,
+            "tem_mais": cursor is not None,
+        }
+    except Exception as exc:
+        log.exception("Falha inesperada em buscar_processos_datajud")
+        return _erro(f"Erro inesperado ao buscar no DataJud: {exc}")
+
+
+def _datahora(valor: Any) -> datetime | None:
+    """ISO 8601 do DataJud ("...Z", com ou sem fração, ou sem fuso) em datetime UTC; None se inválido."""
+    if not isinstance(valor, str) or not valor.strip():
+        return None
+    texto = valor.strip().replace("Z", "+00:00")
+    try:
+        momento = datetime.fromisoformat(texto)
+    except ValueError:
+        return None
+    return momento if momento.tzinfo else momento.replace(tzinfo=timezone.utc)
+
+
+def _movimentos_desde(movimentos: list[dict] | None, desde: datetime | None) -> list[dict]:
+    """Movimentos com dataHora estritamente posterior a `desde`, em ordem cronológica.
+    Sem `desde`, devolve todos; movimento sem data legível é mantido (melhor repetir que perder)."""
+    itens = list(movimentos or [])
+    if desde is not None:
+        itens = [m for m in itens if (_datahora(m.get("dataHora")) or datetime.max.replace(tzinfo=timezone.utc)) > desde]
+    return sorted(itens, key=lambda m: _datahora(m.get("dataHora")) or datetime.max.replace(tzinfo=timezone.utc))
+
+
+@mcp.tool()
+async def consultar_movimentos_datajud(tribunal: str, numero_processo: str, desde: str | None = None) -> dict:
+    """Consulta só as movimentações de um processo no DataJud, opcionalmente apenas as POSTERIORES a
+    uma data (para saber "tem algo novo?" sem trazer a capa inteira nem chamar o DJEN).
+
+    Parâmetros:
+    - tribunal: sigla minúscula ("tjsp", "trf1"...).
+    - numero_processo: número CNJ com ou sem máscara; o dígito verificador é conferido.
+    - desde: data ou data e hora ISO (ex.: "2026-11-01" ou "2026-11-01T10:30:00Z", UTC se sem fuso).
+      Só movimentos com dataHora MAIOR que isso voltam. Sem `desde`, voltam todos.
+
+    Retorno: "encontrado", "instancias" (uma por grau: grau, total_movimentos, novos, movimentos
+    filtrados em ordem cronológica, ultima_atualizacao) e "total_novos". Não usa o cache: a resposta
+    é sempre a do momento.
+    """
+    try:
+        sigla, erro = _tribunal_valido(tribunal)
+        if erro:
+            return erro
+        numero, erro_cnj = cnj.validar_cnj(numero_processo)
+        if erro_cnj:
+            return _erro(erro_cnj)
+        limite = None
+        if desde:
+            limite = _datahora(desde if "T" in desde else f"{desde}T00:00:00")
+            if limite is None:
+                return _erro("desde inválido: use YYYY-MM-DD ou data e hora ISO 8601.")
+        corpo = {"size": 10, "_source": _CAMPOS_MOVIMENTOS, "query": {"match": {"numeroProcesso": numero}}}
+        url = f"{DATAJUD_BASE_URL}/api_publica_{sigla}/_search"
+        headers = {"Authorization": f"APIKey {_datajud_api_key()}", "Content-Type": "application/json"}
+        resposta = await _datajud_post_com_retry(url, headers, corpo)
+        if isinstance(resposta, dict):
+            return resposta
+        dados, erro_json = _json_da_resposta(resposta)
+        if erro_json:
+            return erro_json
+        if not isinstance(dados, dict) or not isinstance(dados.get("hits"), dict):
+            return _erro(f"Resposta inesperada da API DataJud (sem 'hits'): {str(dados)[:300]}")
+        instancias = []
+        for hit in dados["hits"].get("hits") or []:
+            fonte = hit.get("_source") or {}
+            todos = fonte.get("movimentos") or []
+            novos = _movimentos_desde(todos, limite)
+            instancias.append({
+                "grau": fonte.get("grau"),
+                "grau_descricao": _DESCRICAO_GRAU.get(fonte.get("grau") or "", fonte.get("grau")),
+                "tribunal": fonte.get("tribunal"),
+                "total_movimentos": len(todos),
+                "novos": len(novos),
+                "movimentos": novos,
+                "ultima_atualizacao": fonte.get("dataHoraUltimaAtualizacao"),
+            })
+        if not instancias:
+            return {"encontrado": False, "mensagem": f"Processo {numero} não encontrado no tribunal '{sigla}'."}
+        return {"encontrado": True, "instancias": instancias, "total_novos": sum(i["novos"] for i in instancias)}
+    except Exception as exc:
+        log.exception("Falha inesperada em consultar_movimentos_datajud")
+        return _erro(f"Erro inesperado ao consultar movimentos no DataJud: {exc}")
+
+
+async def _datajud_tem_movimento_novo(tribunal: str, numero: str, movimentos_conhecidos: list[dict]) -> bool | None:
+    """Verificação barata antes de refazer a capa inteira (DataJud + DJEN): True se há movimento
+    posterior ao mais recente já guardado ou se a quantidade mudou (movimento retroativo); False se
+    nada mudou; None se não deu para saber (erro ou processo sem retorno): nesse caso o job faz a
+    atualização completa, como antes."""
+    datas = [d for d in (_datahora(m.get("dataHora")) for m in movimentos_conhecidos or []) if d]
+    resposta = await consultar_movimentos_datajud(tribunal, numero, desde=max(datas).isoformat() if datas else None)
+    if resposta.get("erro") or not resposta.get("encontrado"):
+        return None
+    # `movimentos_conhecidos` junta todos os graus; compara com a soma dos graus devolvidos.
+    total_remoto = sum(i["total_movimentos"] for i in resposta["instancias"])
+    return resposta["total_novos"] > 0 or total_remoto != len(movimentos_conhecidos or [])
+
+
 # --- Tool 2: DJEN ------------------------------------------------------------
 
 _FORMATO_DATA = "%Y-%m-%d"
@@ -3394,6 +3658,11 @@ async def _atualizar_movimentos_processos(gestao: "RegistroClientesCasos", agora
         caso_id, numero, tribunal = vinculo["caso_id"], vinculo["numero_processo"], vinculo["tribunal"]
         try:
             capa_atual = gestao.obter_capa_processo(caso_id, numero) or {}
+            if capa_atual.get("movimentos"):
+                # Já há histórico: pergunta só pelos movimentos mais novos que o último guardado e
+                # pula a atualização completa (DataJud + DJEN) quando nada mudou.
+                if await _datajud_tem_movimento_novo(tribunal.lower(), numero, capa_atual["movimentos"]) is False:
+                    continue
             campos, erro = await _montar_capa_via_tribunal(numero, tribunal.lower())
             if erro:
                 falhou = True

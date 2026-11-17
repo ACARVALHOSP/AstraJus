@@ -183,6 +183,8 @@ Servidor MCP `cnj-processual` (FastMCP), via `stdio` ou `http` (`/mcp`).
 |---|---|---|
 | `status_apis` | — | Estado dos circuit breakers do DataJud e do DJEN |
 | `consultar_processo_datajud` | `tribunal`, `numero_processo` | Capa e movimentações no DataJud (CNJ) |
+| `buscar_processos_datajud` | `tribunal`, `classe_codigo`, `orgao_julgador_codigo`, `assunto_codigo`, `ajuizamento_inicio/fim`, `grau`, `tamanho`, `search_after` | Busca paginada (resumo dos processos); `proximo_cursor` vai em `search_after` na página seguinte |
+| `consultar_movimentos_datajud` | `tribunal`, `numero_processo`, `desde` | Movimentações do processo, só as posteriores a `desde`; sem cache. O job de movimentos usa essa consulta para pular a atualização completa quando nada mudou |
 | `consultar_publicacoes_djen` | `numero_processo`, `sigla_tribunal`, `numero_oab`, `uf_oab`, `data_disponibilizacao_inicio`, `data_disponibilizacao_fim`, `pagina`, `itens_por_pagina` | Publicações e intimações no DJEN |
 | `consultar_processo_unificado` | `tribunal`, `numero_processo` | DataJud (capa + movimentos) + DJEN (partes e advogados) |
 | `buscar_feriados_forenses` | `municipio`, `ano`, `tribunal` | Feriados forenses por comarca/ano, para cálculo de prazos |
