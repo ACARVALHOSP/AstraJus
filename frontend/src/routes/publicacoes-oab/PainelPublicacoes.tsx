@@ -617,7 +617,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
             })}
           </ul>
         ) : (
-          <TabelaResponsiva principais={triagemAtiva ? ['Processo', 'Partes', 'Triagem', 'Situação/Tipo'] : ['Processo', 'Partes', 'Situação/Tipo']} larguraCompacta={triagemAtiva ? 1000 : 860}>
+          <TabelaResponsiva principais={['Divulgado ↓', 'Divulgado ↑', 'Processo', 'Partes', ...opcionais.map(c => c.header), ...(triagemAtiva ? ['Triagem'] : []), 'Situação/Tipo']} larguraCompacta={triagemAtiva ? 900 : 780}>
             <table aria-label="Publicações recebidas" className="oab-tabela">
               <thead>
                 <tr>
