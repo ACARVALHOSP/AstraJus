@@ -15,86 +15,25 @@ import { useNavegacao } from '../api/NavegacaoContext'
 import { useFiltrosUrl } from '../api/useFiltrosUrl'
 import { ErroMCP } from '../api/mcpClient'
 import { enviarJson } from '../api/rest'
-import { formatarMoeda, formatarNomeExibicao } from '../utils/formatadores'
+import { dataCurta, formatarMoeda, formatarNomeExibicao, isoLocal } from '../utils/formatadores'
 import { useEstreita } from '../utils/useEstreita'
 import { baixarCsv } from '../utils/csv'
 import { useAvisos } from '../Avisos'
 import NovoLancamentoModal, { ROTULO_TIPO_LANCAMENTO, type Predefinido, type TipoLancamento } from './financeiro/NovoLancamentoModal'
 import PorProcesso from './financeiro/PorProcesso'
 import Inadimplencia from './financeiro/Inadimplencia'
+import {
+  calcularKpis, calcularTotais, contarPorSituacao, doPeriodo as lancamentosDoPeriodo, filtrarLancamentos, idsReembolsados,
+  mesSomado, ORDEM_SITUACAO, partesDescricao, relativo, responsaveisDe, rotuloMes, situacaoDe, somar as soma,
+  type Direcao, type Lancamento, type Situacao,
+} from './financeiro/lancamentos'
 import './financeiro/financeiro.scss'
 
-type Lancamento = {
-  id: string
-  vencimento?: string
-  valor?: number
-  descricao: string
-  recorrente?: boolean
-  cliente_id?: string
-  caso_id?: string
-  responsavel?: string
-  direcao: 'DESPESA' | 'RECEITA'
-  pago: boolean
-  asaas_cobranca_id?: string
-  tipo?: TipoLancamento
-  pago_em?: string | null
-  parcela_numero?: number | null
-  parcela_total?: number | null
-  reembolsavel?: boolean
-  favorecido?: string | null
-  origem_id?: string | null
-}
 type Cliente = { id: string; nome?: string }
 type Caso = { id: string; titulo?: string }
 const SEM_CLIENTES: Cliente[] = []
 const SEM_CASOS: Caso[] = []
-type Situacao = 'aberto' | 'vencido' | 'quitado'
 type Atalho = '' | Situacao
-
-const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
-const RE_PARCELA = /\s*\(parcela (\d+)\/(\d+)\)\s*$/i
-
-function isoLocal(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-function diasEntre(deIso: string, ateIso: string) {
-  const [a, b] = [deIso, ateIso].map(v => { const [y, m, d] = v.split('-').map(Number); return Date.UTC(y, m - 1, d) })
-  return Math.round((b - a) / 86_400_000)
-}
-function mesSomado(mes: string, delta: number) {
-  const [y, m] = mes.split('-').map(Number)
-  const d = new Date(y, m - 1 + delta, 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-function rotuloMes(mes: string) {
-  const [y, m] = mes.split('-').map(Number)
-  const nome = MESES[m - 1]
-  return `${nome[0].toUpperCase()}${nome.slice(1)} de ${y}`
-}
-function situacaoDe(l: Lancamento, hoje: string): Situacao {
-  if (l.pago) return 'quitado'
-  return l.vencimento && l.vencimento.slice(0, 10) < hoje ? 'vencido' : 'aberto'
-}
-function relativo(l: Lancamento, hoje: string) {
-  if (!l.vencimento) return ''
-  const dias = diasEntre(hoje, l.vencimento.slice(0, 10))
-  if (l.pago && l.pago_em) return `${l.direcao === 'RECEITA' ? 'recebido' : 'pago'} em ${dataCurta(l.pago_em)}`
-  if (l.pago) return dias === -1 ? 'ontem' : dias < 0 ? `há ${-dias} dias` : dias === 0 ? 'hoje' : dias === 1 ? 'amanhã' : `em ${dias} dias`
-  if (dias < -1) return `vencido há ${-dias} dias`
-  if (dias === -1) return 'venceu ontem'
-  if (dias === 0) return 'vence hoje'
-  if (dias === 1) return 'vence amanhã'
-  return `vence em ${dias} dias`
-}
-function dataCurta(iso?: string) {
-  if (!iso) return '—'
-  const [y, m, d] = iso.slice(0, 10).split('-')
-  return `${d}/${m}/${y}`
-}
-function partesDescricao(descricao: string) {
-  const m = RE_PARCELA.exec(descricao)
-  return m ? { texto: descricao.replace(RE_PARCELA, ''), parcela: `${m[1]}/${m[2]}` } : { texto: descricao, parcela: '' }
-}
 
 // Lançamentos, situação por processo e inadimplência: três visões do mesmo financeiro.
 export default function Financeiro() {
@@ -147,7 +86,7 @@ function ListaLancamentos({ abas }: { abas: React.ReactNode }) {
   const mes = filtros.mes
   const todosMeses = filtros.todos === '1'
   const atalho = filtros.atalho as Atalho
-  const direcao = filtros.direcao as '' | 'RECEITA' | 'DESPESA'
+  const direcao = filtros.direcao as Direcao
   const tipoFiltro = filtros.tipo
   const clienteFiltro = filtros.cliente
   const responsavelFiltro = filtros.responsavel
@@ -156,7 +95,7 @@ function ListaLancamentos({ abas }: { abas: React.ReactNode }) {
   const setMes = (v: string | ((m: string) => string)) => setFiltros(f => ({ ...f, mes: typeof v === 'function' ? v(f.mes) : v }))
   const setTodosMeses = (v: (anterior: boolean) => boolean) => setFiltros(f => ({ ...f, todos: v(f.todos === '1') ? '1' : '' }))
   const setAtalho = (v: Atalho) => mudar({ atalho: v })
-  const setDirecao = (v: '' | 'RECEITA' | 'DESPESA') => mudar({ direcao: v })
+  const setDirecao = (v: Direcao) => mudar({ direcao: v })
   const setClienteFiltro = (v: string) => mudar({ cliente: v })
   const setResponsavelFiltro = (v: string) => mudar({ responsavel: v })
   const setBusca = (v: string) => mudar({ busca: v })
@@ -185,24 +124,12 @@ function ListaLancamentos({ abas }: { abas: React.ReactNode }) {
   const nomeCliente = useCallback((id?: string) => formatarNomeExibicao(clientes.find(c => c.id === id)?.nome ?? '') || '—', [clientes])
   const tituloCaso = useCallback((id?: string) => formatarNomeExibicao(casos.find(c => c.id === id)?.titulo ?? ''), [casos])
 
-  // Mês escolhido + vencidos em aberto de meses anteriores, que continuam pendentes.
-  const doPeriodo = useMemo(() => (lancamentos ?? []).filter(l => {
-    if (todosMeses) return true
-    const venc = (l.vencimento ?? '').slice(0, 7)
-    return venc === mes || (!l.pago && venc < mes && mes <= hoje.slice(0, 7))
-  }), [lancamentos, mes, todosMeses, hoje])
-  const filtrados = useMemo(() => {
-    const termo = busca.trim().toLocaleLowerCase('pt-BR')
-    return doPeriodo.filter(l =>
-      (!direcao || l.direcao === direcao) &&
-      (!tipoFiltro || (l.tipo ?? 'HONORARIO') === tipoFiltro) &&
-      (!clienteFiltro || l.cliente_id === clienteFiltro) &&
-      (!responsavelFiltro || l.responsavel === responsavelFiltro) &&
-      (!termo || `${l.descricao} ${nomeCliente(l.cliente_id)} ${tituloCaso(l.caso_id)}`.toLocaleLowerCase('pt-BR').includes(termo)))
-  }, [doPeriodo, direcao, tipoFiltro, clienteFiltro, responsavelFiltro, busca, nomeCliente, tituloCaso])
+  const doPeriodo = useMemo(() => lancamentosDoPeriodo(lancamentos ?? [], mes, todosMeses, hoje), [lancamentos, mes, todosMeses, hoje])
+  const filtrados = useMemo(
+    () => filtrarLancamentos(doPeriodo, { direcao, tipo: tipoFiltro, cliente: clienteFiltro, responsavel: responsavelFiltro, busca }, { cliente: nomeCliente, caso: tituloCaso }),
+    [doPeriodo, direcao, tipoFiltro, clienteFiltro, responsavelFiltro, busca, nomeCliente, tituloCaso])
   const { ordem, alternar: alternarOrdem } = useOrdenacao('lancamentos', { campo: 'vencimento', direcao: 'asc' })
   const colunas = useColunas('lancamentos', [{ chave: 'cliente', rotulo: 'Cliente' }, { chave: 'situacao', rotulo: 'Situação' }])
-  const ORDEM_SITUACAO: Record<Situacao, number> = { vencido: 0, aberto: 1, quitado: 2 }
   const visiveis = ordenarLista(atalho ? filtrados.filter(l => situacaoDe(l, hoje) === atalho) : filtrados, ordem, {
     vencimento: l => l.vencimento?.slice(0, 10),
     descricao: l => partesDescricao(l.descricao).texto,
@@ -210,30 +137,12 @@ function ListaLancamentos({ abas }: { abas: React.ReactNode }) {
     valor: l => (l.direcao === 'DESPESA' ? -1 : 1) * (l.valor ?? 0),
     situacao: l => ORDEM_SITUACAO[situacaoDe(l, hoje)],
   })
-  const contagem = useMemo(() => {
-    const c: Record<Situacao, number> = { aberto: 0, vencido: 0, quitado: 0 }
-    for (const l of filtrados) c[situacaoDe(l, hoje)]++
-    return c
-  }, [filtrados, hoje])
+  const contagem = useMemo(() => contarPorSituacao(filtrados, hoje), [filtrados, hoje])
+  const kpis = useMemo(() => calcularKpis(filtrados, mes, todosMeses, hoje), [filtrados, mes, todosMeses, hoje])
+  const totais = useMemo(() => calcularTotais(visiveis), [visiveis])
 
-  const soma = (lista: Lancamento[]) => lista.reduce((t, l) => t + (l.valor ?? 0), 0)
-  const kpis = useMemo(() => {
-    const base = filtrados
-    const noMes = (l: Lancamento) => todosMeses || (l.vencimento ?? '').slice(0, 7) === mes
-    const receber = base.filter(l => l.direcao === 'RECEITA' && situacaoDe(l, hoje) === 'aberto' && noMes(l))
-    const pagar = base.filter(l => l.direcao === 'DESPESA' && !l.pago && noMes(l))
-    const vencidos = base.filter(l => l.direcao === 'RECEITA' && situacaoDe(l, hoje) === 'vencido')
-    const recebido = base.filter(l => l.direcao === 'RECEITA' && l.pago && noMes(l))
-    return { receber, pagar, vencidos, recebido }
-  }, [filtrados, mes, todosMeses, hoje])
-  const totais = useMemo(() => {
-    const receitas = soma(visiveis.filter(l => l.direcao === 'RECEITA'))
-    const despesas = soma(visiveis.filter(l => l.direcao === 'DESPESA'))
-    return { receitas, despesas, saldo: receitas - despesas }
-  }, [visiveis])
-
-  const reembolsadas = useMemo(() => new Set((lancamentos ?? []).filter(l => l.direcao === 'RECEITA' && l.origem_id).map(l => l.origem_id as string)), [lancamentos])
-  const responsaveis = useMemo(() => [...new Set((lancamentos ?? []).map(l => l.responsavel).filter((r): r is string => Boolean(r)))].sort(), [lancamentos])
+  const reembolsadas = useMemo(() => idsReembolsados(lancamentos ?? []), [lancamentos])
+  const responsaveis = useMemo(() => responsaveisDe(lancamentos ?? []), [lancamentos])
   const clientesComLancamento = useMemo(() => {
     const ids = new Set((lancamentos ?? []).map(l => l.cliente_id))
     return clientes.filter(c => ids.has(c.id)).sort((a, b) => (a.nome ?? '').localeCompare(b.nome ?? '', 'pt-BR'))

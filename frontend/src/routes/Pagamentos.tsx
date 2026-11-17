@@ -12,7 +12,7 @@ import { useCliente } from '../api/ClienteContext'
 import { ErroMCP } from '../api/mcpClient'
 import { useClientes } from '../api/consultas'
 import { buscarJson, enviarJson } from '../api/rest'
-import { formatarMoeda, formatarNomeExibicao } from '../utils/formatadores'
+import { dataCurta, diasEntreDatas, isoLocal, formatarMoeda, formatarNomeExibicao } from '../utils/formatadores'
 import { useEstreita } from '../utils/useEstreita'
 import { useAvisos } from '../Avisos'
 import NovaCobrancaModal from './pagamentos/NovaCobrancaModal'
@@ -68,21 +68,9 @@ const ROTULOS_FORMA: Record<string, string> = { BOLETO: 'Boleto', PIX: 'Pix', CR
 const STATUS_FINALIZADOS = new Set(['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH', 'REFUNDED', 'REFUND_REQUESTED', 'REFUND_IN_PROGRESS'])
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
 
-function isoLocal(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-function diasEntre(deIso: string, ateIso: string) {
-  const [a, b] = [deIso, ateIso].map(v => { const [y, m, d] = v.split('-').map(Number); return Date.UTC(y, m - 1, d) })
-  return Math.round((b - a) / 86_400_000)
-}
-function dataCurta(iso?: string | null) {
-  if (!iso) return '—'
-  const [y, m, d] = iso.slice(0, 10).split('-')
-  return `${d}/${m}/${y}`
-}
 function prazo(c: Cobranca, hoje: string) {
   if (!c.dueDate || STATUS_FINALIZADOS.has(c.status ?? '')) return ''
-  const dias = diasEntre(hoje, c.dueDate)
+  const dias = diasEntreDatas(hoje, c.dueDate)
   if (dias < -1) return `venceu há ${-dias} dias`
   if (dias === -1) return 'venceu ontem'
   if (dias === 0) return 'vence hoje'

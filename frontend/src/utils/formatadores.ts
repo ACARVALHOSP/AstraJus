@@ -68,10 +68,21 @@ export function diasEntreDatas(deIso: string, ateIso: string): number {
   return Math.round((b - a) / 86_400_000)
 }
 
+/** Data no fuso local, AAAA-MM-DD. */
+export function isoLocal(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 /** Data de hoje no fuso local, AAAA-MM-DD. */
 export function hojeIso(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return isoLocal(new Date())
+}
+
+/** "2026-10-01…" → "01/10/2026"; vazio vira "—". */
+export function dataCurta(iso?: string | null): string {
+  if (!iso) return '—'
+  const [y, m, d] = iso.slice(0, 10).split('-')
+  return `${d}/${m}/${y}`
 }
 
 /** "2026-10-01" → "01/10/2026" (formato que as buscas do TJSP exigem); outros valores passam iguais. */
