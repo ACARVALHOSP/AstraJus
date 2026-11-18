@@ -26,6 +26,7 @@ import AtividadePublicacao from './AtividadePublicacao'
 import { PRAZOS_PADRAO } from './prazos'
 import { pct, selosTriagem, type InfoTriagem } from './triagem'
 import { POLO_CURTO } from '../../utils/polos'
+import TextoFormatado from '../../TextoFormatado'
 import './publicacoes.scss'
 
 type Status = PublicacaoOab['status']
@@ -351,7 +352,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
         </dl>
         <div>
           <Text as="p" size="1" weight="bold" color="gray" className="oab-rotulo">Inteiro teor</Text>
-          <p className="oab-inteiro-teor">{p.dados?.texto || 'Inteiro teor não disponibilizado.'}</p>
+          <p className="oab-inteiro-teor">{p.dados?.texto ? <TextoFormatado texto={p.dados.texto} html={p.dados.texto_html} /> : 'Inteiro teor não disponibilizado.'}</p>
         </div>
         {link && <a href={link} target="_blank" rel="noopener noreferrer" className="oab-link">Abrir no DJEN</a>}
       </div>

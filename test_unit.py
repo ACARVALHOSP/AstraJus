@@ -125,6 +125,14 @@ class UtilitariosTest(unittest.TestCase):
         texto = server._html_para_texto("<p>Pra&ccedil;a &aacute; <b>negrito</b></p><script>x=1</script>")
         self.assertEqual(texto, "Praça á negrito")
 
+    def test_html_sanitizado_mantem_so_negrito_italico_sublinhado(self):
+        html = '<p onclick="x()">Ordem <strong style="a">urgente</strong> &amp; <em>nova</em></p><div>Linha <u>2</u></div><script>x=1</script><a href="javascript:1">l</a>'
+        self.assertEqual(server._html_sanitizado(html), "Ordem <b>urgente</b> &amp; <i>nova</i>\n\nLinha <u>2</u>\nl")
+        self.assertEqual(server._html_sanitizado("<b>aberto <i>mal</b> fim"), "<b>aberto <i>mal</i></b> fim")
+        self.assertIsNone(server._html_sanitizado("<p>sem formatação</p>"))
+        self.assertIsNone(server._html_sanitizado(None))
+        self.assertNotIn("<script", server._html_sanitizado("<b>&lt;script&gt;alert(1)&lt;/script&gt;</b>"))
+
     def test_total_hits_aceita_dict_e_inteiro(self):
         self.assertEqual(server._total_hits({"total": {"value": 7}}), 7)
         self.assertEqual(server._total_hits({"total": 3}), 3)

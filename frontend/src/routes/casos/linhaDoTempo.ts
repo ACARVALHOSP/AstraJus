@@ -10,7 +10,7 @@ import type { AtividadeResumo, Movimento, VinculoCaso } from './consultasCaso'
 export type TipoEvento = 'movimentacao' | 'publicacao' | 'atividade' | 'vinculo'
 export type CorSelo = 'gray' | 'blue' | 'amber' | 'green' | 'red' | 'orange' | 'violet'
 export type Selo = { texto: string; cor: CorSelo }
-export type Evento = { id: string; tipo: TipoEvento; dia: string; hora: string; titulo: string; detalhe: string; selos: Selo[]; texto: string }
+export type Evento = { id: string; tipo: TipoEvento; dia: string; hora: string; titulo: string; detalhe: string; selos: Selo[]; texto: string; html?: string | null }
 export type Grupo = { dia: string; eventos: Evento[] }
 
 export const TIPOS: { id: TipoEvento; rotulo: string; singular: string }[] = [
@@ -23,7 +23,7 @@ const STATUS_PUBLICACAO: Record<string, Selo> = {
   nao_tratada: { texto: 'Por revisar', cor: 'amber' }, tratada: { texto: 'Tratada', cor: 'green' }, arquivada: { texto: 'Arquivada', cor: 'gray' },
 }
 const TIPO_VINCULO: Record<string, string> = { recurso: 'Recurso', apenso: 'Apenso', execucao: 'Execução de sentença', cautelar: 'Cautelar / Tutela', relacionado: 'Relacionado' }
-const LIMITE_TEXTO = 1500
+export const LIMITE_TEXTO = 1500
 
 const dois = (n: number) => String(n).padStart(2, '0')
 export const isoLocalDe = (d: Date) => `${d.getFullYear()}-${dois(d.getMonth() + 1)}-${dois(d.getDate())}`
@@ -57,7 +57,7 @@ export function eventosPublicacoes(pubs: PublicacaoOab[], atividades: AtividadeR
     const selos: Selo[] = [STATUS_PUBLICACAO[p.status] ?? { texto: p.status, cor: 'gray' }]
     if (comPrazo.has(p.hash)) selos.push({ texto: 'Gerou atividade', cor: 'blue' })
     const orgao = [p.dados?.siglaTribunal?.toUpperCase(), p.dados?.nomeOrgao].filter(Boolean).join(' · ')
-    return [{ id: `pub:${p.hash}`, tipo: 'publicacao' as const, ...q, hora: '', titulo: [p.dados?.tipoComunicacao, p.dados?.nomeClasse].filter(Boolean).join(' · ') || 'Publicação', detalhe: orgao, selos, texto: cortar(p.dados?.texto) }]
+    return [{ id: `pub:${p.hash}`, tipo: 'publicacao' as const, ...q, hora: '', titulo: [p.dados?.tipoComunicacao, p.dados?.nomeClasse].filter(Boolean).join(' · ') || 'Publicação', detalhe: orgao, selos, texto: cortar(p.dados?.texto), html: p.dados?.texto_html }]
   })
 }
 

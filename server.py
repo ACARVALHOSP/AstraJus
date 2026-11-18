@@ -258,6 +258,60 @@ def _html_para_texto(conteudo: str | None) -> str:
     return extrator.texto()
 
 
+class _ExtratorTextoFormatado(_ExtratorTexto):
+    """Como _ExtratorTexto, mas mantém negrito, itálico e sublinhado como <b>, <i> e <u> (sem atributos).
+    Todo o resto é descartado e o texto sai escapado: o resultado só contém essas três tags e quebras de linha."""
+
+    _INLINE = {"b": "b", "strong": "b", "i": "i", "em": "i", "u": "u", "ins": "u"}
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._abertas: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        super().handle_starttag(tag, attrs)
+        if not self._ignorando and tag in self._INLINE:
+            self._abertas.append(self._INLINE[tag])
+            self._partes.append(f"<{self._INLINE[tag]}>")
+
+    def handle_endtag(self, tag):
+        super().handle_endtag(tag)
+        nome = self._INLINE.get(tag)
+        if nome and not self._ignorando and nome in self._abertas:
+            while self._abertas:   # fecha na ordem, mesmo que o HTML de origem esteja mal aninhado
+                topo = self._abertas.pop()
+                self._partes.append(f"</{topo}>")
+                if topo == nome:
+                    break
+
+    def handle_data(self, data):
+        if not self._ignorando:
+            self._partes.append(_escapar(data, quote=False))
+
+    def texto(self) -> str:
+        while self._abertas:
+            self._partes.append(f"</{self._abertas.pop()}>")
+        bruto = "".join(self._partes)
+        linhas = [re.sub(r"[ \t\xa0]+", " ", linha).strip() for linha in bruto.splitlines()]
+        saida: list[str] = []
+        for linha in linhas:
+            vazia = not re.sub(r"</?[biu]>", "", linha)
+            if not vazia or (saida and saida[-1]):
+                saida.append("" if vazia else linha)
+        return "\n".join(saida).strip()
+
+
+def _html_sanitizado(conteudo: str | None) -> str | None:
+    """Texto com negrito/itálico/sublinhado do HTML do DJEN, ou None se não houver nenhuma formatação."""
+    if not conteudo:
+        return None
+    extrator = _ExtratorTextoFormatado()
+    extrator.feed(conteudo)
+    extrator.close()
+    resultado = extrator.texto()
+    return resultado if re.search(r"</?[biu]>", resultado) else None
+
+
 # --- Circuit breaker (DJEN e DataJud) ----------------------------------------
 
 
@@ -1046,6 +1100,7 @@ def _extrair_publicacao_djen(item: dict) -> dict:
             for da in item.get("destinatarioadvogados") or []
         ],
         "texto": _html_para_texto(item.get("texto")),
+        "texto_html": _html_sanitizado(item.get("texto")),
     }
 
 

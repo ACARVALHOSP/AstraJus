@@ -6,7 +6,7 @@ import type { DestinoPublicacao } from '../../utils/polos'
 export type DadosDjen = {
   data_disponibilizacao?: string; tipoComunicacao?: string; siglaTribunal?: string
   nomeOrgao?: string; nomeClasse?: string; numeroprocessocommascara?: string
-  texto?: string; link?: string; [campo: string]: unknown
+  texto?: string; texto_html?: string | null; link?: string; [campo: string]: unknown
   destinatarios?: Array<{ nome?: string; polo?: string }>
   destinatarioadvogados?: Array<{ nome?: string; numero_oab?: string; uf_oab?: string }>
 }
