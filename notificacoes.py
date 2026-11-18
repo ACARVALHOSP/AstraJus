@@ -46,7 +46,7 @@ _VISIVEL = """
        (e.caso_id IS NULL AND p.caso_id IS NULL)
        OR (c.id IS NOT NULL AND p.caso_id=e.caso_id)
    ))
-   OR (e.tipo IN ('movimento_processual', 'processo_parado', 'processo_atribuido') AND c.id IS NOT NULL)
+   OR (e.tipo IN ('movimento_processual', 'processo_parado', 'processo_atribuido', 'processo_rascunho') AND c.id IS NOT NULL)
    OR (e.tipo IN ('prazo_vencendo', 'prazo_escalonado') AND a.id IS NOT NULL AND c.id IS NOT NULL AND a.status IN ('pendente', 'em_andamento', 'aguardando'))
  )
 """
@@ -128,6 +128,11 @@ class Repositorio:
         """Avisa (só no sino) quem passou a ser o responsável de um processo por regra. Um aviso por processo e pessoa."""
         with self.transacao() as c:
             registrar_evento(c, usuario, "processo_atribuido", f"{caso_id}:{usuario}", caso_id=caso_id, agora=self.agora())
+
+    def registrar_processo_rascunho(self, caso_id, usuario):
+        """Avisa (só no sino) quem é o responsável por um processo criado como rascunho pelo autocadastro."""
+        with self.transacao() as c:
+            registrar_evento(c, usuario, "processo_rascunho", f"{caso_id}:{usuario}", caso_id=caso_id, agora=self.agora())
 
     def registrar_processo_parado(self, caso_id, chave):
         """Avisa o responsável pelo processo (ou, sem responsável ativo, os administradores) de que ele
@@ -262,6 +267,12 @@ class Repositorio:
                                   "exige_ciencia": linha["ativ_tipo"] == "prazo", "ciente": linha["ciente_em"] is not None,
                                   "destino": {"tipo": "atividade", "caso_id": linha["caso_id"], "atividade_id": linha["atividade_id"]}})
                     continue
+                if linha["tipo"] == "processo_rascunho":
+                    itens.append({"id": str(linha["id"]), "tipo": linha["tipo"], "titulo": "Novo processo a confirmar",
+                                  "mensagem": f"{linha['caso_titulo'] or 'Processo'}: criado automaticamente a partir de uma publicação. Confirme ou descarte.",
+                                  "criado_em": linha["criado_em"], "lida_em": linha["lida_em"],
+                                  "destino": {"tipo": "processos_a_confirmar"}})
+                    continue
                 if linha["tipo"] == "processo_atribuido":
                     itens.append({"id": str(linha["id"]), "tipo": linha["tipo"], "titulo": "Processo atribuído a você",
                                   "mensagem": f"{linha['caso_titulo'] or 'Processo'}: você é o responsável, por regra de distribuição.",
@@ -322,6 +333,8 @@ class Repositorio:
                 return {"tipo": "movimentos_processo", "caso_id": linha["caso_id"]}
             if linha["tipo"] == "processo_atribuido":
                 return {"tipo": "processo", "caso_id": linha["caso_id"]}
+            if linha["tipo"] == "processo_rascunho":
+                return {"tipo": "processos_a_confirmar"}
             if linha["tipo"] in ("atividade_delegada", "prazo_vencendo", "prazo_escalonado"):
                 return {"tipo": "atividade", "caso_id": linha["caso_id"], "atividade_id": linha["atividade_id"]}
             return {"tipo": "publicacoes_processo", "caso_id": linha["caso_id"]} if linha["caso_id"] else {"tipo": "publicacoes_monitoradas"}

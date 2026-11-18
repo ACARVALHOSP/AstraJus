@@ -1193,9 +1193,11 @@ class RegistroClientesCasos:
         self, cliente_id: str, titulo: str | None, responsavel: str | None,
         numeros_processo: list[str], agora, clientes_adicionais: list[str] | None = None,
         acao: str | None = None, foro: str | None = None,
-        pasta: str | None = None, acesso: str | None = None,
+        pasta: str | None = None, acesso: str | None = None, status: str = "ativo",
     ) -> dict:
         numeros_processo = normalizar_numero_processo(numeros_processo)
+        if status not in ("ativo", "rascunho"):
+            raise ValueError("Situação inválida.")
         if acesso and acesso not in self._ACESSOS_VALIDOS:
             raise ValueError(f"Acesso inválido: use um entre {self._ACESSOS_VALIDOS}.")
         novo_id = uuid.uuid4().hex
@@ -1204,8 +1206,8 @@ class RegistroClientesCasos:
             proximo_numero = conexao.execute("SELECT COALESCE(MAX(numero), 0) + 1 FROM casos").fetchone()[0]
             conexao.execute(
                 "INSERT INTO casos (id, cliente_id, titulo, responsavel, acao, foro, status, criado_em, numero, "
-                "pasta, acesso) VALUES (?, ?, ?, ?, ?, ?, 'ativo', ?, ?, ?, ?)",
-                (novo_id, cliente_id, titulo, responsavel, acao, foro, criado_em, proximo_numero,
+                "pasta, acesso) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (novo_id, cliente_id, titulo, responsavel, acao, foro, status, criado_em, proximo_numero,
                  pasta, acesso or "equipe"),
             )
             conexao.executemany(
@@ -1218,6 +1220,17 @@ class RegistroClientesCasos:
                     [(novo_id, cid) for cid in clientes_adicionais if cid != cliente_id],
                 )
         return self.obter_caso(novo_id)
+
+    def caso_do_numero(self, numero_processo: str) -> str | None:
+        """Id de um caso (inclusive rascunho) que já tem este número de processo."""
+        numeros = normalizar_numero_processo([numero_processo])
+        with _abrir(self.caminho) as conexao:
+            linha = conexao.execute("SELECT caso_id FROM caso_processos WHERE numero_processo = ? LIMIT 1", (numeros[0],)).fetchone() if numeros else None
+        return linha[0] if linha else None
+
+    def confirmar_rascunho(self, caso_id: str) -> bool:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            return conexao.execute("UPDATE casos SET status='ativo' WHERE id=? AND status='rascunho'", (caso_id,)).rowcount > 0
 
     def adicionar_processo_ao_caso(self, caso_id: str, numero_processo: str) -> None:
         numeros = normalizar_numero_processo([numero_processo])
@@ -1374,12 +1387,15 @@ class RegistroClientesCasos:
                 )
         return self.obter_caso(caso_id)
 
-    def listar_casos(self) -> list[dict]:
+    def listar_casos(self, situacao: str = "ativos") -> list[dict]:
+        """"ativos" (padrão): tudo menos rascunhos do autocadastro, que ficam fora de listas, buscas e alertas até
+        alguém confirmar; "rascunhos": só eles; "todos": os dois."""
+        filtro = {"ativos": "WHERE status <> 'rascunho' ", "rascunhos": "WHERE status = 'rascunho' ", "todos": ""}[situacao]
         with _abrir(self.caminho) as conexao:
             linhas = conexao.execute(
                 "SELECT id, cliente_id, titulo, responsavel, status, drive_pasta_id, "
                 "criado_em, acao, foro, autor, reu, advogados, desfecho, numero, pasta, acesso "
-                "FROM casos ORDER BY criado_em DESC"
+                "FROM casos " + filtro + "ORDER BY criado_em DESC"
             ).fetchall()
             if not linhas:
                 return []

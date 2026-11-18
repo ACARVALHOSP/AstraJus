@@ -12,7 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY pyproject.toml README.md server.py db.py cnj.py tpu.py _util.py google_integracao.py agenda_atividades.py notificacoes.py monitoramento_runtime.py asaas_integracao.py integracoes.py integracoes_http.py usuarios_admin.py financeiro_juridico.py triagem.py polos.py modelos_prazo.py horas.py emails_html.py automacoes.py regras_responsavel.py nomes.py guia-do-usuario.html ./
+COPY pyproject.toml README.md server.py db.py cnj.py tpu.py _util.py google_integracao.py agenda_atividades.py notificacoes.py monitoramento_runtime.py asaas_integracao.py integracoes.py integracoes_http.py usuarios_admin.py financeiro_juridico.py triagem.py polos.py modelos_prazo.py horas.py emails_html.py automacoes.py regras_responsavel.py nomes.py autocadastro.py guia-do-usuario.html ./
 COPY static/ ./static/
 COPY modulos/ ./modulos/
 COPY tpu_dados/ ./tpu_dados/

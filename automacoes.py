@@ -70,6 +70,15 @@ CATALOGO: dict[str, dict] = {
         "agendada": False,
         "parametros": {},
     },
+    "autocadastro_rascunho": {
+        "nome": "Autocadastro de processos (rascunho)",
+        "descricao": "Para publicação de processo ainda não cadastrado cujas partes reconhecem exatamente um cliente do escritório, cria o "
+                     "processo como rascunho, a confirmar em Processos. Nunca cria cliente. Antes de ligar é preciso rodar a simulação.",
+        "ativo_por_padrao": False,
+        "parametros": {
+            "limite_dia": {"tipo": "int", "rotulo": "Máximo de rascunhos por dia", "minimo": 1, "maximo": 200, "padrao": 20},
+        },
+    },
     "processo_parado": {
         "nome": "Processo parado",
         "descricao": "Avisa o responsável (ou os administradores) quando um processo ativo fica muitos dias sem movimentação. "

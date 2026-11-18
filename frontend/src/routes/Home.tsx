@@ -13,7 +13,7 @@ import { usePerfil } from '../api/PerfilContext'
 import { buscarJson, enviarJson } from '../api/rest'
 import { ErroMCP } from '../api/mcpClient'
 import AtividadeModal from './casos/AtividadeModal'
-import { useNomePessoa } from '../api/consultas'
+import { useNomePessoa, useRascunhos } from '../api/consultas'
 import { formatarDataSimples } from '../utils/formatadores'
 import {
   COLUNAS, TIPOS, chaveItem, colunaAtividade, diaLocal, noPeriodo, ordenarItens,
@@ -53,6 +53,7 @@ function PainelHome({ abas }: { abas: ReactNode }) {
   const { cliente, status } = useCliente()
   const nomePessoa = useNomePessoa()
   const { irPara } = useNavegacao()
+  const rascunhos = useRascunhos().data ?? []
   const verFinanceiro = usePerfil().abaPermitida('financeiro')
   const { avisar } = useAvisos()
   const [executor, setExecutor] = useState('')
@@ -318,6 +319,13 @@ function PainelHome({ abas }: { abas: ReactNode }) {
                 <small className="home-metrica-desc">{!semDados && totais(r.id) === 0 ? r.vazio : r.descricao}</small>
               </button>
             ))}
+            {rascunhos.length > 0 && (
+              <button className="home-metrica home-metrica-publicacoes" onClick={() => irPara('casos')}>
+                <span className="home-metrica-titulo">Processos a confirmar</span>
+                <strong className="home-metrica-num">{rascunhos.length}</strong>
+                <small className="home-metrica-desc">Criados sozinhos a partir de publicações</small>
+              </button>
+            )}
             <button
               className={`home-metrica home-metrica-publicacoes${publicacoes === 0 ? ' home-metrica--zero' : ''}`}
               onClick={() => irPara('publicacoes-oab', { status: 'nao_tratada' })}

@@ -30,6 +30,7 @@ export default defineConfig({
       '/pendentes': 'http://localhost:8000',
       '/publicacoes-oab': 'http://localhost:8000',
       '/responsaveis': 'http://localhost:8000',
+      '/rascunhos': 'http://localhost:8000',
     },
   },
 })

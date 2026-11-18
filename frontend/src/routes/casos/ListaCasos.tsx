@@ -96,6 +96,8 @@ const parado = (c: Caso, hoje: string) => !encerrado(c) && Boolean(c.ultima_movi
 
 const SEM_CLIENTES: Cliente[] = []
 
+import ProcessosAConfirmar from './ProcessosAConfirmar'
+
 export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void }) {
   const { avisar } = useAvisos()
   const { cliente } = useCliente()
@@ -390,6 +392,7 @@ export default function ListaCasos({ onAbrir }: { onAbrir: (id: string) => void 
   return (
     <div className="casos-lista">
       <Flex direction="column" gap="5">
+        <ProcessosAConfirmar onAbrir={onAbrir} />
         <CabecalhoPagina
           titulo="Processos"
           focavel

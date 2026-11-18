@@ -3,6 +3,7 @@ import { AlertTriangle } from 'lucide-react'
 import { AlertDialog, Badge, Button, Callout, Card, Flex, Heading, Switch, Text, TextField } from '@radix-ui/themes'
 import Carregamento from '../../Carregamento'
 import RegrasResponsavel from './RegrasResponsavel'
+import SimulacaoAutocadastro from './SimulacaoAutocadastro'
 import { buscarJson, enviarJson } from '../../api/rest'
 import {
   descreverAlteracao, lerParametro, quandoBrasilia, seloRotina, textoDoValor,
@@ -106,6 +107,7 @@ export default function AutomacoesAdmin({ token }: { token: string }) {
                 )}
                 {r.ultima_execucao?.erro && <Text as="p" size="1" color="red">{r.ultima_execucao.erro}</Text>}
                 {r.chave === 'responsavel_regras' && <RegrasResponsavel token={token} />}
+                {r.chave === 'autocadastro_rascunho' && <SimulacaoAutocadastro token={token} />}
                 {parametros.map(([nome, def]) => {
                   const id = `auto-${r.chave}-${nome}`
                   return (

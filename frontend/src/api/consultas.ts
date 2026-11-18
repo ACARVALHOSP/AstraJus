@@ -59,6 +59,22 @@ export function useSugestaoResponsavel({ publicacao, clienteId, enabled = true }
   })
 }
 
+export type Rascunho = {
+  id: string; titulo: string | null; responsavel: string | null; cliente_id: string; cliente: string
+  processos: string[]; criado_em: string | null; publicacao: string | null; motivo: string | null
+}
+
+/** Processos criados sozinhos a partir de publicações, à espera de confirmação. Falha vira lista vazia. */
+export function useRascunhos() {
+  const { cliente } = useCliente()
+  return useQuery({
+    queryKey: ['rascunhos', cliente?.token],
+    enabled: Boolean(cliente),
+    retry: false,
+    queryFn: ({ signal }) => buscarJson<{ rascunhos?: Rascunho[] }>(cliente, '/rascunhos', signal).then(r => r.rascunhos ?? []),
+  })
+}
+
 export function useCasos<T = { id: string }>({ enabled = true }: { enabled?: boolean } = {}) {
   const { cliente } = useCliente()
   return useQuery({
