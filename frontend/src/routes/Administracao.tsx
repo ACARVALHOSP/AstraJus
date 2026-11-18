@@ -72,6 +72,7 @@ export default function Administracao() {
   const [tokenNovo, setTokenNovo] = useState('')
   const [confirmarBackup, setConfirmarBackup] = useState(false)
   const [limpeza, setLimpeza] = useState<{ categorias: string[]; texto: string; resultado: Record<string, number> | null } | null>(null)
+  const [baixaGeral, setBaixaGeral] = useState<{ texto: string } | null>(null)
   const [alvoToken, setAlvoToken] = useState<AlvoToken | null>(null)
   const [resultadoToken, setResultadoToken] = useState<ResultadoToken | null>(null)
   const [alvoApagar, setAlvoApagar] = useState<AlvoApagar | null>(null)
@@ -128,7 +129,7 @@ export default function Administracao() {
   }
   function sair() {
     setSessao(null); setCredencial(''); setUsuarios([]); setHistorico([]); setAcessos([]); setBanco(null); setTarifas(null)
-    setEditor(null); setTokenNovo(''); setErro(''); setMensagem(''); setConfirmarBackup(false); setLimpeza(null)
+    setEditor(null); setTokenNovo(''); setErro(''); setMensagem(''); setConfirmarBackup(false); setLimpeza(null); setBaixaGeral(null)
   }
 
   // Conectada como administradora: abre já carregada, sem pedir o token administrativo.
@@ -310,6 +311,11 @@ export default function Administracao() {
             <Button variant="soft" size="2" disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/banco/integridade', sessao, 'POST')).json(); if (!r.integro) throw new Error('A verificação identificou inconsistências no banco.'); setMensagem(`Integridade verificada em ${data(r.verificado_em)}.`) })}>Verificar integridade</Button>
             <Button variant="soft" size="2" disabled={ocupado} onClick={() => setConfirmarBackup(true)}>Baixar backup</Button>
             <Button variant="ghost" color="red" size="2" disabled={ocupado} onClick={() => setLimpeza({ categorias: [], texto: '', resultado: null })}>Limpar dados</Button>
+          </div>
+          <Heading as="h2" size="4" mt="4">Baixa geral</Heading>
+          <Text as="p" size="2" color="gray">Marca como cumpridos todos os prazos e tarefas em aberto do escritório, para começar do zero. Não dá para desfazer.</Text>
+          <div className="administracao__acoes">
+            <Button variant="soft" color="red" size="2" disabled={ocupado} onClick={() => setBaixaGeral({ texto: '' })}>Fazer a baixa geral…</Button>
           </div>
           {banco ? <dl className="administracao__resumo"><div><dt>Banco</dt><dd>{banco.tipo}</dd></div><div><dt>Tamanho</dt><dd>{(banco.tamanho_bytes / 1024 / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} MB</dd></div><div><dt>Tabelas</dt><dd>{banco.tabelas}</dd></div></dl>
             : <Text as="p" size="2" color="gray" role="status">{falhaCarga('banco', '')}</Text>}
@@ -542,6 +548,36 @@ export default function Administracao() {
             const r = await requisicao('/admin/banco/backup', sessao, 'POST')
             const url = URL.createObjectURL(await r.blob()); const a = document.createElement('a'); a.href = url; a.download = 'cnj-backup.db'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); setConfirmarBackup(false); setMensagem('Backup gerado para download.')
           })}>Baixar backup</Button>
+        </Flex>
+      </AlertDialog.Content>
+    </AlertDialog.Root>
+
+    <AlertDialog.Root open={baixaGeral !== null} onOpenChange={(open) => { if (!open && !ocupado) { setBaixaGeral(null); setErro('') } }}>
+      <AlertDialog.Content maxWidth="480px">
+        <AlertDialog.Title>Fazer a baixa geral</AlertDialog.Title>
+        {baixaGeral && <div className="administracao__formulario">
+          <AlertDialog.Description>Todos os prazos e tarefas em aberto de todos os processos serão marcados como cumpridos. Esta ação não pode ser desfeita.</AlertDialog.Description>
+          {erro && (
+            <Callout.Root color="red" size="1">
+              <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+              <Callout.Text>{erro}</Callout.Text>
+            </Callout.Root>
+          )}
+          <div className="form-campo">
+            <label className="form-campo-label" htmlFor="baixa-confirmacao">Digite "BAIXAR" para confirmar</label>
+            <TextField.Root id="baixa-confirmacao" value={baixaGeral.texto} disabled={ocupado} autoComplete="off" onChange={e => setBaixaGeral({ texto: e.target.value })} />
+          </div>
+        </div>}
+        <Flex gap="3" mt="4" justify="end">
+          <AlertDialog.Cancel><Button variant="soft" color="gray" disabled={ocupado}>Cancelar</Button></AlertDialog.Cancel>
+          <Button color="red" disabled={ocupado || baixaGeral?.texto !== 'BAIXAR'} onClick={() => void executar(async () => {
+            if (!sessao) return
+            const r = await requisicao('/admin/banco/baixa-geral', sessao, 'POST')
+            const { baixados } = await r.json() as { baixados: number }
+            setBaixaGeral(null)
+            setMensagem(baixados ? `Baixa geral concluída: ${baixados} prazo(s) e tarefa(s) marcados como cumpridos.` : 'Não havia prazos ou tarefas em aberto.')
+            await carregarHistorico(sessao)
+          })}>{ocupado ? 'Baixando…' : 'Fazer a baixa geral'}</Button>
         </Flex>
       </AlertDialog.Content>
     </AlertDialog.Root>

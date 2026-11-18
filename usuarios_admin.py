@@ -554,6 +554,13 @@ async def tratar(app, scope, receive, send, s):
                 c.execute('INSERT INTO usuarios_auditoria (ocorrido_em, ator, usuario, acao, campos) VALUES (?, ?, ?, ?, ?)',
                           (agora(), ator, '(sistema)', 'limpar_banco', json.dumps(apagados, ensure_ascii=False)))
             await s._json(send, 200, {'apagados': apagados})
+        elif path == '/admin/banco/baixa-geral' and method == 'POST':
+            # Baixa geral: marca como cumpridos todos os prazos e tarefas em aberto do escritório. Não há desfazer.
+            with _abrir(app.registro.caminho) as c, c:
+                baixados = c.execute("UPDATE caso_atividades SET status = 'concluida' WHERE status IN ('pendente', 'em_andamento', 'aguardando')").rowcount
+                c.execute('INSERT INTO usuarios_auditoria (ocorrido_em, ator, usuario, acao, campos) VALUES (?, ?, ?, ?, ?)',
+                          (agora(), ator, '(sistema)', 'baixa_geral', json.dumps({'baixados': baixados})))
+            await s._json(send, 200, {'baixados': baixados})
         elif path == '/admin/banco/backup' and method == 'POST':
             with tempfile.TemporaryDirectory() as tmp:
                 destino = Path(tmp) / 'cnj-backup.db'

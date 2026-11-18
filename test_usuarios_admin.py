@@ -176,6 +176,21 @@ class UsuariosTest(unittest.TestCase):
             self.assertEqual(c.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
             self.assertEqual(c.execute('SELECT nome_completo FROM usuarios').fetchone()[0], 'Ana Exemplo')
 
+    def test_baixa_geral_conclui_apenas_abertas_e_exige_admin(self):
+        r = self.criar()
+        with closing(sqlite3.connect(self.reg.caminho)) as c, c:
+            c.execute('PRAGMA foreign_keys = OFF')
+            c.execute("INSERT INTO casos (id, cliente_id, titulo, criado_em) VALUES ('c1', 'cli', 'Caso', '2026-01-01')")
+            for st in ('pendente', 'em_andamento', 'aguardando', 'concluida'):
+                c.execute("INSERT INTO caso_atividades (caso_id, tipo, titulo, status, criado_em) VALUES ('c1', 'prazo', 'x', ?, '2026-01-01')", (st,))
+        status, _ = asyncio.run(self.chamar('/admin/banco/baixa-geral', r['token'], 'POST'))
+        self.assertEqual(status['status'], 403)
+        status, corpo = asyncio.run(self.chamar('/admin/banco/baixa-geral', 'bootstrap-seguro', 'POST'))
+        self.assertEqual(json.loads(corpo)['baixados'], 3)
+        with closing(sqlite3.connect(self.reg.caminho)) as c:
+            self.assertEqual(c.execute("SELECT count(*) FROM caso_atividades WHERE status != 'concluida'").fetchone()[0], 0)
+            self.assertEqual(c.execute("SELECT count(*) FROM usuarios_auditoria WHERE acao = 'baixa_geral'").fetchone()[0], 1)
+
 
 if __name__ == '__main__':
     unittest.main()
