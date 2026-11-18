@@ -101,16 +101,16 @@ class ClassificadoresTest(unittest.TestCase):
         def tratar(req: httpx.Request) -> httpx.Response:
             chamadas.append(req)
             conteudo = '```json\n{"tipo": "exige_manifestacao", "tipo_confianca": 0.95, "gera_prazo": 0.97, "prazo_padrao": "contestacao", "prazo_padrao_confianca": 0.92, "urgencia": 3, "urgencia_confianca": 0.8}\n```'
-            return httpx.Response(200, json={"model": "typesafe/jev-router", "choices": [{"message": {"content": conteudo}}]})
+            return httpx.Response(200, json={"model": "typesafe/jev-1.14", "choices": [{"message": {"content": conteudo}}]})
         cl = triagem.ClassificadorOpenRouter("sk-or-secreta", cliente_http=lambda: httpx.AsyncClient(transport=httpx.MockTransport(tratar)))
         r = asyncio.run(cl.classificar(triagem.anonimizar(PUBLICACAO)))
         req = chamadas[0]
         corpo = json.loads(req.content)
         self.assertEqual(str(req.url), "https://openrouter.ai/api/v1/chat/completions")
         self.assertEqual(req.headers["authorization"], "Bearer sk-or-secreta")
-        self.assertEqual(corpo["model"], "typesafe/jev-router")
+        self.assertEqual(corpo["model"], "typesafe/jev-1.14")
         self.assertNotIn("Teixeira", json.dumps(corpo, ensure_ascii=False))                                       # nada identificável sai
-        self.assertEqual((r["modelo"], r["tipo"]["valor"], r["faixas"]["gera_prazo"], r["prazo_padrao"]["valor"]), ("typesafe/jev-router", "exige_manifestacao", "alta", "contestacao"))
+        self.assertEqual((r["modelo"], r["tipo"]["valor"], r["faixas"]["gera_prazo"], r["prazo_padrao"]["valor"]), ("typesafe/jev-1.14", "exige_manifestacao", "alta", "contestacao"))
         self.assertEqual(r["urgencia"]["nota"], 7.8)
 
     def test_openrouter_rejeita_resposta_invalida_e_trata_erros(self):
@@ -131,7 +131,7 @@ class ClassificadoresTest(unittest.TestCase):
 
     def test_criar_classificador_openrouter(self):
         self.assertIsNone(triagem.criar_classificador("openrouter"))                                              # sem chave: não liga
-        self.assertEqual(triagem.criar_classificador("openrouter", chave_openrouter="k").modelo, "typesafe/jev-router")
+        self.assertEqual(triagem.criar_classificador("openrouter", chave_openrouter="k").modelo, "typesafe/jev-1.14")
 
     def test_jev_repete_429_e_recusa_chave_invalida(self):
         respostas = iter([httpx.Response(429), httpx.Response(529), httpx.Response(200, json={"model": "m", "answers": {
