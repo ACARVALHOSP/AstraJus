@@ -90,29 +90,10 @@ Rotina desligada por padrão; desligada, todos voltam ao e-mail de hoje.
 
 ## 4. Responsável por regras de distribuição (ticket 05)
 
-**Hoje:** o responsável é digitado ao criar o caso; sem ele, os avisos vão ao responsável do caso e, na falta, aos
-administradores.
-
-**Mudança:** quando um caso nasce **sem responsável**, o sistema o preenche por regras. Nunca sobrescreve um responsável já
-definido. Vale para casos criados a partir de publicação (inclusive o ticket 07) e para casos criados na tela sem responsável.
-
-**Ordem de decisão (a primeira que casa vence):**
-1. **Quem captou:** o dono do monitoramento que trouxe a publicação (o advogado daquela OAB). É a regra natural e vem ligada.
-2. **Regras do administrador**, em ordem editável. Critérios aceitos: cliente; classe ou assunto da capa; tribunal ou órgão
-   julgador (foro/vara); área do direito. Cada regra aponta para uma pessoa.
-3. **Responsável padrão do escritório** (parâmetro).
-4. Sem resposta: fica sem responsável, como hoje, e o administrador é avisado "processo sem responsável".
-
-**Detalhes:**
-- Pessoa inativa ou revogada: a regra é pulada e o administrador vê o alerta na tela de Automações.
-- Armazenamento: tabela `regras_responsavel (id, ordem, criterio, valor, responsavel, ativo)`.
-- O responsável escolhido recebe o aviso `processo_atribuido` (sino e e-mail) e o evento fica no caso: "responsável definido
-  por regra X".
-- **Simulação:** a tela mostra, para as últimas 50 publicações sem caso, quem seria o responsável e por qual regra.
-- **Fora desta onda:** rodízio e balanceamento por carga de trabalho.
-
-**Aceite:** caso sem responsável recebe o dono do monitoramento; regra de cliente vence a padrão; responsável já definido
-nunca muda; regra apontando para pessoa revogada é ignorada com alerta; simulação não grava nada.
+Especificação completa e decisões abertas em `issues/05-responsavel-por-regras.md`. Em resumo: o administrador escreve regras em
+ordem (quem captou, cliente, classe, assunto, tribunal, vara, padrão do escritório); a primeira que casa e aponta para pessoa
+ativa define o responsável. Vale para processos criados por automação (ticket 07), como **sugestão** nos formulários de criar
+processo e, opcionalmente, para processos existentes sem responsável (com simulação). Nunca sobrescreve responsável já definido.
 
 ## 5. Normalizar nomes (ticket 06)
 
