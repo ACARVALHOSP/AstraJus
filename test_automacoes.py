@@ -33,14 +33,17 @@ class RepositorioTest(_Base):
 
     def test_catalogo_real_traz_as_rotinas_do_agendador(self):
         self.assertEqual(set(automacoes.CATALOGO),
-                         {"monitoramentos", "captura_oab", "movimentos", "alertas_prazo", "triagem_publicacoes", "processo_parado"})
+                         {"monitoramentos", "captura_oab", "movimentos", "alertas_prazo", "triagem_publicacoes", "processo_parado",
+                          "resumo_publicacoes"})
 
     def test_rotinas_antigas_nascem_ligadas_e_as_novas_desligadas(self):
         repo = automacoes.Repositorio(self.caminho)
         for chave in ("monitoramentos", "captura_oab", "movimentos", "alertas_prazo", "triagem_publicacoes"):
             self.assertTrue(repo.ativa(chave), chave)
-        self.assertFalse(repo.ativa("processo_parado"))
+        for nova in ("processo_parado", "resumo_publicacoes"):
+            self.assertFalse(repo.ativa(nova), nova)
         self.assertEqual(repo.estado("processo_parado")["parametros"], {"dias": 60})
+        self.assertEqual(repo.estado("resumo_publicacoes")["parametros"], {"hora": 8})
 
     def test_desligar_persiste_e_entra_no_historico(self):
         depois = self.repo.definir("rotina_a", "usuario:ana", ativo=False)
@@ -222,7 +225,7 @@ class RotasAdministrativasTest(unittest.TestCase):
             status, corpo = self.run_("/admin/automacoes/api", token)
             self.assertEqual(status, 200)
             self.assertEqual({r["chave"] for r in corpo["rotinas"]}, set(automacoes.CATALOGO))
-            self.assertEqual({r["chave"] for r in corpo["rotinas"] if not r["ativo"]}, {"processo_parado"})
+            self.assertEqual({r["chave"] for r in corpo["rotinas"] if not r["ativo"]}, {"processo_parado", "resumo_publicacoes"})
             self.assertEqual(corpo["historico"], [])
 
     def test_desligar_pela_rota_grava_historico_com_ator(self):

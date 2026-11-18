@@ -2,7 +2,7 @@
 const EMAIL_VALIDO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 /** Campos que mudaram e a mensagem de erro, se houver. Separado do componente para ser testável. */
-export function avaliarPerfil(atual: { nome: string; email: string; foto: string }, novo: { nome: string; email: string; foto: string }) {
+export function avaliarPerfil(atual: { nome: string; email: string; foto: string; avisos?: string }, novo: { nome: string; email: string; foto: string; avisos?: string }) {
   const nome = novo.nome.trim(), email = novo.email.trim()
   let erro: string | null = null
   if (!nome) erro = 'Informe o nome de exibição.'
@@ -13,5 +13,6 @@ export function avaliarPerfil(atual: { nome: string; email: string; foto: string
   if (nome !== atual.nome.trim()) mudancas.nome_completo = nome
   if (email !== atual.email.trim()) mudancas.email = email
   if (novo.foto !== atual.foto) mudancas.foto = novo.foto
+  if (novo.avisos !== undefined && novo.avisos !== atual.avisos) mudancas.avisos_publicacao = novo.avisos
   return { erro, mudancas, alterado: Object.keys(mudancas).length > 0 }
 }

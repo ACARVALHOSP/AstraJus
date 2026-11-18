@@ -53,6 +53,15 @@ CATALOGO: dict[str, dict] = {
         "descricao": "Classifica as publicações novas (tipo de ato e prazo sugerido), quando há classificador configurado.",
         "parametros": {},
     },
+    "resumo_publicacoes": {
+        "nome": "Resumo diário de publicações",
+        "descricao": "Manda um único e-mail por dia com as publicações novas dos monitoramentos de cada pessoa. Cada pessoa escolhe "
+                     "em Meu perfil se quer o e-mail de cada lote, só o resumo ou os dois. Dia sem publicação não envia nada.",
+        "ativo_por_padrao": False,
+        "parametros": {
+            "hora": {"tipo": "int", "rotulo": "Enviar a partir das (hora de Brasília)", "minimo": 0, "maximo": 23, "padrao": 8},
+        },
+    },
     "processo_parado": {
         "nome": "Processo parado",
         "descricao": "Avisa o responsável (ou os administradores) quando um processo ativo fica muitos dias sem movimentação. "
@@ -112,6 +121,7 @@ class Repositorio:
                     parametros TEXT NOT NULL DEFAULT '{}', atualizado_em TEXT NOT NULL, atualizado_por TEXT);
                 CREATE TABLE IF NOT EXISTS automacoes_vigencia (
                     chave TEXT NOT NULL, parametro TEXT NOT NULL, desde TEXT NOT NULL, PRIMARY KEY (chave, parametro));
+                CREATE TABLE IF NOT EXISTS automacoes_resumo (usuario TEXT PRIMARY KEY, enviado_em TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS automacoes_silenciados (
                     rotina TEXT NOT NULL, caso_id TEXT NOT NULL, criado_em TEXT NOT NULL, criado_por TEXT,
                     PRIMARY KEY (rotina, caso_id));
@@ -307,3 +317,165 @@ async def avisar_processos_parados(gestao, *, agora=lambda: datetime.now(timezon
                 falhou = True
                 log.exception("Processo parado: falha ao enviar e-mail para %s", usuario)
     return not falhou
+
+
+# --- Resumo diário de publicações --------------------------------------------------------------------
+
+MODOS_AVISO_PUBLICACAO = ("imediato", "resumo", "ambos")
+RETENCAO_RESUMO_HORAS = 36   # o que o resumo não levou nesse prazo sai pelo e-mail normal
+LIMITE_ITENS_RESUMO = 40
+
+_TIPOS_ATO = {"exige_manifestacao": "Exige manifestação", "ciencia": "Ciência",
+              "despacho_expediente": "Despacho de expediente", "sentenca_ou_decisao": "Sentença ou decisão"}
+
+
+def preferencia_avisos_publicacao(perfil: dict | None) -> str:
+    """Como a pessoa quer receber os e-mails de publicações novas. Sem escolha: os dois."""
+    valor = (perfil or {}).get("avisos_publicacao")
+    return valor if valor in MODOS_AVISO_PUBLICACAO else "ambos"
+
+
+def modo_avisos_publicacao(caminho, usuario: str | None) -> str:
+    """Modo efetivo: a preferência da pessoa só vale com a rotina do resumo ligada; desligada, todos recebem como antes."""
+    if not usuario or not Repositorio(caminho).ativa("resumo_publicacoes"):
+        return "imediato"
+    return preferencia_avisos_publicacao(db.RegistroUsuarios(caminho).carregar().get(usuario))
+
+
+def _sugestao_da_triagem(triagem: dict | None) -> tuple[str, str]:
+    """(tipo de ato, prazo provável) sugeridos pela triagem; vazio quando ela não classificou ou a confiança é baixa."""
+    import triagem as modulo_triagem
+    if not triagem:
+        return "", ""
+    tipo = triagem.get("tipo") or {}
+    ato = _TIPOS_ATO.get(tipo.get("valor"), "") if (tipo.get("confianca") or 0) >= modulo_triagem.LIMITE_BAIXO else ""
+    prazo = triagem.get("prazo_padrao") or {}
+    gera = (triagem.get("gera_prazo") or {}).get("valor")
+    rotulo = modulo_triagem.PRAZOS_PADRAO.get(prazo.get("valor"), "") if prazo.get("valor") != "nenhum" else ""
+    return ato, (rotulo if gera and (prazo.get("confianca") or 0) >= modulo_triagem.LIMITE_BAIXO else "")
+
+
+def montar_resumo(grupos: list[dict], total: int, desde: str, hoje: str, base_url: str = "") -> tuple[str, str, str]:
+    """Assunto, texto e HTML do resumo. `grupos`: [{titulo, numero, cadastrado, itens: [{data, tribunal, orgao, classe,
+    tipo, ato, prazo}]}], já ordenados e limitados. `desde`/`hoje`: datas ISO. Nunca leva o texto das publicações."""
+    quando = emails_html.data_br(desde)
+    dia = emails_html.data_br(hoje)[:5]
+    atrasado = (date.fromisoformat(hoje) - date.fromisoformat(desde)).days > 1  # mais de um dia sem resumo
+    assunto = f"AstraJus: {total} publicação(ões) nova(s) ({'desde ' + quando[:5] if atrasado else dia})"
+    mostrados = sum(len(g["itens"]) for g in grupos)
+    link = f"{base_url}/radix/#/publicacoes-oab" if base_url else ""
+    linhas_texto, linhas_html = [f"{total} publicação(ões) nova(s) desde {quando}.", ""], []
+    for cadastrado in (True, False):
+        blocos = [g for g in grupos if g["cadastrado"] is cadastrado]
+        if not blocos:
+            continue
+        cabecalho = "Processos cadastrados no escritório" if cadastrado else "Sem processo cadastrado"
+        linhas_texto += [cabecalho.upper(), ""]
+        linhas_html.append(("", cabecalho.upper(), ""))
+        for g in blocos:
+            rotulo = " · ".join(x for x in (g["titulo"], g["numero"]) if x) or "Processo não identificado"
+            linhas_texto.append(rotulo)
+            linhas_html.append(("Processo", rotulo, ""))
+            for i in g["itens"]:
+                partes = [x for x in (i["tribunal"], i["orgao"], i["classe"], i["tipo"]) if x]
+                extra = [f"{x} (sugestão)" for x in (i["ato"], i["prazo"]) if x]
+                linha = f"  - {emails_html.data_br(i['data'])} · " + " · ".join(partes + extra)
+                linhas_texto.append(linha)
+                linhas_html.append((emails_html.data_br(i["data"]), " · ".join(partes + extra), "atencao" if extra else ""))
+            linhas_texto.append("")
+    notas = [f"Mostrando {mostrados} de {total}."] if total > mostrados else []
+    if link:
+        linhas_texto.append(f"Abrir as publicações: {link}")
+    corpo = "\n".join(linhas_texto)
+    html = emails_html.montar(
+        f"{total} publicação(ões) nova(s)", [f"Resumo das publicações que chegaram desde {quando}. O texto completo está no painel."],
+        linhas=linhas_html, botao=("Abrir publicações recebidas", link), notas=notas,
+        preheader=f"{total} publicação(ões) nova(s) desde {quando}", rodape="AstraJus · Resumo diário de publicações.")
+    return assunto, corpo, html
+
+
+async def enviar_resumos_publicacoes(registro, gestao, *, agora=lambda: datetime.now(timezone.utc), enviar_email=None,
+                                     base_url="") -> bool:
+    """Rotina horária. A partir da hora configurada, uma vez por dia por pessoa, manda o resumo do que os monitoramentos
+    dela trouxeram desde o último. `enviar_email(destino, assunto, corpo, html)` é uma corrotina injetada."""
+    import monitoramento_runtime
+    config = Repositorio(gestao.caminho)
+    agora_brasilia = agora().astimezone(_BRASILIA)
+    if agora_brasilia.hour < config.estado("resumo_publicacoes")["parametros"]["hora"]:
+        return True
+    hoje = agora_brasilia.date().isoformat()
+    entregas = monitoramento_runtime.Repositorio(gestao.caminho)
+    usuarios = db.RegistroUsuarios(gestao.caminho).carregar()
+    triagens = db.RegistroPublicacoesOAB(gestao.caminho)
+    por_pessoa: dict[str, list[str]] = {}
+    for mid, mon in registro.carregar().items():
+        if mon.get("usuario"):
+            por_pessoa.setdefault(mon["usuario"], []).append(mid)
+    falhou = False
+    for usuario, mids in por_pessoa.items():
+        perfil = usuarios.get(usuario) or {}
+        modo = preferencia_avisos_publicacao(perfil)
+        pendentes = [(mid, i) for mid in mids for i in entregas.pendentes_detalhe(mid, "resumo")]
+        if not pendentes:
+            continue
+        ativo = not perfil.get("revogado") and perfil.get("status", "ativo") == "ativo"
+        email = perfil.get("email")
+        # "Cada publicação" já recebeu tudo pelo e-mail normal; sem e-mail ou revogada não há como entregar: nada acumula.
+        incluir = [(m, i) for m, i in pendentes if modo == "ambos" or (modo == "resumo" and i["email"] == 0)]
+        if modo == "imediato" or not (ativo and email) or not incluir:
+            for mid in mids:
+                entregas.confirmar(mid, "resumo", [i["hash"] for m, i in pendentes if m == mid])
+            continue
+        enviado = _enviado_em(config, usuario)
+        if enviado == hoje or enviar_email is None:
+            continue
+        itens = sorted({i["hash"]: i for m, i in incluir}.values(), key=lambda i: i["criado_em"])
+        grupos = _agrupar_para_resumo(itens, gestao, triagens)
+        desde = itens[0]["criado_em"][:10]
+        assunto, corpo, html = montar_resumo(grupos, len(itens), desde, hoje, base_url)
+        try:
+            await enviar_email(email, assunto, corpo, html)
+        except Exception:
+            falhou = True
+            log.exception("Resumo de publicações: falha ao enviar para %s", usuario)
+            continue
+        for mid in mids:
+            do_mid = [i["hash"] for m, i in pendentes if m == mid]
+            entregas.confirmar(mid, "resumo", do_mid)
+            if modo == "resumo":
+                entregas.confirmar(mid, "email", [i["hash"] for m, i in incluir if m == mid])
+        _marcar_enviado(config, usuario, hoje)
+    return not falhou
+
+
+def _enviado_em(config: Repositorio, usuario: str) -> str | None:
+    with config._abrir() as c:
+        linha = c.execute("SELECT enviado_em FROM automacoes_resumo WHERE usuario=?", (usuario,)).fetchone()
+    return linha[0] if linha else None
+
+
+def _marcar_enviado(config: Repositorio, usuario: str, dia: str) -> None:
+    with config._abrir() as c:
+        c.execute("INSERT INTO automacoes_resumo (usuario, enviado_em) VALUES (?,?) "
+                  "ON CONFLICT(usuario) DO UPDATE SET enviado_em=excluded.enviado_em", (usuario, dia))
+
+
+def _agrupar_para_resumo(itens: list[dict], gestao, triagens) -> list[dict]:
+    """Agrupa por processo (cadastrados primeiro), mais urgentes antes, até LIMITE_ITENS_RESUMO publicações."""
+    triados = triagens.obter_triagens([i["hash"] for i in itens])
+    grupos: dict[str, dict] = {}
+    for i in itens[:LIMITE_ITENS_RESUMO]:
+        d = i["dados"]
+        numero = "".join(ch for ch in str(d.get("numeroprocessocommascara") or "") if ch.isdigit())
+        casos = gestao.casos_do_processo(numero) if len(numero) == 20 else []
+        titulo = (gestao.obter_caso(casos[0]) or {}).get("titulo") if casos else ""
+        ato, prazo = _sugestao_da_triagem(triados.get(i["hash"]))
+        urgencia = ((triados.get(i["hash"]) or {}).get("urgencia") or {}).get("nota") or 0
+        grupo = grupos.setdefault(numero or d.get("hash") or "?", {
+            "titulo": titulo or "", "numero": d.get("numeroprocessocommascara") or "", "cadastrado": bool(casos),
+            "itens": [], "urgencia": 0})
+        grupo["itens"].append({"data": d.get("data_disponibilizacao") or i["criado_em"][:10], "tribunal": d.get("siglaTribunal") or "",
+                               "orgao": d.get("nomeOrgao") or "", "classe": d.get("nomeClasse") or "",
+                               "tipo": d.get("tipoComunicacao") or d.get("tipoDocumento") or "", "ato": ato, "prazo": prazo})
+        grupo["urgencia"] = max(grupo["urgencia"], urgencia)
+    return sorted(grupos.values(), key=lambda g: -g["urgencia"])

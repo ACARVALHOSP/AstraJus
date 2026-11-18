@@ -1,6 +1,6 @@
 # Resumo diário de publicações
 
-Status: especificado (aguardando decisões do escritório, ver o fim)
+Status: implementado (aguardando PR para main)
 Blocked by: 01
 Tamanho: M
 Spec: ../spec.md (seção 3)
@@ -84,8 +84,30 @@ estiver ligada no escritório; desligada, todo mundo volta a receber como hoje.
   parâmetro; fica para depois, se fizer falta.
 - **Fonte dos dados:** não é `publicacoes_capturadas` (só OAB), e sim as entregas do monitoramento (OAB e processo).
 
-## Decisões abertas
-1. **Padrão "Os dois"** (nada muda para ninguém, quem quer menos e-mail escolhe) ou **"Resumo do dia"** como padrão?
-2. **08:00** está bom?
-3. Confirma **sem trecho do texto** no e-mail?
-4. Um resumo **por dia**, mesmo que chegue publicação depois das 8h (ela entra no dia seguinte)?
+## Decisões do escritório (17/11/2026)
+1. Padrão **"Os dois"**. 2. Horário **08:00**. 3. **Sem trecho do texto** no e-mail. 4. **Um resumo por dia**.
+
+## Como ficou (implementação)
+- `monitoramento_runtime`: coluna `resumo` em `monitoramento_entregas` (tabelas antigas ganham a coluna com valor 1, então nada que
+  já existia fica pendente); `ingerir(..., aguarda_resumo)`, `pendentes_detalhe`, canal `resumo` em `confirmar`; o conteúdo só é
+  apagado quando os três canais terminam.
+- `automacoes.py`: rotina `resumo_publicacoes` (desligada por padrão; parâmetro `hora`, padrão 8), `enviar_resumos_publicacoes`,
+  `montar_resumo`, `modo_avisos_publicacao` (a preferência só vale com a rotina ligada), tabela `automacoes_resumo`.
+- `server.py`: modo na entrada dos itens; e-mail de cada lote **retém** o que espera o resumo (rede de segurança de 36 h);
+  expiração do monitoramento não apaga o que ainda espera; rotina horária no agendador; `/responsaveis/me` devolve e aceita
+  `avisos_publicacao` (também em `usuarios_admin.atualizar_perfil`).
+- Frontend: "E-mails de publicações novas" em Meu perfil (três opções) e parâmetro `hora` na aba Automações.
+
+### Regras que a implementação fixou
+- **Retenção:** quem escolheu "Resumo do dia" não recebe o e-mail de cada lote enquanto o resumo estiver ligado. Se o resumo
+  não levar o item em **36 h** (e-mail fora do ar, rotina desligada), ele sai pelo e-mail normal: nunca fica sem e-mail.
+- **"Resumo do dia" não repete:** itens que a rede de segurança já enviou ficam fora do resumo. **"Os dois"** leva tudo.
+- **Sem SMTP configurado:** nada é enviado nem descartado; os itens esperam.
+- **Pessoa sem e-mail ou revogada:** o que esperava o resumo é dado como entregue (não acumula).
+- Triagem só existe para publicações de OAB; as de monitoramento por número de processo saem sem sugestão de ato/prazo.
+
+### Verificação
+`test_resumo_publicacoes.py` (25) e `frontend/tests/avisos-publicacao.test.mjs` (3). Mutação conferida em 4 pontos
+(retenção, uma vez por dia, texto da publicação, rede de segurança): cada uma faz um teste falhar. No navegador contra o
+servidor real: a escolha em Meu perfil persiste e volta marcada; o parâmetro `hora` aparece na aba Automações. O e-mail
+renderizado foi conferido em HTML (texto e visual); o envio SMTP real não foi exercitado.

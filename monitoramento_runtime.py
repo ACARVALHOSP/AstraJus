@@ -29,6 +29,7 @@ class Repositorio:
                     monitoramento_id TEXT NOT NULL, hash TEXT NOT NULL,
                     dados TEXT NOT NULL, criado_em TEXT NOT NULL,
                     email INTEGER NOT NULL DEFAULT 0, local INTEGER NOT NULL DEFAULT 0,
+                    resumo INTEGER NOT NULL DEFAULT 1,
                     PRIMARY KEY(monitoramento_id, hash));
                 CREATE INDEX IF NOT EXISTS monitoramento_entregas_pendentes
                     ON monitoramento_entregas(monitoramento_id, email, local);
@@ -42,6 +43,9 @@ class Repositorio:
                 CREATE TABLE IF NOT EXISTS automacao_leases (
                     rotina TEXT PRIMARY KEY, dono TEXT NOT NULL, expira REAL NOT NULL);
             ''')
+            # Tabela criada antes do resumo diário: 1 = nada aguardando o resumo (o que já existe segue como estava).
+            if 'resumo' not in {linha[1] for linha in c.execute('PRAGMA table_info(monitoramento_entregas)')}:
+                c.execute('ALTER TABLE monitoramento_entregas ADD COLUMN resumo INTEGER NOT NULL DEFAULT 1')
 
     @contextmanager
     def abrir(self):
@@ -66,34 +70,43 @@ class Repositorio:
             c.execute('INSERT OR REPLACE INTO monitoramento_coletas VALUES (?,?)',
                       (chave, json.dumps(dados, ensure_ascii=False)))
 
-    def ingerir(self, mid, itens, agora, hashes_legados=()):
+    def ingerir(self, mid, itens, agora, hashes_legados=(), aguarda_resumo=False):
+        """Guarda os itens novos na fila de entregas. `aguarda_resumo`: a pessoa recebe o resumo diário, então o
+        item fica pendente nesse canal (resumo=0) até o resumo sair."""
         novos = 0
         with self.abrir() as c:
             for item in itens:
                 if not item.get('hash'):
                     continue
                 cursor = c.execute('INSERT OR IGNORE INTO monitoramento_entregas '
-                    '(monitoramento_id,hash,dados,criado_em,email) VALUES (?,?,?,?,?)',
+                    '(monitoramento_id,hash,dados,criado_em,email,resumo) VALUES (?,?,?,?,?,?)',
                     (mid, item['hash'], json.dumps(item, ensure_ascii=False), utc(agora).isoformat(),
-                     int(item['hash'] in hashes_legados)))
+                     int(item['hash'] in hashes_legados), 0 if aguarda_resumo else 1))
                 novos += cursor.rowcount
         return novos
 
     def pendentes(self, mid, canal):
-        if canal not in ('email', 'local'):
+        return [i['dados'] for i in self.pendentes_detalhe(mid, canal)]
+
+    def pendentes_detalhe(self, mid, canal):
+        """Itens ainda não entregues num canal ('email', 'local' ou 'resumo'), com a data em que chegaram e o
+        estado dos outros dois canais."""
+        if canal not in ('email', 'local', 'resumo'):
             raise ValueError('Canal inválido')
         with self.abrir() as c:
-            rows = c.execute(f'SELECT dados FROM monitoramento_entregas WHERE monitoramento_id=? '
-                             f'AND {canal}=0 ORDER BY criado_em,hash', (mid,)).fetchall()
-        return [json.loads(r[0]) for r in rows]
+            rows = c.execute(f'SELECT hash, dados, criado_em, email, local, resumo FROM monitoramento_entregas '
+                             f'WHERE monitoramento_id=? AND {canal}=0 ORDER BY criado_em,hash', (mid,)).fetchall()
+        return [{'hash': h, 'dados': json.loads(d), 'criado_em': criado, 'email': e, 'local': l, 'resumo': r}
+                for h, d, criado, e, l, r in rows]
 
     def confirmar(self, mid, canal, hashes):
-        if canal not in ('email', 'local'):
+        if canal not in ('email', 'local', 'resumo'):
             raise ValueError('Canal inválido')
         with self.abrir() as c:
             c.executemany(f'UPDATE monitoramento_entregas SET {canal}=1 WHERE monitoramento_id=? AND hash=?',
                           [(mid, h) for h in hashes])
-            c.execute("UPDATE monitoramento_entregas SET dados='{}' WHERE monitoramento_id=? AND email=1 AND local=1", (mid,))
+            # O conteúdo só é apagado quando os três canais terminaram.
+            c.execute("UPDATE monitoramento_entregas SET dados='{}' WHERE monitoramento_id=? AND email=1 AND local=1 AND resumo=1", (mid,))
 
     def remover(self, mid):
         with self.abrir() as c:

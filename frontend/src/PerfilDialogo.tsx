@@ -9,6 +9,7 @@ import { AREAS, usePerfil, type Grau } from './api/PerfilContext'
 import MinhaAgendaGoogle from './MinhaAgendaGoogle'
 import { reduzirFoto } from './utils/foto'
 import { avaliarPerfil } from './utils/perfil'
+import { OPCOES_AVISOS, normalizarAvisos, type AvisosPublicacao } from './utils/avisosPublicacao'
 
 const NIVEIS: Record<string, string> = { administrador: 'Administrador', operador: 'Operador', consulta: 'Consulta' }
 const GRAUS: Record<Grau, { texto: string; cor: 'green' | 'blue' | 'gray' }> = {
@@ -18,15 +19,16 @@ const GRAUS: Record<Grau, { texto: string; cor: 'green' | 'blue' | 'gray' }> = {
 export default function PerfilDialogo({ onClose, accent, setAccent }: { onClose: () => void; accent: AccentColor; setAccent: (a: AccentColor) => void }) {
   const { cliente } = useCliente()
   const { avisar } = useAvisos()
-  const { nome: nomeAtual, email: emailAtual, foto: fotoAtual, login, nivel, permissoes, atualizarPerfil } = usePerfil()
+  const { nome: nomeAtual, email: emailAtual, foto: fotoAtual, avisosPublicacao: avisosAtual, login, nivel, permissoes, atualizarPerfil } = usePerfil()
   const [nome, setNome] = useState(nomeAtual ?? '')
   const [email, setEmail] = useState(emailAtual)
   const [foto, setFoto] = useState(fotoAtual)
+  const [avisos, setAvisos] = useState<AvisosPublicacao>(avisosAtual)
   const [erro, setErro] = useState('')
   const [salvando, setSalvando] = useState(false)
   const seletor = useRef<HTMLInputElement>(null)
   const administrador = nivel === 'administrador'
-  const { erro: erroCampos, mudancas, alterado } = avaliarPerfil({ nome: nomeAtual ?? '', email: emailAtual, foto: fotoAtual }, { nome, email, foto })
+  const { erro: erroCampos, mudancas, alterado } = avaliarPerfil({ nome: nomeAtual ?? '', email: emailAtual, foto: fotoAtual, avisos: avisosAtual }, { nome, email, foto, avisos })
 
   async function escolherFoto(arquivo: File | undefined) {
     if (!arquivo) return
@@ -39,8 +41,8 @@ export default function PerfilDialogo({ onClose, accent, setAccent }: { onClose:
     if (!cliente) { setErro('Conecte-se na aba Acesso.'); return }
     setSalvando(true); setErro('')
     try {
-      const dados = await enviarJson<{ usuario?: { nome_completo?: string; email?: string; foto?: string } }>(cliente, '/responsaveis/me', mudancas, 'PATCH')
-      atualizarPerfil({ nome: dados.usuario?.nome_completo ?? nome.trim(), email: dados.usuario?.email ?? email.trim(), foto: dados.usuario?.foto ?? foto })
+      const dados = await enviarJson<{ usuario?: { nome_completo?: string; email?: string; foto?: string; avisos_publicacao?: string } }>(cliente, '/responsaveis/me', mudancas, 'PATCH')
+      atualizarPerfil({ nome: dados.usuario?.nome_completo ?? nome.trim(), email: dados.usuario?.email ?? email.trim(), foto: dados.usuario?.foto ?? foto, avisosPublicacao: normalizarAvisos(dados.usuario?.avisos_publicacao ?? avisos) })
       avisar({ texto: 'Perfil atualizado.', tipo: 'sucesso' })
       onClose()
     } catch (e) {
@@ -74,6 +76,21 @@ export default function PerfilDialogo({ onClose, accent, setAccent }: { onClose:
               <Text size="1" color="gray">Usado nos avisos por e-mail. O login de acesso não muda.</Text>
             </div>
           </Flex>
+
+          <Text as="p" size="2" weight="medium" mt="4" mb="1">E-mails de publicações novas</Text>
+          <RadioGroup.Root value={avisos} onValueChange={v => setAvisos(v as AvisosPublicacao)} aria-label="E-mails de publicações novas">
+            <Flex direction="column" gap="2">
+              {OPCOES_AVISOS.map(o => (
+                <Text as="label" size="2" key={o.valor}>
+                  <Flex align="start" gap="2">
+                    <RadioGroup.Item value={o.valor} />
+                    <span><strong>{o.rotulo}</strong><br /><Text size="1" color="gray">{o.descricao}</Text></span>
+                  </Flex>
+                </Text>
+              ))}
+            </Flex>
+          </RadioGroup.Root>
+          <Text as="p" size="1" color="gray" mt="1">O resumo do dia só vale quando o escritório liga essa rotina; até lá você continua recebendo cada publicação.</Text>
 
           <Text as="p" size="2" weight="medium" mt="4" mb="2">Cor de destaque</Text>
           <RadioGroup.Root value={accent} onValueChange={v => setAccent(v as AccentColor)} aria-label="Cor de destaque">
