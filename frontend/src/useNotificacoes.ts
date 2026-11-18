@@ -6,6 +6,7 @@ export type DestinoNotificacao =
   | { tipo: 'atividade'; caso_id: string; atividade_id: string | number }
   | { tipo: 'publicacoes_processo'; caso_id: string }
   | { tipo: 'movimentos_processo'; caso_id: string }
+  | { tipo: 'processo'; caso_id: string }
   | { tipo: 'publicacoes_monitoradas' }
 
 export type Notificacao = {
@@ -172,7 +173,7 @@ export function useNotificacoes(cliente: ClienteMCP | null, aberta: boolean, som
     return executarAcao(item.id, async sinal => {
       const dados = await buscarJson<{ destino: DestinoNotificacao }>(cliente, `/notificacoes/${encodeURIComponent(item.id)}/destino`, sinal)
       const destino = dados.destino
-      if (!destino || !['atividade', 'publicacoes_processo', 'movimentos_processo', 'publicacoes_monitoradas'].includes(destino.tipo)
+      if (!destino || !['atividade', 'publicacoes_processo', 'movimentos_processo', 'processo', 'publicacoes_monitoradas'].includes(destino.tipo)
         || (destino.tipo !== 'publicacoes_monitoradas' && !destino.caso_id)
         || (destino.tipo === 'atividade' && destino.atividade_id == null)) {
         throw new ErroMCP(404, 'Destino indisponível. Atualize a lista.')

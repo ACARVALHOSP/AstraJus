@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { AlertDialog, Badge, Button, Callout, Card, Flex, Heading, Switch, Text, TextField } from '@radix-ui/themes'
 import Carregamento from '../../Carregamento'
+import RegrasResponsavel from './RegrasResponsavel'
 import { buscarJson, enviarJson } from '../../api/rest'
 import {
   descreverAlteracao, lerParametro, quandoBrasilia, seloRotina, textoDoValor,
@@ -98,10 +99,13 @@ export default function AutomacoesAdmin({ token }: { token: string }) {
                   </Text>
                 </Flex>
                 <Text as="p" size="2" color="gray">{r.descricao}</Text>
-                <Text as="p" size="1" color="gray">
-                  Última execução: {r.ultima_execucao ? quandoBrasilia(r.ultima_execucao.inicio) : 'nenhuma ainda'}
-                </Text>
+                {r.agendada !== false && (
+                  <Text as="p" size="1" color="gray">
+                    Última execução: {r.ultima_execucao ? quandoBrasilia(r.ultima_execucao.inicio) : 'nenhuma ainda'}
+                  </Text>
+                )}
                 {r.ultima_execucao?.erro && <Text as="p" size="1" color="red">{r.ultima_execucao.erro}</Text>}
+                {r.chave === 'responsavel_regras' && <RegrasResponsavel token={token} />}
                 {parametros.map(([nome, def]) => {
                   const id = `auto-${r.chave}-${nome}`
                   return (

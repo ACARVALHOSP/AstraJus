@@ -43,6 +43,7 @@ import cnj
 import tpu
 import asaas_integracao
 import automacoes
+import regras_responsavel
 import agenda_atividades
 import financeiro_juridico
 import triagem
@@ -3352,7 +3353,7 @@ def _resolver_cliente_id(gestao: RegistroClientesCasos, item: dict) -> tuple[str
 
 def _criar_caso_validado(
     gestao: RegistroClientesCasos, dados: dict, publicacoes: "RegistroPublicacoesOAB | None" = None,
-    usuario_padrao: str | None = None,
+    usuario_padrao: str | None = None, contexto_regras: dict | None = None,
 ) -> tuple[dict | None, dict | None]:
     """Valida o corpo de POST /casos. Aceita cliente_id (existente) ou cliente_novo (cria na
     hora) - é o que permite o botão "cadastrar como caso" da consulta pontual de processo.
@@ -3389,10 +3390,20 @@ def _criar_caso_validado(
     acesso = (dados.get("acesso") or "").strip() or None
     if acesso and acesso not in RegistroClientesCasos._ACESSOS_VALIDOS:
         return None, _erro(f"Acesso inválido: use um entre {RegistroClientesCasos._ACESSOS_VALIDOS}.")
+    responsavel = (dados.get("responsavel") or "").strip() or usuario_padrao or None
+    por_regra = None
+    if not responsavel and contexto_regras is not None and automacoes.Repositorio(gestao.caminho).ativa("responsavel_regras"):
+        # Ninguém escolheu e ninguém está criando (automação): vale a regra de distribuição.
+        nomes = {c["id"]: c.get("nome") for c in gestao.listar_clientes()}
+        contexto_regras = {**contexto_regras, "cliente_ids": [cliente_id, *clientes_adicionais], "cliente_nomes": nomes}
+        por_regra = regras_responsavel.resolver_responsavel(
+            contexto_regras, regras_responsavel.Regras(gestao.caminho).listar(),
+            set(RegistroUsuarios(gestao.caminho).ativos()))
+        responsavel = (por_regra or {}).get("responsavel")
     caso = gestao.criar_caso(
         cliente_id=cliente_id,
         titulo=(dados.get("titulo") or "").strip() or None,
-        responsavel=(dados.get("responsavel") or "").strip() or usuario_padrao or None,
+        responsavel=responsavel,
         numeros_processo=numeros,
         agora=lambda: datetime.now(timezone.utc),
         clientes_adicionais=clientes_adicionais,
@@ -3401,6 +3412,8 @@ def _criar_caso_validado(
         pasta=(dados.get("pasta") or "").strip() or None,
         acesso=acesso,
     )
+    if por_regra:
+        regras_responsavel.Regras(gestao.caminho).registrar_aplicacao(caso["id"], por_regra, regras_responsavel.ORIGEM)
     if publicacoes is not None:
         for numero in numeros:
             try:
@@ -4214,6 +4227,9 @@ class _AutenticacaoBearer:
             await _djen_debug_http(send, caminho[len("/debug/djen/"):], (scope.get("query_string") or b"").decode("latin-1"))
             return
 
+        if caminho == "/responsaveis/sugestao" and scope.get("method") == "GET" and self.gestao is not None:
+            await self._sugestao_responsavel(scope, send)
+            return
         if caminho == "/responsaveis" and scope.get("method") == "GET":
             perfis = self.registro.carregar()
             # "nomes" deixa a interface exibir o nome da pessoa em vez do login (e-mail).
@@ -5304,6 +5320,25 @@ class _AutenticacaoBearer:
             return
         await _json(send, 200, {"atividades": criadas})
 
+    async def _sugestao_responsavel(self, scope, send) -> None:
+        """GET /responsaveis/sugestao?publicacao=<hash>&cliente_id=<id>: quem as regras indicam como responsável (ou {}).
+        Serve só de sugestão para os formulários; não grava nada."""
+        if not automacoes.Repositorio(self.gestao.caminho).ativa("responsavel_regras"):
+            await _json(send, 200, {})
+            return
+        consulta = parse_qs((scope.get("query_string") or b"").decode("latin-1"))
+        hash_pub = (consulta.get("publicacao") or [""])[0]
+        cliente_id = (consulta.get("cliente_id") or [""])[0]
+        publicacao = self.publicacoes.obter(hash_pub) if hash_pub and self.publicacoes is not None else None
+        nomes = {c["id"]: c.get("nome") for c in self.gestao.listar_clientes()}
+        contexto = (regras_responsavel.contexto_da_publicacao(
+            self.registro_monitoramentos, publicacao, _assunto_da_publicacao((publicacao.get("dados") or {}).get("texto")),
+            [cliente_id] if cliente_id else [], nomes) if publicacao and self.registro_monitoramentos is not None
+            else {"cliente_ids": [cliente_id] if cliente_id else [], "cliente_nomes": nomes})
+        resultado = regras_responsavel.resolver_responsavel(
+            contexto, regras_responsavel.Regras(self.gestao.caminho).listar(), set(self.registro.ativos()))
+        await _json(send, 200, {"responsavel": resultado["responsavel"], "motivo": resultado["motivo"]} if resultado else {})
+
     async def _aviso_processo_parado(self, scope, receive, send, caso_id: str, usuario: str | None) -> None:
         """GET/PUT /casos/<id>/aviso-processo-parado: se a rotina "Processo parado" avisa sobre este processo.
         PUT {silenciado: true|false} liga ou desliga o silêncio (reversível); qualquer pessoa com acesso ao processo pode."""
@@ -5425,8 +5460,11 @@ class _AutenticacaoBearer:
         if caso is None:
             await _json(send, 404, _erro("Caso não encontrado."))
             return
+        aplicacao = regras_responsavel.Regras(self.gestao.caminho).aplicacao(caso_id)
         await _json(send, 200, {**caso, "eventos": self.gestao.eventos_do_caso(caso_id),
-                                "contagens": self.gestao.contagens_caso(caso_id)})
+                                "contagens": self.gestao.contagens_caso(caso_id),
+                                # Só mostra "definido por regra" enquanto o responsável é o que a regra definiu.
+                                "responsavel_regra": aplicacao if aplicacao and aplicacao["responsavel"] == caso.get("responsavel") else None})
 
     async def _lancamentos(self, scope, receive, send) -> None:
         """GET /lancamentos: lista todos os lançamentos financeiros.

@@ -7,6 +7,7 @@ import json
 import monitoramento_runtime
 import os
 import re
+import regras_responsavel
 import secrets
 import sqlite3
 import tempfile
@@ -627,6 +628,35 @@ async def tratar(app, scope, receive, send, s):
                     origem.backup(copia)
                 await s._responder(send, 200, destino.read_bytes(), tipo='application/octet-stream',
                     cabecalhos_extra=[(b'content-disposition', b'attachment; filename="cnj-backup.db"'), (b'cache-control', b'no-store')])
+        elif path.startswith('/admin/automacoes/responsavel/'):
+            if app.gestao is None:
+                await s._json(send, 503, {'mensagem': 'Cadastro de processos indisponível.'})
+                return
+            acao = path[len('/admin/automacoes/responsavel/'):]
+            regras = regras_responsavel.Regras(app.registro.caminho)
+            ativos = set(app.registro.ativos())
+            config = automacoes.Repositorio(app.registro.caminho)
+            if acao == 'regras' and method in ('GET', 'PUT'):
+                if method == 'PUT':
+                    raw = await s._ler_corpo(receive)
+                    if raw is None:
+                        await s._json(send, 413, {'mensagem': 'Corpo da requisição grande demais.'})
+                        return
+                    pedido = json.loads(raw or b'{}')
+                    if not isinstance(pedido, dict):
+                        raise ValueError('Informe um objeto JSON.')
+                    regras.salvar(pedido.get('regras'), ativos, ator, config.ativa('responsavel_regras'))
+                lista = regras.listar()
+                await s._json(send, 200, {
+                    'regras': [{**r, 'invalida': bool(r['responsavel']) and r['responsavel'] not in ativos} for r in lista],
+                    'ativa': config.ativa('responsavel_regras'), 'sem_responsavel': len(regras_responsavel.sem_responsavel(app.gestao))})
+            elif acao == 'simular' and method == 'POST':
+                itens = regras_responsavel.simular(app.gestao, app.registro_monitoramentos, regras.listar(), ativos)
+                await s._json(send, 200, {'itens': itens[:200], 'total': len(itens)})
+            elif acao == 'aplicar' and method == 'POST':
+                await s._json(send, 200, regras_responsavel.aplicar(app.gestao, app.registro_monitoramentos, regras.listar(), ativos, ator))
+            else:
+                await s._json(send, 405, {'mensagem': 'Método ou rota não permitido.'})
         elif path == '/admin/automacoes/api' and method == 'GET':
             repo_auto = automacoes.Repositorio(app.registro.caminho)
             execucoes = monitoramento_runtime.Repositorio(app.registro.caminho).historico

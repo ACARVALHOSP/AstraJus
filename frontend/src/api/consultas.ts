@@ -45,6 +45,20 @@ export function useNomePessoa(): (login: string | null | undefined) => string {
   return login => (login ? nomes?.[login] ?? formatarNomeExibicao(login) : '')
 }
 
+/** Sugestão de responsável pelas regras do escritório (vazia com a rotina desligada). Só sugere; não grava. */
+export function useSugestaoResponsavel({ publicacao, clienteId, enabled = true }: { publicacao?: string; clienteId?: string; enabled?: boolean }) {
+  const { cliente } = useCliente()
+  const params = new URLSearchParams()
+  if (publicacao) params.set('publicacao', publicacao)
+  if (clienteId) params.set('cliente_id', clienteId)
+  return useQuery({
+    queryKey: ['sugestao-responsavel', cliente?.token, publicacao ?? '', clienteId ?? ''],
+    enabled: Boolean(cliente) && enabled,
+    retry: false,
+    queryFn: ({ signal }) => buscarJson<{ responsavel?: string; motivo?: string }>(cliente, `/responsaveis/sugestao?${params}`, signal),
+  })
+}
+
 export function useCasos<T = { id: string }>({ enabled = true }: { enabled?: boolean } = {}) {
   const { cliente } = useCliente()
   return useQuery({

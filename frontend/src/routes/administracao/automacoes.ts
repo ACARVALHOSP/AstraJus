@@ -7,7 +7,7 @@ export type ParametroDefinido = ParametroInt | ParametroLista
 export type ValorParametro = number | number[]
 export type ExecucaoAuto = { inicio: string; fim: string | null; estado: string; erro: string | null }
 export type RotinaAuto = {
-  chave: string; nome: string; descricao: string; ativo: boolean
+  chave: string; nome: string; descricao: string; ativo: boolean; agendada?: boolean
   parametros: Record<string, ValorParametro>; parametros_definidos: Record<string, ParametroDefinido>
   ultima_execucao: ExecucaoAuto | null
 }
@@ -16,8 +16,9 @@ export type AlteracaoAuto = { ocorrido_em: string; ator: string; chave: string; 
 
 export type SeloAuto = { texto: string; cor: 'gray' | 'green' | 'red' | 'amber' }
 
-export function seloRotina(r: Pick<RotinaAuto, 'ativo' | 'ultima_execucao'>): SeloAuto {
+export function seloRotina(r: Pick<RotinaAuto, 'ativo' | 'ultima_execucao'> & { agendada?: boolean }): SeloAuto {
   if (!r.ativo) return { texto: 'Desligada', cor: 'gray' }
+  if (r.agendada === false) return { texto: 'Ligada', cor: 'green' } // age quando algo acontece, não por horário
   const e = r.ultima_execucao
   if (!e) return { texto: 'Ainda não executou', cor: 'gray' }
   if (e.estado === 'falha') return { texto: 'Falhou na última execução', cor: 'red' }
@@ -47,6 +48,7 @@ export function descreverAlteracao(a: AlteracaoAuto, nomes: Record<string, strin
   const nome = nomes[a.chave] ?? a.chave
   const quem = nomeDoAutor(a.ator)
   if (a.antes.ativo !== a.depois.ativo) return `${quem} ${a.depois.ativo ? 'ligou' : 'desligou'} "${nome}"`
+  if (a.chave === 'responsavel_regras') return `${quem} alterou as regras de "${nome}"`
   return `${quem} alterou os parâmetros de "${nome}"`
 }
 

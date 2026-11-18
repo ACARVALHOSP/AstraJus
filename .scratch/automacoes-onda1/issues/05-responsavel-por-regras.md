@@ -1,6 +1,6 @@
 # Responsável por regras de distribuição
 
-Status: especificado (aguardando 2 decisões do escritório, ver o fim)
+Status: implementado (decisões: incluir "Aplicar" aos existentes e sugerir nos formulários)
 Blocked by: 01 (pronto)
 Tamanho: M (G se entrar a ferramenta de aplicar aos processos existentes)
 Spec: ../spec.md (seção 4)
@@ -85,3 +85,19 @@ Em **Administração › Automações**, uma seção **"Regras de responsável"*
 
 O "responsável padrão do escritório" **não bloqueia** a implementação: ele é um campo da própria tela; enquanto estiver
 vazio, a última etapa (padrão) é simplesmente pulada.
+
+
+## Implementação (ticket 05)
+- `regras_responsavel.py` (resolvedor, tabelas, simular/aplicar), rotas em `/admin/automacoes/responsavel/{regras,simular,aplicar}`
+  e `GET /responsaveis/sugestao`. A rotina nasce desligada e não é agendada (age na criação e no botão Aplicar).
+- A auditoria ("definido pela regra: motivo") fica na tabela própria `regras_responsavel_aplicacoes`, **não** em `caso_eventos`:
+  qualquer evento ali reinicia a "última movimentação" e atrapalharia o aviso de processo parado.
+- Aviso à pessoa: só no sino (`processo_atribuido`, abre a aba Cadastro do processo); nada de e-mail.
+- Gancho de criação: `_criar_caso_validado(..., contexto_regras=...)`. Só o autocadastro (ticket 07) vai passar esse contexto;
+  hoje nenhuma criação existente o usa, então nada muda para quem cria processo à mão.
+- Frontend: editor em Automações (`RegrasResponsavel.tsx`), sugestão no formulário da publicação (pré-preenche) e em Novo processo
+  ("Usar sugestão"), nota "Definido pela regra" no Cadastro.
+
+### Verificação
+`test_regras_responsavel.py` (30) + suíte completa; `frontend/tests/regrasResponsavel.test.mjs` (3). No navegador contra o servidor
+real: criar regras, salvar, simular (nada grava) e aplicar (2 processos receberam responsável).

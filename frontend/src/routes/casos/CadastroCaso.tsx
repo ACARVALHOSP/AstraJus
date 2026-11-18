@@ -141,6 +141,7 @@ export default function CadastroCaso({
               ))}
             </Select.Content>
           </Select.Root>
+          {caso?.responsavel_regra && responsavel === (caso.responsavel ?? '') && <Text as="p" size="1" color="gray">Definido pela regra: {caso.responsavel_regra.motivo}.</Text>}
         </div>
         <div className="form-campo">
           <label className="form-campo-label" htmlFor="editar-caso-pasta">Pasta</label>

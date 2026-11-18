@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Check } from 'lucide-react'
 import { Button, Callout, Dialog, Flex, Select, Spinner, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
-import { useClientes, useNomePessoa, useResponsaveis } from '../../api/consultas'
+import { useClientes, useNomePessoa, useResponsaveis, useSugestaoResponsavel } from '../../api/consultas'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarNomeExibicao, formatarNumeroCNJ } from '../../utils/formatadores'
 import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
@@ -48,7 +48,10 @@ export default function ProcessoPublicacao({ publicacao, onClose, onConcluido }:
   // Começa vazio: o nome pesquisado na captura é o do advogado, não o do cliente.
   const [nomeCliente, setNomeCliente] = useState('')
   const partes = [...new Set((publicacao.dados?.destinatarios ?? []).map(d => (d.nome ?? '').trim()).filter(Boolean))]
-  const [responsavel, setResponsavel] = useState('')
+  const [responsavelEscolhido, setResponsavel] = useState<string | null>(null)
+  const sugestao = useSugestaoResponsavel({ publicacao: publicacao.hash, clienteId }).data
+  // Preenche com a sugestão das regras enquanto a pessoa não escolheu; escolher (ou limpar) vale mais.
+  const responsavel = responsavelEscolhido ?? sugestao?.responsavel ?? ''
   const [termo, setTermo] = useState(numero)
   const [salvando, setSalvando] = useState(false)
   // Etapa em andamento (índice em `passos`); as anteriores aparecem como concluídas.
@@ -165,6 +168,7 @@ export default function ProcessoPublicacao({ publicacao, onClose, onConcluido }:
                     {responsaveis.map(r => <Select.Item key={r} value={r}>{nomePessoa(r)}</Select.Item>)}
                   </Select.Content>
                 </Select.Root>
+                {sugestao?.responsavel && responsavel === sugestao.responsavel && <Text as="p" size="1" color="gray">Sugerido pelas regras: {sugestao.motivo}.</Text>}
               </div>
             </>}
           </>}
