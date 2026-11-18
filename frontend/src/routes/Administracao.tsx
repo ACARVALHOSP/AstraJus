@@ -72,6 +72,7 @@ export default function Administracao() {
   const [tokenNovo, setTokenNovo] = useState('')
   const [confirmarBackup, setConfirmarBackup] = useState(false)
   const [limpeza, setLimpeza] = useState<{ categorias: string[]; texto: string; resultado: Record<string, number> | null } | null>(null)
+  const [progressoFormatacao, setProgressoFormatacao] = useState('')
   const [baixaGeral, setBaixaGeral] = useState<{ texto: string } | null>(null)
   const [alvoToken, setAlvoToken] = useState<AlvoToken | null>(null)
   const [resultadoToken, setResultadoToken] = useState<ResultadoToken | null>(null)
@@ -181,6 +182,26 @@ export default function Administracao() {
     setAlvoApagar(null)
     await carregar(sessao)
     setMensagem(`${nome} foi apagado.${frases.length ? ` ${listarEmFrase(frases)} ficaram sem responsável.` : ''}`)
+  }
+  // Recaptura em lotes (o servidor trata alguns processos por chamada) até não restar nada ou não haver mais progresso.
+  async function recapturarFormatacao() {
+    if (!sessao) return
+    type Lote = { atualizadas: number; sem_formatacao: number; nao_encontradas: number; falhas: number; restantes: number }
+    const total = { atualizadas: 0, sem_formatacao: 0, nao_encontradas: 0, falhas: 0 }
+    let restantes = 0
+    try {
+      for (let lote = 0; lote < 500; lote++) {
+        const r = await (await requisicao('/admin/banco/recapturar-formatacao', sessao, 'POST')).json() as Lote
+        total.atualizadas += r.atualizadas; total.sem_formatacao += r.sem_formatacao; total.nao_encontradas += r.nao_encontradas; total.falhas = r.falhas
+        restantes = r.restantes
+        setProgressoFormatacao(`Recapturando… ${restantes} pendente(s)`)
+        if (!restantes || r.atualizadas + r.sem_formatacao + r.nao_encontradas === 0) break
+      }
+    } finally { setProgressoFormatacao('') }
+    const feitas = total.atualizadas + total.sem_formatacao + total.nao_encontradas
+    setMensagem(!feitas && !restantes ? 'Nenhuma publicação antiga pendente.'
+      : `Recaptura: ${total.atualizadas} com formatação gravada, ${total.sem_formatacao} sem formatação no original, ${total.nao_encontradas} não encontradas no DJEN.${restantes ? ` Faltam ${restantes}${total.falhas ? ' (o DJEN falhou em parte; tente de novo mais tarde)' : ''}.` : ''}`)
+    await carregarHistorico(sessao)
   }
   function abrirEditor(u: Usuario | null) {
     setErro('')
@@ -311,6 +332,11 @@ export default function Administracao() {
             <Button variant="soft" size="2" disabled={ocupado} onClick={() => void executar(async () => { const r = await (await requisicao('/admin/banco/integridade', sessao, 'POST')).json(); if (!r.integro) throw new Error('A verificação identificou inconsistências no banco.'); setMensagem(`Integridade verificada em ${data(r.verificado_em)}.`) })}>Verificar integridade</Button>
             <Button variant="soft" size="2" disabled={ocupado} onClick={() => setConfirmarBackup(true)}>Baixar backup</Button>
             <Button variant="ghost" color="red" size="2" disabled={ocupado} onClick={() => setLimpeza({ categorias: [], texto: '', resultado: null })}>Limpar dados</Button>
+          </div>
+          <Heading as="h2" size="4" mt="4">Formatação das publicações antigas</Heading>
+          <Text as="p" size="2" color="gray">As publicações capturadas antes do negrito e do itálico não os mostram. Esta ação consulta o DJEN de novo, processo a processo, e grava só a formatação: status, vínculo com o caso e texto não mudam. Pode demorar; dá para repeti-la.</Text>
+          <div className="administracao__acoes">
+            <Button variant="soft" size="2" disabled={ocupado} onClick={() => void executar(recapturarFormatacao)}>{ocupado && progressoFormatacao ? progressoFormatacao : 'Recapturar formatação das publicações antigas'}</Button>
           </div>
           <Heading as="h2" size="4" mt="4">Baixa geral</Heading>
           <Text as="p" size="2" color="gray">Marca como cumpridos todos os prazos e tarefas em aberto do escritório, para começar do zero. Não dá para desfazer.</Text>

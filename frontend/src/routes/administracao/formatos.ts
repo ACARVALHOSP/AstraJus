@@ -33,11 +33,13 @@ const CAMPOS_CADASTRO: Record<string, string> = {
   // resumo da exclusão de um usuário
   processos: 'Processos sem responsável', atividades: 'Atividades sem responsável', lancamentos: 'Lançamentos sem responsável',
   monitoramentos: 'Monitoramentos removidos', notificacoes: 'Notificações removidas', horas: 'Horas mantidas', agenda: 'Agenda',
+  // recaptura da formatação das publicações
+  atualizadas: 'Com formatação gravada', sem_formatacao: 'Sem formatação no original', nao_encontradas: 'Não encontradas no DJEN', falhas: 'Falhas do DJEN', restantes: 'Ainda pendentes',
 }
 const CATEGORIAS_LIMPEZA: Record<string, string> = {
   publicacoes: 'Publicações capturadas', monitoramento_tecnico: 'Dados técnicos de monitoramento', notificacoes: 'Notificações',
 }
-const ACOES: Record<string, string> = { criar: 'Cadastro criado', atualizar: 'Cadastro alterado', limpar_banco: 'Limpeza de dados', baixa_geral: 'Baixa geral de prazos e tarefas', novo_token: 'Novo token gerado', apagar: 'Usuário apagado' }
+const ACOES: Record<string, string> = { criar: 'Cadastro criado', atualizar: 'Cadastro alterado', limpar_banco: 'Limpeza de dados', baixa_geral: 'Baixa geral de prazos e tarefas', recapturar_formatacao: 'Recaptura da formatação das publicações', novo_token: 'Novo token gerado', apagar: 'Usuário apagado' }
 
 /** Rótulo da ação do histórico administrativo; ação desconhecida aparece como veio. */
 export const rotuloAcao = (acao: string): string => ACOES[acao] ?? acao

@@ -109,6 +109,58 @@ CATEGORIAS_LIMPEZA = {
 }
 
 
+# Publicações capturadas antes do campo `texto_html` não têm a chave em `dados`. A recaptura consulta o DJEN por
+# processo e grava só esse campo (json_set): status, vínculo com o caso, triagem e o texto não mudam.
+_PENDENTES_FORMATACAO = ("FROM publicacoes_capturadas WHERE json_type(dados, '$.texto_html') IS NULL "
+                         "AND coalesce(numero_processo, '') <> ''")
+
+
+async def _recapturar_formatacao(caminho, s, limite_processos: int = 10) -> dict:
+    """Um lote: até `limite_processos` processos com publicações sem `texto_html`. Devolve os totais do lote e
+    quantas publicações ainda faltam. Falha do DJEN deixa as publicações do processo como estão (nova tentativa depois)."""
+    from db import _abrir
+    atualizadas = sem_formatacao = nao_encontradas = falhas = 0
+    with _abrir(caminho) as c:
+        processos = [r[0] for r in c.execute(
+            f'SELECT DISTINCT numero_processo {_PENDENTES_FORMATACAO} ORDER BY numero_processo LIMIT ?', (limite_processos,))]
+    for numero in processos:
+        numero_cnj, erro_cnj = s.cnj.validar_cnj(numero)
+        with _abrir(caminho) as c:
+            hashes = {r[0] for r in c.execute(
+                f'SELECT hash {_PENDENTES_FORMATACAO} AND numero_processo = ?', (numero,))}
+        achados, falhou = {}, False
+        if not erro_cnj:   # número que o DJEN não aceita: sem como recapturar, fica como "não encontrada" e não volta
+            for pagina in range(1, 11):
+                resposta = await s._djen_get_com_retry(
+                    s.DJEN_BASE_URL, params={'numeroProcesso': numero_cnj, 'pagina': pagina, 'itensPorPagina': 100})
+                dados, erro = (None, resposta) if isinstance(resposta, dict) else s._json_da_resposta(resposta)
+                if erro or not isinstance(dados, dict) or not isinstance(dados.get('items'), list):
+                    falhou = True
+                    break
+                for item in dados['items']:
+                    if isinstance(item, dict) and item.get('hash') in hashes:
+                        achados[item['hash']] = s._html_sanitizado(item.get('texto'))
+                if len(dados['items']) < 100 or hashes <= set(achados):
+                    break
+        if falhou:
+            falhas += len(hashes)
+            continue
+        with _abrir(caminho) as c, c:
+            for h in hashes:
+                html = achados.get(h)
+                c.execute("UPDATE publicacoes_capturadas SET dados = json_set(dados, '$.texto_html', ?) WHERE hash = ?", (html, h))
+                if h not in achados:
+                    nao_encontradas += 1
+                elif html:
+                    atualizadas += 1
+                else:
+                    sem_formatacao += 1
+    with _abrir(caminho) as c:
+        restantes = c.execute(f'SELECT count(*) {_PENDENTES_FORMATACAO}').fetchone()[0]
+    return {'atualizadas': atualizadas, 'sem_formatacao': sem_formatacao, 'nao_encontradas': nao_encontradas,
+            'falhas': falhas, 'restantes': restantes}
+
+
 def agora():
     return datetime.now(timezone.utc).isoformat(timespec='seconds')
 
@@ -554,6 +606,13 @@ async def tratar(app, scope, receive, send, s):
                 c.execute('INSERT INTO usuarios_auditoria (ocorrido_em, ator, usuario, acao, campos) VALUES (?, ?, ?, ?, ?)',
                           (agora(), ator, '(sistema)', 'limpar_banco', json.dumps(apagados, ensure_ascii=False)))
             await s._json(send, 200, {'apagados': apagados})
+        elif path == '/admin/banco/recapturar-formatacao' and method == 'POST':
+            resultado = await _recapturar_formatacao(app.registro.caminho, s)
+            if resultado['atualizadas'] or resultado['sem_formatacao'] or resultado['nao_encontradas']:
+                with _abrir(app.registro.caminho) as c, c:
+                    c.execute('INSERT INTO usuarios_auditoria (ocorrido_em, ator, usuario, acao, campos) VALUES (?, ?, ?, ?, ?)',
+                              (agora(), ator, '(sistema)', 'recapturar_formatacao', json.dumps(resultado, ensure_ascii=False)))
+            await s._json(send, 200, resultado)
         elif path == '/admin/banco/baixa-geral' and method == 'POST':
             # Baixa geral: marca como cumpridos todos os prazos e tarefas em aberto do escritório. Não há desfazer.
             with _abrir(app.registro.caminho) as c, c:

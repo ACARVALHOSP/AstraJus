@@ -191,6 +191,47 @@ class UsuariosTest(unittest.TestCase):
             self.assertEqual(c.execute("SELECT count(*) FROM caso_atividades WHERE status != 'concluida'").fetchone()[0], 0)
             self.assertEqual(c.execute("SELECT count(*) FROM usuarios_auditoria WHERE acao = 'baixa_geral'").fetchone()[0], 1)
 
+    def test_recaptura_grava_so_texto_html_e_nao_repete(self):
+        from types import SimpleNamespace
+        self.criar()
+        ok = '1006314-27.2023.8.26.0005'
+        with closing(sqlite3.connect(self.reg.caminho)) as c, c:
+            for h, num, dados in (('h1', ok, {'texto': 'Ordem urgente', 'x': 1}), ('h2', ok, {'texto': 'Simples'}),
+                                  ('h3', ok, {'texto': 'Sumiu'}), ('h4', '123', {'texto': 'CNJ inválido'}),
+                                  ('h5', ok, {'texto': 'Novo', 'texto_html': None})):
+                c.execute("INSERT INTO publicacoes_capturadas (hash, numero_processo, dados, status, criado_em) VALUES (?, ?, ?, 'tratada', '2026-01-01')",
+                          (h, num, json.dumps(dados)))
+        chamadas = []
+        class Resp:
+            def __init__(self, corpo): self.corpo = corpo
+            def json(self): return self.corpo
+        async def djen(url, params=None):
+            chamadas.append(params)
+            return Resp({'count': 2, 'items': [{'hash': 'h1', 'texto': '<p>Ordem <b>urgente</b></p>'}, {'hash': 'h2', 'texto': '<p>Simples</p>'}]})
+        falso = SimpleNamespace(cnj=server.cnj, DJEN_BASE_URL='x', _djen_get_com_retry=djen,
+                                _json_da_resposta=server._json_da_resposta, _html_sanitizado=server._html_sanitizado)
+        r = asyncio.run(u._recapturar_formatacao(self.reg.caminho, falso))
+        self.assertEqual(r, {'atualizadas': 1, 'sem_formatacao': 1, 'nao_encontradas': 2, 'falhas': 0, 'restantes': 0})
+        self.assertEqual(len(chamadas), 1)   # h4 (CNJ inválido) nem chega ao DJEN; h5 já tinha a chave
+        with closing(sqlite3.connect(self.reg.caminho)) as c:
+            d = {h: (json.loads(x), st) for h, x, st in c.execute('SELECT hash, dados, status FROM publicacoes_capturadas')}
+        self.assertEqual(d['h1'][0], {'texto': 'Ordem urgente', 'x': 1, 'texto_html': 'Ordem <b>urgente</b>'})
+        self.assertIsNone(d['h2'][0]['texto_html'])
+        self.assertTrue(all(st == 'tratada' for _, st in d.values()))
+        self.assertEqual(asyncio.run(u._recapturar_formatacao(self.reg.caminho, falso))['restantes'], 0)
+        self.assertEqual(len(chamadas), 1)   # nada pendente: não consulta de novo
+
+    def test_recaptura_falha_do_djen_mantem_pendente(self):
+        from types import SimpleNamespace
+        self.criar()
+        with closing(sqlite3.connect(self.reg.caminho)) as c, c:
+            c.execute("INSERT INTO publicacoes_capturadas (hash, numero_processo, dados, status, criado_em) VALUES ('h1', '1006314-27.2023.8.26.0005', '{\"texto\": \"a\"}', 'nao_tratada', '2026-01-01')")
+        async def djen(url, params=None): return {'erro': 'Falha ao consultar o DJEN'}
+        falso = SimpleNamespace(cnj=server.cnj, DJEN_BASE_URL='x', _djen_get_com_retry=djen,
+                                _json_da_resposta=server._json_da_resposta, _html_sanitizado=server._html_sanitizado)
+        r = asyncio.run(u._recapturar_formatacao(self.reg.caminho, falso))
+        self.assertEqual((r['falhas'], r['restantes'], r['atualizadas']), (1, 1, 0))
+
 
 if __name__ == '__main__':
     unittest.main()
