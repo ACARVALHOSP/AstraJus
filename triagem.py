@@ -26,7 +26,7 @@ LIMITE_ALTO = 0.90   # acima: sugestão em destaque
 LIMITE_BAIXO = 0.50  # abaixo: nenhuma sugestão é mostrada
 TAMANHO_MAX_TEXTO = 6000
 MODOS = ("desligado", "simulado", "jev", "openrouter")
-MODELO_OPENROUTER = "typesafe/jev-router"
+MODELO_OPENROUTER = "typesafe/jev-1.14"
 
 # Mesmos ids de frontend/src/routes/publicacoes-oab/prazos.ts (PRAZOS_PADRAO); há um teste que confere.
 PRAZOS_PADRAO = {

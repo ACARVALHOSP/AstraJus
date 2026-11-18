@@ -41,7 +41,7 @@ A implementação local não configura automaticamente segredos ou publica códi
 
 Apoio à leitura da caixa de Publicações recebidas: para cada publicação sugere o tipo (exige manifestação, só ciência, despacho, sentença), se abre prazo, o prazo-padrão provável e uma urgência de 1 a 10, e permite ordenar pelas mais urgentes. São **sugestões**: nada é criado, tratado, arquivado ou escondido por causa delas, e a data de um prazo continua vindo só do cálculo de prazos.
 
-Configuração: o interruptor é o módulo **Triagem por IA**, em Configurações › Módulos (só administrador; vem **desligado**). Ligado, a triagem usa o Jev (`typesafe/jev-router`) pela integração OpenRouter, que precisa estar cadastrada, testada e **ativa** em Administração › Integrações. Não há variável de ambiente para ligar ou desligar: `CNJ_TRIAGEM_MODO` e `TYPESAFE_API_KEY` deixaram de ser usadas. Opcional: `CNJ_TRIAGEM_MODELO` troca o modelo por outro id do OpenRouter (precisa conter `/`).
+Configuração: o interruptor é o módulo **Triagem por IA**, em Configurações › Módulos (só administrador; vem **desligado**). Ligado, a triagem usa o Jev (`typesafe/jev-1.14`) pela integração OpenRouter, que precisa estar cadastrada, testada e **ativa** em Administração › Integrações. Não há variável de ambiente para ligar ou desligar: `CNJ_TRIAGEM_MODO` e `TYPESAFE_API_KEY` deixaram de ser usadas. Modelo fixo, sem variável de ambiente para trocar.
 
 A tela de Publicações informa o estado: desligada (como ligar), ligada sem chave ativa (como ativar) ou ligada.
 

@@ -3608,14 +3608,12 @@ async def _montar_capa_via_tribunal(numero: str, tribunal: str) -> tuple[dict | 
 
 def _classificador_triagem():
     """(classificador, modo). O interruptor é o módulo "Triagem por IA" (Configurações › Módulos, desligado por
-    padrão). Ligado, usa o Jev (typesafe/jev-router) pela integração OpenRouter ativa; o modelo pode ser trocado
-    por CNJ_TRIAGEM_MODELO com um id do OpenRouter (contém "/"). Modos devolvidos: desligado, sem_chave, openrouter."""
+    padrão). Ligado, usa só o Jev (typesafe/jev-1.14) pela integração OpenRouter ativa, sem troca de modelo.
+    Modos devolvidos: desligado, sem_chave, openrouter."""
     if not registro_modulos.ativo("triagem"):
         return None, "desligado"
     chave = (_config_integracao("OPENROUTER_API_KEY", "") or "").strip()
-    modelo = (_config_integracao("CNJ_TRIAGEM_MODELO", "") or "").strip()
-    classificador = triagem.criar_classificador(
-        "openrouter", chave_openrouter=chave, modelo_openrouter=modelo if "/" in modelo else triagem.MODELO_OPENROUTER)
+    classificador = triagem.criar_classificador("openrouter", chave_openrouter=chave)
     return (classificador, "openrouter") if classificador else (None, "sem_chave")
 
 
