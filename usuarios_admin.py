@@ -1,5 +1,6 @@
 """Perfis estruturados e administração de usuários, compatíveis com dados legados."""
 import asyncio
+import autocadastro
 import automacoes
 import emails_html
 import hmac
@@ -629,6 +630,19 @@ async def tratar(app, scope, receive, send, s):
                     origem.backup(copia)
                 await s._responder(send, 200, destino.read_bytes(), tipo='application/octet-stream',
                     cabecalhos_extra=[(b'content-disposition', b'attachment; filename="cnj-backup.db"'), (b'cache-control', b'no-store')])
+        elif path.startswith('/admin/automacoes/autocadastro/'):
+            if app.gestao is None or getattr(app, 'publicacoes', None) is None:
+                await s._json(send, 503, {'mensagem': 'Cadastro de processos indisponível.'})
+                return
+            acao = path[len('/admin/automacoes/autocadastro/'):]
+            auto = autocadastro.Autocadastro(app.registro.caminho)
+            if acao == 'estado' and method == 'GET':
+                await s._json(send, 200, {'simulou_em': auto.simulou_em(), 'criados_hoje': auto.criados_hoje(datetime.now(timezone.utc))})
+            elif acao == 'simular' and method == 'POST':
+                limite = automacoes.Repositorio(app.registro.caminho).estado('autocadastro_rascunho')['parametros']['limite_dia']
+                await s._json(send, 200, auto.simular(app.gestao, app.publicacoes, app.registro_monitoramentos, limite, datetime.now(timezone.utc)))
+            else:
+                await s._json(send, 405, {'mensagem': 'Método ou rota não permitido.'})
         elif path.startswith('/admin/automacoes/responsavel/'):
             if app.gestao is None:
                 await s._json(send, 503, {'mensagem': 'Cadastro de processos indisponível.'})
@@ -710,6 +724,9 @@ async def tratar(app, scope, receive, send, s):
             if not isinstance(pedido, dict):
                 raise ValueError('Informe um objeto JSON.')
             repo_auto = automacoes.Repositorio(app.registro.caminho)
+            if chave == 'autocadastro_rascunho' and pedido.get('ativo') is True and not repo_auto.ativa(chave) \
+                    and not autocadastro.Autocadastro(app.registro.caminho).simulou_em():
+                raise ValueError('Antes de ligar, rode a simulação para ver quais rascunhos seriam criados.')
             estado = repo_auto.definir(chave, ator, ativo=pedido.get('ativo'), parametros=pedido.get('parametros'))
             await s._json(send, 200, {'chave': chave, **estado})
         elif path.startswith('/admin/usuarios/api/') and path.endswith('/vinculos') and method == 'GET':

@@ -43,6 +43,7 @@ import cnj
 import tpu
 import asaas_integracao
 import automacoes
+import autocadastro
 import nomes as nomes_mod
 import regras_responsavel
 import agenda_atividades
@@ -3354,7 +3355,7 @@ def _resolver_cliente_id(gestao: RegistroClientesCasos, item: dict) -> tuple[str
 
 def _criar_caso_validado(
     gestao: RegistroClientesCasos, dados: dict, publicacoes: "RegistroPublicacoesOAB | None" = None,
-    usuario_padrao: str | None = None, contexto_regras: dict | None = None,
+    usuario_padrao: str | None = None, contexto_regras: dict | None = None, status: str = "ativo",
 ) -> tuple[dict | None, dict | None]:
     """Valida o corpo de POST /casos. Aceita cliente_id (existente) ou cliente_novo (cria na
     hora) - é o que permite o botão "cadastrar como caso" da consulta pontual de processo.
@@ -3411,7 +3412,7 @@ def _criar_caso_validado(
         acao=(dados.get("acao") or "").strip() or None,
         foro=(dados.get("foro") or "").strip() or None,
         pasta=(dados.get("pasta") or "").strip() or None,
-        acesso=acesso,
+        acesso=acesso, status=status,
     )
     if por_regra:
         regras_responsavel.Regras(gestao.caminho).registrar_aplicacao(caso["id"], por_regra, regras_responsavel.ORIGEM)
@@ -3447,7 +3448,7 @@ def _consultar_casos_para_vinculo(gestao, termo: str) -> list[dict]:
     return encontrados
 
 
-def _criar_caso_de_publicacao(gestao, publicacoes, publicacao, dados, usuario_padrao=None):
+def _criar_caso_de_publicacao(gestao, publicacoes, publicacao, dados, usuario_padrao=None, *, rascunho=False, contexto_regras=None):
     """Cria usando dados já capturados; não consulta APIs externas."""
     numero = publicacao.get("numero_processo")
     if not numero:
@@ -3477,7 +3478,8 @@ def _criar_caso_de_publicacao(gestao, publicacoes, publicacao, dados, usuario_pa
         "numeros_processo": [numero],
         "acao": d.get("nomeClasse"), "foro": d.get("nomeOrgao"),
     }
-    caso, erro = _criar_caso_validado(gestao, corpo, publicacoes, usuario_padrao=usuario_padrao)
+    caso, erro = _criar_caso_validado(gestao, corpo, publicacoes, usuario_padrao=usuario_padrao, contexto_regras=contexto_regras,
+                                      status="rascunho" if rascunho else "ativo")
     if erro:
         return None, erro
     advogados = d.get("destinatarioadvogados") or []
@@ -3678,6 +3680,19 @@ async def _avisar_processos_parados(gestao: "RegistroClientesCasos", agora=lambd
     return await automacoes.avisar_processos_parados(
         gestao, agora=agora, enviar_email=enviar if cfg else None,
         base_url=(os.environ.get("CNJ_MCP_URL_PUBLICA") or "").rstrip("/"))
+
+
+async def _autocadastrar_rascunhos(registro_monitoramentos, publicacoes, gestao, agora=lambda: datetime.now(timezone.utc)) -> bool:
+    """Rotina "Autocadastro de processos" (desligada até um administrador simular e ligar em Administração › Automações)."""
+    limite = automacoes.Repositorio(gestao.caminho).estado("autocadastro_rascunho")["parametros"]["limite_dia"]
+
+    def criar(publicacao, cliente_id):
+        contexto = regras_responsavel.contexto_da_publicacao(
+            registro_monitoramentos, publicacao, _assunto_da_publicacao((publicacao.get("dados") or {}).get("texto")), [cliente_id])
+        return _criar_caso_de_publicacao(gestao, publicacoes, publicacao, {"cliente_id": cliente_id}, None, rascunho=True, contexto_regras=contexto)
+
+    resultado = autocadastro.Autocadastro(gestao.caminho).executar(gestao, publicacoes, registro_monitoramentos, criar, limite, agora())
+    return resultado["falhas"] == 0
 
 
 ALERTAS_PRAZO_FAIXAS = (0, 1, 2, 5)  # dias que faltam: o aviso sai ao entrar em cada faixa
@@ -4231,6 +4246,9 @@ class _AutenticacaoBearer:
             await _djen_debug_http(send, caminho[len("/debug/djen/"):], (scope.get("query_string") or b"").decode("latin-1"))
             return
 
+        if (caminho == "/rascunhos" or caminho.startswith("/rascunhos/")) and self.gestao is not None:
+            await self._rascunhos(scope, send, caminho)
+            return
         if caminho == "/responsaveis/sugestao" and scope.get("method") == "GET" and self.gestao is not None:
             await self._sugestao_responsavel(scope, send)
             return
@@ -5323,6 +5341,25 @@ class _AutenticacaoBearer:
                                             else f"{sobraram} atividade(s) ficaram criadas; confira o processo antes de tentar de novo.")))
             return
         await _json(send, 200, {"atividades": criadas})
+
+    async def _rascunhos(self, scope, send, caminho: str) -> None:
+        """Processos criados sozinhos a partir de publicações, a confirmar.
+        GET /rascunhos; POST /rascunhos/<id>/confirmar; POST /rascunhos/<id>/descartar. Toda a equipe vê e decide."""
+        auto = autocadastro.Autocadastro(self.gestao.caminho)
+        metodo = scope.get("method")
+        if caminho == "/rascunhos" and metodo == "GET":
+            lista = auto.listar(self.gestao)
+            await _json(send, 200, {"rascunhos": lista, "total": len(lista)})
+            return
+        partes = caminho.strip("/").split("/")
+        if len(partes) == 3 and metodo == "POST" and partes[2] in ("confirmar", "descartar"):
+            feito = auto.confirmar(self.gestao, partes[1]) if partes[2] == "confirmar" else auto.descartar(self.gestao, partes[1])
+            if not feito:
+                await _json(send, 404, _erro("Rascunho não encontrado (talvez já tenha sido confirmado ou descartado)."))
+                return
+            await _json(send, 200, {"ok": True})
+            return
+        await _responder(send, 404, b"Nao encontrado")
 
     async def _sugestao_responsavel(self, scope, send) -> None:
         """GET /responsaveis/sugestao?publicacao=<hash>&cliente_id=<id>: quem as regras indicam como responsável (ou {}).
@@ -7264,6 +7301,7 @@ def _montar_agendador(
         ('movimentos', 12, _atualizar_movimentos_processos, [gestao], {}),
         ('alertas_prazo', 6, _alertar_prazos, [gestao], {}),
         ('triagem_publicacoes', 1, _triagem_automatica, [publicacoes], {}),
+        ('autocadastro_rascunho', 24, _autocadastrar_rascunhos, [registro_monitoramentos, publicacoes, gestao], {}),
         ('processo_parado', 24, _avisar_processos_parados, [gestao], {}),
         ('resumo_publicacoes', 1, _enviar_resumos_publicacoes, [registro_monitoramentos, gestao], {}),
     ):

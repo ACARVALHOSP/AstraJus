@@ -1,6 +1,6 @@
 # Autocadastro como rascunho
 
-Status: especificado (aguardando 3 decisões do escritório, ver o fim)
+Status: implementado (decisões: toda a equipe vê; publicação segue na fila; teto 20/dia)
 Blocked by: 01 (pronto), 05 (pronto), 06 (pronto)
 Tamanho: G
 Spec: ../spec.md (seção 6)
@@ -63,3 +63,18 @@ cadastrado; e-mail a cliente.
 - Rascunho não aparece em Processos, buscas, processo parado nem regras de responsável; confirmar o torna ativo e tratado.
 - Descartar remove o rascunho, devolve a publicação à fila sem vínculo e a rotina não o recria.
 - Teto diário e por rodada respeitados; simulação não grava nada; primeira ativação exige simulação.
+
+## Implementação
+- `autocadastro.py` (candidatas, simular, executar, listar/confirmar/descartar), situação `casos.status='rascunho'` com
+  `listar_casos(situacao="ativos"|"rascunhos"|"todos")` (padrão exclui rascunho: lista, buscas, processo parado, regras de responsável).
+- Rotina `autocadastro_rascunho` (nasce desligada, parâmetro `limite_dia`), simulação obrigatória (o PUT que liga recusa sem simulação
+  prévia; desligar nunca exige), rotas `/admin/automacoes/autocadastro/{estado,simular}` e `/rascunhos` (GET, POST confirmar/descartar).
+- Notificação `processo_rascunho` só no sino (responsável; sem responsável, administradores).
+- Frontend: cartão "Processos a confirmar" no topo de Processos, contador na Home, simulação dentro do cartão da rotina em Automações.
+- Ajuste ao plano: **confirmar não muda o status da publicação**. Criar processo a partir de publicação nunca a marcou como tratada
+  (só vincula), e a revisão continua independente; o rascunho nasce vinculado e a publicação segue na fila.
+- Limitação conhecida: enquanto o rascunho existe, a busca por número na tela da publicação não o mostra (está fora das listas);
+  quem usar "criar processo" nesse intervalo pode duplicar. Confirmar ou descartar resolve.
+- Verificação: `test_autocadastro.py` (19), 4 mutações detectadas (regra de cliente único, exclusão do rascunho das listas, descarte
+  não recriar, teto), suíte completa; no navegador: simular, ligar, rotina criou 2 rascunhos, confirmar (virou ativo) e descartar
+  (publicação voltou à fila sem vínculo).
