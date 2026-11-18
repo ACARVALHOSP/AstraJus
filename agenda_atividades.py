@@ -241,10 +241,11 @@ def conferir_identidade(v, remoto):
         raise ErroAgenda("O evento remoto não corresponde a este vínculo. Nenhuma alteração foi enviada.")
 
 
-async def processar(repo, vinculo_id, registro_google, client_id, client_secret, cliente, conexao=None):
+async def processar(repo, vinculo_id, registro_google, client_id, client_secret, cliente, conexao=None, descricao=""):
     v = repo.adquirir(vinculo_id)
     if not v:
         return
+    v["descricao"] = descricao  # número do processo + link; não é persistido, só vai no corpo do evento
     remoto = None
     try:
         token, calendario = conexao or await conectar(registro_google, client_id, client_secret, cliente)

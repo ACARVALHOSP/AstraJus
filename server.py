@@ -5912,6 +5912,12 @@ class _AutenticacaoBearer:
                 raise agenda_atividades.ErroAgenda("JSON inválido.", 400)
             if not isinstance(dados, dict):
                 raise agenda_atividades.ErroAgenda("Informe um objeto JSON.", 400)
+            caso_agenda = self.gestao.obter_caso(caso_id) or {}
+            numero_agenda = (caso_agenda.get("processos") or [None])[0]
+            descricao_agenda = "\n".join(filter(None, [
+                f"Processo: {numero_agenda}" if numero_agenda else "",
+                f"Abrir no AstraJus: {_base_publica(scope)}/radix/#/casos?id={caso_id}&aba=atividades&atividadeId={aid}",
+            ]))
             async with _cliente(20) as http_cliente:
                 if metodo == 'POST' and dados == {'reconciliar_institucional': True} and self.integracoes:
                     token, calendario = await agenda_atividades.conectar(registro_calendar, self.google_client_id, self.google_client_secret, http_cliente)
@@ -5940,7 +5946,7 @@ class _AutenticacaoBearer:
                         # Ler a identidade não cria recurso remoto; reservar antes do INSERT.
                         conexao = await agenda_atividades.conectar(registro_calendar, self.google_client_id, self.google_client_secret, http_cliente)
                         v = repo.reservar(caso_id, aid, conexao[1], scope["usuario"], chave, pedido)
-                    await agenda_atividades.processar(repo, v["id"], registro_calendar, self.google_client_id, self.google_client_secret, http_cliente, conexao)
+                    await agenda_atividades.processar(repo, v["id"], registro_calendar, self.google_client_id, self.google_client_secret, http_cliente, conexao, descricao_agenda)
                 else:
                     identificador = dados.get("vinculo_id")
                     versao = dados.get("versao")
@@ -5960,7 +5966,7 @@ class _AutenticacaoBearer:
                         remoto = await google_integracao.obter_evento_vinculado(http_cliente, token, calendario, v["evento_id"])
                         agenda_atividades.conferir_identidade(v, remoto)
                         repo.resolver(caso_id, aid, identificador, versao, dados["comando"], remoto)
-                    await agenda_atividades.processar(repo, v["id"], registro_calendar, self.google_client_id, self.google_client_secret, http_cliente)
+                    await agenda_atividades.processar(repo, v["id"], registro_calendar, self.google_client_id, self.google_client_secret, http_cliente, None, descricao_agenda)
                 atual = repo.obter(caso_id, aid, v["id"])
                 status = 202 if atual["estado"] in ("pendente", "cancelamento_pendente", "falha") else 200
                 await _json(send, status, {"agenda": agenda_atividades.resumo(atual)})
@@ -6198,7 +6204,10 @@ class _AutenticacaoBearer:
                 )
                 resultado = await google_integracao.criar_evento_calendar(
                     http_cliente, access_token, titulo, data_iso,
-                    f"Criado automaticamente pelo cnj-processual para o caso {caso_id}.", caso_id,
+                    "\n".join(filter(None, [
+                        f"Processo: {(caso.get('processos') or [''])[0]}" if caso.get("processos") else "",
+                        f"Abrir no AstraJus: {_base_publica(scope)}/radix/#/casos?id={caso_id}",
+                    ])), caso_id,
                 )
         except google_integracao.ErroGoogle as erro:
             log.warning("Caso %s: falha ao criar evento no Calendar: %s", caso_id, erro)
