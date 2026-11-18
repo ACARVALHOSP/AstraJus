@@ -99,7 +99,7 @@ export default function CartaoPublicacao({ item }: { item: ItemPublicacao }) {
         {item.texto && (
           <details>
             <summary>Texto da publicação</summary>
-            <Text as="p" size="2" mt="2">{item.texto}</Text>
+            <Text as="p" size="2" mt="2" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{item.texto}</Text>
           </details>
         )}
         <Flex gap="3" align="center" wrap="wrap">
