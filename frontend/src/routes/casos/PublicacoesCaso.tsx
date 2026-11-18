@@ -16,6 +16,7 @@ import {
   advogadosPublicacao, COR_STATUS, corTipo, dataCaptura, dataDivulgacao, nomePublicacao, ROTULO_STATUS, urlPublicacao, type PublicacaoOab,
 } from '../publicacoes-oab/dados'
 import AtividadePublicacao from '../publicacoes-oab/AtividadePublicacao'
+import TextoFormatado from '../../TextoFormatado'
 import '../publicacoes-oab/publicacoes.scss'
 
 type Status = PublicacaoOab['status']
@@ -135,7 +136,7 @@ export default function PublicacoesCaso({ casoId, onAlterado }: { casoId: string
         </dl>
         <div>
           <Text as="p" size="1" weight="bold" color="gray" className="oab-rotulo">Inteiro teor</Text>
-          <p className="oab-inteiro-teor">{p.dados?.texto || 'Inteiro teor não disponibilizado.'}</p>
+          <p className="oab-inteiro-teor">{p.dados?.texto ? <TextoFormatado texto={p.dados.texto} html={p.dados.texto_html} /> : 'Inteiro teor não disponibilizado.'}</p>
         </div>
         {link && <a href={link} target="_blank" rel="noopener noreferrer" className="oab-link">Abrir no DJEN</a>}
       </div>

@@ -1,4 +1,5 @@
 import Carregamento from '../../Carregamento'
+import TextoFormatado from '../../TextoFormatado'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Badge, Button, Callout, Text } from '@radix-ui/themes'
@@ -8,7 +9,7 @@ import { useNomePessoa } from '../../api/consultas'
 import { consultaAtividades, consultaMovimentacoes, consultaPublicacoes, consultaVinculos } from './consultasCaso'
 import {
   eventosAtividades, eventosMovimentacoes, eventosPublicacoes, eventosVinculos, isoLocalDe, montarLinha, rotuloDia,
-  TIPOS, type Evento, type TipoEvento,
+  LIMITE_TEXTO, TIPOS, type Evento, type TipoEvento,
 } from './linhaDoTempo'
 import './linha-do-tempo.scss'
 
@@ -95,7 +96,7 @@ export default function LinhaDoTempoCaso({ casoId }: { casoId: string }) {
                       <div className="linha-tempo__titulo">{e.titulo}</div>
                       {e.selos.length > 0 && <div className="linha-tempo__selos">{e.selos.map(s => <Badge key={s.texto} color={s.cor} variant="soft">{s.texto}</Badge>)}</div>}
                       {e.detalhe && <Text as="p" size="2" color="gray">{e.detalhe}</Text>}
-                      {e.texto && aberto && <p className="linha-tempo__texto">{e.texto}</p>}
+                      {e.texto && aberto && <p className="linha-tempo__texto"><TextoFormatado texto={e.texto} html={e.html} limite={LIMITE_TEXTO} /></p>}
                       {e.texto && (
                         <button type="button" className="linha-tempo__ver" aria-expanded={aberto} onClick={() => alternarDetalhe(e.id)}>
                           {aberto ? 'Ocultar detalhes' : 'Ver detalhes'}

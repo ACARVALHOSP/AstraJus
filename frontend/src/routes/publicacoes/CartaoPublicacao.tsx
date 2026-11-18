@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Badge, Button, Card, Flex, Heading, Text } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
+import TextoFormatado from '../../TextoFormatado'
 import { formatarDataSimples } from '../../utils/formatadores'
 
 export type Destinatario = { nome?: string; polo?: string }
@@ -18,6 +19,7 @@ export type ItemPublicacao = {
   destinatarios?: Destinatario[]
   destinatarioadvogados?: Advogado[]
   texto?: string
+  texto_html?: string | null
   link?: string
   hash?: string
 }
@@ -99,7 +101,7 @@ export default function CartaoPublicacao({ item }: { item: ItemPublicacao }) {
         {item.texto && (
           <details>
             <summary>Texto da publicação</summary>
-            <Text as="p" size="2" mt="2" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{item.texto}</Text>
+            <Text as="p" size="2" mt="2" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}><TextoFormatado texto={item.texto} html={item.texto_html} /></Text>
           </details>
         )}
         <Flex gap="3" align="center" wrap="wrap">
