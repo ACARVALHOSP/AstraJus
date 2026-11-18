@@ -1,47 +1,46 @@
-// Sugestão de prazo por modelo: a classe/assunto do processo escolhe o modelo e o texto da publicação
-// escolhe, entre os prazos desse modelo, o que a publicação está pedindo. Só sugere quando os dois
-// concordam e há um único prazo candidato; na dúvida, não sugere nada.
-import type { ItemPrazo, Modelo } from '../casos/modelosPrazo.ts'
+// Sugestão de prazo por regra: o backend já casou classe/assunto e palavras-chave da publicação
+// com as regras ativas e devolveu as sugestões da mais específica para a menos. Aqui só escolhemos
+// a primeira e traduzimos o motivo para uma frase legível. Só sugere; quem cria o prazo é a pessoa.
+import type { Sugestao } from '../casos/regrasPrazo.ts'
 
-export type SugestaoModeloPrazo = { modelo: string; prazo: ItemPrazo; classe: string }
-
-/** Minúsculas, sem acento e com espaços simples (igual ao `normalizar` de modelos_prazo.py). */
-export function normalizar(texto: string): string {
-  return texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().split(/\s+/).filter(Boolean).join(' ')
+export type SugestaoPrazoRegra = {
+  regra: string
+  prazo: { titulo: string; dias: number; contagem: 'uteis' | 'corridos' }
+  motivo: string
 }
 
-const PALAVRAS_VAZIAS = new Set(['prazo', 'para', 'sobre', 'dias', 'apresentar', 'protocolar', 'ofertar'])
-const TAMANHO_RADICAL = 6
-
-/** Radicais das palavras do título do prazo ("Contestação" → "contes"): casam com contestar, contestação etc. */
-function radicais(titulo: string): string[] {
-  return normalizar(titulo).split(/[^a-z0-9]+/).filter(p => p.length >= 4 && !PALAVRAS_VAZIAS.has(p)).map(p => p.slice(0, TAMANHO_RADICAL))
+function listar(itens: string[]): string {
+  if (itens.length <= 1) return itens[0] ?? ''
+  return `${itens.slice(0, -1).join(', ')} e ${itens[itens.length - 1]}`
 }
 
-/** O texto cita o prazo quando traz todas as palavras do título (pelo radical). */
-export function textoCitaPrazo(titulo: string, texto: string): boolean {
-  const rs = radicais(titulo)
-  if (!rs.length) return false
-  const palavras = normalizar(texto).split(/[^a-z0-9]+/).filter(Boolean)
-  return rs.every(r => palavras.some(p => p.startsWith(r)))
+/** Motivo em português: termos casados entre aspas e/ou o item de escopo (classe/assunto). */
+export function motivoDaSugestao(sugestao: Pick<Sugestao, 'termos' | 'correspondeu_a'>): string {
+  const partes: string[] = []
+  const termos = (sugestao.termos ?? []).filter(Boolean)
+  if (termos.length) partes.push(`termos ${listar(termos.map(t => `“${t}”`))}`)
+  const escopo = sugestao.correspondeu_a
+  if (escopo?.nome) partes.push(`${escopo.tipo === 'assunto' ? 'assunto' : 'classe'} “${escopo.nome}”`)
+  // Regra sem palavras-chave e sem escopo casado: não inventa motivo, assume o casamento da regra.
+  return partes.length ? partes.join(' e ') : 'a regra casou com o processo e a publicação'
 }
 
-/** `textosClasse`: classe e assuntos do processo (capa, DJEN). Um modelo vale quando o critério está contido
- *  em algum deles; dentre os prazos desses modelos, vale o que o texto da publicação cita. */
-export function sugerirPorModelo(
-  modelos: Array<Pick<Modelo, 'nome' | 'criterio' | 'ativo' | 'prazos'>>, textosClasse: string[], textoPublicacao: string,
-): SugestaoModeloPrazo | null {
-  const classes = textosClasse.filter(Boolean).map(t => ({ original: t, normal: normalizar(t) }))
-  const candidatos = new Map<string, SugestaoModeloPrazo>()
-  for (const modelo of modelos) {
-    const chave = normalizar(modelo.criterio)
-    const classe = chave ? classes.find(c => c.normal.includes(chave)) : undefined
-    if (!modelo.ativo || !classe) continue
-    for (const prazo of modelo.prazos) {
-      if (!textoCitaPrazo(prazo.titulo, textoPublicacao)) continue
-      const id = `${normalizar(prazo.titulo)}|${prazo.dias}|${prazo.contagem}`
-      if (!candidatos.has(id)) candidatos.set(id, { modelo: modelo.nome, prazo, classe: classe.original })
-    }
+/** Primeira sugestão (a mais específica, já ordenada pelo backend), ou null quando não há nenhuma. */
+export function escolherSugestao(sugestoes: Sugestao[]): SugestaoPrazoRegra | null {
+  const primeira = sugestoes?.[0]
+  if (!primeira) return null
+  return {
+    regra: primeira.regra.nome,
+    prazo: { titulo: primeira.tipo.nome, dias: primeira.tipo.dias, contagem: primeira.tipo.contagem },
+    motivo: motivoDaSugestao(primeira),
   }
-  return candidatos.size === 1 ? [...candidatos.values()][0] : null
+}
+
+/** Todas as sugestões no formato da tela; a primeira é a aplicada e as demais só são contadas. */
+export function sugestoesParaLista(sugestoes: Sugestao[]): SugestaoPrazoRegra[] {
+  return (sugestoes ?? []).map(s => ({
+    regra: s.regra.nome,
+    prazo: { titulo: s.tipo.nome, dias: s.tipo.dias, contagem: s.tipo.contagem },
+    motivo: motivoDaSugestao(s),
+  }))
 }

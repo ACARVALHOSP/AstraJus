@@ -51,7 +51,7 @@ import financeiro_juridico
 import triagem
 import emails_html
 import notificacoes
-import modelos_prazo
+import regras_prazo
 import horas
 import monitoramento_runtime
 import db as _db
@@ -4281,12 +4281,15 @@ class _AutenticacaoBearer:
         if (caminho == "/horas" or caminho.startswith("/horas/")) and self.gestao is not None:
             await self._horas(scope, receive, send, caminho[len("/horas"):].strip("/"))
             return
-        if (caminho == "/modelos-prazo" or caminho.startswith("/modelos-prazo/")) and self.gestao is not None:
-            await self._modelos_prazo(scope, receive, send, caminho[len("/modelos-prazo"):].strip("/"))
+        if (caminho == "/tipos-prazo" or caminho.startswith("/tipos-prazo/")) and self.gestao is not None:
+            await self._tipos_prazo(scope, receive, send, caminho[len("/tipos-prazo"):].strip("/"))
             return
-        rota_modelos = re.fullmatch(r"/casos/([^/]+)/modelos-prazo(?:/(.*))?", caminho)
-        if rota_modelos and self.gestao is not None:
-            await self._modelos_do_caso(scope, receive, send, rota_modelos[1], (rota_modelos[2] or "").strip("/"))
+        if (caminho == "/regras-prazo" or caminho.startswith("/regras-prazo/")) and self.gestao is not None:
+            await self._regras_prazo(scope, receive, send, caminho[len("/regras-prazo"):].strip("/"))
+            return
+        rota_regras_prazo = re.fullmatch(r"/casos/([^/]+)/regras-prazo(?:/(.*))?", caminho)
+        if rota_regras_prazo and self.gestao is not None:
+            await self._regras_prazo_do_caso(scope, receive, send, rota_regras_prazo[1], (rota_regras_prazo[2] or "").strip("/"))
             return
         if caminho.startswith("/casos/") and caminho.endswith("/aviso-processo-parado") and self.gestao is not None:
             await self._aviso_processo_parado(scope, receive, send, caminho[len("/casos/"):-len("/aviso-processo-parado")].rstrip("/"), usuario)
@@ -5230,117 +5233,185 @@ class _AutenticacaoBearer:
         conhecida = not partes or partes[0].isdigit() or partes[0] in ("relatorio", "tarifas", "cronometro", "faturar")
         await _responder(send, 405 if conhecida else 404, b"Metodo nao permitido" if conhecida else b"Nao encontrado")
 
-    async def _modelos_prazo(self, scope, receive, send, modelo_id: str) -> None:
-        """Modelos de prazos e tarefas por assunto ou classe: GET /modelos-prazo[/<id>],
-        POST /modelos-prazo, PATCH /modelos-prazo/<id>, DELETE /modelos-prazo/<id>."""
-        repo = modelos_prazo.Repositorio(self.gestao.caminho)
+    async def _tipos_prazo(self, scope, receive, send, tipo_id: str) -> None:
+        """Tipos de prazo: GET /tipos-prazo[/<id>], POST /tipos-prazo,
+        PATCH /tipos-prazo/<id>, DELETE /tipos-prazo/<id>."""
+        repo = regras_prazo.Repositorio(self.gestao.caminho)
         metodo = scope.get("method")
         try:
             if metodo == "GET":
-                if not modelo_id:
-                    await _json(send, 200, {"modelos": repo.listar()})
+                if not tipo_id:
+                    await _json(send, 200, {"tipos": repo.listar_tipos()})
                     return
-                modelo = repo.obter(modelo_id)
-                await _json(send, 200 if modelo else 404, {"modelo": modelo} if modelo else _erro("Modelo não encontrado."))
+                tipo = repo.obter_tipo(tipo_id)
+                await _json(send, 200 if tipo else 404,
+                            {"tipo": tipo} if tipo else _erro("Tipo de prazo não encontrado."))
                 return
-            if metodo == "POST" and not modelo_id:
+            if metodo == "POST" and not tipo_id:
                 dados = await self._corpo_json(receive, send)
                 if dados is not None:
-                    await _json(send, 201, {"modelo": repo.criar(dados, scope.get("usuario"))})
+                    await _json(send, 201, {"tipo": repo.criar_tipo(dados, scope.get("usuario"))})
                 return
-            if metodo == "PATCH" and modelo_id:
+            if metodo == "PATCH" and tipo_id:
                 dados = await self._corpo_json(receive, send)
                 if dados is None:
                     return
-                modelo = repo.atualizar(modelo_id, dados)
-                await _json(send, 200 if modelo else 404, {"modelo": modelo} if modelo else _erro("Modelo não encontrado."))
+                tipo = repo.atualizar_tipo(tipo_id, dados)
+                await _json(send, 200 if tipo else 404,
+                            {"tipo": tipo} if tipo else _erro("Tipo de prazo não encontrado."))
                 return
-            if metodo == "DELETE" and modelo_id:
-                achou = repo.excluir(modelo_id)
-                await _json(send, 200 if achou else 404, {"excluido": True} if achou else _erro("Modelo não encontrado."))
+            if metodo == "DELETE" and tipo_id:
+                try:
+                    achou = repo.excluir_tipo(tipo_id)
+                except ValueError as erro:
+                    await _json(send, 409, _erro(str(erro)))
+                    return
+                await _json(send, 200 if achou else 404,
+                            {"excluido": True} if achou else _erro("Tipo de prazo não encontrado."))
                 return
         except ValueError as erro:
             await _json(send, 400, _erro(str(erro)))
             return
         await _responder(send, 405, b"Metodo nao permitido")
 
-    async def _modelos_do_caso(self, scope, receive, send, caso_id: str, resto: str) -> None:
-        """GET /casos/<id>/modelos-prazo: modelos que combinam com o processo e ainda não foram decididos.
-        POST /casos/<id>/modelos-prazo/<modelo>/aplicar: {itens: [{tipo, titulo, data}]} cria as atividades
-        já revisadas pela pessoa. POST .../<modelo>/dispensar: não sugerir este modelo neste processo."""
-        repo = modelos_prazo.Repositorio(self.gestao.caminho)
+    async def _regras_prazo(self, scope, receive, send, resto: str) -> None:
+        """Regras de prazo: GET/POST /regras-prazo, GET/PATCH/DELETE /regras-prazo/<id>
+        e POST /regras-prazo/previa {palavras} -> leitura humana da expressão."""
+        repo = regras_prazo.Repositorio(self.gestao.caminho)
         metodo = scope.get("method")
-        if not resto:
-            if metodo != "GET":
-                await _responder(send, 405, b"Metodo nao permitido")
+        try:
+            if resto == "previa":
+                if metodo != "POST":
+                    await _responder(send, 405, b"Metodo nao permitido")
+                    return
+                dados = await self._corpo_json(receive, send)
+                if dados is not None:
+                    await _json(send, 200, {"leitura": regras_prazo.compilar(dados.get("palavras")).descrever()})
                 return
-            sugestoes = repo.sugestoes(caso_id)
+            if metodo == "GET":
+                if not resto:
+                    await _json(send, 200, {"regras": repo.listar_regras()})
+                    return
+                regra = repo.obter_regra(resto)
+                await _json(send, 200 if regra else 404,
+                            {"regra": regra} if regra else _erro("Regra de prazo não encontrada."))
+                return
+            if metodo == "POST" and not resto:
+                dados = await self._corpo_json(receive, send)
+                if dados is not None:
+                    await _json(send, 201, {"regra": repo.criar_regra(dados, scope.get("usuario"))})
+                return
+            if metodo == "PATCH" and resto:
+                dados = await self._corpo_json(receive, send)
+                if dados is None:
+                    return
+                regra = repo.atualizar_regra(resto, dados)
+                await _json(send, 200 if regra else 404,
+                            {"regra": regra} if regra else _erro("Regra de prazo não encontrada."))
+                return
+            if metodo == "DELETE" and resto:
+                achou = repo.excluir_regra(resto)
+                await _json(send, 200 if achou else 404,
+                            {"excluido": True} if achou else _erro("Regra de prazo não encontrada."))
+                return
+        except ValueError as erro:
+            await _json(send, 400, _erro(str(erro)))
+            return
+        await _responder(send, 405, b"Metodo nao permitido")
+
+    async def _regras_prazo_do_caso(self, scope, receive, send, caso_id: str, resto: str) -> None:
+        """POST /casos/<id>/regras-prazo/sugestoes: regras que casam com o processo e o evento.
+        POST .../<regra>/aplicar: cria UM prazo já revisado pela pessoa.
+        POST .../<regra>/dispensar: não sugerir esta regra para este evento."""
+        metodo = scope.get("method")
+        if metodo != "POST":
+            await _responder(send, 405, b"Metodo nao permitido")
+            return
+        repo = regras_prazo.Repositorio(self.gestao.caminho)
+        partes = resto.split("/") if resto else []
+        if partes == ["sugestoes"]:
+            if self.gestao.obter_caso(caso_id) is None:
+                await _json(send, 404, _erro("Processo não encontrado."))
+                return
+            dados = await self._corpo_json(receive, send)
+            if dados is None:
+                return
+            try:
+                sugestoes = repo.sugestoes(caso_id, dados)
+            except ValueError as erro:
+                await _json(send, 400, _erro(str(erro)))
+                return
             await _json(send, 200 if sugestoes is not None else 404,
                         {"sugestoes": sugestoes} if sugestoes is not None else _erro("Processo não encontrado."))
             return
-        partes = resto.split("/")
-        if metodo != "POST" or len(partes) != 2 or partes[1] not in ("aplicar", "dispensar"):
+        if len(partes) != 2 or partes[1] not in ("aplicar", "dispensar"):
             await _responder(send, 404, b"Nao encontrado")
             return
-        modelo_id, acao = partes
-        modelo = repo.obter(modelo_id)
-        if modelo is None or self.gestao.obter_caso(caso_id) is None:
-            await _json(send, 404, _erro("Modelo ou processo não encontrado."))
-            return
-        usuario = scope.get("usuario")
-        if acao == "dispensar":
-            if not repo.reservar(caso_id, modelo_id, "dispensado", usuario):
-                await _json(send, 409, _erro("Este modelo já foi aplicado ou dispensado neste processo."))
-                return
-            await _json(send, 200, {"dispensado": True})
+        regra_id, acao = partes
+        regra = repo.obter_regra(regra_id)
+        if regra is None or self.gestao.obter_caso(caso_id) is None:
+            await _json(send, 404, _erro("Regra ou processo não encontrado."))
             return
         dados = await self._corpo_json(receive, send)
         if dados is None:
             return
-        itens = dados.get("itens")
-        if not isinstance(itens, list) or not 1 <= len(itens) <= 2 * modelos_prazo.MAX_ITENS:
-            await _json(send, 400, _erro("Informe de 1 a %d itens para criar." % (2 * modelos_prazo.MAX_ITENS)))
+        usuario = scope.get("usuario")
+        origem, origem_id = dados.get("origem"), dados.get("origem_id")
+        if origem not in regras_prazo.ORIGENS:
+            await _json(send, 400, _erro("A origem deve ser publicacao ou movimento."))
             return
-        validos = []
-        for item in itens:
-            tipo = item.get("tipo") if isinstance(item, dict) else None
-            titulo = " ".join(str(item.get("titulo") or "").split()) if isinstance(item, dict) else ""
-            data = item.get("data") if isinstance(item, dict) else None
+        if not isinstance(origem_id, str) or not origem_id.strip():
+            await _json(send, 400, _erro("Informe o identificador do evento."))
+            return
+        origem_id = origem_id.strip()
+        if acao == "dispensar":
             try:
-                datetime.strptime(str(data), "%Y-%m-%d")
-            except ValueError:
-                await _json(send, 400, _erro("Informe a data de cada item no formato AAAA-MM-DD."))
+                decidiu = repo.reservar(regra_id, origem, origem_id, caso_id, "dispensado", usuario)
+            except ValueError as erro:
+                await _json(send, 400, _erro(str(erro)))
                 return
-            if tipo not in ("prazo", "tarefa") or not titulo or len(titulo) > 200:
-                await _json(send, 400, _erro("Cada item precisa de tipo (prazo ou tarefa) e de um título de até 200 caracteres."))
+            if not decidiu:
+                await _json(send, 409, _erro("Esta regra já foi aplicada ou dispensada para este evento."))
                 return
-            validos.append((tipo, titulo, data))
-        if not repo.reservar(caso_id, modelo_id, "aplicado", usuario):
-            await _json(send, 409, _erro("Este modelo já foi aplicado ou dispensado neste processo."))
+            await _json(send, 200, {"dispensado": True})
             return
-        criadas = []
+        titulo = " ".join(str(dados.get("titulo") or "").split())
+        if not titulo or len(titulo) > 200:
+            await _json(send, 400, _erro("Informe o título do prazo (até 200 caracteres)."))
+            return
+        data = dados.get("data")
         try:
-            agora = lambda: datetime.now(timezone.utc)
-            for tipo, titulo, data in validos:
-                criadas.append(self.gestao.criar_atividade(
-                    caso_id, tipo, titulo, data, None, f"Sugerido pelo modelo “{modelo['nome']}”. Confira antes de cumprir.", agora))
-        except Exception:
-            log.exception("Modelo de prazos: falha ao criar atividades (processo %s, modelo %s)", caso_id, modelo_id)
-            # Desfaz o que já foi criado para a pessoa poder tentar de novo sem duplicar.
-            sobraram = 0
-            for criada in criadas:
-                try:
-                    self.gestao.excluir_atividade(caso_id, criada["id"])
-                except Exception:
-                    sobraram += 1
-                    log.exception("Modelo de prazos: não foi possível desfazer a atividade %s", criada.get("id"))
-            if sobraram == 0:
-                repo.liberar(caso_id, modelo_id)
-            await _json(send, 500, _erro("Não foi possível criar todas as atividades. "
-                                         + ("Nada foi criado; tente de novo." if sobraram == 0
-                                            else f"{sobraram} atividade(s) ficaram criadas; confira o processo antes de tentar de novo.")))
+            datetime.strptime(str(data), "%Y-%m-%d")
+        except ValueError:
+            await _json(send, 400, _erro("Informe a data do prazo no formato AAAA-MM-DD."))
             return
-        await _json(send, 200, {"atividades": criadas})
+        observacoes = dados.get("observacoes")
+        if observacoes is not None and not isinstance(observacoes, str):
+            await _json(send, 400, _erro("Informe as observações como texto."))
+            return
+        observacoes = " ".join((observacoes or "").split()) \
+            or f"Sugerido pela regra “{regra['nome']}”. Confira antes de cumprir."
+        try:
+            reservou = repo.reservar(regra_id, origem, origem_id, caso_id, "aplicado", usuario)
+        except ValueError as erro:
+            await _json(send, 400, _erro(str(erro)))
+            return
+        if not reservou:
+            await _json(send, 409, _erro("Esta regra já foi aplicada ou dispensada para este evento."))
+            return
+        try:
+            atividade = self.gestao.criar_atividade(
+                caso_id, "prazo", titulo, data, None, observacoes, lambda: datetime.now(timezone.utc))
+        except Exception:
+            log.exception("Regra de prazo: falha ao criar o prazo (processo %s, regra %s)", caso_id, regra_id)
+            try:
+                repo.liberar(regra_id, origem, origem_id)
+            except Exception:
+                log.exception("Regra de prazo: não foi possível liberar a decisão (processo %s, regra %s)",
+                              caso_id, regra_id)
+            await _json(send, 500, _erro("Não foi possível criar o prazo. Nada foi criado; tente de novo."))
+            return
+        await _json(send, 201, {"atividade": atividade})
 
     async def _rascunhos(self, scope, send, caminho: str) -> None:
         """Processos criados sozinhos a partir de publicações, a confirmar.

@@ -7,7 +7,7 @@ from pathlib import Path
 import db
 import server
 import usuarios_admin
-from test_modelos_prazo import chamar
+from helpers_http import chamar
 
 AGORA = lambda: datetime(2026, 11, 12, 15, tzinfo=timezone.utc)
 ONTEM = (datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=-3))).date() - timedelta(days=1)).isoformat()

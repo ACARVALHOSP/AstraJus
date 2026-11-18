@@ -40,7 +40,7 @@ const Agenda = lazy(() => import('./routes/Agenda'))
 const PublicacoesOab = lazy(() => import('./routes/PublicacoesOab'))
 const Contatos = lazy(() => import('./routes/Contatos'))
 const Casos = lazy(() => import('./routes/Casos'))
-const ModelosPrazo = lazy(() => import('./routes/ModelosPrazo'))
+const RegrasPrazo = lazy(() => import('./routes/RegrasPrazo'))
 const HorasPagina = lazy(() => import('./routes/Horas'))
 import './app-radix.css'
 
@@ -80,7 +80,7 @@ const GRUPOS_BASE = [
     id: 'configuracoes', label: 'Configurações', icone: Settings,
     abas: [
       { id: 'acesso', label: 'Acesso', icone: KeyRound },
-      { id: 'modelos-prazo', label: 'Modelos de prazos', icone: ListChecks },
+      { id: 'modelos-prazo', label: 'Regras de prazos', icone: ListChecks },
       { id: 'administracao', label: 'Administração', icone: ShieldCheck },
       { id: 'modulos', label: 'Módulos', icone: Puzzle },
     ],
@@ -170,7 +170,7 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
   switch (abaAtiva) {
     case 'inicio': return <Home />
     case 'administracao': return <Administracao />
-    case 'modelos-prazo': return <ModelosPrazo />
+    case 'modelos-prazo': return <RegrasPrazo />
     case 'horas': return <HorasPagina />
     case 'acesso': return <Acesso />
     case 'processo': return <Processo />

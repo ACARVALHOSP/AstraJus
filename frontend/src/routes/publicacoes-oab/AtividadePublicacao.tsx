@@ -4,7 +4,7 @@ import { AlertTriangle, Info } from 'lucide-react'
 import { Button, Callout, Checkbox, Dialog, Flex, Select, Text, TextField } from '@radix-ui/themes'
 import { useCliente } from '../../api/ClienteContext'
 import { useCasos, useNomePessoa, useResponsaveis } from '../../api/consultas'
-import { buscarJson, enviarJson } from '../../api/rest'
+import { buscarJson, enviarJson, requisitar } from '../../api/rest'
 import { formatarDataSimples } from '../../utils/formatadores'
 import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
 import { numeroPublicacao, type PublicacaoOab } from './dados'
@@ -13,8 +13,8 @@ import { calcularPrazo, cruzaRecesso, dataValida, detectarDias, PRAZOS_PADRAO, R
 import { buscarPrazo } from './prazosBusca'
 import { PRAZOS_CATALOGO, ROTULO_RAMO, type RamoPrazo } from './prazosCatalogo'
 import { imprimirDemonstrativoPrazo } from './impressaoPrazo'
-import { sugerirPorModelo, type SugestaoModeloPrazo } from './sugestaoModelo'
-import type { Modelo } from '../casos/modelosPrazo'
+import { sugestoesParaLista, type SugestaoPrazoRegra } from './sugestaoModelo'
+import type { Sugestao } from '../casos/regrasPrazo'
 
 type CasoOpcao = { id: string; titulo?: string | null; processos?: string[] }
 const SEM_CASOS: CasoOpcao[] = []
@@ -72,11 +72,12 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
   const [jaCriada, setJaCriada] = useState(false)
   const trava = useRef(false)
   const [carregandoContexto, setCarregandoContexto] = useState(true)
-  // Sugestão por modelo: a classe/assunto do processo escolhe o modelo e o texto da publicação escolhe o prazo.
-  const [modelos, setModelos] = useState<Modelo[] | null>(null)
-  const [textosClasse, setTextosClasse] = useState<string[]>(() => publicacao?.dados?.nomeClasse ? [publicacao.dados.nomeClasse] : [])
-  const [origemModelo, setOrigemModelo] = useState<SugestaoModeloPrazo | null>(null)
-  const modeloAvaliado = useRef(false)
+  // Sugestão por regra de prazo: o backend casa classe/assunto e palavras-chave da publicação.
+  const [sugestoesRegra, setSugestoesRegra] = useState<SugestaoPrazoRegra[]>([])
+  const sugestaoRegra = sugestoesRegra[0] ?? null
+  // Marca quando a pessoa mexeu no prazo: a sugestão não pode sobrescrever a escolha dela.
+  const editouPrazo = useRef(false)
+  const sugestaoAplicada = useRef(false)
 
   // Calculadora avulsa: número do processo escolhido.
   useEffect(() => {
@@ -97,35 +98,37 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
       if (!ativo) return
       if (capa.status === 'fulfilled') {
         setMunicipio(capa.value.cidade || ''); if (capa.value.tribunal) setTribunal(capa.value.tribunal.toLowerCase())
-        const nomes = [capa.value.classe, ...(capa.value.assuntos ?? [])].filter((n): n is string => typeof n === 'string' && Boolean(n.trim()))
-        setTextosClasse(atual => [...new Set([...atual, ...nomes])])
       }
       setCarregandoContexto(false)
     })
     return () => { ativo = false }
   }, [cliente, casoId, numero])
 
-  // Modelos de prazo cadastrados (recurso complementar: sem permissão ou com erro, segue sem sugestão por modelo).
+  // Regras de prazo que casam com o processo e a publicação (recurso complementar: sem caso, sem
+  // permissão ou com erro, segue sem sugestão).
   useEffect(() => {
-    if (!publicacao || !cliente) return
+    if (!publicacao || !cliente || !casoId) return
     let ativo = true
-    buscarJson<{ modelos?: Modelo[] }>(cliente, '/modelos-prazo').then(r => { if (ativo) setModelos(r.modelos ?? []) }).catch(() => { if (ativo) setModelos([]) })
+    // `requisitar` (e não enviarJson): é um POST só de leitura e não deve invalidar o cache do app.
+    requisitar(cliente, `/casos/${encodeURIComponent(casoId)}/regras-prazo/sugestoes`, {
+      metodo: 'POST', corpo: { origem: 'publicacao', id: publicacao.hash, texto: textoPublicacao },
+    }).then(r => r.json() as Promise<{ sugestoes?: Sugestao[] }>)
+      .then(r => { if (ativo) setSugestoesRegra(sugestoesParaLista(r.sugestoes ?? [])) })
+      .catch(() => { if (ativo) setSugestoesRegra([]) })
     return () => { ativo = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cliente, publicacao?.hash])
+  }, [cliente, casoId, publicacao?.hash])
 
-  // Aplica a sugestão uma só vez, quando classe/assunto e modelos já chegaram, sem sobrescrever prazo numérico
-  // explícito no texto nem o que a pessoa já tenha escolhido.
+  // Aplica a primeira sugestão uma só vez, sem sobrescrever prazo numérico explícito no texto
+  // nem o que a pessoa já tenha escolhido. As demais regras só são contadas no aviso.
   useEffect(() => {
-    if (!publicacao || modeloAvaliado.current || carregandoContexto || modelos === null) return
-    modeloAvaliado.current = true
-    if (diasExplicitos) return
-    const achada = sugerirPorModelo(modelos, textosClasse, textoPublicacao)
-    if (!achada) return
+    if (!sugestaoRegra || sugestaoAplicada.current) return
+    sugestaoAplicada.current = true
     // eslint-disable-next-line react/set-state-in-effect
-    setOrigemModelo(achada); setPrazoPadrao('outro'); setDias(String(achada.prazo.dias)); setContagem(achada.prazo.contagem)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [carregandoContexto, modelos, textosClasse])
+    if (editouPrazo.current || diasExplicitos) { setSugestoesRegra([]); return }
+    // eslint-disable-next-line react/set-state-in-effect
+    setPrazoPadrao('outro'); setDias(String(sugestaoRegra.prazo.dias)); setContagem(sugestaoRegra.prazo.contagem)
+  }, [sugestaoRegra, diasExplicitos])
 
   useEffect(() => {
     let ativo = true
@@ -226,7 +229,7 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
           <div className="form-campo">
             <label className="form-campo-label" htmlFor="oab-prazo-padrao">Tipo de prazo</label>
             <Select.Root value={prazoPadrao} disabled={bloqueado} onValueChange={(v) => {
-              setPrazoPadrao(v); setOrigemModelo(null)
+              setPrazoPadrao(v); editouPrazo.current = true; setSugestoesRegra([])
               const p = buscarPrazo(v)
               if (p) { setDias(String(p.dias)); setContagem(p.contagem); setRamo(p.ramo); if (!publicacao && !titulo.trim()) setTitulo(`Prazo: ${p.rotulo}`) }
             }}>
@@ -246,13 +249,13 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
                 <Select.Item value="outro">Outro (informar os dias)</Select.Item>
               </Select.Content>
             </Select.Root>
-            {publicacao && origemModelo && (
+            {publicacao && sugestaoRegra && (
               <Text size="1" color="gray">
-                Sugerido pelo modelo “{origemModelo.modelo}”: classe/assunto “{origemModelo.classe}” e o texto da publicação cita “{origemModelo.prazo.titulo}”
-                ({origemModelo.prazo.dias} dias {origemModelo.prazo.contagem === 'uteis' ? 'úteis' : 'corridos'}). Confira: o prazo pode ser outro.
+                Sugerido pela regra “{sugestaoRegra.regra}”: {sugestaoRegra.motivo}. {sugestaoRegra.prazo.dias} dias {sugestaoRegra.prazo.contagem === 'uteis' ? 'úteis' : 'corridos'}
+                {sugestoesRegra.length > 1 ? ` e mais ${sugestoesRegra.length - 1} regra(s) casaram` : ''}. Confira: o prazo pode ser outro.
               </Text>
             )}
-            {publicacao && !origemModelo && sugestao && prazoPadrao === sugestao.id && !diasExplicitos && (
+            {publicacao && !sugestaoRegra && sugestao && prazoPadrao === sugestao.id && !diasExplicitos && (
               <Text size="1" color="gray">Sugerido pelo texto da publicação ({sugestao.rotulo}, {sugestao.base}). Confira: o prazo pode ser outro.</Text>
             )}
           </div>
@@ -274,7 +277,7 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
             )}
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="oab-prazo-dias">Quantidade de dias</label>
-              <TextField.Root id="oab-prazo-dias" type="number" min={1} max={999} value={dias} disabled={bloqueado} onChange={e => { setDias(e.target.value); setPrazoPadrao('outro'); setOrigemModelo(null) }} />
+              <TextField.Root id="oab-prazo-dias" type="number" min={1} max={999} value={dias} disabled={bloqueado} onChange={e => { setDias(e.target.value); setPrazoPadrao('outro'); editouPrazo.current = true; setSugestoesRegra([]) }} />
               <Text size="1" color="gray">{publicacao ? 'Sugerida quando o texto traz um prazo numérico explícito e único ou um tipo de manifestação reconhecido.' : 'Preenchida pelo tipo de prazo; pode ser ajustada.'}</Text>
             </div>
             <div className="form-campo">
@@ -298,7 +301,7 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
           <div className="aj-form-grade">
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="oab-prazo-contagem">Contagem</label>
-              <Select.Root value={contagem} disabled={bloqueado} onValueChange={(v) => { setContagem(v as Contagem); setOrigemModelo(null) }}>
+              <Select.Root value={contagem} disabled={bloqueado} onValueChange={(v) => { setContagem(v as Contagem); editouPrazo.current = true; setSugestoesRegra([]) }}>
                 <Select.Trigger id="oab-prazo-contagem" style={{ width: '100%' }} />
                 <Select.Content>
                   <Select.Item value="uteis">Dias úteis ({ramo === 'clt' ? 'CLT art. 775' : 'CPC art. 219'})</Select.Item>

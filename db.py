@@ -1524,9 +1524,9 @@ class RegistroClientesCasos:
             if pendencias:
                 raise ConflitoCaso("Este processo ainda tem " + " e ".join(pendencias)
                                    + ". Exclua ou mova esses registros antes de excluir o processo.")
-            # Dados derivados que não valem sem o processo: somem junto (as tabelas de horas e de modelos
+            # Dados derivados que não valem sem o processo: somem junto (as tabelas de horas e de regras
             # são criadas sob demanda, então só limpa as que existem).
-            for tabela in ("atividade_ciencia", "horas_cronometro", "modelo_prazo_decisoes"):
+            for tabela in ("atividade_ciencia", "horas_cronometro", "regra_prazo_decisoes"):
                 if conexao.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (tabela,)).fetchone():
                     conexao.execute(f"DELETE FROM {tabela} WHERE caso_id = ?", (caso_id,))
             conexao.execute(
