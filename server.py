@@ -85,7 +85,7 @@ DJEN_BASE_URL = "https://comunicaapi.pje.jus.br/api/v1/comunicacao"
 # A API DataJud é frequentemente lenta (observado ~48s em teste real); timeouts curtos
 # geram falso negativo, por isso o limite é alto e há uma nova tentativa.
 DATAJUD_TIMEOUT_S = 70.0
-DATAJUD_TENTATIVAS = 2
+DATAJUD_TENTATIVAS = 3  # o gateway do CNJ devolve 504 aos 60s; o sucesso é intermitente
 DATAJUD_BACKOFF_S = 3.0
 
 DJEN_TIMEOUT_S = 30.0
@@ -447,7 +447,7 @@ async def consultar_processo_datajud(tribunal: str, numero_processo: str) -> dic
     Limitações:
     - A API DataJud NÃO expõe nomes de partes (política de proteção de dados), então o
       resultado nunca inclui partes, autores ou réus.
-    - A API é lenta: esta tool usa timeout de 70s e uma nova tentativa automática em timeout,
+    - A API é lenta: esta tool usa timeout de 70s e até 3 tentativas automáticas em timeout,
       429 ou 502/503/504. Uma consulta com falhas pode levar mais de dois minutos.
     - Consulta apenas o tribunal informado; se não sabe o tribunal, deduza pelo número CNJ
       (segmento J.TR, ex: ".8.26." = TJSP) ou tente o tribunal superior correspondente.
