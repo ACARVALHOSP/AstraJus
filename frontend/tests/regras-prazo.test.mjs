@@ -95,5 +95,10 @@ test('resumo da regra mostra escopo, palavras e a combinação', () => {
     }),
     'Classe “A”, Assunto “B” e mais 1',
   )
-  assert.equal(resumoDaRegra({ escopo: [], palavras: '', combinacao: 'e' }), 'Sem escopo nem palavras-chave')
+  assert.equal(resumoDaRegra({ escopo: [], palavras: '', combinacao: 'e' }), 'Nenhum critério preenchido')
+  assert.equal(resumoDaRegra({ escopo: [], palavras: '', tipos_publicacao: ['Intimação'], combinacao: 'e' }), 'publicação do tipo “Intimação”')
+  assert.equal(
+    resumoDaRegra({ escopo: [], palavras: 'contestar', tipos_publicacao: ['Intimação', 'Despacho'], combinacao: 'ou' }),
+    'publicação do tipo “Intimação”, “Despacho” ou palavras-chave: contestar',
+  )
 })

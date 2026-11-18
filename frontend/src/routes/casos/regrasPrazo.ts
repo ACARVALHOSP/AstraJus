@@ -30,6 +30,8 @@ export type Regra = {
   escopo: EscopoItem[]
   /** Expressão de palavras-chave (até 500 caracteres); pode ser vazia. */
   palavras: string
+  /** Tipos de publicação do DJEN (comunicação ou documento); até 20. Regras antigas podem não trazer o campo. */
+  tipos_publicacao?: string[]
   combinacao: 'e' | 'ou'
   ativo: boolean
 }
@@ -40,22 +42,25 @@ export type Sugestao = {
   tipo: TipoPrazo
   correspondeu_a: EscopoItem | null
   termos: string[]
+  tipo_publicacao_casou?: string | null
 }
 
 const ROTULO_ESCOPO = { classe: 'Classe', assunto: 'Assunto' } as const
 
 /** Resumo legível do escopo e das palavras-chave, para a lista de regras.
  *  Com as duas partes, mostra a combinação escolhida ("e" ou "ou"). */
-export function resumoDaRegra(regra: Pick<Regra, 'escopo' | 'palavras' | 'combinacao'>): string {
+export function resumoDaRegra(regra: Pick<Regra, 'escopo' | 'palavras' | 'combinacao'> & { tipos_publicacao?: string[] }): string {
   const escopo = regra.escopo ?? []
   const nomes = escopo.map(item => `${ROTULO_ESCOPO[item.tipo]} “${item.nome}”`)
   const partes: string[] = []
   if (nomes.length === 1) partes.push(nomes[0])
   else if (nomes.length > 1) partes.push(`${nomes.slice(0, 2).join(', ')}${nomes.length > 2 ? ` e mais ${nomes.length - 2}` : ''}`)
+  const tipos = regra.tipos_publicacao ?? []
+  if (tipos.length) partes.push(`publicação do tipo ${tipos.slice(0, 3).map(t => `“${t}”`).join(', ')}${tipos.length > 3 ? ` e mais ${tipos.length - 3}` : ''}`)
   const palavras = (regra.palavras ?? '').trim()
   if (palavras) partes.push(`palavras-chave: ${palavras}`)
-  if (partes.length === 2) return `${partes[0]} ${regra.combinacao === 'ou' ? 'ou' : 'e'} ${partes[1]}`
-  return partes[0] ?? 'Sem escopo nem palavras-chave'
+  // Com mais de um critério preenchido, mostra a combinação escolhida ("e" ou "ou").
+  return partes.join(` ${regra.combinacao === 'ou' ? 'ou' : 'e'} `) || 'Nenhum critério preenchido'
 }
 
 /** Só precisa da ferramenta de feriados; o ClienteMCP satisfaz esta forma. */

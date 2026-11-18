@@ -268,8 +268,52 @@ class SugestoesTest(unittest.TestCase):
     def definir_acao(self, acao):
         definir_acao(self.caminho, self.caso["id"], acao)
 
-    def evento(self, texto, origem="publicacao", id="pub-1"):
-        return {"origem": origem, "id": id, "texto": texto}
+    def evento(self, texto, origem="publicacao", id="pub-1", tipos=None):
+        return {"origem": origem, "id": id, "texto": texto, **({"tipos": tipos} if tipos is not None else {})}
+
+    def test_regra_so_com_tipo_da_publicacao_casa_publicacao_e_nao_movimento(self):
+        t = self.criar_tipo()
+        self.criar_regra(t, escopo=[], palavras="", tipos_publicacao=["Intimação"])
+        achados = self.repo.sugestoes(self.caso["id"], self.evento("qualquer texto", tipos=["intimacao", "Despacho"]))
+        self.assertEqual([a["tipo_publicacao_casou"] for a in achados], ["Intimação"])
+        self.assertEqual(self.repo.sugestoes(self.caso["id"], self.evento("x", tipos=["Edital"])), [])
+        self.assertEqual(self.repo.sugestoes(self.caso["id"], self.evento("x", origem="movimento", tipos=["Intimação"])), [])
+        self.assertEqual(self.repo.sugestoes(self.caso["id"], self.evento("x")), [])
+
+    def test_combinacao_e_exige_os_tres_criterios_preenchidos(self):
+        t = self.criar_tipo()
+        self.criar_regra(t, tipos_publicacao=["Intimação"])  # escopo classe + palavras + tipo
+        self.definir_acao("Ação de Cobrança")
+        ok = self.evento("Prazo para contestar", tipos=["Intimação"])
+        self.assertEqual(len(self.repo.sugestoes(self.caso["id"], ok)), 1)
+        self.assertEqual(self.repo.sugestoes(self.caso["id"], self.evento("Prazo para contestar", tipos=["Edital"])), [])
+        self.assertEqual(self.repo.sugestoes(self.caso["id"], self.evento("outra coisa", tipos=["Intimação"])), [])
+
+    def test_combinacao_ou_basta_um_dos_criterios_preenchidos(self):
+        t = self.criar_tipo()
+        self.criar_regra(t, combinacao="ou", tipos_publicacao=["Intimação"])
+        self.definir_acao("Ação de Cobrança")
+        self.assertEqual(len(self.repo.sugestoes(self.caso["id"], self.evento("nada", tipos=["Edital"]))), 1)  # só escopo
+        self.assertEqual(len(self.repo.sugestoes(self.caso["id"], self.evento("nada", tipos=["Intimação"]))), 1)
+        self.definir_acao("Outra classe")
+        self.assertEqual(self.repo.sugestoes(self.caso["id"], self.evento("nada", tipos=["Edital"])), [])
+
+    def test_regra_sem_nenhum_criterio_e_recusada_e_tipos_invalidos_tambem(self):
+        t = self.criar_tipo()
+        with self.assertRaises(ValueError):
+            self.repo.criar_regra({"tipo_id": t["id"], "escopo": [], "palavras": "", "tipos_publicacao": []}, "ana", AGORA)
+        for ruim in ("Intimação", [1], [""], ["x"] * 21):
+            with self.assertRaises(ValueError):
+                self.repo.criar_regra({"tipo_id": t["id"], "tipos_publicacao": ruim}, "ana", AGORA)
+
+    def test_banco_antigo_sem_a_coluna_ganha_a_coluna(self):
+        antigo = Path(self.caminho).with_name("antigo.db")
+        with sqlite3.connect(antigo) as c:
+            c.execute("CREATE TABLE regras_prazo (id TEXT PRIMARY KEY, nome TEXT NOT NULL, tipo_id TEXT NOT NULL, "
+                      "escopo TEXT NOT NULL, palavras TEXT NOT NULL, combinacao TEXT NOT NULL DEFAULT 'e', "
+                      "ativo INTEGER NOT NULL DEFAULT 1, criado_por TEXT, criado_em TEXT NOT NULL, atualizado_em TEXT NOT NULL)")
+            c.execute("INSERT INTO regras_prazo VALUES ('r1','Velha','t1','[]','contestar','e',1,'x','2026-01-01','2026-01-01')")
+        self.assertEqual(regras_prazo.Repositorio(antigo).obter_regra("r1")["tipos_publicacao"], [])
 
     def test_e_com_escopo_vazio_casa_pelas_palavras(self):
         t = self.criar_tipo()

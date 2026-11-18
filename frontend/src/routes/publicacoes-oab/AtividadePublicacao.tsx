@@ -111,7 +111,10 @@ export default function AtividadePublicacao({ publicacao, casoIdInicial, dataBas
     let ativo = true
     // `requisitar` (e não enviarJson): é um POST só de leitura e não deve invalidar o cache do app.
     requisitar(cliente, `/casos/${encodeURIComponent(casoId)}/regras-prazo/sugestoes`, {
-      metodo: 'POST', corpo: { origem: 'publicacao', id: publicacao.hash, texto: textoPublicacao },
+      metodo: 'POST', corpo: {
+        origem: 'publicacao', id: publicacao.hash, texto: textoPublicacao,
+        tipos: [publicacao.dados?.tipoComunicacao, publicacao.dados?.tipoDocumento].filter((t): t is string => typeof t === 'string' && Boolean(t.trim())),
+      },
     }).then(r => r.json() as Promise<{ sugestoes?: Sugestao[] }>)
       .then(r => { if (ativo) setSugestoesRegra(sugestoesParaLista(r.sugestoes ?? [])) })
       .catch(() => { if (ativo) setSugestoesRegra([]) })

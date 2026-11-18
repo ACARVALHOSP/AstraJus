@@ -49,3 +49,11 @@ test('motivo só com a classe casada', () => {
 test('sem termos nem escopo, assume o casamento da regra', () => {
   assert.equal(motivoDaSugestao({ termos: [], correspondeu_a: null }), 'a regra casou com o processo e a publicação')
 })
+
+test('motivo com o tipo da publicação, sozinho ou junto de termos e escopo', () => {
+  assert.equal(motivoDaSugestao({ termos: [], correspondeu_a: null, tipo_publicacao_casou: 'Intimação' }), 'tipo de publicação “Intimação”')
+  assert.equal(
+    motivoDaSugestao({ termos: ['contestar'], correspondeu_a: { tipo: 'classe', codigo: null, nome: 'Cobrança' }, tipo_publicacao_casou: 'Despacho' }),
+    'termos “contestar” e tipo de publicação “Despacho” e classe “Cobrança”',
+  )
+})
