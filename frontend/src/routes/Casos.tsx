@@ -18,7 +18,7 @@ import PoloClientes from './casos/PoloClientes'
 import VinculosCaso from './casos/VinculosCaso'
 import LinhaDoTempoCaso from './casos/LinhaDoTempoCaso'
 import JurimetriaCaso from './casos/JurimetriaCaso'
-import SugestaoModelos from './casos/SugestaoModelos'
+import SugestaoPrazos from './casos/SugestaoPrazos'
 import './casos/processos-radix.css'
 
 const ABAS = ['cadastro', 'atividades', 'publicacoes', 'movimentacoes', 'vinculos', 'linha-do-tempo', 'jurimetria'] as const
@@ -127,7 +127,7 @@ export default function Casos() {
           ))}
           {resumo && <PoloClientes key={casoId} casoId={casoId} polos={resumo.polos} podeEditar={podeEditar('casos')} />}
         </div>
-        <SugestaoModelos key={casoId} casoId={casoId} onAplicado={() => { atualizarContagens(); setVersaoAtividades(v => v + 1) }} />
+        <SugestaoPrazos key={casoId} casoId={casoId} onAplicado={() => { atualizarContagens(); setVersaoAtividades(v => v + 1) }} />
         <Tabs.Root key={casoId} value={abaSelecionada} onValueChange={(v) => confirmarSaida(() => setAbaSelecionada(v as AbaId))}>
           <div ref={faixaAbas}>
             <Tabs.List className="casos-abas" aria-label="Detalhes do processo">

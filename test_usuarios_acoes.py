@@ -8,10 +8,9 @@ from unittest import mock
 
 import db
 import horas
-import modelos_prazo
 import server
 import usuarios_admin
-from test_modelos_prazo import chamar
+from helpers_http import chamar
 
 AGORA = lambda: datetime(2026, 11, 12, 15, tzinfo=timezone.utc)
 

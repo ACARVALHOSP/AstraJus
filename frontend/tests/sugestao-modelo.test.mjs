@@ -1,48 +1,51 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { sugerirPorModelo, textoCitaPrazo } from '../src/routes/publicacoes-oab/sugestaoModelo.ts'
+import { escolherSugestao, motivoDaSugestao, sugestoesParaLista } from '../src/routes/publicacoes-oab/sugestaoModelo.ts'
 
-const cobranca = {
-  nome: 'Cobrança', criterio: 'Ação de Cobrança', ativo: true,
-  prazos: [{ titulo: 'Contestação', dias: 15, contagem: 'uteis' }, { titulo: 'Réplica', dias: 10, contagem: 'uteis' }],
-}
-const trabalhista = {
-  nome: 'Trabalhista', criterio: 'Reclamação Trabalhista', ativo: true,
-  prazos: [{ titulo: 'Recurso ordinário', dias: 8, contagem: 'uteis' }],
+const classeCobranca = { tipo: 'classe', codigo: 1, nome: 'Ação de Cobrança' }
+
+function sugestao({ id = 'r1', nome = 'Contestação em cobrança', tipo = 't1', tipoNome = 'Contestação', dias = 15, contagem = 'uteis', escopo = [classeCobranca], palavras = 'contestar', termos = ['contestar'], correspondeu_a = classeCobranca } = {}) {
+  return {
+    regra: { id, nome, tipo_id: tipo, escopo, palavras, combinacao: 'e', ativo: true },
+    tipo: { id: tipo, nome: tipoNome, dias, contagem, base_legal: null, inicio: 'disponibilizacao', ativo: true },
+    correspondeu_a,
+    termos,
+  }
 }
 
-test('o texto cita o prazo pelo radical, sem acento e sem maiúsculas', () => {
-  assert.equal(textoCitaPrazo('Contestação', 'Fica a parte ré intimada para CONTESTAR o feito.'), true)
-  assert.equal(textoCitaPrazo('Recurso ordinário', 'Intime-se para razões do recurso ordinario.'), true)
-  assert.equal(textoCitaPrazo('Recurso ordinário', 'Intime-se para o recurso.'), false)
-  assert.equal(textoCitaPrazo('', 'qualquer texto'), false)
+test('sem sugestões, não sugere nada', () => {
+  assert.equal(escolherSugestao([]), null)
+  assert.equal(escolherSugestao(undefined), null)
 })
 
-test('classe do modelo e texto da publicação juntos escolhem o prazo', () => {
-  const r = sugerirPorModelo([cobranca, trabalhista], ['Ação de Cobrança de Aluguéis'], 'Intime-se a ré para apresentar contestação.')
-  assert.equal(r?.modelo, 'Cobrança')
+test('uma sugestão vira regra, prazo e motivo legíveis', () => {
+  const r = escolherSugestao([sugestao({ termos: ['contestar', 'prazo de 15 dias'] })])
+  assert.equal(r?.regra, 'Contestação em cobrança')
   assert.deepEqual(r?.prazo, { titulo: 'Contestação', dias: 15, contagem: 'uteis' })
-  assert.equal(r?.classe, 'Ação de Cobrança de Aluguéis')
+  assert.equal(r?.motivo, 'termos “contestar” e “prazo de 15 dias” e classe “Ação de Cobrança”')
 })
 
-test('sem sugestão quando a classe não bate com o modelo', () => {
-  assert.equal(sugerirPorModelo([cobranca], ['Procedimento Comum Cível'], 'Apresente contestação.'), null)
+test('várias sugestões: vale a primeira (a mais específica, já ordenada)', () => {
+  const primeira = sugestao({ id: 'r1', nome: 'Contestação', dias: 15 })
+  const segunda = sugestao({ id: 'r2', nome: 'Genérica', tipo: 't2', tipoNome: 'Manifestação', dias: 5, contagem: 'corridos', correspondeu_a: null, termos: [] })
+  const r = escolherSugestao([primeira, segunda])
+  assert.equal(r?.regra, 'Contestação')
+  assert.deepEqual(r?.prazo, { titulo: 'Contestação', dias: 15, contagem: 'uteis' })
+  assert.deepEqual(sugestoesParaLista([primeira, segunda]).map(s => s.regra), ['Contestação', 'Genérica'])
 })
 
-test('sem sugestão quando o texto não cita nenhum prazo do modelo', () => {
-  assert.equal(sugerirPorModelo([cobranca], ['Ação de Cobrança'], 'Vista dos autos.'), null)
+test('motivo só com termos casados', () => {
+  const r = escolherSugestao([sugestao({ correspondeu_a: null, termos: ['embargos', '5 dias'] })])
+  assert.equal(r?.motivo, 'termos “embargos” e “5 dias”')
 })
 
-test('na dúvida (dois prazos citados) não sugere', () => {
-  assert.equal(sugerirPorModelo([cobranca], ['Ação de Cobrança'], 'Apresente contestação e, depois, réplica.'), null)
+test('motivo só com a classe casada', () => {
+  const r = escolherSugestao([sugestao({ termos: [] })])
+  assert.equal(r?.motivo, 'classe “Ação de Cobrança”')
+  const assunto = escolherSugestao([sugestao({ termos: [], correspondeu_a: { tipo: 'assunto', codigo: null, nome: 'Horas extras' } })])
+  assert.equal(assunto?.motivo, 'assunto “Horas extras”')
 })
 
-test('modelo inativo não conta; o mesmo prazo repetido em dois modelos conta uma vez', () => {
-  assert.equal(sugerirPorModelo([{ ...cobranca, ativo: false }], ['Ação de Cobrança'], 'Apresente contestação.'), null)
-  const outro = { ...cobranca, nome: 'Cobrança 2', criterio: 'Cobrança' }
-  assert.equal(sugerirPorModelo([cobranca, outro], ['Ação de Cobrança'], 'Apresente contestação.')?.prazo.dias, 15)
-})
-
-test('o assunto também escolhe o modelo', () => {
-  assert.equal(sugerirPorModelo([trabalhista], ['Procedimento X', 'Reclamação Trabalhista - Horas extras'], 'Prazo para recurso ordinário.')?.prazo.dias, 8)
+test('sem termos nem escopo, assume o casamento da regra', () => {
+  assert.equal(motivoDaSugestao({ termos: [], correspondeu_a: null }), 'a regra casou com o processo e a publicação')
 })

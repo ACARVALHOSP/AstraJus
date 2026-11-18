@@ -72,10 +72,12 @@ O frontend Radix (`/radix/`) é servido diretamente pelo Caddy a partir de `/srv
 | GET, POST, DELETE | `/horas/cronometro` | Cronômetro individual: estado / liga (um por pessoa; 409 se já ligado) / descarta |
 | POST | `/horas/cronometro/parar` | Para o cronômetro e lança as horas (arredonda para cima, mínimo de 1 minuto, máximo de 24 h) |
 | POST | `/horas/faturar` | Cria UM lançamento de honorário no Financeiro com horas faturáveis de um só processo (`ids`, `vencimento`, `descricao`); exige edição em Lançamentos; reserva as horas antes (nunca cobra duas vezes), 409 se já faturadas |
-| GET, POST, PATCH, DELETE | `/modelos-prazo[/<id>]` | Modelos de prazos e tarefas por assunto ou classe processual (leitura: atividades ou processos; escrita: atividades) |
-| GET | `/casos/<id>/modelos-prazo` | Modelos ativos que combinam com a ação, a classe ou os assuntos do processo e ainda não foram aplicados nem dispensados nele |
-| POST | `/casos/<id>/modelos-prazo/<modelo>/aplicar` | Cria as atividades já revisadas (`itens: [{tipo, titulo, data}]`); 409 se o modelo já foi decidido no processo; desfaz tudo se a criação falhar no meio |
-| POST | `/casos/<id>/modelos-prazo/<modelo>/dispensar` | Não sugerir mais este modelo neste processo |
+| GET, POST, PATCH, DELETE | `/tipos-prazo[/<id>]` | Tipos de prazo (nome, dias, contagem, base legal e início); 409 ao excluir um tipo ainda usado por alguma regra (leitura: atividades ou processos; escrita: atividades) |
+| GET, POST, PATCH, DELETE | `/regras-prazo[/<id>]` | Regras que ligam escopo (classes/assuntos) e palavras-chave a um tipo de prazo (leitura: atividades ou processos; escrita: atividades) |
+| POST | `/regras-prazo/previa` | Leitura humana da expressão de palavras-chave (`{palavras}` -> `{leitura}`); 400 se a expressão for inválida |
+| POST | `/casos/<id>/regras-prazo/sugestoes` | Regras ativas que casam com o processo e o evento (`{origem, id, texto}`) e ainda não foram decididas nele; só sugere, nada cria |
+| POST | `/casos/<id>/regras-prazo/<regra>/aplicar` | Cria UM prazo (`titulo`, `data`, `observacoes` opcional); 409 se a regra já foi decidida para o evento; libera a decisão se a criação falhar |
+| POST | `/casos/<id>/regras-prazo/<regra>/dispensar` | Não sugerir mais esta regra para este evento |
 | POST | `/casos/<id>/atividades/<aid>/ciencia` | Confirma ciência de um prazo (só `tipo=prazo`; vale a primeira confirmação da data atual do prazo; 404 se não for prazo) |
 | POST | `/casos/<id>/evento-calendar` | Cria evento de dia inteiro no Google Calendar |
 | GET, POST | `/casos/<id>/publicacoes` | Publicações vinculadas ao caso / vincular |

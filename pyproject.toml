@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-py-modules = ["server", "db", "cnj", "tpu", "_util", "google_integracao", "agenda_atividades", "notificacoes", "monitoramento_runtime", "asaas_integracao", "integracoes", "integracoes_http", "usuarios_admin", "financeiro_juridico", "triagem", "polos", "modelos_prazo", "horas", "emails_html", "automacoes", "regras_responsavel", "nomes", "autocadastro"]
+py-modules = ["server", "db", "cnj", "tpu", "_util", "google_integracao", "agenda_atividades", "notificacoes", "monitoramento_runtime", "asaas_integracao", "integracoes", "integracoes_http", "usuarios_admin", "financeiro_juridico", "triagem", "polos", "regras_prazo", "horas", "emails_html", "automacoes", "regras_responsavel", "nomes", "autocadastro"]
 packages = ["modulos", "modulos.jurimetria", "modulos.jurisprudencia", "modulos.cacador_alvaras"]
 
 [tool.setuptools.package-data]

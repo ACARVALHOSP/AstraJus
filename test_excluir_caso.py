@@ -7,9 +7,9 @@ from pathlib import Path
 
 import db
 import horas
-import modelos_prazo
+import regras_prazo
 import server
-from test_modelos_prazo import chamar
+from helpers_http import chamar
 
 AGORA = lambda: datetime(2026, 11, 12, 15, tzinfo=timezone.utc)
 
@@ -75,21 +75,22 @@ class ExcluirCasoTest(unittest.TestCase):
         mensagem = self.excluir_http()[1]["mensagem"]
         self.assertIn("1 lançamento financeiro (em Financeiro) e 1 lançamento de horas (em Horas)", mensagem)
 
-    def test_cronometro_decisoes_de_modelo_e_ciencia_somem_junto(self):
+    def test_cronometro_decisoes_de_regra_e_ciencia_somem_junto(self):
         h = horas.Repositorio(self.caminho)
         h.iniciar_cronometro("ana@teste.com", self.caso["id"], None, AGORA)
-        m = modelos_prazo.Repositorio(self.caminho)
-        modelo = m.criar({"criterio": "Cobrança", "prazos": [{"titulo": "Contestação", "dias": 15}]}, "ana@teste.com", AGORA)
-        m.reservar(self.caso["id"], modelo["id"], "dispensado", "ana@teste.com", AGORA)
+        r = regras_prazo.Repositorio(self.caminho)
+        tipo = r.criar_tipo({"nome": "Contestação", "dias": 15}, "ana@teste.com", AGORA)
+        regra = r.criar_regra({"tipo_id": tipo["id"], "palavras": "contestar"}, "ana@teste.com", AGORA)
+        r.reservar(regra["id"], "publicacao", "pub-1", self.caso["id"], "dispensado", "ana@teste.com", AGORA)
         prazo = self.gestao.criar_atividade(self.caso["id"], "prazo", "Réplica", "2026-12-01", None, None, AGORA)
         self.gestao.confirmar_ciencia(self.caso["id"], prazo["id"], "ana@teste.com", AGORA)
-        self.assertEqual((self.contar("horas_cronometro"), self.contar("modelo_prazo_decisoes"), self.contar("atividade_ciencia")), (1, 1, 1))
+        self.assertEqual((self.contar("horas_cronometro"), self.contar("regra_prazo_decisoes"), self.contar("atividade_ciencia")), (1, 1, 1))
         self.assertEqual(self.excluir_http()[0], 200)
-        self.assertEqual((self.contar("horas_cronometro"), self.contar("modelo_prazo_decisoes"), self.contar("atividade_ciencia")), (0, 0, 0))
+        self.assertEqual((self.contar("horas_cronometro"), self.contar("regra_prazo_decisoes"), self.contar("atividade_ciencia")), (0, 0, 0))
         self.assertIsNone(h.cronometro("ana@teste.com"))
 
-    def test_funciona_sem_as_tabelas_de_horas_e_de_modelos(self):
-        # instalação que nunca abriu Horas nem Modelos: as tabelas ainda não existem
+    def test_funciona_sem_as_tabelas_de_horas_e_de_regras(self):
+        # instalação que nunca abriu Horas nem Regras: as tabelas ainda não existem
         self.assertEqual(self.contar("atividade_ciencia"), 0)
         with sqlite3.connect(self.caminho) as c:
             existentes = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
