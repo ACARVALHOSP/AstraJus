@@ -62,6 +62,14 @@ CATALOGO: dict[str, dict] = {
             "hora": {"tipo": "int", "rotulo": "Enviar a partir das (hora de Brasília)", "minimo": 0, "maximo": 23, "padrao": 8},
         },
     },
+    "responsavel_regras": {
+        "nome": "Responsável por regras",
+        "descricao": "Sugere e define o responsável de processos novos segundo as regras abaixo (quem captou, cliente, classe, "
+                     "assunto, tribunal, vara e padrão do escritório). Nunca troca um responsável já definido.",
+        "ativo_por_padrao": False,
+        "agendada": False,
+        "parametros": {},
+    },
     "processo_parado": {
         "nome": "Processo parado",
         "descricao": "Avisa o responsável (ou os administradores) quando um processo ativo fica muitos dias sem movimentação. "
@@ -231,7 +239,7 @@ class Repositorio:
             ultima = (execucoes(chave) or [None])[0]
             itens.append({
                 "chave": chave, "nome": definicao["nome"], "descricao": definicao["descricao"],
-                "parametros_definidos": definicao["parametros"],
+                "agendada": definicao.get("agendada", True), "parametros_definidos": definicao["parametros"],
                 **self.estado(chave), "ultima_execucao": ultima,
             })
         return itens

@@ -26,6 +26,7 @@ import './lista-casos.scss'
 
 export type Caso = {
   id: string
+  responsavel_regra?: { motivo: string; aplicado_em?: string } | null
   titulo?: string
   status?: string
   processos?: string[]

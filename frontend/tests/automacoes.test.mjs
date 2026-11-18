@@ -15,6 +15,14 @@ test('selo da rotina: desligada, sem execução, em dia, falha, interrompida e e
   assert.equal(seloRotina({ ativo: true, ultima_execucao: exec('executando') }).texto, 'Executando')
 })
 
+test('rotina sem agendamento mostra só ligada/desligada e o histórico fala em regras', () => {
+  assert.deepEqual(seloRotina({ ativo: true, agendada: false, ultima_execucao: null }), { texto: 'Ligada', cor: 'green' })
+  assert.deepEqual(seloRotina({ ativo: false, agendada: false, ultima_execucao: null }), { texto: 'Desligada', cor: 'gray' })
+  const est = { ativo: true, parametros: {} }
+  assert.equal(descreverAlteracao({ ocorrido_em: '', ator: 'usuario:ana', chave: 'responsavel_regras', antes: est, depois: est }, { responsavel_regras: 'Responsável' }),
+    'ana alterou as regras de "Responsável"')
+})
+
 test('data e hora no horário de Brasília', () => {
   assert.equal(quandoBrasilia('2026-11-17T22:30:00+00:00'), '17/11/2026 19:30')
   assert.equal(quandoBrasilia('2026-11-18T02:05:00+00:00'), '17/11/2026 23:05') // vira o dia em UTC, não em Brasília

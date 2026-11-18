@@ -1463,6 +1463,15 @@ class RegistroClientesCasos:
                 for linha in linhas
             ]
 
+    def definir_responsavel_se_vazio(self, caso_id: str, responsavel: str) -> bool:
+        """Preenche o responsável só se o processo ainda não tem um (a checagem e a gravação são uma única instrução,
+        então nada que alguém acabou de definir é sobrescrito). Devolve True se gravou."""
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            cursor = conexao.execute(
+                "UPDATE casos SET responsavel = ? WHERE id = ? AND (responsavel IS NULL OR trim(responsavel) = '')",
+                (responsavel, caso_id))
+            return cursor.rowcount > 0
+
     def excluir_caso(self, caso_id: str) -> bool:
         """Remove o caso e tudo que depende dele (processos, clientes adicionais, linha do
         tempo). Publicações já capturadas (aba "Publicações por OAB") que apontavam pra este

@@ -5,6 +5,7 @@ import { AlertTriangle } from 'lucide-react'
 import { useAvisos } from '../../Avisos'
 import { useCliente } from '../../api/ClienteContext'
 import { ErroMCP } from '../../api/mcpClient'
+import { useSugestaoResponsavel } from '../../api/consultas'
 import { enviarJson } from '../../api/rest'
 import { formatarNomeExibicao } from '../../utils/formatadores'
 import type { Caso } from './ListaCasos'
@@ -28,6 +29,7 @@ export default function NovoProcessoModal({
   const [clienteSelecionado, setClienteSelecionado] = useState<ClienteOpcao | null>(null)
   const [titulo, setTitulo] = useState('')
   const [responsavel, setResponsavel] = useState('')
+  const sugestao = useSugestaoResponsavel({ clienteId: clienteSelecionado?.id, enabled: open }).data
   const [acao, setAcao] = useState('')
   const [foro, setForo] = useState('')
   const [pasta, setPasta] = useState('')
@@ -149,6 +151,11 @@ export default function NovoProcessoModal({
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="caso-responsavel">Responsável</label>
               <TextField.Root id="caso-responsavel" placeholder="Ex.: Dra. Fernanda Reis" autoComplete="off" value={responsavel} onChange={(e) => setResponsavel(e.target.value)} />
+              {sugestao?.responsavel && !responsavel.trim() && (
+                <Text as="p" size="1" color="gray">
+                  Pelas regras: {sugestao.responsavel} ({sugestao.motivo}). <Button variant="ghost" size="1" type="button" onClick={() => setResponsavel(sugestao.responsavel ?? '')}>Usar sugestão</Button>
+                </Text>
+              )}
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="caso-acao">Ação</label>
