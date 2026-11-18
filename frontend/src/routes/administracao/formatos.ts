@@ -39,7 +39,7 @@ const CAMPOS_CADASTRO: Record<string, string> = {
 const CATEGORIAS_LIMPEZA: Record<string, string> = {
   publicacoes: 'Publicações capturadas', monitoramento_tecnico: 'Dados técnicos de monitoramento', notificacoes: 'Notificações',
 }
-const ACOES: Record<string, string> = { criar: 'Cadastro criado', atualizar: 'Cadastro alterado', limpar_banco: 'Limpeza de dados', baixa_geral: 'Baixa geral de prazos e tarefas', recapturar_formatacao: 'Recaptura da formatação das publicações', novo_token: 'Novo token gerado', apagar: 'Usuário apagado' }
+const ACOES: Record<string, string> = { criar: 'Cadastro criado', atualizar: 'Cadastro alterado', limpar_banco: 'Limpeza de dados', baixa_geral: 'Baixa geral de prazos e tarefas', normalizar_nomes: 'Normalização de nomes', desfazer_normalizar_nomes: 'Normalização de nomes desfeita', recapturar_formatacao: 'Recaptura da formatação das publicações', novo_token: 'Novo token gerado', apagar: 'Usuário apagado' }
 
 /** Rótulo da ação do histórico administrativo; ação desconhecida aparece como veio. */
 export const rotuloAcao = (acao: string): string => ACOES[acao] ?? acao

@@ -896,6 +896,11 @@ class RegistroMonitoramentos(_RegistroJSON):
 # --- Clientes e casos: fundação para as fases seguintes (CRUD, timeline, OAB, Google) -----
 
 
+def _dobrar_nome(texto):
+    import nomes
+    return nomes.dobrar(texto)
+
+
 class RegistroClientesCasos:
     """CRUD mínimo de clientes e casos/pastas, usado a partir da Fase 1.
 
@@ -1064,6 +1069,12 @@ class RegistroClientesCasos:
                 "FROM clientes WHERE lower(nome) = lower(?) LIMIT 1",
                 (nome,),
             ).fetchone()
+            if not linha:
+                # lower() do SQLite não trata acento ("JOSÉ" x "José"): compara de novo sem acento e sem caixa.
+                chave = _dobrar_nome(nome)
+                achado = next((i for i, n in conexao.execute("SELECT id, nome FROM clientes") if _dobrar_nome(n) == chave), None) if chave else None
+                if achado:
+                    return self.obter_cliente(achado)
         return _linha_cliente(linha) if linha else None
 
     def listar_clientes(self) -> list[dict]:

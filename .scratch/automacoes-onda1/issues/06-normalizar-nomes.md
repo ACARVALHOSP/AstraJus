@@ -1,6 +1,6 @@
 # Normalizar nomes
 
-Status: especificado (aguardando 2 decisões do escritório, ver o fim)
+Status: implementado (decisões: incluir processos; exceções editáveis na tela)
 Blocked by: — (nenhum)
 Tamanho: P
 Spec: ../spec.md (seção 5)
@@ -60,3 +60,11 @@ o título de processo que a pessoa já editou à mão (caixa mista = não toca).
 - Aplicar grava o anterior; desfazer restaura; desfazer recusa quando o nome mudou depois.
 - Duplicado aparece marcado e fica fora da seleção padrão.
 - CPF/CNPJ, OAB, CNJ e capa permanecem intactos (teste com valores nesses campos).
+
+## Implementação
+- `nomes.py` (regra, exceções, saneamento, desfazer), rotas `/admin/nomes/{verificar,aplicar,desfazer,excecoes}`, painel "Normalizar nomes"
+  na aba Banco de dados. Cliente novo e título criados a partir de publicação já saem normalizados (partes e capa ficam como vieram).
+- `buscar_cliente_por_nome` passou a ignorar acento (o `lower()` do SQLite não trata "JOSÉ").
+- Desvio do plano: a regra **não** foi espelhada no frontend. Nada no frontend grava nome, e a exibição (`formatarNomeExibicao`) continua
+  como estava; espelhar seria código sem uso. `frontend/tests/casos-nomes.json` é a tabela de referência dos testes Python.
+- Verificação: `test_nomes.py` (17) + suíte completa; no navegador: verificar, aplicar a todos e desfazer todos.

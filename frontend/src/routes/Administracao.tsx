@@ -27,6 +27,7 @@ import { NIVEIS, PERFIS, aplicarPerfil, grauPadrao, perfilDe, type Grau } from '
 import { descreverCampos, haQuanto, lerValorHora, listarEmFrase, resumoVinculos, rotuloAcao, type Vinculos } from './administracao/formatos'
 import IntegracoesAdmin from './administracao/IntegracoesAdmin'
 import AutomacoesAdmin from './administracao/AutomacoesAdmin'
+import NormalizarNomes from './administracao/NormalizarNomes'
 import './administracao.scss'
 
 type Usuario = {
@@ -338,6 +339,7 @@ export default function Administracao() {
           <div className="administracao__acoes">
             <Button variant="soft" size="2" disabled={ocupado} onClick={() => void executar(recapturarFormatacao)}>{ocupado && progressoFormatacao ? progressoFormatacao : 'Recapturar formatação das publicações antigas'}</Button>
           </div>
+          <NormalizarNomes token={sessao} />
           <Heading as="h2" size="4" mt="4">Baixa geral</Heading>
           <Text as="p" size="2" color="gray">Marca como cumpridos todos os prazos e tarefas em aberto do escritório, para começar do zero. Não dá para desfazer.</Text>
           <div className="administracao__acoes">

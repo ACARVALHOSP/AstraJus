@@ -43,6 +43,7 @@ import cnj
 import tpu
 import asaas_integracao
 import automacoes
+import nomes as nomes_mod
 import regras_responsavel
 import agenda_atividades
 import financeiro_juridico
@@ -3461,9 +3462,12 @@ def _criar_caso_de_publicacao(gestao, publicacoes, publicacao, dados, usuario_pa
     partes = d.get("destinatarios") or []
     autores = " / ".join(dict.fromkeys(p["nome"] for p in partes if p.get("nome") and str(p.get("polo") or "").upper() == "A"))
     reus = " / ".join(dict.fromkeys(p["nome"] for p in partes if p.get("nome") and str(p.get("polo") or "").upper() == "P"))
-    nome = f"{autores or 'Parte Ativa Não Informada'} X {reus or 'Parte Passiva Não Informada'}"
+    # Título e cliente novo saem em caixa de título (o tribunal manda em maiúsculas); partes ficam como vieram.
+    excecoes = nomes_mod.Nomes(gestao.caminho).excecoes()
+    nome = (f"{nomes_mod.normalizar(autores, excecoes) or 'Parte Ativa Não Informada'} X "
+            f"{nomes_mod.normalizar(reus, excecoes) or 'Parte Passiva Não Informada'}")
     cliente_id = dados.get("cliente_id")
-    nome_cliente = (dados.get("nome_cliente") or publicacao.get("nome_pesquisado") or "").strip()
+    nome_cliente = nomes_mod.normalizar((dados.get("nome_cliente") or publicacao.get("nome_pesquisado") or "").strip(), excecoes)
     if not cliente_id and not nome_cliente:
         return None, _erro("Selecione um cliente ou informe nome_cliente.")
     corpo = {
@@ -4072,7 +4076,7 @@ class _AutenticacaoBearer:
             # acesso por link assinado e temporário (sem token de usuário)
             await _servir_certidao(scope, send)
             return
-        if caminho.startswith('/admin/usuarios/') or caminho.startswith('/admin/banco/') or caminho.startswith('/admin/automacoes/'):
+        if caminho.startswith('/admin/usuarios/') or caminho.startswith('/admin/banco/') or caminho.startswith('/admin/automacoes/') or caminho.startswith('/admin/nomes/'):
             import usuarios_admin
             await usuarios_admin.tratar(self, scope, receive, send, sys.modules[__name__])
             return
