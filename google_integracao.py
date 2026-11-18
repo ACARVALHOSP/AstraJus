@@ -70,6 +70,7 @@ async def obter_evento_vinculado(cliente, token, calendario, evento_id):
 
 def _corpo_evento_vinculado(vinculo):
     return {
+        **({"description": vinculo["descricao"]} if vinculo.get("descricao") else {}),
         "summary": vinculo["titulo"], "start": {"date": vinculo["data"]},
         "end": {"date": (date.fromisoformat(vinculo["data"]) + timedelta(days=1)).isoformat()},
         "extendedProperties": {"private": {"cnj_caso_id": vinculo["caso_id"],
