@@ -280,8 +280,10 @@ def atualizar_perfil(registro, login, dados):
     """Autoatendimento: a própria pessoa muda nome de exibição, e-mail e foto. Nível, status e permissões
     não passam por aqui. `foto` aceita uma imagem pequena em data URL, ou '' para remover."""
     from db import _abrir
-    if not isinstance(dados, dict) or set(dados) - {'nome_completo', 'email', 'foto'}:
+    if not isinstance(dados, dict) or set(dados) - {'nome_completo', 'email', 'foto', 'avisos_publicacao'}:
         raise ValueError('Campos de perfil inválidos.')
+    if 'avisos_publicacao' in dados and dados['avisos_publicacao'] not in ('imediato', 'resumo', 'ambos'):
+        raise ValueError('Escolha como receber os e-mails de publicações: imediato, resumo ou ambos.')
     comuns = {k: dados[k] for k in ('nome_completo', 'email') if k in dados}
     comuns = {k: v for k, v in validar(comuns).items()} if comuns else {}
     if 'email' in comuns and not comuns['email']:
@@ -300,6 +302,8 @@ def atualizar_perfil(registro, login, dados):
         r.update(comuns)
         if 'foto' in dados:
             r['foto'] = dados['foto'] or None
+        if 'avisos_publicacao' in dados:
+            r['avisos_publicacao'] = dados['avisos_publicacao']
         if r.get('email'):
             if c.execute('SELECT 1 FROM usuarios WHERE lower(email)=lower(?) AND nome<>?', (r['email'], login)).fetchone():
                 raise ValueError('E-mail já utilizado por outro usuário.')
@@ -308,7 +312,8 @@ def atualizar_perfil(registro, login, dados):
         r['atualizado_em'] = agora()
         r = gravar(c, login, r)
         campos = sorted([k for k in ('nome_completo', 'email') if anterior.get(k) != r.get(k)]
-                        + (['foto'] if anterior.get('foto') != r.get('foto') else []))
+                        + (['foto'] if anterior.get('foto') != r.get('foto') else [])
+                        + (['avisos_publicacao'] if anterior.get('avisos_publicacao') != r.get('avisos_publicacao') else []))
         if campos:
             c.execute('INSERT INTO usuarios_auditoria (ocorrido_em, ator, usuario, acao, campos) VALUES (?, ?, ?, ?, ?)',
                       (agora(), 'usuario:' + login, login, 'perfil', json.dumps(campos)))

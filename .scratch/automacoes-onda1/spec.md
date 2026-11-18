@@ -82,23 +82,11 @@ duplica avisos; faixa inválida (fora de 0–30, repetida) é recusada na tela c
 
 ## 3. Resumo diário das publicações (ticket 04)
 
-**Hoje:** cada publicação nova gera aviso (sino e e-mail do monitoramento). Em dia movimentado, são vários e-mails.
-
-**Mudança:** um **e-mail único por pessoa por dia** com tudo o que chegou desde o último resumo.
-
-- **Quando:** 08:00, dias em que houve publicação. **Sem publicação nova, não envia nada.**
-- **Quem recebe:** o dono de cada monitoramento (a pessoa cuja OAB captou); opcionalmente os administradores recebem um
-  resumo geral do escritório (parâmetro, desligado).
-- **Conteúdo:** agrupado por processo — número, tribunal, classe, **tipo de ato e prazo sugerido pela triagem** quando
-  existirem, uma linha de contexto (até 200 caracteres) e link. Processos não cadastrados aparecem em bloco separado
-  ("sem processo cadastrado"). Botão "Abrir Publicações recebidas".
-- **Preferência por pessoa** (em Meu perfil, junto da pendência "preferências de notificação"): *imediato*, *resumo diário*
-  ou *ambos*. Padrão: **ambos**, para não mudar o comportamento atual sem aviso.
-- **Idempotência:** guarda a data do último resumo por pessoa. Falha de envio repete na rodada seguinte; se o resumo de um dia
-  só sair no dia seguinte, o assunto indica a data a que ele se refere.
-
-**Aceite:** 12 publicações no dia geram 1 e-mail por destinatário com as 12; dia sem publicação não gera e-mail; quem
-escolheu "só imediato" não recebe resumo; rodar duas vezes não duplica.
+Especificação completa e decisões abertas em `issues/04-resumo-diario.md`. Em resumo: um e-mail por pessoa por dia
+(padrão 08:00, horário de Brasília) com as publicações novas dos monitoramentos dela (OAB e processo) desde o último resumo,
+agrupadas por processo e com a sugestão de ato e prazo da triagem quando existir; sem texto da publicação; dia sem
+publicação não envia. Preferência por pessoa em Meu perfil: cada publicação, resumo do dia ou os dois (padrão: os dois).
+Rotina desligada por padrão; desligada, todos voltam ao e-mail de hoje.
 
 ## 4. Responsável por regras de distribuição (ticket 05)
 

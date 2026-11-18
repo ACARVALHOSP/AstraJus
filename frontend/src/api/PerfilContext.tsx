@@ -1,3 +1,4 @@
+import { normalizarAvisos, type AvisosPublicacao } from '../utils/avisosPublicacao'
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useCliente } from './ClienteContext'
 
@@ -14,8 +15,8 @@ const ABA_AREA: Record<string, string> = {
   contatos: 'contatos', processo: 'pesquisa', publicacoes: 'pesquisa', financeiro: 'financeiro', pagamentos: 'pagamentos', integracoes: 'integracoes',
 }
 
-type Dados = { login: string | null; nome: string | null; email: string; foto: string; nivel: string; permissoes: Record<string, Grau> }
-type Valor = { login: string | null; nome: string | null; email: string; foto: string; atualizarPerfil: (novos: Partial<Pick<Dados, 'nome' | 'email' | 'foto'>>) => void; nivel: string | null; permissoes: Record<string, Grau> | null; abaPermitida: (aba: string) => boolean; areaPermitida: (area: string) => boolean; podeEditar: (area: string) => boolean }
+type Dados = { login: string | null; nome: string | null; email: string; foto: string; avisosPublicacao: AvisosPublicacao; nivel: string; permissoes: Record<string, Grau> }
+type Valor = { login: string | null; nome: string | null; email: string; foto: string; avisosPublicacao: AvisosPublicacao; atualizarPerfil: (novos: Partial<Pick<Dados, 'nome' | 'email' | 'foto' | 'avisosPublicacao'>>) => void; nivel: string | null; permissoes: Record<string, Grau> | null; abaPermitida: (aba: string) => boolean; areaPermitida: (area: string) => boolean; podeEditar: (area: string) => boolean }
 const PerfilContext = createContext<Valor | null>(null)
 
 export function PerfilProvider({ children }: { children: ReactNode }) {
@@ -28,8 +29,8 @@ export function PerfilProvider({ children }: { children: ReactNode }) {
     void fetch('/responsaveis/me', { headers: { Authorization: `Bearer ${cliente.token}` }, cache: 'no-store', signal: controlador.signal })
       .then(async r => {
         if (!r.ok) throw new Error('Perfil indisponível')
-        const d = await r.json() as { usuario: { login?: string; nome_completo?: string; email?: string; foto?: string; nivel_acesso: string; permissoes?: Record<string, Grau> } }
-        if (!controlador.signal.aborted) setPerfil({ login: d.usuario.login ?? null, nome: d.usuario.nome_completo ?? null, email: d.usuario.email ?? '', foto: d.usuario.foto ?? '', nivel: d.usuario.nivel_acesso, permissoes: d.usuario.permissoes ?? {} })
+        const d = await r.json() as { usuario: { login?: string; nome_completo?: string; email?: string; foto?: string; avisos_publicacao?: string; nivel_acesso: string; permissoes?: Record<string, Grau> } }
+        if (!controlador.signal.aborted) setPerfil({ login: d.usuario.login ?? null, nome: d.usuario.nome_completo ?? null, email: d.usuario.email ?? '', foto: d.usuario.foto ?? '', avisosPublicacao: normalizarAvisos(d.usuario.avisos_publicacao), nivel: d.usuario.nivel_acesso, permissoes: d.usuario.permissoes ?? {} })
       })
       .catch(() => { if (!controlador.signal.aborted) setPerfil(null) })
     return () => { controlador.abort(); setPerfil(null) }
@@ -40,6 +41,7 @@ export function PerfilProvider({ children }: { children: ReactNode }) {
     nome: perfil?.nome ?? null,
     email: perfil?.email ?? '',
     foto: perfil?.foto ?? '',
+    avisosPublicacao: perfil?.avisosPublicacao ?? 'ambos',
     atualizarPerfil: novos => setPerfil(atual => atual && { ...atual, ...novos }),
     nivel: perfil?.nivel ?? null,
     permissoes: perfil?.permissoes ?? null,

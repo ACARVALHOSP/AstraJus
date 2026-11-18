@@ -2211,7 +2211,15 @@ async def _entregar_monitoramento(repo, registro, mid, mon, gestao, enviar_fn, a
         except Exception:
             falhou = True
             log.exception('Monitoramento %s: destino local pendente', mid)
-    emails = repo.pendentes(mid, 'email')
+    # Quem recebe só o resumo diário não recebe o e-mail de cada lote: os itens ficam retidos. Rede de segurança: o que o
+    # resumo não levou em RETENCAO_RESUMO_HORAS sai pelo e-mail normal (rotina desligada, e-mail fora do ar...).
+    modo = automacoes.modo_avisos_publicacao(registro.caminho, mon['usuario'])
+    limite_retencao = agora_dt - timedelta(hours=automacoes.RETENCAO_RESUMO_HORAS)
+
+    def retido(item) -> bool:
+        return modo == 'resumo' and item['resumo'] == 0 and monitoramento_runtime.utc(item['criado_em']) > limite_retencao
+
+    emails = [i['dados'] for i in repo.pendentes_detalhe(mid, 'email') if not retido(i)]
     destino = _email_do_monitoramento(registro, mon['usuario'])
     if emails and enviar_fn is not None and destino:
         try:
@@ -2226,7 +2234,7 @@ async def _entregar_monitoramento(repo, registro, mid, mon, gestao, enviar_fn, a
         except Exception:
             falhou = True
             log.exception('Monitoramento %s: entrega de e-mail pendente', mid)
-    repo.marcar(mid + ':djen', emails_pendentes=len(repo.pendentes(mid, 'email')),
+    repo.marcar(mid + ':djen', emails_pendentes=sum(1 for i in repo.pendentes_detalhe(mid, 'email') if not retido(i)),
                 locais_pendentes=len(repo.pendentes(mid, 'local')),
                 entrega_erro='Há entregas pendentes. Nova tentativa no próximo ciclo.' if falhou else None)
     return not falhou
@@ -2248,9 +2256,11 @@ async def _verificar_um_monitoramento(
         return False
     repo.marcar(chave, ultima_tentativa=agora_dt.isoformat(), estado='executando')
     novas = [0]
+    aguarda_resumo = automacoes.modo_avisos_publicacao(registro.caminho, monitoramento.get('usuario')) in ('resumo', 'ambos')
     def receber(brutos):
         itens = [_extrair_publicacao_djen(i) for i in brutos]
-        novas[0] += repo.ingerir(id_monitoramento, itens, agora_dt, monitoramento.get('hashes_notificados') or [])
+        novas[0] += repo.ingerir(id_monitoramento, itens, agora_dt, monitoramento.get('hashes_notificados') or [],
+                                 aguarda_resumo=aguarda_resumo)
     params = _parametros_coleta(monitoramento.get('criterio') or {}, estado, agora_dt, 20)
     resumo, erro = await _coletar_paginas_djen(params, receber)
     if novas[0]:
@@ -2277,7 +2287,8 @@ async def _verificar_um_monitoramento(
     if not atual:
         return entrega_ok
     expira = monitoramento_runtime.utc(atual['expira_em'])
-    if not novas[0] and expira <= agora_dt and not repo.pendentes(id_monitoramento, 'email') and not repo.pendentes(id_monitoramento, 'local'):
+    if (not novas[0] and expira <= agora_dt and not repo.pendentes(id_monitoramento, 'email')
+            and not repo.pendentes(id_monitoramento, 'local') and not repo.pendentes(id_monitoramento, 'resumo')):
         registro.atualizar(lambda d: d.pop(id_monitoramento, None) if id_monitoramento in d else False)
         return entrega_ok
     dias = (expira - agora_dt).days
@@ -3572,6 +3583,19 @@ async def _triagem_automatica(publicacoes: "RegistroPublicacoesOAB", agora=lambd
     return not falhas
 
 
+async def _enviar_resumos_publicacoes(registro: RegistroMonitoramentos, gestao: "RegistroClientesCasos",
+                                      agora=lambda: datetime.now(timezone.utc)) -> bool:
+    """Rotina "Resumo diário de publicações" (desligada até um administrador ligar em Administração › Automações)."""
+    cfg = _smtp_do_ambiente()
+
+    async def enviar(destino, assunto, corpo, html):
+        await asyncio.to_thread(_enviar_email_simples, cfg, destino, assunto, corpo, html=html)
+
+    return await automacoes.enviar_resumos_publicacoes(
+        registro, gestao, agora=agora, enviar_email=enviar if cfg else None,
+        base_url=(os.environ.get("CNJ_MCP_URL_PUBLICA") or "").rstrip("/"))
+
+
 async def _avisar_processos_parados(gestao: "RegistroClientesCasos", agora=lambda: datetime.now(timezone.utc)) -> bool:
     """Rotina diária "Processo parado" (desligada até um administrador ligar em Administração › Automações)."""
     cfg = _smtp_do_ambiente()
@@ -4121,6 +4145,7 @@ class _AutenticacaoBearer:
                 "nome_completo": perfil.get("nome_completo") or usuario,
                 "email": perfil.get("email") or "",
                 "foto": perfil.get("foto") or "",
+                "avisos_publicacao": automacoes.preferencia_avisos_publicacao(perfil),
                 "nivel_acesso": perfil.get("nivel_acesso") or "operador",
                 "permissoes": usuarios_admin.permissoes_efetivas(perfil),
             }}, ensure_ascii=False).encode("utf-8"), tipo="application/json; charset=utf-8",
@@ -7134,6 +7159,7 @@ def _montar_agendador(
         ('alertas_prazo', 6, _alertar_prazos, [gestao], {}),
         ('triagem_publicacoes', 1, _triagem_automatica, [publicacoes], {}),
         ('processo_parado', 24, _avisar_processos_parados, [gestao], {}),
+        ('resumo_publicacoes', 1, _enviar_resumos_publicacoes, [registro_monitoramentos, gestao], {}),
     ):
         agendador.add_job(repo.executar, 'interval', minutes=5, id=nome,
             args=[nome, horas, funcao, args, kwargs], next_run_time=datetime.now(timezone.utc),
