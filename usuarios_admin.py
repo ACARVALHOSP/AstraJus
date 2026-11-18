@@ -5,6 +5,7 @@ import emails_html
 import hmac
 import json
 import monitoramento_runtime
+import nomes
 import os
 import re
 import regras_responsavel
@@ -655,6 +656,43 @@ async def tratar(app, scope, receive, send, s):
                 await s._json(send, 200, {'itens': itens[:200], 'total': len(itens)})
             elif acao == 'aplicar' and method == 'POST':
                 await s._json(send, 200, regras_responsavel.aplicar(app.gestao, app.registro_monitoramentos, regras.listar(), ativos, ator))
+            else:
+                await s._json(send, 405, {'mensagem': 'Método ou rota não permitido.'})
+        elif path.startswith('/admin/nomes/'):
+            acao = path[len('/admin/nomes/'):]
+            repo = nomes.Nomes(app.registro.caminho)
+            pedido = {}
+            if method in ('PUT', 'POST'):
+                raw = await s._ler_corpo(receive)
+                if raw is None:
+                    await s._json(send, 413, {'mensagem': 'Corpo da requisição grande demais.'})
+                    return
+                pedido = json.loads(raw or b'{}')
+                if not isinstance(pedido, dict):
+                    raise ValueError('Informe um objeto JSON.')
+            def auditar(acao_log, campos):
+                with _abrir(app.registro.caminho) as c, c:
+                    c.execute('INSERT INTO usuarios_auditoria (ocorrido_em, ator, usuario, acao, campos) VALUES (?, ?, ?, ?, ?)',
+                              (agora(), ator, '(sistema)', acao_log, json.dumps(campos, ensure_ascii=False)))
+            if acao == 'verificar' and method == 'GET':
+                await s._json(send, 200, {**repo.verificar(), 'aplicados': repo.aplicados()})
+            elif acao == 'aplicar' and method == 'POST':
+                resultado = repo.aplicar(ator, pedido.get('itens'), bool(pedido.get('todos')))
+                if resultado['aplicados']:
+                    auditar('normalizar_nomes', resultado)
+                await s._json(send, 200, resultado)
+            elif acao == 'desfazer' and method == 'POST':
+                ids = pedido.get('ids')
+                if not isinstance(ids, list):
+                    raise ValueError('Informe a lista de alterações a desfazer.')
+                resultado = repo.desfazer(ids, ator)
+                if resultado['desfeitos']:
+                    auditar('desfazer_normalizar_nomes', resultado)
+                await s._json(send, 200, resultado)
+            elif acao == 'excecoes' and method in ('GET', 'PUT'):
+                if method == 'PUT':
+                    repo.salvar_excecoes(pedido.get('excecoes'))
+                await s._json(send, 200, {'excecoes': repo.excecoes()})
             else:
                 await s._json(send, 405, {'mensagem': 'Método ou rota não permitido.'})
         elif path == '/admin/automacoes/api' and method == 'GET':
