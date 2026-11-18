@@ -17,6 +17,8 @@ type Evento = {
   id: string
   texto: string
   data: string
+  /** Tipo da comunicação e do documento do DJEN (só publicações), para regras por tipo de publicação. */
+  tipos?: string[]
 }
 type Item = { evento: Evento; sugestao: Sugestao }
 
@@ -52,6 +54,7 @@ function eventosRecentes(publicacoes: PublicacaoOab[], capas: CapaProcesso[], li
       id: p.hash,
       texto: String(p.dados?.texto ?? p.dados?.teor ?? p.dados?.conteudo ?? '').replace(/\s+/g, ' ').trim(),
       data: dataIso(p.dados?.data_disponibilizacao),
+      tipos: [p.dados?.tipoComunicacao, p.dados?.tipoDocumento].filter((t): t is string => typeof t === 'string' && Boolean(t.trim())),
     }))
     .filter(e => e.id && e.data && e.data >= limite)
     .sort((a, b) => b.data.localeCompare(a.data))
@@ -91,7 +94,11 @@ function listaDeTermos(termos: string[]): string {
 }
 
 function fraseDaSugestao({ evento, sugestao }: Item): string {
-  const termos = sugestao.termos.length ? listaDeTermos(sugestao.termos) : 'uma regra cadastrada'
+  const motivos = [
+    ...(sugestao.termos.length ? [listaDeTermos(sugestao.termos)] : []),
+    ...(sugestao.tipo_publicacao_casou ? [`tipo “${sugestao.tipo_publicacao_casou}”`] : []),
+  ]
+  const termos = motivos.length ? motivos.join(' e ') : 'uma regra cadastrada'
   const contagem = sugestao.tipo.contagem === 'uteis'
     ? (sugestao.tipo.dias === 1 ? 'dia útil' : 'dias úteis')
     : (sugestao.tipo.dias === 1 ? 'dia corrido' : 'dias corridos')
@@ -134,7 +141,7 @@ export default function SugestaoPrazos({ casoId, onAplicado }: { casoId: string;
       // Leitura: usa requisitar para não disparar avisarDadosAlterados a cada consulta de sugestões.
       const respostas = await Promise.allSettled(eventos.map(async evento => {
         const resposta = await requisitar(cliente, `${api}/regras-prazo/sugestoes`, {
-          metodo: 'POST', corpo: { origem: evento.origem, id: evento.id, texto: evento.texto }, signal,
+          metodo: 'POST', corpo: { origem: evento.origem, id: evento.id, texto: evento.texto, tipos: evento.tipos ?? [] }, signal,
         })
         const dados = await resposta.json() as { sugestoes?: Sugestao[] }
         return dados.sugestoes ?? []

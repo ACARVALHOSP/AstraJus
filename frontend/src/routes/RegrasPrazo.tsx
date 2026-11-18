@@ -22,11 +22,16 @@ const SEM_TIPOS: TipoPrazo[] = []
 
 type RascunhoRegra = {
   id?: string; nome: string; tipo_id: string; escopo: EscopoItem[]
-  palavras: string; combinacao: Regra['combinacao']; ativo: boolean
+  palavras: string; tipos_publicacao: string[]; combinacao: Regra['combinacao']; ativo: boolean
 }
 const novaRegra = (tipoId = ''): RascunhoRegra => ({
-  nome: '', tipo_id: tipoId, escopo: [], palavras: '', combinacao: 'e', ativo: true,
+  nome: '', tipo_id: tipoId, escopo: [], palavras: '', tipos_publicacao: [], combinacao: 'e', ativo: true,
 })
+
+// Tipos de comunicação e de documento do DJEN mais comuns; o campo aceita qualquer outro texto.
+const TIPOS_PUBLICACAO_COMUNS = ['Intimação', 'Edital', 'Lista de distribuição', 'Despacho', 'Decisão', 'Sentença', 'Acórdão', 'Ato ordinatório', 'Certidão']
+const MAX_TIPOS_PUBLICACAO = 20
+const semAcento = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
 
 const ROTULO_INICIO: Record<TipoPrazo['inicio'], string> = {
   disponibilizacao: 'Disponibilização no DJEN',
@@ -43,7 +48,7 @@ function chaveDoEscopo(item: EscopoItem): string {
 
 // Regra criada pela migração dos modelos antigos: nome "modelo – prazo", inativa e sem palavras.
 function pareceMigrada(regra: Regra): boolean {
-  return regra.nome.includes(' – ') && !regra.ativo && !regra.palavras.trim()
+  return regra.nome.includes(' – ') && !regra.ativo && !regra.palavras.trim() && !regra.tipos_publicacao?.length
 }
 
 /** Configurações › Regras de prazos: tipos de prazo e regras de sugestão por classe, assunto e palavras-chave. */
@@ -184,7 +189,7 @@ export default function RegrasPrazo() {
                         {tipo ? tipo.nome : 'Tipo de prazo indisponível'} · {resumoDaRegra(regra)}
                       </Text>
                       <Text as="p" size="1" color="gray">
-                        Casa quando: {regra.combinacao === 'ou' ? 'assunto/classe OU palavras-chave' : 'assunto/classe E palavras-chave'}
+                        Casa quando: {regra.combinacao === 'ou' ? 'qualquer um dos critérios preenchidos (OU)' : 'todos os critérios preenchidos (E)'}
                       </Text>
                       {pareceMigrada(regra) && (
                         <Callout.Root color="gray" size="1" mt="2" role="status">
@@ -197,7 +202,8 @@ export default function RegrasPrazo() {
                       <Switch size="1" checked={regra.ativo} disabled={!editavel} onCheckedChange={() => void alternarRegra(regra)} aria-label={`${regra.ativo ? 'Desativar' : 'Ativar'} a regra ${regra.nome}`} />
                       <IconButton size="1" variant="soft" color="gray" disabled={!editavel} aria-label={`Editar a regra ${regra.nome}`} onClick={() => setEditandoRegra({
                         id: regra.id, nome: regra.nome, tipo_id: regra.tipo_id, escopo: regra.escopo,
-                        palavras: regra.palavras, combinacao: regra.combinacao, ativo: regra.ativo,
+                        palavras: regra.palavras, tipos_publicacao: regra.tipos_publicacao ?? [],
+                        combinacao: regra.combinacao, ativo: regra.ativo,
                       })}><Pencil size={14} /></IconButton>
                       <IconButton size="1" variant="soft" color="red" disabled={!editavel} aria-label={`Excluir a regra ${regra.nome}`} onClick={() => setExcluindoRegra(regra)}><Trash2 size={14} /></IconButton>
                     </Flex>
@@ -376,7 +382,18 @@ function FormularioRegra({ inicial, tipos, onClose, onSalvo }: {
   // A prévia só vale para o texto atual; enquanto o novo resultado não chega, a anterior não aparece.
   const previaAtual = previa && previa.texto === expressao ? previa : null
   const lendo = prevendo === expressao && !previaAtual
-  const valido = Boolean(d.tipo_id) && (d.escopo.length > 0 || Boolean(expressao)) && previaAtual?.erro === undefined
+  const [novoTipoPub, setNovoTipoPub] = useState('')
+  // Nenhum critério é obrigatório, mas ao menos um precisa estar preenchido.
+  const temCriterio = d.escopo.length > 0 || d.tipos_publicacao.length > 0 || Boolean(expressao)
+  const valido = Boolean(d.tipo_id) && temCriterio && previaAtual?.erro === undefined
+
+  function adicionarTipoPublicacao() {
+    const texto = novoTipoPub.trim().replace(/\s+/g, ' ')
+    if (!texto) return
+    if (d.tipos_publicacao.length >= MAX_TIPOS_PUBLICACAO) { setAvisoEscopo(`Limite de ${MAX_TIPOS_PUBLICACAO} tipos de publicação.`); return }
+    if (!d.tipos_publicacao.some(t => semAcento(t) === semAcento(texto))) setD({ ...d, tipos_publicacao: [...d.tipos_publicacao, texto] })
+    setNovoTipoPub('')
+  }
 
   // Prévia da expressão: espera a pessoa parar de digitar e chama a leitura humana do servidor.
   useEffect(() => {
@@ -417,7 +434,7 @@ function FormularioRegra({ inicial, tipos, onClose, onSalvo }: {
     setSalvando(true); setErro('')
     const corpo = {
       nome: d.nome.trim(), tipo_id: d.tipo_id, escopo: d.escopo,
-      palavras: d.palavras.trim(), combinacao: d.combinacao, ativo: d.ativo,
+      palavras: d.palavras.trim(), tipos_publicacao: d.tipos_publicacao, combinacao: d.combinacao, ativo: d.ativo,
     }
     try {
       if (d.id) await enviarJson(cliente, `/regras-prazo/${encodeURIComponent(d.id)}`, corpo, 'PATCH')
@@ -434,7 +451,8 @@ function FormularioRegra({ inicial, tipos, onClose, onSalvo }: {
       <Dialog.Content maxWidth="640px">
         <Dialog.Title>{d.id ? 'Editar regra' : 'Nova regra de prazo'}</Dialog.Title>
         <Dialog.Description size="2" color="gray">
-          A regra sugere um prazo quando o processo e o evento combinam com o escopo e/ou as palavras-chave abaixo. Você confere a data antes de criar.
+          A regra sugere um prazo quando o processo e o evento combinam com os critérios abaixo. Nenhum critério é obrigatório: preencha ao menos um
+          (só palavras-chave, só o tipo da publicação, ou qualquer combinação). Você confere a data antes de criar.
         </Dialog.Description>
         <Flex direction="column" gap="3" mt="4">
           <Flex direction="column" gap="1">
@@ -460,7 +478,7 @@ function FormularioRegra({ inicial, tipos, onClose, onSalvo }: {
           </Flex>
 
           <Flex direction="column" gap="2">
-            <Text size="2" weight="medium">Escopo (assunto ou classe)</Text>
+            <Text size="2" weight="medium">Assunto ou classe (opcional)</Text>
             {d.escopo.length >= 20 ? (
               <Text size="1" color="gray">Limite de 20 itens no escopo.</Text>
             ) : (
@@ -491,6 +509,34 @@ function FormularioRegra({ inicial, tipos, onClose, onSalvo }: {
             {avisoEscopo && <Text size="1" color="gray" role="status">{avisoEscopo}</Text>}
           </Flex>
 
+          <Flex direction="column" gap="2">
+            <Text as="label" size="2" weight="medium" htmlFor="regra-tipo-publicacao">Tipo da publicação (opcional)</Text>
+            <Flex gap="2" align="center">
+              <TextField.Root id="regra-tipo-publicacao" style={{ flex: 1 }} value={novoTipoPub} maxLength={80} list="regra-tipos-publicacao-sugestoes"
+                placeholder="Ex.: Intimação, Sentença" aria-describedby="regra-tipo-publicacao-ajuda"
+                onChange={e => setNovoTipoPub(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); adicionarTipoPublicacao() } }} />
+              <datalist id="regra-tipos-publicacao-sugestoes">
+                {TIPOS_PUBLICACAO_COMUNS.map(t => <option key={t} value={t} />)}
+              </datalist>
+              <Button size="2" variant="soft" disabled={!novoTipoPub.trim()} onClick={adicionarTipoPublicacao}><Plus size={14} aria-hidden="true" />Adicionar</Button>
+            </Flex>
+            <Text as="p" size="1" color="gray" id="regra-tipo-publicacao-ajuda">
+              Vale só para publicações do DJEN (tipo da comunicação ou do documento). Não casa movimentos.
+            </Text>
+            {d.tipos_publicacao.length > 0 && (
+              <Flex gap="2" wrap="wrap">
+                {d.tipos_publicacao.map(t => (
+                  <Badge key={t} size="2" variant="soft" color="gray">
+                    {t}
+                    <IconButton size="1" variant="ghost" color="gray" aria-label={`Remover o tipo ${t}`}
+                      onClick={() => setD({ ...d, tipos_publicacao: d.tipos_publicacao.filter(x => x !== t) })}><Trash2 size={12} /></IconButton>
+                  </Badge>
+                ))}
+              </Flex>
+            )}
+          </Flex>
+
           <Flex direction="column" gap="1">
             <Text as="label" size="2" weight="medium" htmlFor="regra-palavras">Palavras-chave (opcional)</Text>
             <TextField.Root id="regra-palavras" value={d.palavras} maxLength={500}
@@ -516,14 +562,15 @@ function FormularioRegra({ inicial, tipos, onClose, onSalvo }: {
             <Select.Root value={d.combinacao} onValueChange={v => setD({ ...d, combinacao: v as Regra['combinacao'] })}>
               <Select.Trigger id="regra-combinacao" aria-label="Casar quando" />
               <Select.Content>
-                <Select.Item value="e">Assunto/classe E palavras-chave (padrão)</Select.Item>
-                <Select.Item value="ou">Assunto/classe OU palavras-chave</Select.Item>
+                <Select.Item value="e">Todos os critérios preenchidos (E)</Select.Item>
+                <Select.Item value="ou">Qualquer um dos critérios preenchidos (OU)</Select.Item>
               </Select.Content>
             </Select.Root>
           </Flex>
 
           <Text as="span" size="2"><Flex gap="2" align="center"><Switch aria-label="Regra ativa" checked={d.ativo} onCheckedChange={v => setD({ ...d, ativo: v })} />Regra ativa (pode sugerir prazos)</Flex></Text>
         </Flex>
+        {!temCriterio && <Text as="p" size="1" color="gray" mt="3" role="status">Preencha ao menos um critério; nenhum é obrigatório.</Text>}
         {erro && <Callout.Root color="red" size="1" mt="3" role="alert"><Callout.Text>{erro}</Callout.Text></Callout.Root>}
         <Flex gap="3" mt="5" justify="end">
           <Dialog.Close><Button variant="soft" color="gray" disabled={salvando}>Cancelar</Button></Dialog.Close>

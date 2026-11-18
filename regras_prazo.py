@@ -1,10 +1,11 @@
-"""Regras de sugestão de prazos por assunto, classe e palavras-chave.
+"""Regras de sugestão de prazos por assunto, classe, tipo de publicação e palavras-chave.
 
 Substitui o modelo de prazo (critério em texto + lista fixa de prazos) por três cadastros:
-tipo de prazo, regra e decisões. Uma regra liga um escopo (assuntos/classes) e uma expressão
-de palavras-chave a um tipo de prazo e SUGERE — nunca cria sozinho — um prazo quando uma
-publicação do DJEN ou um movimento do processo casa. Cada regra é sugerida uma vez por
-evento; depois de aplicada ou dispensada, não é sugerida de novo para o mesmo evento.
+tipo de prazo, regra e decisões. Uma regra liga até três critérios OPCIONAIS — escopo
+(assuntos/classes), tipos de publicação do DJEN e uma expressão de palavras-chave — a um
+tipo de prazo e SUGERE — nunca cria sozinho — um prazo quando uma publicação do DJEN ou um
+movimento do processo casa. Basta ao menos um critério preenchido. Cada regra é sugerida uma
+vez por evento; depois de aplicada ou dispensada, não é sugerida de novo para o mesmo evento.
 
 A expressão de palavras-chave é uma função pura, sem banco: palavras soltas, "frase exata"
 entre aspas duplas e os operadores escritos como palavras `e`, `ou` e `sem`. O `e` tem
@@ -21,6 +22,8 @@ from datetime import datetime, timezone
 
 MAX_ESCOPO = 20
 MAX_PALAVRAS = 500
+MAX_TIPOS_PUBLICACAO = 20
+MAX_TIPO_PUBLICACAO = 80
 CONTAGENS = ("uteis", "corridos")
 INICIOS = ("disponibilizacao", "movimento")
 COMBINACOES = ("e", "ou")
@@ -275,6 +278,24 @@ def _validar_palavras(valor) -> str:
     return valor
 
 
+def _validar_tipos_publicacao(valor) -> list[str]:
+    """Tipos de publicação do DJEN (comunicação ou documento) da regra: sem vazios nem repetidos."""
+    if valor is None:
+        return []
+    if not isinstance(valor, list):
+        raise ValueError("Os tipos de publicação devem ser uma lista.")
+    if len(valor) > MAX_TIPOS_PUBLICACAO:
+        raise ValueError(f"Use no máximo {MAX_TIPOS_PUBLICACAO} tipos de publicação.")
+    saida, vistos = [], set()
+    for item in valor:
+        texto = _texto(item, "o tipo da publicação", MAX_TIPO_PUBLICACAO)
+        chave = normalizar(texto)
+        if chave not in vistos:
+            vistos.add(chave)
+            saida.append(texto)
+    return saida
+
+
 def validar_regra(dados, tipo=None) -> dict:
     """Confere e normaliza uma regra. `tipo` é o tipo já resolvido (dá o nome padrão da regra)."""
     if not isinstance(dados, dict):
@@ -285,8 +306,9 @@ def validar_regra(dados, tipo=None) -> dict:
     nome_padrao = tipo.get("nome") if isinstance(tipo, dict) else None
     escopo = _validar_escopo(dados.get("escopo"))
     palavras = _validar_palavras(dados.get("palavras"))
-    if not escopo and not palavras:
-        raise ValueError("Informe ao menos um escopo (assunto ou classe) ou palavras-chave na regra.")
+    tipos_publicacao = _validar_tipos_publicacao(dados.get("tipos_publicacao"))
+    if not escopo and not palavras and not tipos_publicacao:
+        raise ValueError("Informe ao menos um critério: assunto/classe, tipo da publicação ou palavras-chave.")
     combinacao = dados.get("combinacao") or "e"
     if combinacao not in COMBINACOES:
         raise ValueError("A combinação da regra deve ser e ou ou.")
@@ -294,7 +316,8 @@ def validar_regra(dados, tipo=None) -> dict:
     if not isinstance(ativo, bool):
         raise ValueError("O campo ativo deve ser verdadeiro ou falso.")
     return {"nome": _texto(dados.get("nome") or nome_padrao, "o nome da regra", 120), "tipo_id": tipo_id.strip(),
-            "escopo": escopo, "palavras": palavras, "combinacao": combinacao, "ativo": ativo}
+            "escopo": escopo, "palavras": palavras, "tipos_publicacao": tipos_publicacao,
+            "combinacao": combinacao, "ativo": ativo}
 
 
 def _tipo(linha) -> dict:
@@ -306,7 +329,7 @@ def _tipo(linha) -> dict:
 def _regra(linha) -> dict:
     return {"id": linha[0], "nome": linha[1], "tipo_id": linha[2], "escopo": json.loads(linha[3]),
             "palavras": linha[4], "combinacao": linha[5], "ativo": bool(linha[6]), "criado_por": linha[7],
-            "criado_em": linha[8], "atualizado_em": linha[9]}
+            "criado_em": linha[8], "atualizado_em": linha[9], "tipos_publicacao": json.loads(linha[10] or "[]")}
 
 
 _ESQUEMA = (
@@ -319,7 +342,8 @@ _ESQUEMA = (
         id TEXT PRIMARY KEY, nome TEXT NOT NULL, tipo_id TEXT NOT NULL, escopo TEXT NOT NULL,
         palavras TEXT NOT NULL, combinacao TEXT NOT NULL DEFAULT 'e',
         ativo INTEGER NOT NULL DEFAULT 1, criado_por TEXT,
-        criado_em TEXT NOT NULL, atualizado_em TEXT NOT NULL)""",
+        criado_em TEXT NOT NULL, atualizado_em TEXT NOT NULL,
+        tipos_publicacao TEXT NOT NULL DEFAULT '[]')""",
     """CREATE TABLE IF NOT EXISTS regra_prazo_decisoes (
         regra_id TEXT NOT NULL, origem TEXT NOT NULL, origem_id TEXT NOT NULL,
         caso_id TEXT NOT NULL, acao TEXT NOT NULL, usuario TEXT, em TEXT NOT NULL,
@@ -330,6 +354,9 @@ _ESQUEMA = (
 def _criar_tabelas(conexao) -> None:
     for comando in _ESQUEMA:
         conexao.execute(comando)
+    # Bancos criados antes do critério "tipo da publicação" não têm a coluna.
+    if "tipos_publicacao" not in {l[1] for l in conexao.execute("PRAGMA table_info(regras_prazo)")}:
+        conexao.execute("ALTER TABLE regras_prazo ADD COLUMN tipos_publicacao TEXT NOT NULL DEFAULT '[]'")
 
 
 def _agora() -> str:
@@ -421,7 +448,7 @@ def _escopo_casou(escopo: list[dict], classes: list[str], assuntos: list[str]):
 
 class Repositorio:
     _COLUNAS_TIPO = "id, nome, dias, contagem, base_legal, inicio, ativo, criado_por, criado_em, atualizado_em"
-    _COLUNAS_REGRA = "id, nome, tipo_id, escopo, palavras, combinacao, ativo, criado_por, criado_em, atualizado_em"
+    _COLUNAS_REGRA = "id, nome, tipo_id, escopo, palavras, combinacao, ativo, criado_por, criado_em, atualizado_em, tipos_publicacao"
 
     def __init__(self, caminho):
         self.caminho = caminho
@@ -500,10 +527,11 @@ class Repositorio:
             raise ValueError("Escolha um tipo de prazo válido para a regra.")
         d, instante, novo_id = validar_regra(dados, tipo), agora().astimezone(timezone.utc).isoformat(timespec="seconds"), uuid.uuid4().hex
         with self.abrir() as c:
-            c.execute("INSERT INTO regras_prazo (id, nome, tipo_id, escopo, palavras, combinacao, ativo, criado_por, criado_em, atualizado_em) "
-                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            c.execute("INSERT INTO regras_prazo (id, nome, tipo_id, escopo, palavras, combinacao, ativo, criado_por, criado_em, atualizado_em, tipos_publicacao) "
+                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                       (novo_id, d["nome"], d["tipo_id"], json.dumps(d["escopo"], ensure_ascii=False),
-                       d["palavras"], d["combinacao"], int(d["ativo"]), usuario, instante, instante))
+                       d["palavras"], d["combinacao"], int(d["ativo"]), usuario, instante, instante,
+                       json.dumps(d["tipos_publicacao"], ensure_ascii=False)))
         return self.obter_regra(novo_id)
 
     def atualizar_regra(self, regra_id: str, dados: dict, agora=lambda: datetime.now(timezone.utc)) -> dict | None:
@@ -517,10 +545,11 @@ class Repositorio:
             raise ValueError("Escolha um tipo de prazo válido para a regra.")
         d = validar_regra(mesclado, tipo)
         with self.abrir() as c:
-            c.execute("UPDATE regras_prazo SET nome=?, tipo_id=?, escopo=?, palavras=?, combinacao=?, ativo=?, atualizado_em=? WHERE id=?",
+            c.execute("UPDATE regras_prazo SET nome=?, tipo_id=?, escopo=?, palavras=?, combinacao=?, ativo=?, atualizado_em=?, tipos_publicacao=? WHERE id=?",
                       (d["nome"], d["tipo_id"], json.dumps(d["escopo"], ensure_ascii=False), d["palavras"],
                        d["combinacao"], int(d["ativo"]),
-                       agora().astimezone(timezone.utc).isoformat(timespec="seconds"), regra_id))
+                       agora().astimezone(timezone.utc).isoformat(timespec="seconds"),
+                       json.dumps(d["tipos_publicacao"], ensure_ascii=False), regra_id))
         return self.obter_regra(regra_id)
 
     def excluir_regra(self, regra_id: str) -> bool:
@@ -584,6 +613,10 @@ class Repositorio:
         texto = evento.get("texto") or ""
         if not isinstance(texto, str):
             raise ValueError("O texto do evento deve ser texto.")
+        tipos_evento = evento.get("tipos") or []
+        if not isinstance(tipos_evento, list):
+            raise ValueError("Os tipos do evento devem ser uma lista.")
+        tipos_evento = [(t, normalizar(t)) for t in tipos_evento if isinstance(t, str) and t.strip()]
 
         with self.abrir() as c:
             caso = c.execute("SELECT acao FROM casos WHERE id = ?", (caso_id,)).fetchone()
@@ -615,22 +648,22 @@ class Repositorio:
             tipo = tipos.get(regra["tipo_id"])
             if tipo is None or not tipo["ativo"] or regra["id"] in decididos:
                 continue
-            escopo, palavras = regra["escopo"], regra["palavras"]
-            if not escopo and not palavras:
+            escopo, palavras, tipos_regra = regra["escopo"], regra["palavras"], regra["tipos_publicacao"]
+            if not escopo and not palavras and not tipos_regra:
                 continue
             correspondeu_a = _escopo_casou(escopo, classes, assuntos) if escopo else None
             termos = compilar(palavras).avaliar(texto) if palavras else None
-            casou_escopo, casou_palavras = correspondeu_a is not None, bool(termos)
-            if regra["combinacao"] == "ou":
-                if not casou_escopo and not casou_palavras:
-                    continue
-            else:
-                if escopo and not casou_escopo:
-                    continue
-                if palavras and not casou_palavras:
-                    continue
+            # O tipo da publicação só existe em publicações do DJEN: movimento nunca casa esse critério.
+            tipo_casou = None
+            if tipos_regra and origem == "publicacao":
+                tipo_casou = next((t for t in tipos_regra if any(normalizar(t) == n for _, n in tipos_evento)), None)
+            casou = [correspondeu_a is not None if escopo else None, bool(termos) if palavras else None,
+                     tipo_casou is not None if tipos_regra else None]
+            preenchidos = [c for c in casou if c is not None]  # critério vazio não conta
+            if not (any(preenchidos) if regra["combinacao"] == "ou" else all(preenchidos)):
+                continue
             saida.append({"regra": regra, "tipo": tipo, "correspondeu_a": correspondeu_a,
-                          "termos": termos or []})
-        saida.sort(key=lambda s: (-(bool(s["regra"]["escopo"]) + bool(s["regra"]["palavras"])),
+                          "termos": termos or [], "tipo_publicacao_casou": tipo_casou})
+        saida.sort(key=lambda s: (-(bool(s["regra"]["escopo"]) + bool(s["regra"]["palavras"]) + bool(s["regra"]["tipos_publicacao"])),
                                   normalizar(s["regra"]["nome"]), s["regra"]["id"]))
         return saida

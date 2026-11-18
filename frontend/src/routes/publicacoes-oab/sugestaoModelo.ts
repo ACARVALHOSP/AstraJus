@@ -15,10 +15,11 @@ function listar(itens: string[]): string {
 }
 
 /** Motivo em português: termos casados entre aspas e/ou o item de escopo (classe/assunto). */
-export function motivoDaSugestao(sugestao: Pick<Sugestao, 'termos' | 'correspondeu_a'>): string {
+export function motivoDaSugestao(sugestao: Pick<Sugestao, 'termos' | 'correspondeu_a' | 'tipo_publicacao_casou'>): string {
   const partes: string[] = []
   const termos = (sugestao.termos ?? []).filter(Boolean)
   if (termos.length) partes.push(`termos ${listar(termos.map(t => `“${t}”`))}`)
+  if (sugestao.tipo_publicacao_casou) partes.push(`tipo de publicação “${sugestao.tipo_publicacao_casou}”`)
   const escopo = sugestao.correspondeu_a
   if (escopo?.nome) partes.push(`${escopo.tipo === 'assunto' ? 'assunto' : 'classe'} “${escopo.nome}”`)
   // Regra sem palavras-chave e sem escopo casado: não inventa motivo, assume o casamento da regra.
