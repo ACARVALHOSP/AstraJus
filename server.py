@@ -12,6 +12,7 @@ logs vão para stderr.
 
 import argparse
 import asyncio
+import base64
 import hashlib
 import hmac
 import json
@@ -54,6 +55,7 @@ import emails_html
 import notificacoes
 import regras_prazo
 import horas
+import documentos
 import monitoramento_runtime
 import db as _db
 import google_integracao
@@ -4171,6 +4173,10 @@ class _AutenticacaoBearer:
         if self.oauth and (caminho.startswith("/oauth/") or caminho.startswith("/.well-known/")):
             await self.oauth.tratar(scope, receive, send)
             return
+        if caminho == "/zapsign/webhook":
+            # Chamado pela ZapSign, sem token de usuário: autenticado pelo cabeçalho X-Webhook-Token.
+            await self._zapsign_webhook(scope, receive, send)
+            return
         if caminho == "/asaas/webhook":
             # Chamado pelo Asaas, sem token de usuário: autenticado pelo cabeçalho próprio.
             await self._asaas_webhook(scope, receive, send)
@@ -4350,6 +4356,9 @@ class _AutenticacaoBearer:
                 and caminho.startswith(("/casos/", "/clientes/")):
             alvo, _, resto = caminho[1:].partition("/")
             await self._pasta_drive_sob_demanda(send, alvo, resto[:-len("/pasta-drive")])
+            return
+        if (caminho == "/documentos" or caminho.startswith("/documentos/")) and self.gestao is not None:
+            await self._documentos(scope, receive, send, caminho[len("/documentos"):].strip("/"))
             return
         if (caminho == "/horas" or caminho.startswith("/horas/")) and self.gestao is not None:
             await self._horas(scope, receive, send, caminho[len("/horas"):].strip("/"))
@@ -5241,6 +5250,160 @@ class _AutenticacaoBearer:
             await _json(send, 400, _erro("Informe um objeto JSON."))
             return None
         return dados
+
+    async def _zapsign_webhook(self, scope, receive, send) -> None:
+        """POST /zapsign/webhook: avisos da ZapSign (doc_signed, doc_refused, doc-expired...).
+        Autenticado pelo cabeçalho X-Webhook-Token, igual a ZAPSIGN_WEBHOOK_TOKEN (cadastrado junto
+        com o webhook na ZapSign). Atualiza o documento pelo token e baixa o PDF assinado."""
+        esperado = (_config_integracao("ZAPSIGN_WEBHOOK_TOKEN", "") or "").strip()
+        if not esperado or self.gestao is None:
+            await _responder(send, 404, b"Nao encontrado")
+            return
+        if scope.get("method") != "POST":
+            await _responder(send, 405, b"Metodo nao permitido")
+            return
+        recebido = dict(scope.get("headers") or []).get(b"x-webhook-token", b"").decode("latin-1")
+        if not hmac.compare_digest(recebido, esperado):
+            await _responder(send, 401, b"Token invalido")
+            return
+        corpo = await _ler_corpo(receive, limite=512 * 1024)
+        try:
+            dados = json.loads((corpo or b"").decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            await _json(send, 400, _erro("JSON inválido."))
+            return
+        if isinstance(dados, dict) and dados.get("token"):
+            await self._aplicar_retorno_zapsign(documentos.Repositorio(self.gestao.caminho), dados, dados.get("event_type"))
+        await _json(send, 200, {"recebido": True})  # sempre 200: senão a ZapSign reenvia e duplica
+
+    async def _aplicar_retorno_zapsign(self, repo, zap: dict, evento: str | None) -> str:
+        status = documentos.status_do_retorno(zap, evento)
+        assinado = None
+        if status == "assinado" and zap.get("signed_file"):
+            try:
+                assinado = await documentos.baixar(zap["signed_file"])
+            except documentos.ErroDocumento:
+                log.warning("ZapSign: não baixou o PDF assinado de %s", zap.get("token"))
+        repo.aplicar_estado(zap["token"], status, documentos.signatarios_do_retorno(zap), assinado)
+        return status
+
+    async def _documentos(self, scope, receive, send, resto: str) -> None:
+        """Modelos DOCX e documentos gerados. GET /documentos/catalogo; GET/POST /documentos/modelos,
+        DELETE /documentos/modelos/<id> (administrador), POST /documentos/modelos/<id>/previa;
+        GET/POST /documentos; GET /documentos/<id>/arquivo?tipo=docx|pdf|assinado;
+        POST /documentos/<id>/enviar (ZapSign) e /documentos/<id>/atualizar."""
+        repo = documentos.Repositorio(self.gestao.caminho)
+        usuario, metodo = scope["usuario"], scope.get("method")
+        administrador = scope.get("nivel_acesso") == "administrador"
+        consulta = parse_qs((scope.get("query_string") or b"").decode("utf-8", "ignore"))
+        partes = resto.split("/") if resto else []
+        chave = _config_integracao("ZAPSIGN_API_KEY", "") or ""
+        ambiente = _config_integracao("ZAPSIGN_AMBIENTE", "") or ""
+
+        async def corpo(limite=64 * 1024):
+            bruto = await _ler_corpo(receive, limite)
+            if bruto is None:
+                raise ValueError("O conteúdo enviado passou do limite.")
+            try:
+                dados = json.loads(bruto.decode("utf-8") or "{}")
+            except (ValueError, UnicodeDecodeError):
+                raise ValueError("JSON inválido.") from None
+            if not isinstance(dados, dict):
+                raise ValueError("Informe um objeto JSON.")
+            return dados
+
+        try:
+            if partes == ["catalogo"] and metodo == "GET":
+                await _json(send, 200, {"variaveis": [{"chave": k, "rotulo": v[0], "origem": v[1]} for k, v in documentos.VARIAVEIS.items()],
+                                       "poderes": [{"chave": k, "texto": t} for k, t in documentos.PODERES],
+                                       "tipos": list(documentos.TIPOS), "zapsign": bool(chave)})
+                return
+            if partes == ["modelos"]:
+                if metodo == "GET":
+                    await _json(send, 200, {"modelos": repo.modelos()})
+                    return
+                if metodo == "POST":
+                    if not administrador:
+                        raise PermissionError("Só um administrador envia modelos.")
+                    dados = await corpo(8 * 1024 * 1024)
+                    try:
+                        arquivo = base64.b64decode(dados.get("arquivo_base64") or "", validate=True)
+                    except ValueError:
+                        raise ValueError("Arquivo inválido.") from None
+                    await _json(send, 201, {"modelo": repo.criar_modelo(dados.get("nome"), dados.get("tipo") or "outro", arquivo, usuario)})
+                    return
+            elif len(partes) == 2 and partes[0] == "modelos" and partes[1].isdigit() and metodo == "DELETE":
+                if not administrador:
+                    raise PermissionError("Só um administrador exclui modelos.")
+                repo.excluir_modelo(int(partes[1]))
+                await _json(send, 200, {"excluido": True})
+                return
+            elif len(partes) == 3 and partes[0] == "modelos" and partes[1].isdigit() and partes[2] == "previa" and metodo == "POST":
+                dados = await corpo()
+                modelo = repo.modelo(int(partes[1]))
+                auto = documentos.valores_automaticos(
+                    self.gestao.obter_cliente(dados["cliente_id"]) if dados.get("cliente_id") else None,
+                    self.gestao.obter_caso(dados["caso_id"]) if dados.get("caso_id") else None)
+                campos = [{"chave": v, "rotulo": documentos.VARIAVEIS.get(v, (v, ""))[0], "origem": documentos.VARIAVEIS.get(v, ("", "manual"))[1],
+                           "valor": auto.get(v, "")} for v in modelo["variaveis"]]
+                await _json(send, 200, {"modelo": modelo, "campos": campos})
+                return
+            elif not partes:
+                if metodo == "GET":
+                    await _json(send, 200, {"documentos": repo.documentos((consulta.get("cliente_id") or [None])[0], (consulta.get("caso_id") or [None])[0])})
+                    return
+                if metodo == "POST":
+                    dados = await corpo(256 * 1024)
+                    modelo = repo.modelo(int(dados.get("modelo_id") or 0))
+                    valores = {k: str(v) for k, v in (dados.get("valores") or {}).items() if k in modelo["variaveis"]}
+                    docx = await asyncio.to_thread(documentos.preencher, repo.docx_do_modelo(modelo["id"]), valores)
+                    pdf = await asyncio.to_thread(documentos.converter_pdf, docx)
+                    nome = str(dados.get("nome") or modelo["nome"]).strip()[:120] or modelo["nome"]
+                    criado = repo.criar_documento(modelo["id"], nome, dados.get("cliente_id"), dados.get("caso_id"), valores, docx, pdf, usuario)
+                    await _json(send, 201, {"documento": criado})
+                    return
+            elif partes[0].isdigit():
+                doc_id = int(partes[0])
+                acao = partes[1] if len(partes) == 2 else None
+                if acao == "arquivo" and metodo == "GET":
+                    tipo = (consulta.get("tipo") or ["pdf"])[0]
+                    if tipo not in ("docx", "pdf", "assinado"):
+                        raise ValueError("Tipo de arquivo inválido.")
+                    conteudo = repo.arquivo(doc_id, tipo)
+                    if not conteudo:
+                        raise LookupError("Arquivo ainda não disponível.")
+                    nome = re.sub(r"[^\w.-]+", "_", repo.documento(doc_id)["nome"]) + ("." + ("docx" if tipo == "docx" else "pdf"))
+                    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document" if tipo == "docx" else "application/pdf"
+                    await _responder(send, 200, conteudo, tipo=mime, cabecalhos_extra=[(b"content-disposition", f'attachment; filename="{nome}"'.encode("latin-1", "replace"))])
+                    return
+                if acao == "enviar" and metodo == "POST":
+                    dados = await corpo()
+                    doc = repo.documento(doc_id)
+                    if doc["status"] != "gerado":
+                        raise documentos.ErroDocumento("Esse documento já foi enviado para assinatura.")
+                    pdf = repo.arquivo(doc_id, "pdf")
+                    signatarios = documentos.signatarios_zapsign(dados.get("signatarios"), "whatsapp" if dados.get("canal") == "whatsapp" else "email")
+                    zap = await documentos.enviar_para_assinatura(pdf, doc["nome"], signatarios, chave, ambiente, f"astrajus-{doc_id}", dados.get("prazo") or None)
+                    repo.marcar_enviado(doc_id, zap["token"], documentos.signatarios_do_retorno(zap))
+                    await _json(send, 200, {"documento": repo.documento(doc_id)})
+                    return
+                if acao == "atualizar" and metodo == "POST":
+                    token = repo.token_zap(doc_id)
+                    if not token:
+                        raise documentos.ErroDocumento("Esse documento ainda não foi enviado para assinatura.")
+                    await self._aplicar_retorno_zapsign(repo, await documentos.detalhar(token, chave, ambiente), None)
+                    await _json(send, 200, {"documento": repo.documento(doc_id)})
+                    return
+        except PermissionError as erro:
+            await _json(send, 403, _erro(str(erro)))
+            return
+        except LookupError as erro:
+            await _json(send, 404, _erro(str(erro.args[0]) if erro.args else "Não encontrado."))
+            return
+        except (ValueError, KeyError) as erro:  # ErroDocumento é ValueError
+            await _json(send, 400, _erro(str(erro)))
+            return
+        await _responder(send, 405, b"Metodo nao permitido")
 
     async def _horas(self, scope, receive, send, resto: str) -> None:
         """Horas por processo. GET/POST /horas, PATCH/DELETE /horas/<id>, GET /horas/relatorio,

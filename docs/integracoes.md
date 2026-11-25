@@ -69,3 +69,14 @@ chave e remetente configurados; senão, pelo SMTP. Serve para servidores que blo
 4. O SMTP continua cadastrável como reserva: sem o Brevo configurado, ele vale como antes.
 
 A chave fica cifrada no cofre e nunca é exibida de volta nem gravada em log.
+
+## ZapSign: documentos e assinatura
+
+A tela **Documentos** gera PDF a partir de modelos DOCX (campos `{{cliente_nome}}`, `{{poderes}}`...) e envia para assinatura. O PDF é feito pelo LibreOffice, instalado na imagem Docker.
+
+Variáveis de ambiente (além da chave `ZAPSIGN_API_KEY` do cofre):
+- `ZAPSIGN_AMBIENTE=sandbox` usa `sandbox.api.zapsign.com.br` (sem validade jurídica; token próprio). Sem a variável, vale a produção, que exige plano de API.
+- `ZAPSIGN_WEBHOOK_TOKEN`: segredo do webhook. A ZapSign não assina as chamadas, então o segredo vai num cabeçalho que a própria ZapSign repete a cada aviso.
+
+Webhook: no painel da ZapSign (Configurações > Integrações > ZapSign API > Webhooks), cadastre `https://<servidor>/zapsign/webhook`, os eventos `doc_signed`, `doc_refused` e `doc-expired`, e o cabeçalho `X-Webhook-Token` com o valor de `ZAPSIGN_WEBHOOK_TOKEN`. Sem o webhook, o botão **Atualizar** da linha do documento consulta a ZapSign na hora.
+O PDF assinado é baixado e guardado no banco: o link da ZapSign vale só 60 minutos.

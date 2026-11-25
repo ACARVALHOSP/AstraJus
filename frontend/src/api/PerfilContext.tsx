@@ -12,7 +12,7 @@ export const AREAS: Record<string, string> = {
 }
 const ABA_AREA: Record<string, string> = {
   casos: 'casos', atividades: 'atividades', agenda: 'atividades', 'modelos-prazo': 'atividades', horas: 'atividades', 'publicacoes-oab': 'publicacoes_oab', monitoramentos: 'publicacoes_oab',
-  contatos: 'contatos', processo: 'pesquisa', publicacoes: 'pesquisa', financeiro: 'financeiro', pagamentos: 'pagamentos', integracoes: 'integracoes',
+  contatos: 'contatos', documentos: 'contatos', processo: 'pesquisa', publicacoes: 'pesquisa', financeiro: 'financeiro', pagamentos: 'pagamentos', integracoes: 'integracoes',
 }
 
 type Dados = { login: string | null; nome: string | null; email: string; foto: string; avisosPublicacao: AvisosPublicacao; nivel: string; permissoes: Record<string, Grau> }
