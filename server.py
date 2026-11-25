@@ -18,6 +18,7 @@ import json
 import logging
 import math
 import os
+import random
 import re
 import secrets
 import smtplib
@@ -87,7 +88,7 @@ DJEN_BASE_URL = "https://comunicaapi.pje.jus.br/api/v1/comunicacao"
 # A API DataJud é frequentemente lenta (observado ~48s em teste real); timeouts curtos
 # geram falso negativo, por isso o limite é alto e há uma nova tentativa.
 DATAJUD_TIMEOUT_S = 70.0
-DATAJUD_TENTATIVAS = 3  # o gateway do CNJ devolve 504 aos 60s; o sucesso é intermitente
+DATAJUD_TENTATIVAS = 4  # o gateway do CNJ devolve 504 aos 60s; o sucesso é intermitente
 DATAJUD_BACKOFF_S = 3.0
 
 DJEN_TIMEOUT_S = 30.0
@@ -112,6 +113,44 @@ MONITORAMENTO_RETROATIVO_DIAS = 90
 MONITORAMENTO_MAX_HASHES_LEMBRADOS = 50
 
 DATAJUD_CACHE_TTL_S = 3600.0  # resultados do DataJud ficam em cache por 1 hora
+
+# Limitador global de tráfego ao DataJud: a API pública devolve 429/504 quando várias consultas
+# chegam juntas. Um semáforo limita as requisições em voo e um intervalo mínimo espaça os inícios.
+try:
+    DATAJUD_MAX_CONCORRENTES = max(1, int(os.environ.get("CNJ_DATAJUD_MAX_CONCORRENTES", "3")))
+except ValueError:
+    DATAJUD_MAX_CONCORRENTES = 3
+try:
+    DATAJUD_INTERVALO_S = max(0.0, float(os.environ.get("CNJ_DATAJUD_INTERVALO_S", "0.5")))
+except ValueError:
+    DATAJUD_INTERVALO_S = 0.5
+DATAJUD_BACKOFFS_S = (2.0, 5.0, 12.0)  # espera após a 1ª, 2ª e 3ª falha (4 tentativas)
+DATAJUD_BACKOFF_JITTER = 0.25          # acréscimo aleatório de até 25%
+DATAJUD_RETRY_AFTER_MAX_S = 30.0       # teto para o cabeçalho Retry-After
+
+# Semáforo/lock criados sob demanda, dentro do loop em execução (ver _limitador_datajud).
+_LOOP_DATAJUD = None
+_SEM_DATAJUD = None
+_LOCK_INTERVALO_DATAJUD = None
+_ULTIMO_INICIO_DATAJUD = 0.0
+
+
+def _limitador_datajud():
+    """Devolve (semáforo, lock) do limitador global, criando-os na primeira chamada.
+
+    asyncio.Semaphore/Lock ficam presos ao loop em que foram criados; por isso são criados
+    sob demanda e recriados quando a chamada vem de outro loop (comum em testes com asyncio.run).
+    """
+    global _LOOP_DATAJUD, _SEM_DATAJUD, _LOCK_INTERVALO_DATAJUD, _ULTIMO_INICIO_DATAJUD
+    loop = asyncio.get_running_loop()
+    if _SEM_DATAJUD is None or _LOOP_DATAJUD is not loop:
+        _LOOP_DATAJUD = loop
+        _SEM_DATAJUD = asyncio.Semaphore(DATAJUD_MAX_CONCORRENTES)
+        _LOCK_INTERVALO_DATAJUD = asyncio.Lock()
+        _ULTIMO_INICIO_DATAJUD = 0.0
+    return _SEM_DATAJUD, _LOCK_INTERVALO_DATAJUD
+
+
 MONITORAMENTO_AVISO_EXPIRACAO_DIAS = 30  # avisa por e-mail N dias antes de expirar
 MONITORAMENTO_BACKOFF_MAX_HORAS = 48.0   # teto do backoff exponencial por monitoramento
 MONITORAMENTO_MAX_CONCORRENTES = 3       # semáforo para o loop de verificação/captura
@@ -521,40 +560,66 @@ async def _datajud_post_com_retry(url: str, headers: dict, corpo: dict):
     """Faz o POST com timeout de 70s. Retenta em timeout, em 502/503/504 (gateway lento) e em
     429 (Elasticsearch sobrecarregado, comum em horário de pico).
 
+    O tráfego passa por um limitador global (semáforo + intervalo mínimo entre inícios) para
+    reduzir a sobrecarga que provoca 429/504. Nas retentativas respeita Retry-After (até 30s)
+    ou usa backoff exponencial com jitter.
+
     Retorna a resposta httpx em caso de sucesso, ou um dicionário de erro já pronto.
     """
+    global _ULTIMO_INICIO_DATAJUD
     ultimo_problema = "sem detalhes"
     async with _cliente(DATAJUD_TIMEOUT_S) as cliente:
         for tentativa in range(1, DATAJUD_TENTATIVAS + 1):
-            try:
-                resp = await cliente.post(url, headers=headers, json=corpo)
-            except httpx.TimeoutException:
-                ultimo_problema = f"timeout após {DATAJUD_TIMEOUT_S:.0f}s"
-            except httpx.HTTPError as exc:
-                ultimo_problema = f"erro de conexão: {exc}"
-            else:
-                if resp.status_code in (429, 502, 503, 504):
-                    ultimo_problema = f"HTTP {resp.status_code} da API DataJud (sobrecarga ou gateway lento)"
-                elif resp.status_code in (401, 403):
-                    _CIRCUIT_DATAJUD.registrar_sucesso()  # API respondeu; erro é de autenticação
-                    return _erro(
-                        f"HTTP {resp.status_code} da API DataJud: chave de API rejeitada. "
-                        "O CNJ pode ter rotacionado a chave pública; consulte "
-                        "https://datajud-wiki.cnj.jus.br/api-publica/ e defina DATAJUD_API_KEY."
-                    )
-                elif resp.status_code == 404:
-                    _CIRCUIT_DATAJUD.registrar_sucesso()  # API respondeu; tribunal inválido
-                    return _erro("HTTP 404 da API DataJud: sigla de tribunal provavelmente inválida.")
-                elif resp.status_code >= 400:
-                    _CIRCUIT_DATAJUD.registrar_sucesso()  # API respondeu com erro de cliente
-                    return _erro(f"HTTP {resp.status_code} da API DataJud: {resp.text[:300]}")
+            semaforo, lock_intervalo = _limitador_datajud()
+            resp = None
+            async with semaforo:
+                # O intervalo é marcado no início efetivo da requisição, com o semáforo já tomado,
+                # para que as requisições não saiam em rajada quando uma vaga é liberada.
+                async with lock_intervalo:
+                    espera_intervalo = _ULTIMO_INICIO_DATAJUD + DATAJUD_INTERVALO_S - time.monotonic()
+                    if espera_intervalo > 0:
+                        await asyncio.sleep(espera_intervalo)
+                    _ULTIMO_INICIO_DATAJUD = time.monotonic()
+                try:
+                    resp = await cliente.post(url, headers=headers, json=corpo)
+                except httpx.TimeoutException:
+                    ultimo_problema = f"timeout após {DATAJUD_TIMEOUT_S:.0f}s"
+                except httpx.HTTPError as exc:
+                    ultimo_problema = f"erro de conexão: {exc}"
                 else:
-                    _CIRCUIT_DATAJUD.registrar_sucesso()
-                    return resp
+                    if resp.status_code in (429, 502, 503, 504):
+                        ultimo_problema = f"HTTP {resp.status_code} da API DataJud (sobrecarga ou gateway lento)"
+                    elif resp.status_code in (401, 403):
+                        _CIRCUIT_DATAJUD.registrar_sucesso()  # API respondeu; erro é de autenticação
+                        return _erro(
+                            f"HTTP {resp.status_code} da API DataJud: chave de API rejeitada. "
+                            "O CNJ pode ter rotacionado a chave pública; consulte "
+                            "https://datajud-wiki.cnj.jus.br/api-publica/ e defina DATAJUD_API_KEY."
+                        )
+                    elif resp.status_code == 404:
+                        _CIRCUIT_DATAJUD.registrar_sucesso()  # API respondeu; tribunal inválido
+                        return _erro("HTTP 404 da API DataJud: sigla de tribunal provavelmente inválida.")
+                    elif resp.status_code >= 400:
+                        _CIRCUIT_DATAJUD.registrar_sucesso()  # API respondeu com erro de cliente
+                        return _erro(f"HTTP {resp.status_code} da API DataJud: {resp.text[:300]}")
+                    else:
+                        _CIRCUIT_DATAJUD.registrar_sucesso()
+                        return resp
 
             log.warning("DataJud tentativa %d/%d falhou: %s", tentativa, DATAJUD_TENTATIVAS, ultimo_problema)
             if tentativa < DATAJUD_TENTATIVAS:
-                await asyncio.sleep(DATAJUD_BACKOFF_S * tentativa)
+                espera = None
+                if resp is not None:
+                    retry_after = (resp.headers.get("Retry-After") or "").strip()
+                    if retry_after:
+                        try:
+                            espera = min(max(0.0, float(retry_after)), DATAJUD_RETRY_AFTER_MAX_S)
+                        except ValueError:
+                            espera = None
+                if espera is None:
+                    base = DATAJUD_BACKOFFS_S[min(tentativa - 1, len(DATAJUD_BACKOFFS_S) - 1)]
+                    espera = base * (1.0 + random.uniform(0.0, DATAJUD_BACKOFF_JITTER))
+                await asyncio.sleep(espera)
 
     _CIRCUIT_DATAJUD.registrar_falha()
     return _erro(
