@@ -37,6 +37,9 @@ class _Simulado:
         self._transporte_original = server._TRANSPORTE_HTTP
         self._patches = [
             mock.patch.object(server, "DATAJUD_BACKOFF_S", 0),
+            mock.patch.object(server, "DATAJUD_BACKOFFS_S", (0.0, 0.0, 0.0)),
+            mock.patch.object(server, "DATAJUD_BACKOFF_JITTER", 0.0),
+            mock.patch.object(server, "DATAJUD_INTERVALO_S", 0.0),
             mock.patch.object(server, "DJEN_BACKOFF_S", 0),
         ]
         for p in self._patches:
