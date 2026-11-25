@@ -12,11 +12,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY pyproject.toml README.md server.py db.py cnj.py tpu.py _util.py google_integracao.py agenda_atividades.py notificacoes.py monitoramento_runtime.py asaas_integracao.py integracoes.py integracoes_http.py usuarios_admin.py financeiro_juridico.py triagem.py polos.py regras_prazo.py horas.py emails_html.py automacoes.py regras_responsavel.py nomes.py autocadastro.py guia-do-usuario.html ./
+COPY pyproject.toml README.md server.py db.py cnj.py tpu.py _util.py google_integracao.py agenda_atividades.py notificacoes.py monitoramento_runtime.py asaas_integracao.py integracoes.py integracoes_http.py usuarios_admin.py financeiro_juridico.py triagem.py polos.py regras_prazo.py horas.py emails_html.py automacoes.py regras_responsavel.py nomes.py autocadastro.py documentos.py guia-do-usuario.html ./
 COPY static/ ./static/
 COPY modulos/ ./modulos/
 COPY tpu_dados/ ./tpu_dados/
 COPY --from=frontend-build /frontend/dist/ ./frontend-dist/
+# LibreOffice converte os modelos DOCX preenchidos em PDF (documentos.py).
+RUN apt-get update && apt-get install -y --no-install-recommends libreoffice-writer fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir . \
     && useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app \
     && mkdir -p /data && chown app:app /data

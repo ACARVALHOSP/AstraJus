@@ -5,7 +5,7 @@ import {
   Scale, Users, CalendarCheck, CalendarDays, Search, Gavel, Briefcase,
   Newspaper, History, FileSearch, Receipt, KeyRound,
   Settings, Wallet, CreditCard, ShieldCheck, Menu, X,
-  ChevronDown, ChevronRight, House, ListChecks, Clock, Puzzle,
+  ChevronDown, ChevronRight, House, ListChecks, Clock, Puzzle, FileText,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ClienteProvider, useCliente } from './api/ClienteContext'
@@ -42,6 +42,7 @@ const Contatos = lazy(() => import('./routes/Contatos'))
 const Casos = lazy(() => import('./routes/Casos'))
 const RegrasPrazo = lazy(() => import('./routes/RegrasPrazo'))
 const HorasPagina = lazy(() => import('./routes/Horas'))
+const Documentos = lazy(() => import('./routes/Documentos'))
 import './app-radix.css'
 
 const CHAVE_ACCENT = 'astrajus-accent'
@@ -59,6 +60,7 @@ const GRUPOS_BASE = [
       { id: 'horas', label: 'Horas', icone: Clock },
       { id: 'publicacoes-oab', label: 'Publicações recebidas', icone: Gavel },
       { id: 'contatos', label: 'Contatos', icone: Users },
+      { id: 'documentos', label: 'Documentos', icone: FileText },
     ],
   },
   {
@@ -172,6 +174,7 @@ function ConteudoAba({ abaAtiva }: { abaAtiva: string }) {
     case 'administracao': return <Administracao />
     case 'modelos-prazo': return <RegrasPrazo />
     case 'horas': return <HorasPagina />
+    case 'documentos': return <Documentos />
     case 'acesso': return <Acesso />
     case 'processo': return <Processo />
     case 'publicacoes': return <Publicacoes />

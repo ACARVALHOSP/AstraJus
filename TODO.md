@@ -55,7 +55,7 @@ Restam ~26 arquivos com `buscarJson` direto. Ordem sugerida:
 - [x] **B+F** Horas por caso: cronômetro, lançamento manual, tempo faturável, valor por hora (por pessoa, gravado em cada lançamento), relatório (totais e CSV) e faturamento em um lançamento de honorário. Pendências: indicador do cronômetro na barra superior (hoje só na tela Horas); horas na ficha do processo; valor por hora por processo ou cliente (contrato); faturar vários processos do mesmo cliente de uma vez; relatório em PDF; aprovação de horas; horas no resumo do Escritório
 - [ ] **B+F** Financeiro: contas/caixas, fluxo de caixa, recorrência de honorários e controle de alvarás
 - [ ] **B+F** Contrato de honorários com geração de parcelas e recibo em PDF; lembretes de cobrança (já listado como "ainda não existe" no README)
-- [ ] **B+F** Assinatura eletrônica via ZapSign (hoje só configura e testa a API)
+- [ ] **B+F** Assinatura eletrônica via ZapSign: modelos DOCX, PDF e envio feitos (tela Documentos); falta guardar o assinado no Drive do caso e vincular proposta/contrato do CRM
 - [ ] **B+F** Modelos de peças e documentos: "Nova peça" com modelo opcional e processo vinculado, já nascendo com os dados do processo
 - [ ] **B+F** Radar legislativo: listas de palavras-chave sobre Câmara e Senado, com itens pendentes e revisados
 - [ ] **B+F** CRM de triagem: atendimento inicial (dados, parte contrária, área e honorários) com pendentes, convertidos e arquivados, antes de virar cliente ou processo
