@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 import documentos
 
@@ -41,6 +42,26 @@ class TestDocumentos(unittest.TestCase):
         self.assertNotIn("{{", texto)
         negrito = Document(io.BytesIO(pronto)).paragraphs[0].runs[1]
         self.assertIn("Ana Souza", negrito.text)  # o valor fica no trecho onde o campo começa, com a formatação dele
+
+    def test_texto_do_modelo(self):
+        doc = Document()
+        titulo = doc.add_paragraph()
+        titulo.add_run("{{cliente_nome}}").bold = True
+        centro = doc.add_paragraph("Cidade, {{data_hoje}}.")
+        centro.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.add_paragraph("   ")  # vazio: não entra na prévia
+        doc.add_table(rows=1, cols=1).cell(0, 0).text = "Processo {{caso_numero}}"
+        saida = io.BytesIO()
+        doc.save(saida)
+
+        paragrafos = documentos.texto_do_modelo(saida.getvalue())
+
+        self.assertEqual([p["texto"] for p in paragrafos],
+                         ["{{cliente_nome}}", "Cidade, {{data_hoje}}.", "Processo {{caso_numero}}"])
+        self.assertTrue(paragrafos[0]["negrito"])
+        self.assertFalse(paragrafos[1]["negrito"])
+        self.assertTrue(paragrafos[1]["centralizado"])
+        self.assertFalse(paragrafos[2]["centralizado"])
 
     def test_arquivo_invalido(self):
         for ruim in (b"", b"nao e docx"):
