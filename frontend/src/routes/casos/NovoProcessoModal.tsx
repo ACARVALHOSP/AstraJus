@@ -108,6 +108,7 @@ export default function NovoProcessoModal({
       limpar()
       onCriado(novoCaso)
       if (novoCaso.pasta_drive === 'falhou') avisar({ tipo: 'info', texto: 'Processo cadastrado, mas a pasta no Google Drive não foi criada. Abra o processo e use "Criar pasta no Drive".' })
+      if (novoCaso.pasta_drive === 'em_segundo_plano') avisar({ tipo: 'info', texto: 'A pasta do Drive está sendo criada em segundo plano.' })
     } catch (e) {
       setErro(e instanceof ErroMCP ? e.message : 'Falha ao cadastrar processo.')
     } finally {

@@ -171,6 +171,10 @@ def _agora_utc() -> datetime:
 # o webhook do Asaas mantém cada cobrança atualizada.
 _ASAAS_SINCRONIZACAO_MAX_S = 30 * 60
 
+# Quanto o cadastro de um processo espera pela pasta no Drive. Passado esse tempo, a criação continua
+# em segundo plano (a pasta aparece no processo quando terminar) e o cadastro responde na hora.
+PASTA_DRIVE_ESPERA_S = float(os.environ.get("CNJ_PASTA_DRIVE_ESPERA_S", "15"))
+
 
 def _sincronizacao_vencida(sincronizado_em: str | None) -> bool:
     if not sincronizado_em:
@@ -3608,7 +3612,7 @@ async def _montar_capa_via_tribunal(numero: str, tribunal: str) -> tuple[dict | 
 
 def _classificador_triagem():
     """(classificador, modo). O interruptor é o módulo "Triagem por IA" (Configurações › Módulos, desligado por
-    padrão). Ligado, usa só o Jev (typesafe/jev-1.14) pela integração OpenRouter ativa, sem troca de modelo.
+    padrão). Ligado, usa só o Jev (typesafe/jev-router) pela integração OpenRouter ativa, sem troca de modelo.
     Modos devolvidos: desligado, sem_chave, openrouter."""
     if not registro_modulos.ativo("triagem"):
         return None, "desligado"
@@ -3921,6 +3925,9 @@ class _AutenticacaoBearer:
         # Em memória só: perde-se num restart do servidor, o que só obriga a pessoa a clicar
         # "Conectar" de novo - sem risco de segurança.
         self._google_estados_pendentes: dict[str, datetime] = {}
+        # Criações de pasta no Drive que passaram do tempo de espera e seguem rodando: guardadas aqui
+        # só para não serem coletadas e para registrar erro no log.
+        self._tarefas_fundo: set[asyncio.Task] = set()
         self.integracoes = _COFRE_INTEGRACOES
         self._google_fluxos = {}
         self._integracoes_google_candidatos = {}
@@ -5069,16 +5076,33 @@ class _AutenticacaoBearer:
 
     async def _tentar_pasta_drive(self, caso: dict) -> None:
         """Pasta no Drive logo após criar o processo. Nunca derruba o cadastro: o resultado vai em
-        caso["pasta_drive"] ('criada', 'falhou' ou 'nao_configurado') para a tela avisar."""
+        caso["pasta_drive"] ('criada', 'falhou', 'nao_configurado' ou 'em_segundo_plano') para a tela avisar.
+        Se a criação passar de PASTA_DRIVE_ESPERA_S, ela continua em segundo plano e o cadastro responde na hora."""
         if not self._google_conectado():
             caso["pasta_drive"] = "nao_configurado"
             return
+        tarefa = asyncio.ensure_future(self._criar_pasta_drive_do_caso(caso))
+        await asyncio.wait({tarefa}, timeout=PASTA_DRIVE_ESPERA_S)
+        if not tarefa.done():
+            caso["pasta_drive"] = "em_segundo_plano"
+            self._tarefas_fundo.add(tarefa)
+            tarefa.add_done_callback(lambda t: self._pasta_drive_terminou(t, caso["id"]))
+            return
         try:
-            caso["drive_pasta_id"] = await self._criar_pasta_drive_do_caso(caso)
+            caso["drive_pasta_id"] = tarefa.result()
             caso["pasta_drive"] = "criada"
         except Exception:
             log.exception("Caso %s: falha ao criar pasta no Drive", caso["id"])
             caso["pasta_drive"] = "falhou"
+
+    def _pasta_drive_terminou(self, tarefa: asyncio.Task, caso_id: str) -> None:
+        """Callback de uma criação de pasta que ficou em segundo plano."""
+        self._tarefas_fundo.discard(tarefa)
+        if tarefa.cancelled():
+            return
+        erro = tarefa.exception()
+        if erro is not None:
+            log.error("Caso %s: falha ao criar pasta no Drive em segundo plano: %s", caso_id, erro)
 
     async def _pasta_drive_sob_demanda(self, send, alvo: str, alvo_id: str) -> None:
         """POST /casos/<id>/pasta-drive e /clientes/<id>/pasta-drive: cria (ou refaz) a pasta."""

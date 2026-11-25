@@ -26,7 +26,7 @@ LIMITE_ALTO = 0.90   # acima: sugestão em destaque
 LIMITE_BAIXO = 0.50  # abaixo: nenhuma sugestão é mostrada
 TAMANHO_MAX_TEXTO = 6000
 MODOS = ("desligado", "simulado", "jev", "openrouter")
-MODELO_OPENROUTER = "typesafe/jev-1.14"
+MODELO_OPENROUTER = "typesafe/jev-router"
 
 # Mesmos ids de frontend/src/routes/publicacoes-oab/prazos.ts (PRAZOS_PADRAO); há um teste que confere.
 PRAZOS_PADRAO = {
@@ -352,7 +352,7 @@ class ClassificadorOpenRouter:
                 if resp.status_code == 402:
                     raise ErroTriagem("Créditos insuficientes no OpenRouter (402).")
                 if resp.status_code in (400, 404, 413, 422):
-                    raise ErroTriagem(f"O OpenRouter recusou o pedido ({resp.status_code}).")
+                    raise ErroTriagem(f"O OpenRouter recusou o pedido ({resp.status_code}): {resp.text[:200]}")
                 ultimo = f"HTTP {resp.status_code}"
                 if resp.status_code not in (408, 429, 500, 502, 503, 504, 529):
                     break
