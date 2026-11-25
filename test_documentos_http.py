@@ -83,6 +83,7 @@ class DocumentosHttpTest(unittest.TestCase):
         m = self.modelo()
         _, previa = self.req("POST", f"/documentos/modelos/{m['id']}/previa", {"cliente_id": self.cliente["id"]})
         valores = {c["chave"]: c["valor"] for c in previa["campos"]}
+        self.assertTrue(any("Outorgante" in p["texto"] for p in previa["paragrafos"]))
         self.assertEqual(valores["cliente_nome"], "Maria Souza")
         self.assertEqual(valores["poderes"], "")
         valores["poderes"] = "ad judicia"

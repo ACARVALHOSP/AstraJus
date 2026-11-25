@@ -20,6 +20,7 @@ from pathlib import Path
 
 import httpx
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 MAX_DOCX = 5 * 1024 * 1024
 TIPOS = ("procuracao", "contrato", "outro")
@@ -94,21 +95,49 @@ def _abrir(docx: bytes):
         raise ErroDocumento("Não foi possível ler o DOCX. Abra no Word e salve novamente como .docx.") from None
 
 
+def _paragrafos_de_tabelas(tabelas):
+    """Parágrafos das células de tabelas, descendo nas tabelas aninhadas."""
+    for tabela in tabelas:
+        for linha in tabela.rows:
+            for celula in linha.cells:
+                yield from celula.paragraphs
+                yield from _paragrafos_de_tabelas(celula.tables)
+
+
+def _paragrafos_corpo(doc):
+    """Parágrafos do corpo e de tabelas (em qualquer nível), na ordem, sem cabeçalho/rodapé."""
+    yield from doc.paragraphs
+    yield from _paragrafos_de_tabelas(doc.tables)
+
+
 def _paragrafos(doc):
     """Parágrafos do corpo, de tabelas (em qualquer nível) e de cabeçalhos/rodapés."""
-    def de_tabelas(tabelas):
-        for tabela in tabelas:
-            for linha in tabela.rows:
-                for celula in linha.cells:
-                    yield from celula.paragraphs
-                    yield from de_tabelas(celula.tables)
-
-    yield from doc.paragraphs
-    yield from de_tabelas(doc.tables)
+    yield from _paragrafos_corpo(doc)
     for secao in doc.sections:
         for parte in (secao.header, secao.footer, secao.first_page_header, secao.first_page_footer):
             yield from parte.paragraphs
-            yield from de_tabelas(parte.tables)
+            yield from _paragrafos_de_tabelas(parte.tables)
+
+
+def texto_do_modelo(docx: bytes) -> list[dict]:
+    """Parágrafos do corpo e das tabelas para a prévia ao vivo no diálogo de gerar.
+
+    Mantém os {{campos}} crus (o frontend troca pelos valores), ignora cabeçalho/rodapé e
+    devolve só os parágrafos não vazios, com o estilo que dá para reproduzir no navegador."""
+    saida = []
+    for paragrafo in _paragrafos_corpo(_abrir(docx)):
+        texto = "".join(run.text for run in paragrafo.runs)
+        if not texto.strip():
+            continue
+        com_texto = [run for run in paragrafo.runs if run.text.strip()]
+        saida.append({
+            "texto": texto,
+            "negrito": bool(com_texto) and all(run.bold for run in com_texto),
+            "centralizado": paragrafo.alignment == WD_ALIGN_PARAGRAPH.CENTER,
+        })
+        if len(saida) >= 400:
+            break
+    return saida
 
 
 def preencher(docx: bytes, valores: dict) -> bytes:

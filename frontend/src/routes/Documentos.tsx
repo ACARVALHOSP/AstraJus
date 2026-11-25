@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Badge, Button, Callout, Checkbox, Dialog, Flex, Select, Table, Text, TextArea, TextField } from '@radix-ui/themes'
+import { Badge, Box, Button, Callout, Checkbox, Dialog, Flex, Select, Table, Text, TextArea, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Download, FilePlus, RefreshCw, Send, Trash2, Upload } from 'lucide-react'
 import { useAvisos } from '../Avisos'
 import CabecalhoPagina from '../CabecalhoPagina'
@@ -22,6 +22,7 @@ type Documento = {
   signatarios: Signatario[]; tem_pdf: boolean; tem_assinado: boolean; criado_em: string
 }
 type Campo = { chave: string; rotulo: string; origem: string; valor: string }
+type Paragrafo = { texto: string; negrito: boolean; centralizado: boolean }
 type ContatoLista = { id: string; nome?: string; email?: string | null; telefone?: string | null }
 type CasoLista = { id: string; titulo?: string; cliente_id?: string }
 
@@ -31,6 +32,7 @@ const STATUS: Record<string, { rotulo: string; cor: 'gray' | 'blue' | 'green' | 
   assinado: { rotulo: 'Assinado', cor: 'green' }, recusado: { rotulo: 'Recusado', cor: 'red' }, expirado: { rotulo: 'Expirado', cor: 'amber' },
 }
 const LONGOS = new Set(['poderes', 'objeto', 'condicoes_pagamento', 'cliente_qualificacao'])
+const CAMPO = /\{\{\s*([a-z0-9_]+)\s*\}\}/g
 const NENHUM = '__nenhum__'
 
 const mensagem = (e: unknown, padrao: string) => (e instanceof ErroMCP ? e.message : padrao)
@@ -221,6 +223,64 @@ function DialogoModelo({ catalogo, onFechar }: { catalogo: Catalogo; onFechar: (
   )
 }
 
+/** Troca cada {{campo}} do parágrafo pelo valor digitado ou por um aviso amarelo de campo em branco. */
+function partesDoParagrafo(texto: string, valores: Record<string, string>, rotulos: Record<string, string>, foco: string | null) {
+  const partes: ReactNode[] = []
+  let ultimo = 0
+  for (const achado of texto.matchAll(CAMPO)) {
+    const inicio = achado.index ?? 0
+    if (inicio > ultimo) partes.push(texto.slice(ultimo, inicio))
+    const chave = achado[1]
+    const valor = (valores[chave] ?? '').trim()
+    const emFoco = foco === chave
+    partes.push(
+      <span key={`${inicio}-${chave}`} data-campo={chave} style={{
+        whiteSpace: 'pre-wrap',
+        ...(valor ? {} : { background: '#fff3b0', color: '#5c4a00', padding: '0 2px', borderRadius: 2 }),
+        outline: emFoco ? '2px solid var(--accent-9)' : undefined,
+      }}>
+        {valor || `[${rotulos[chave] ?? chave}]`}
+      </span>,
+    )
+    ultimo = inicio + achado[0].length
+  }
+  if (ultimo < texto.length) partes.push(texto.slice(ultimo))
+  return partes
+}
+
+/** Prévia ao vivo do documento: o texto do modelo com os valores trocados a cada tecla, tudo no cliente. */
+function PreviaDocumento({ paragrafos, valores, rotulos, foco }: {
+  paragrafos: Paragrafo[]; valores: Record<string, string>; rotulos: Record<string, string>; foco: string | null
+}) {
+  const caixa = useRef<HTMLDivElement>(null)
+
+  // Mantém o campo em foco visível dentro do papel.
+  useEffect(() => {
+    if (!foco) return
+    caixa.current?.querySelector<HTMLElement>(`[data-campo="${foco}"]`)?.scrollIntoView({ block: 'nearest' })
+  }, [foco])
+
+  return (
+    <>
+      <Box ref={caixa} style={{
+        background: '#fff', color: '#1a1a1a', fontFamily: 'Georgia, "Times New Roman", serif',
+        fontSize: 12, lineHeight: 1.55, padding: '18px 20px', border: '1px solid var(--gray-a5)',
+        borderRadius: 'var(--radius-3)', maxHeight: '60vh', overflow: 'auto',
+      }}>
+        {paragrafos.map((p, i) => (
+          <Text as="p" key={i} style={{
+            margin: '0 0 8px', fontFamily: 'inherit', fontSize: 'inherit', lineHeight: 'inherit',
+            fontWeight: p.negrito ? 700 : 400, textAlign: p.centralizado ? 'center' : 'justify', whiteSpace: 'pre-wrap',
+          }}>
+            {partesDoParagrafo(p.texto, valores, rotulos, foco)}
+          </Text>
+        ))}
+      </Box>
+      <Text as="p" size="1" color="gray" mt="2">Prévia aproximada: o papel timbrado e a paginação aparecem no PDF.</Text>
+    </>
+  )
+}
+
 function DialogoGerar({ catalogo, modelos, contatos, onFechar, onGerado }: {
   catalogo: Catalogo; modelos: Modelo[]; contatos: ContatoLista[]; onFechar: () => void; onGerado: (d: Documento) => void
 }) {
@@ -230,6 +290,9 @@ function DialogoGerar({ catalogo, modelos, contatos, onFechar, onGerado }: {
   const [contatoId, setContatoId] = useState('')
   const [casoId, setCasoId] = useState('')
   const [campos, setCampos] = useState<Campo[]>([])
+  const [paragrafos, setParagrafos] = useState<Paragrafo[]>([])
+  const [automaticos, setAutomaticos] = useState<Set<string>>(new Set())
+  const [foco, setFoco] = useState<string | null>(null)
   const [poderes, setPoderes] = useState<Set<string>>(new Set())
   const [erro, setErro] = useState<string | null>(null)
   const [gerando, setGerando] = useState(false)
@@ -239,8 +302,15 @@ function DialogoGerar({ catalogo, modelos, contatos, onFechar, onGerado }: {
   useEffect(() => {
     if (!modeloId) return
     let cancelado = false
-    enviarJson<{ campos: Campo[] }>(cliente, `/documentos/modelos/${modeloId}/previa`, { cliente_id: contatoId || null, caso_id: casoId || null })
-      .then(r => { if (!cancelado) { setCampos(r.campos); setErro(null) } })
+    enviarJson<{ campos: Campo[]; paragrafos: Paragrafo[] }>(cliente, `/documentos/modelos/${modeloId}/previa`, { cliente_id: contatoId || null, caso_id: casoId || null })
+      .then(r => {
+        if (cancelado) return
+        setCampos(r.campos)
+        setParagrafos(r.paragrafos ?? [])
+        // Guarda o que já veio do cadastro para destacar os campos na prévia.
+        setAutomaticos(new Set(r.campos.filter(c => c.origem !== 'manual' && c.valor.trim()).map(c => c.chave)))
+        setErro(null)
+      })
       .catch(e => { if (!cancelado) setErro(mensagem(e, 'Não foi possível carregar o modelo.')) })
     return () => { cancelado = true }
   }, [cliente, modeloId, contatoId, casoId])
@@ -254,6 +324,7 @@ function DialogoGerar({ catalogo, modelos, contatos, onFechar, onGerado }: {
     const novo = new Set(poderes)
     if (marcado) novo.add(chave); else novo.delete(chave)
     setPoderes(novo)
+    setFoco('poderes')
     definir('poderes', catalogo.poderes.filter(p => novo.has(p.chave)).map(p => p.texto).join('; ') + (novo.size ? '.' : ''))
     void texto
   }
@@ -272,56 +343,77 @@ function DialogoGerar({ catalogo, modelos, contatos, onFechar, onGerado }: {
   }
 
   const modelo = modelos.find(m => String(m.id) === modeloId)
+  const valores = Object.fromEntries(campos.map(c => [c.chave, c.valor]))
+  const rotulos = Object.fromEntries(campos.map(c => [c.chave, c.rotulo]))
+  const emBranco = campos.filter(c => !c.valor.trim()).length
   return (
     <Dialog.Root open onOpenChange={o => { if (!o) onFechar() }}>
-      <Dialog.Content maxWidth="720px">
+      <Dialog.Content maxWidth="1100px" maxHeight="90vh">
         <Dialog.Title>Gerar documento</Dialog.Title>
         <Dialog.Description size="2" color="gray" mb="3">Os campos vêm preenchidos com os dados do contato e podem ser editados antes de gerar o PDF.</Dialog.Description>
-        <Flex direction="column" gap="3">
-          <Flex gap="3" wrap="wrap">
-            <Select.Root value={modeloId} onValueChange={setModeloId}>
-              <Select.Trigger aria-label="Modelo" />
-              <Select.Content>{modelos.map(m => <Select.Item key={m.id} value={String(m.id)}>{m.nome}</Select.Item>)}</Select.Content>
-            </Select.Root>
-            <Select.Root value={contatoId || NENHUM} onValueChange={v => { setContatoId(v === NENHUM ? '' : v); setCasoId('') }}>
-              <Select.Trigger aria-label="Contato" placeholder="Contato" />
-              <Select.Content>
-                <Select.Item value={NENHUM}>Sem contato (preencher à mão)</Select.Item>
-                {contatos.map(c => <Select.Item key={c.id} value={c.id}>{c.nome}</Select.Item>)}
-              </Select.Content>
-            </Select.Root>
-            {casosDoContato.length > 0 && (
-              <Select.Root value={casoId || NENHUM} onValueChange={v => setCasoId(v === NENHUM ? '' : v)}>
-                <Select.Trigger aria-label="Processo" placeholder="Processo" />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16, alignItems: 'start' }}>
+          <Flex direction="column" gap="3">
+            <Flex gap="3" wrap="wrap">
+              <Select.Root value={modeloId} onValueChange={setModeloId}>
+                <Select.Trigger aria-label="Modelo" />
+                <Select.Content>{modelos.map(m => <Select.Item key={m.id} value={String(m.id)}>{m.nome}</Select.Item>)}</Select.Content>
+              </Select.Root>
+              <Select.Root value={contatoId || NENHUM} onValueChange={v => { setContatoId(v === NENHUM ? '' : v); setCasoId('') }}>
+                <Select.Trigger aria-label="Contato" placeholder="Contato" />
                 <Select.Content>
-                  <Select.Item value={NENHUM}>Sem processo</Select.Item>
-                  {casosDoContato.map(c => <Select.Item key={c.id} value={c.id}>{c.titulo}</Select.Item>)}
+                  <Select.Item value={NENHUM}>Sem contato (preencher à mão)</Select.Item>
+                  {contatos.map(c => <Select.Item key={c.id} value={c.id}>{c.nome}</Select.Item>)}
                 </Select.Content>
               </Select.Root>
+              {casosDoContato.length > 0 && (
+                <Select.Root value={casoId || NENHUM} onValueChange={v => setCasoId(v === NENHUM ? '' : v)}>
+                  <Select.Trigger aria-label="Processo" placeholder="Processo" />
+                  <Select.Content>
+                    <Select.Item value={NENHUM}>Sem processo</Select.Item>
+                    {casosDoContato.map(c => <Select.Item key={c.id} value={c.id}>{c.titulo}</Select.Item>)}
+                  </Select.Content>
+                </Select.Root>
+              )}
+            </Flex>
+            {modelo?.variaveis.includes('poderes') && (
+              <Flex direction="column" gap="1" role="group" aria-label="Poderes">
+                <Text size="2" weight="bold">Poderes</Text>
+                {catalogo.poderes.map(p => (
+                  <Text as="label" size="2" key={p.chave}><Flex gap="2" align="center"><Checkbox checked={poderes.has(p.chave)} onCheckedChange={v => alternarPoder(p.chave, p.texto, v === true)} />{p.texto}</Flex></Text>
+                ))}
+              </Flex>
             )}
+            {automaticos.size > 0 && <Text size="1" color="gray">Borda verde: veio do cadastro</Text>}
+            {campos.map(c => {
+              const doCadastro = automaticos.has(c.chave)
+              return (
+                <Flex key={c.chave} direction="column" gap="1">
+                  <Text as="label" size="2" weight="bold" htmlFor={`doc-${c.chave}`}>{c.rotulo}</Text>
+                  {LONGOS.has(c.chave)
+                    ? <TextArea id={`doc-${c.chave}`} rows={c.chave === 'cliente_qualificacao' ? 3 : 4} value={c.valor}
+                        onChange={e => definir(c.chave, e.target.value)} onFocus={() => setFoco(c.chave)} onBlur={() => setFoco(null)}
+                        style={doCadastro ? { boxShadow: 'inset 3px 0 0 var(--green-9)' } : undefined} />
+                    : <TextField.Root id={`doc-${c.chave}`} value={c.valor}
+                        onChange={e => definir(c.chave, e.target.value)} onFocus={() => setFoco(c.chave)} onBlur={() => setFoco(null)}
+                        style={doCadastro ? { boxShadow: 'inset 3px 0 0 var(--green-9)' } : undefined} />}
+                  {c.origem === 'manual' && !c.valor && <Text size="1" color="gray">Em branco, o documento sai com uma linha ________ para preencher.</Text>}
+                </Flex>
+              )
+            })}
+            <Erro texto={erro} />
           </Flex>
-          {modelo?.variaveis.includes('poderes') && (
-            <Flex direction="column" gap="1" role="group" aria-label="Poderes">
-              <Text size="2" weight="bold">Poderes</Text>
-              {catalogo.poderes.map(p => (
-                <Text as="label" size="2" key={p.chave}><Flex gap="2" align="center"><Checkbox checked={poderes.has(p.chave)} onCheckedChange={v => alternarPoder(p.chave, p.texto, v === true)} />{p.texto}</Flex></Text>
-              ))}
-            </Flex>
-          )}
-          {campos.map(c => (
-            <Flex key={c.chave} direction="column" gap="1">
-              <Text as="label" size="2" weight="bold" htmlFor={`doc-${c.chave}`}>{c.rotulo}</Text>
-              {LONGOS.has(c.chave)
-                ? <TextArea id={`doc-${c.chave}`} rows={c.chave === 'cliente_qualificacao' ? 3 : 4} value={c.valor} onChange={e => definir(c.chave, e.target.value)} />
-                : <TextField.Root id={`doc-${c.chave}`} value={c.valor} onChange={e => definir(c.chave, e.target.value)} />}
-              {c.origem === 'manual' && !c.valor && <Text size="1" color="gray">Em branco, o documento sai com uma linha ________ para preencher.</Text>}
-            </Flex>
-          ))}
-          <Erro texto={erro} />
-        </Flex>
-        <Flex gap="3" justify="end" mt="4">
-          <Button variant="soft" color="gray" size="2" onClick={onFechar}>Cancelar</Button>
-          <Button size="2" loading={gerando} disabled={!modeloId} onClick={() => void gerar()}>Gerar PDF</Button>
+          <div style={{ position: 'sticky', top: 0 }}>
+            <PreviaDocumento paragrafos={paragrafos} valores={valores} rotulos={rotulos} foco={foco} />
+          </div>
+        </div>
+        <Flex gap="3" justify="between" align="center" mt="4" wrap="wrap">
+          <Text size="1" color="gray">
+            {emBranco ? `${emBranco} campo(s) em branco: sairão como ________` : 'Todos os campos preenchidos. Confira a prévia.'}
+          </Text>
+          <Flex gap="3">
+            <Button variant="soft" color="gray" size="2" onClick={onFechar}>Cancelar</Button>
+            <Button size="2" loading={gerando} disabled={!modeloId} onClick={() => void gerar()}>Gerar PDF</Button>
+          </Flex>
         </Flex>
       </Dialog.Content>
     </Dialog.Root>

@@ -5346,7 +5346,8 @@ class _AutenticacaoBearer:
                     self.gestao.obter_caso(dados["caso_id"]) if dados.get("caso_id") else None)
                 campos = [{"chave": v, "rotulo": documentos.VARIAVEIS.get(v, (v, ""))[0], "origem": documentos.VARIAVEIS.get(v, ("", "manual"))[1],
                            "valor": auto.get(v, "")} for v in modelo["variaveis"]]
-                await _json(send, 200, {"modelo": modelo, "campos": campos})
+                paragrafos = await asyncio.to_thread(lambda: documentos.texto_do_modelo(repo.docx_do_modelo(modelo["id"])))
+                await _json(send, 200, {"modelo": modelo, "campos": campos, "paragrafos": paragrafos})
                 return
             elif not partes:
                 if metodo == "GET":
