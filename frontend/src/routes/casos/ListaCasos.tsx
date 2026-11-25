@@ -37,7 +37,7 @@ export type Caso = {
   responsavel?: string
   pasta?: string
   drive_pasta_id?: string | null
-  pasta_drive?: 'criada' | 'falhou' | 'nao_configurado'
+  pasta_drive?: 'criada' | 'falhou' | 'nao_configurado' | 'em_segundo_plano'
   acesso?: string
   ultima_movimentacao?: string
   monitorado?: boolean

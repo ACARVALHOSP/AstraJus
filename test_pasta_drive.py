@@ -83,6 +83,31 @@ class PastaDriveTest(unittest.TestCase):
         asyncio.run(self.mw._tentar_pasta_drive(caso))
         self.assertEqual(caso['pasta_drive'], 'nao_configurado')
 
+    def test_criacao_lenta_nao_segura_o_cadastro(self):
+        """Passado o tempo de espera, o cadastro segue e a pasta termina de ser criada em segundo plano."""
+        caso = self.novo_caso('Ação Lenta')
+        criar = self.drive.criar
+
+        async def criar_devagar(http, token, nome, pai=None):
+            await asyncio.sleep(0.2)
+            return await criar(http, token, nome, pai)
+
+        async def executar():
+            with mock.patch.object(google_integracao, 'criar_pasta_drive', criar_devagar), \
+                    mock.patch.object(server, 'PASTA_DRIVE_ESPERA_S', 0.02):
+                await self.mw._tentar_pasta_drive(caso)
+                self.assertEqual(caso['pasta_drive'], 'em_segundo_plano')
+                self.assertIsNone(caso.get('drive_pasta_id'))
+                self.assertEqual(len(self.mw._tarefas_fundo), 1)
+                await asyncio.gather(*self.mw._tarefas_fundo)   # deixa a criação terminar
+            self.assertEqual(self.mw._tarefas_fundo, set())     # o callback removeu a tarefa
+
+        asyncio.run(executar())
+        # a pasta acabou criada e gravada no banco, mesmo depois da resposta ao cadastro
+        pasta = self.gestao.obter_caso(caso['id'])['drive_pasta_id']
+        self.assertIsNotNone(pasta)
+        self.assertEqual(self.drive.pastas[pasta][0], 'Ação Lenta')
+
 
 if __name__ == '__main__':
     unittest.main()

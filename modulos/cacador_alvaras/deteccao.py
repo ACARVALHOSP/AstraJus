@@ -25,7 +25,7 @@ SITUACOES = {
 # Quanto maior, mais "acionável" a situação (ordena a lista e desempata trechos).
 PRIORIDADE = {"expedido": 5, "determinado": 4, "providencia_parte": 3, "indeferido": 2, "mencao": 1, "nenhum": 0}
 CONFIANCA_REGEX = {"expedido": 0.85, "determinado": 0.8, "providencia_parte": 0.75, "indeferido": 0.75, "mencao": 0.4}
-MODELO_PADRAO = "typesafe/jev-router"  # o caçador segue no roteador; só a triagem foi fixada no jev-1.14
+MODELO_PADRAO = "typesafe/jev-router"  # o caçador e a triagem usam o mesmo modelo do OpenRouter
 
 # Trabalha sobre texto sem acento e em minúsculas (ver `_sem_acento`).
 _CANDIDATA = re.compile(
