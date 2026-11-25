@@ -15,6 +15,7 @@ import { enviarJson } from '../../api/rest'
 import { formatarNomeExibicao } from '../../utils/formatadores'
 import { useEstreita } from '../../utils/useEstreita'
 import ClientesLoteModal from './ClientesLoteModal'
+import { nomeDoFunil, useFunilCatalogo } from './funil'
 
 export type ClienteItem = {
   id: string
@@ -25,6 +26,8 @@ export type ClienteItem = {
   telefone?: string
   email?: string
   etiquetas?: string[]
+  estagio?: string | null
+  origem?: string | null
 }
 type CasoResumo = { id: string; cliente_id?: string; clientes_adicionais?: string[] }
 const SEM_CASOS: CasoResumo[] = []
@@ -68,6 +71,9 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
   const [atalho, setAtalho] = useState<Atalho>('cliente')
   const [tipo, setTipo] = useState('')
   const [etiqueta, setEtiqueta] = useState('')
+  const [estagio, setEstagio] = useState('')
+  const [origem, setOrigem] = useState('')
+  const funil = useFunilCatalogo()
   const [pagina, setPagina] = useState(1)
   const [paraExcluir, setParaExcluir] = useState<ClienteItem | null>(null)
   const [excluindo, setExcluindo] = useState(false)
@@ -100,7 +106,7 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
   const { ordem, alternar: alternarOrdem } = useOrdenacao('contatos', { campo: 'nome', direcao: 'asc' })
   const ordenarPor = (campo: string) => { alternarOrdem(campo); setPagina(1) }
   const colunas = useColunas('contatos', [
-    { chave: 'contato', rotulo: 'Contato (telefone e e-mail)' }, { chave: 'etiquetas', rotulo: 'Etiquetas' }, { chave: 'processos', rotulo: 'Processos' },
+    { chave: 'contato', rotulo: 'Contato (telefone e e-mail)' }, { chave: 'etiquetas', rotulo: 'Etiquetas' }, { chave: 'funil', rotulo: 'Estágio e origem' }, { chave: 'processos', rotulo: 'Processos' },
   ])
 
   // Busca, tipo e etiqueta valem para todos os atalhos (e para seus contadores).
@@ -111,13 +117,15 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
     return (clientes ?? []).filter((c) => {
       if (tipo && c.tipo_pessoa !== tipo) return false
       if (etiqueta && !(c.etiquetas ?? []).includes(etiqueta)) return false
+      if (estagio && c.estagio !== estagio) return false
+      if (origem && c.origem !== origem) return false
       if (!consulta) return true
       if (soNumeros) {
         return [c.telefone, c.cpf_cnpj].some(v => String(v || '').replace(/\D/g, '').includes(digitos))
       }
       return normalizar(`${c.nome || ''} ${c.email || ''} ${c.cpf_cnpj || ''}`).includes(consulta)
     }).sort((a, b) => normalizar(a.nome || '').localeCompare(normalizar(b.nome || ''), 'pt-BR'))
-  }, [clientes, busca, tipo, etiqueta])
+  }, [clientes, busca, tipo, etiqueta, estagio, origem])
   const doAtalho = (c: ClienteItem, a: Atalho) => !a || (a === 'contato' ? c.perfil === 'contato' : c.perfil !== 'contato')
   const lista = ordenarLista(filtrados.filter(c => doAtalho(c, atalho)), ordem, {
     nome: c => normalizar(c.nome || ''),
@@ -132,7 +140,7 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
   const idsLote = [...selecionados]
   const todosSelecionados = visiveis.length > 0 && visiveis.every((c) => selecionados.has(c.id))
   const algunsSelecionados = visiveis.some((c) => selecionados.has(c.id)) && !todosSelecionados
-  const filtrosAtivos = Boolean(busca || tipo || etiqueta)
+  const filtrosAtivos = Boolean(busca || tipo || etiqueta || estagio || origem)
 
   function mudarFiltro(acao: () => void) { acao(); setPagina(1) }
   function alternar(id: string) {
@@ -238,7 +246,27 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
             </Select.Content>
           </Select.Root>
         </div>
-        {filtrosAtivos && <Button size="2" variant="soft" color="gray" onClick={() => mudarFiltro(() => { setBusca(''); setTipo(''); setEtiqueta('') })}>Limpar filtros</Button>}
+        <div className="form-campo">
+          <label className="form-campo-label" id="contatos-estagio-rotulo">Estágio</label>
+          <Select.Root value={estagio || '__todos__'} onValueChange={v => mudarFiltro(() => setEstagio(v === '__todos__' ? '' : v))}>
+            <Select.Trigger aria-labelledby="contatos-estagio-rotulo" />
+            <Select.Content>
+              <Select.Item value="__todos__">Todos os estágios</Select.Item>
+              {funil.estagios.map(e => <Select.Item key={e.chave} value={e.chave!}>{e.nome}</Select.Item>)}
+            </Select.Content>
+          </Select.Root>
+        </div>
+        <div className="form-campo">
+          <label className="form-campo-label" id="contatos-origem-rotulo">Origem</label>
+          <Select.Root value={origem || '__todas__'} onValueChange={v => mudarFiltro(() => setOrigem(v === '__todas__' ? '' : v))}>
+            <Select.Trigger aria-labelledby="contatos-origem-rotulo" />
+            <Select.Content>
+              <Select.Item value="__todas__">Todas as origens</Select.Item>
+              {funil.origens.map(o => <Select.Item key={o.chave} value={o.chave!}>{o.nome}</Select.Item>)}
+            </Select.Content>
+          </Select.Root>
+        </div>
+        {filtrosAtivos && <Button size="2" variant="soft" color="gray" onClick={() => mudarFiltro(() => { setBusca(''); setTipo(''); setEtiqueta(''); setEstagio(''); setOrigem('') })}>Limpar filtros</Button>}
       </LinhaFiltros>
       {!estreita && <Flex justify="end" mt="-3"><EscolherColunas colunas={colunas} /></Flex>}
 
@@ -302,6 +330,7 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
                 <th className="contatos-col-tipo" aria-sort={ariaSort('tipo', ordem)}><BotaoOrdenar campo="tipo" ordem={ordem} onOrdenar={ordenarPor}>Tipo</BotaoOrdenar></th>
                 {colunas.visivel('contato') && <th className="contatos-col-contato">Contato</th>}
                 {colunas.visivel('etiquetas') && <th className="contatos-col-etiquetas">Etiquetas</th>}
+                {colunas.visivel('funil') && <th>Estágio e origem</th>}
                 {colunas.visivel('processos') && <th className="contatos-col-processos" aria-sort={ariaSort('processos', ordem)}><BotaoOrdenar campo="processos" ordem={ordem} onOrdenar={ordenarPor}>Processos</BotaoOrdenar></th>}
                 <th className="tabela-acoes contatos-col-acoes">Ações</th>
               </tr>
@@ -316,6 +345,7 @@ export default function ListaContatos({ onAbrir, onNovo }: { onAbrir: (id: strin
                   <td><SeloTipoPessoa tipo={c.tipo_pessoa} /></td>
                   {colunas.visivel('contato') && <td>{contato(c)}</td>}
                   {colunas.visivel('etiquetas') && <td>{etiquetas(c)}</td>}
+                  {colunas.visivel('funil') && <td>{c.estagio ? <Badge variant="soft">{nomeDoFunil(funil.estagios, c.estagio)}</Badge> : null}{c.origem ? <Text size="1" color="gray" as="div">{nomeDoFunil(funil.origens, c.origem)}</Text> : null}</td>}
                   {colunas.visivel('processos') && <td>{processos(c)}</td>}
                   <td className="tabela-acoes">{menu(c)}</td>
                 </tr>

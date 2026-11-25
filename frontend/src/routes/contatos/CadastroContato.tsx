@@ -13,6 +13,7 @@ import { useAvisos } from '../../Avisos'
 import { useAlteracoesPendentes } from '../../AlteracoesPendentes'
 import CampoRepetivel from './CampoRepetivel'
 import EnderecosRepetivel, { type Endereco } from './EnderecosRepetivel'
+import { EditarFunilDialogo, useFunilCatalogo } from './funil'
 
 type Telefone = { tipo: string; telefone: string; operadora: string }
 type Email = { tipo: string; email: string }
@@ -27,6 +28,9 @@ type ClienteRegistro = {
   nome_fantasia?: string | null
   tipo_pessoa?: string
   perfil?: string
+  estagio?: string | null
+  origem?: string | null
+  origem_detalhe?: string | null
   telefones?: Telefone[]
   emails?: Email[]
   sites?: Site[]
@@ -71,7 +75,7 @@ const CAMPOS_EXTRA: Array<keyof ClienteRegistro> = [
 ]
 
 const vazio = (): ClienteRegistro => ({
-  nome: '', cpf_cnpj: '', observacoes: '', tipo_pessoa: 'fisica', perfil: 'cliente',
+  nome: '', cpf_cnpj: '', observacoes: '', tipo_pessoa: 'fisica', perfil: 'cliente', estagio: '', origem: '', origem_detalhe: '',
   telefones: [], emails: [], sites: [], enderecos: [],
   rg_numero: '', rg_emissao: '', rg_emissor: '', ctps_numero: '', ctps_serie: '', ctps_emissao: '', ctps_uf: '',
   pis: '', estado_civil: '', nacionalidade: '', profissao: '',
@@ -110,6 +114,8 @@ export default function CadastroContato({
   const [excluindo, setExcluindo] = useState(false)
 
   const criando = !clienteId
+  const funil = useFunilCatalogo()
+  const [editandoFunil, setEditandoFunil] = useState(false)
 
   useEffect(() => {
     if (!clienteId) {
@@ -217,6 +223,9 @@ export default function CadastroContato({
       observacoes: (registro.observacoes ?? '').trim(),
       tipo_pessoa: registro.tipo_pessoa,
       perfil: registro.perfil,
+      estagio: registro.estagio ?? '',
+      origem: registro.origem ?? '',
+      origem_detalhe: registro.origem ? (registro.origem_detalhe ?? '') : '',
       telefones: (registro.telefones ?? []).filter((t) => t.telefone.trim()),
       emails: (registro.emails ?? []).filter((e) => e.email.trim()),
       sites: (registro.sites ?? []).filter((s) => s.site.trim()),
@@ -297,6 +306,31 @@ export default function CadastroContato({
                   </Flex>
                 </RadioGroup.Root>
               </div>
+            </div>
+            <div className="form-campo">
+              <span className="form-campo-label" id="contato-funil-rotulo">Funil</span>
+              <Flex gap="3" wrap="wrap" align="end">
+                <Select.Root value={registro.estagio || '__nenhum__'} onValueChange={(v) => atualizar('estagio', v === '__nenhum__' ? '' : v)}>
+                  <Select.Trigger aria-label="Estágio" placeholder="Estágio" />
+                  <Select.Content>
+                    <Select.Item value="__nenhum__">Sem estágio</Select.Item>
+                    {funil.estagios.map((e) => <Select.Item key={e.chave} value={e.chave!}>{e.nome}</Select.Item>)}
+                  </Select.Content>
+                </Select.Root>
+                <Select.Root value={registro.origem || '__nenhum__'} onValueChange={(v) => atualizar('origem', v === '__nenhum__' ? '' : v)}>
+                  <Select.Trigger aria-label="Origem" placeholder="Origem" />
+                  <Select.Content>
+                    <Select.Item value="__nenhum__">Sem origem</Select.Item>
+                    {funil.origens.map((o) => <Select.Item key={o.chave} value={o.chave!}>{o.nome}</Select.Item>)}
+                  </Select.Content>
+                </Select.Root>
+                {registro.origem && (
+                  <TextField.Root aria-label="Detalhe da origem" placeholder="Detalhe (ex.: indicação da Dra. Ana)" maxLength={200}
+                    value={registro.origem_detalhe ?? ''} onChange={(e) => atualizar('origem_detalhe', e.target.value)} />
+                )}
+                <Button type="button" variant="ghost" size="1" onClick={() => setEditandoFunil(true)}>Editar listas</Button>
+              </Flex>
+              <EditarFunilDialogo aberto={editandoFunil} onFechar={() => setEditandoFunil(false)} />
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="contato-nome">Nome <span className="aj-obrigatorio" aria-hidden="true">*</span></label>

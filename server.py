@@ -4334,6 +4334,9 @@ class _AutenticacaoBearer:
         if caminho == "/clientes/acoes-em-massa" and self.gestao is not None:
             await self._clientes_em_massa(scope, receive, send)
             return
+        if caminho == "/clientes/funil-catalogo" and self.gestao is not None:
+            await self._funil_catalogo(scope, receive, send)
+            return
         if caminho == "/clientes" and self.gestao is not None:
             await self._clientes(scope, receive, send)
             return
@@ -4710,6 +4713,24 @@ class _AutenticacaoBearer:
             return
         await _json(send, 200, resultado)
 
+    async def _funil_catalogo(self, scope, receive, send):
+        """GET /clientes/funil-catalogo: estágios e origens. PUT: substitui as listas (edição pelo usuário)."""
+        metodo = scope.get("method")
+        if metodo == "GET":
+            await _json(send, 200, self.gestao.funil_catalogo())
+            return
+        if metodo != "PUT":
+            await _responder(send, 405, b"Metodo nao permitido")
+            return
+        corpo = await _ler_corpo(receive)
+        if corpo is None:
+            await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB."))
+            return
+        try:
+            await _json(send, 200, self.gestao.salvar_funil_catalogo(json.loads(corpo.decode("utf-8") or "{}")))
+        except (ValueError, UnicodeDecodeError) as erro:
+            await _json(send, 400, _erro(str(erro)))
+
     async def _clientes(self, scope, receive, send):
         metodo = scope.get("method")
         if metodo == "GET":
@@ -4725,10 +4746,18 @@ class _AutenticacaoBearer:
             except (ValueError, UnicodeDecodeError):
                 await _json(send, 400, _erro("JSON inválido."))
                 return
+            try:
+                self.gestao.validar_funil(dados.get("estagio"), dados.get("origem"))
+            except ValueError as erro:
+                await _json(send, 400, _erro(str(erro)))
+                return
             cliente, erro = _criar_cliente_validado(self.gestao, dados)
             if erro:
                 await _json(send, 409 if erro.get("cliente_existente") else 400, erro)
                 return
+            if dados.get("estagio") or dados.get("origem"):
+                self.gestao.definir_funil(cliente["id"], dados.get("estagio"), dados.get("origem"), dados.get("origem_detalhe"))
+                cliente = self.gestao.obter_cliente(cliente["id"])
             await _json(send, 201, cliente)
             return
         await _responder(send, 404, b"Nao encontrado")
@@ -4781,6 +4810,11 @@ class _AutenticacaoBearer:
         if atual is None:
             await _json(send, 404, _erro("Cliente não encontrado."))
             return
+        try:
+            self.gestao.validar_funil(dados.get("estagio"), dados.get("origem"))
+        except ValueError as erro:
+            await _json(send, 400, _erro(str(erro)))
+            return
         # Só confere o documento quando ele muda: cadastros antigos com CPF fora do padrão
         # continuam editáveis.
         novo_documento = (dados.get("cpf_cnpj") or "").strip()
@@ -4802,6 +4836,9 @@ class _AutenticacaoBearer:
         if cliente_atualizado is None:
             await _json(send, 404, _erro("Cliente não encontrado."))
             return
+        if "estagio" in dados or "origem" in dados:  # PATCH sem esses campos não mexe no funil
+            self.gestao.definir_funil(cliente_id, dados.get("estagio"), dados.get("origem"), dados.get("origem_detalhe"))
+            cliente_atualizado = self.gestao.obter_cliente(cliente_id)
         await _json(send, 200, cliente_atualizado)
 
     async def _asaas_customer_id(
