@@ -21,6 +21,7 @@ import hashlib
 import cnj as _cnj
 import polos as _polos
 import json
+import re
 import sqlite3
 import threading
 import uuid
@@ -456,6 +457,7 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
         if 'usuario' not in {r[1] for r in conexao.execute('PRAGMA table_info(atividade_agenda)')}:
             conexao.execute('ALTER TABLE atividade_agenda ADD COLUMN usuario TEXT')
         _migrar_colunas_clientes(conexao)
+        _migrar_funil_clientes(conexao)
         _migrar_colunas_lancamentos(conexao)
         _migrar_remover_calendar_evento_id(conexao)
         _migrar_fk_publicacoes_capturadas(conexao)
@@ -538,6 +540,35 @@ def normalizar_numero_processo(numeros: list[str]) -> list[str]:
             raise ValueError(erro_cnj)
         resultado.append(digitos)
     return resultado
+
+
+_FUNIL_PADRAO = {
+    "funil_estagios": [("lead", "Lead"), ("proposta", "Proposta enviada"), ("contrato", "Contrato"),
+                       ("ativo", "Cliente ativo"), ("encerrado", "Encerrado"), ("perdido", "Perdido")],
+    "funil_origens": [("indicacao", "Indicação"), ("whatsapp", "WhatsApp"), ("instagram", "Instagram"),
+                      ("google", "Google"), ("evento", "Evento"), ("parceiro", "Parceiro"), ("outro", "Outro")],
+}
+
+
+def _migrar_funil_clientes(conexao: sqlite3.Connection) -> None:
+    """Estágio e origem do contato, em tabela à parte (como as etiquetas), com listas editáveis.
+    Na primeira criação, quem já tem processo vira 'ativo'; depois disso só a edição manual muda."""
+    nova = not conexao.execute("SELECT 1 FROM sqlite_master WHERE name = 'funil_estagios'").fetchone()
+    for tabela in _FUNIL_PADRAO:
+        conexao.execute(f"CREATE TABLE IF NOT EXISTS {tabela} (chave TEXT PRIMARY KEY, nome TEXT NOT NULL, ordem INTEGER NOT NULL)")
+    conexao.execute(
+        "CREATE TABLE IF NOT EXISTS cliente_funil (cliente_id TEXT PRIMARY KEY REFERENCES clientes(id) ON DELETE CASCADE, "
+        "estagio TEXT, origem TEXT, origem_detalhe TEXT)"
+    )
+    if not nova:
+        return
+    for tabela, itens in _FUNIL_PADRAO.items():
+        conexao.executemany(f"INSERT INTO {tabela} (chave, nome, ordem) VALUES (?, ?, ?)", [(c, n, i) for i, (c, n) in enumerate(itens)])
+    conexao.execute(
+        "INSERT OR IGNORE INTO cliente_funil (cliente_id, estagio) SELECT id, 'ativo' FROM clientes WHERE id IN ("
+        "SELECT c.cliente_id FROM casos c JOIN caso_processos p ON p.caso_id = c.id "
+        "UNION SELECT cc.cliente_id FROM caso_clientes cc JOIN caso_processos p ON p.caso_id = cc.caso_id)"
+    )
 
 
 def _migrar_colunas_clientes(conexao: sqlite3.Connection) -> None:
@@ -1002,6 +1033,7 @@ class RegistroClientesCasos:
             cliente["nome_fantasia"] = (conexao.execute("SELECT nome_fantasia FROM clientes WHERE id = ?", (cliente_id,)).fetchone() or [None])[0]
             cliente["telefones"] = self._telefones_do_cliente(conexao, cliente_id)
             cliente["etiquetas"] = self._etiquetas_clientes(conexao).get(cliente_id, [])
+            cliente.update(self._funil_clientes(conexao).get(cliente_id, self._FUNIL_VAZIO))
         return cliente
 
     def atualizar_cliente(
@@ -1088,7 +1120,81 @@ class RegistroClientesCasos:
                 "FROM clientes ORDER BY nome"
             )
             etiquetas = self._etiquetas_clientes(conexao)
-            return [{**_linha_cliente(linha), "etiquetas": etiquetas.get(linha[0], [])} for linha in cursor.fetchall()]
+            funil = self._funil_clientes(conexao)
+            return [{**_linha_cliente(linha), "etiquetas": etiquetas.get(linha[0], []), **funil.get(linha[0], self._FUNIL_VAZIO)} for linha in cursor.fetchall()]
+
+    @staticmethod
+    def _funil_clientes(conexao):
+        return {
+            i: {"estagio": e, "origem": o, "origem_detalhe": d}
+            for i, e, o, d in conexao.execute("SELECT cliente_id, estagio, origem, origem_detalhe FROM cliente_funil")
+        }
+
+    _FUNIL_VAZIO = {"estagio": None, "origem": None, "origem_detalhe": None}
+
+    def funil_catalogo(self) -> dict:
+        with _abrir(self.caminho) as conexao:
+            return {
+                nome: [{"chave": c, "nome": n} for c, n in conexao.execute(f"SELECT chave, nome FROM funil_{nome} ORDER BY ordem")]
+                for nome in ("estagios", "origens")
+            }
+
+    def salvar_funil_catalogo(self, dados) -> dict:
+        """Substitui as listas de estágios e origens. Item sem chave (ou com chave desconhecida) é novo;
+        não dá para remover um item que algum contato ainda usa."""
+        if not isinstance(dados, dict):
+            raise ValueError("Informe um objeto JSON.")
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            for lista, coluna in (("estagios", "estagio"), ("origens", "origem")):
+                if lista not in dados:
+                    continue
+                itens = dados[lista]
+                if not isinstance(itens, list) or not 1 <= len(itens) <= 30:
+                    raise ValueError(f"A lista de {lista} deve ter de 1 a 30 itens.")
+                tabela = f"funil_{lista}"
+                existentes = {c for (c,) in conexao.execute(f"SELECT chave FROM {tabela}")}
+                novos, vistos = [], set()
+                for item in itens:
+                    nome = item.get("nome") if isinstance(item, dict) else None
+                    nome = nome.strip() if isinstance(nome, str) else ""
+                    if not 1 <= len(nome) <= 40 or any(ord(c) < 32 for c in nome):
+                        raise ValueError("Cada nome deve ter de 1 a 40 caracteres.")
+                    if nome.casefold() in vistos:
+                        raise ValueError(f"Nome repetido: {nome}.")
+                    vistos.add(nome.casefold())
+                    chave = item.get("chave") if item.get("chave") in existentes else None
+                    if chave is None:
+                        base = re.sub(r"[^a-z0-9]+", "_", unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode().lower()).strip("_") or "item"
+                        chave, n = base, 2
+                        while chave in existentes or chave in {c for c, _ in novos}:
+                            chave, n = f"{base}_{n}", n + 1
+                    novos.append((chave, nome))
+                for chave in existentes - {c for c, _ in novos}:
+                    (usos,) = conexao.execute(f"SELECT COUNT(*) FROM cliente_funil WHERE {coluna} = ?", (chave,)).fetchone()
+                    if usos:
+                        nome = conexao.execute(f"SELECT nome FROM {tabela} WHERE chave = ?", (chave,)).fetchone()[0]
+                        raise ValueError(f"'{nome}' está em uso por {usos} contato(s). Troque o estágio/origem deles antes de remover.")
+                conexao.execute(f"DELETE FROM {tabela}")
+                conexao.executemany(f"INSERT INTO {tabela} (chave, nome, ordem) VALUES (?, ?, ?)", [(c, n, i) for i, (c, n) in enumerate(novos)])
+        return self.funil_catalogo()
+
+    def validar_funil(self, estagio, origem) -> None:
+        with _abrir(self.caminho) as conexao:
+            for valor, tabela, rotulo in ((estagio, "funil_estagios", "Estágio"), (origem, "funil_origens", "Origem")):
+                if valor and not conexao.execute(f"SELECT 1 FROM {tabela} WHERE chave = ?", (valor,)).fetchone():
+                    raise ValueError(f"{rotulo} inválido(a).")
+
+    def definir_funil(self, cliente_id: str, estagio, origem, detalhe) -> None:
+        estagio, origem = estagio or None, origem or None
+        detalhe = (detalhe or "").strip()[:200] or None
+        self.validar_funil(estagio, origem)
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute(
+                "INSERT INTO cliente_funil (cliente_id, estagio, origem, origem_detalhe) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(cliente_id) DO UPDATE SET estagio = excluded.estagio, origem = excluded.origem, "
+                "origem_detalhe = excluded.origem_detalhe",
+                (cliente_id, estagio, origem, detalhe),
+            )
 
     @staticmethod
     def _etiquetas_clientes(conexao):
