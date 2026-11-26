@@ -164,7 +164,7 @@ async def tratar(app, scope, receive, send):
             corpo = ('Este é um e-mail de teste do AstraJus, enviado por um administrador para conferir o envio de e-mails.\n\n'
                      'Se você recebeu esta mensagem, o envio está funcionando. Nenhuma ação é necessária.\n')
             try:
-                await asyncio.to_thread(s._enviar_email_simples, cfg, destino, 'Teste de e-mail do AstraJus', corpo)
+                id_mensagem = await asyncio.to_thread(s._enviar_email_simples, cfg, destino, 'Teste de e-mail do AstraJus', corpo)
             except Exception as erro:
                 s.log.error('Falha no e-mail de teste (%s): %s: %s', via, type(erro).__name__, erro)
                 with cofre.abrir() as c:
@@ -174,7 +174,7 @@ async def tratar(app, scope, receive, send):
                 return
             with cofre.abrir() as c:
                 cofre.auditar(c, autor, 'email_teste', 'brevo' if via == 'Brevo' else 'smtp', 'padrao')
-            await s._json(send, 200, {'enviado': True, 'destino': destino, 'via': via})
+            await s._json(send, 200, {'enviado': True, 'destino': destino, 'via': via, 'id_mensagem': id_mensagem or None})
         else:
             await s._json(send, 404, {'erro': 'Rota inexistente.'})
     except integracoes.Conflito as erro:

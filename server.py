@@ -2023,7 +2023,8 @@ def _motivo_brevo(r: "httpx.Response") -> str:
     return f"Brevo recusou o envio (HTTP {r.status_code}){': ' + texto[:160] if texto else ''}.{dica}"
 
 
-def _enviar_brevo(cfg: ConfiguracaoBrevo, mensagem: EmailMessage) -> None:
+def _enviar_brevo(cfg: ConfiguracaoBrevo, mensagem: EmailMessage) -> str:
+    """Devolve o messageId do Brevo, que é a chave para achar o envio em Transactional > Logs."""
     corpo = mensagem.get_body(preferencelist=("plain",))
     html = mensagem.get_body(preferencelist=("html",))
     carga = {
@@ -2036,13 +2037,18 @@ def _enviar_brevo(cfg: ConfiguracaoBrevo, mensagem: EmailMessage) -> None:
     r = httpx.post(BREVO_URL_ENVIO, json=carga, headers={"api-key": cfg.api_key, "accept": "application/json"}, timeout=30)
     if r.status_code not in (200, 201, 202):
         raise RuntimeError(_motivo_brevo(r))
+    try:
+        id_mensagem = str(r.json().get("messageId") or "")
+    except Exception:
+        id_mensagem = ""
+    log.info("Brevo aceitou o e-mail para %s (messageId=%s)", mensagem["To"], id_mensagem or "ausente")
+    return id_mensagem
 
 
-def _entregar_email(cfg, mensagem: EmailMessage) -> None:
+def _entregar_email(cfg, mensagem: EmailMessage) -> str:
     """Único ponto de saída de e-mail: Brevo (API) quando configurado; senão SMTP (465 com SSL, as demais com STARTTLS)."""
     if isinstance(cfg, ConfiguracaoBrevo):
-        _enviar_brevo(cfg, mensagem)
-        return
+        return _enviar_brevo(cfg, mensagem)
     contexto = ssl.create_default_context()
     if cfg.porta == 465:
         with smtplib.SMTP_SSL(cfg.host, cfg.porta, context=contexto, timeout=30) as servidor:
@@ -2053,6 +2059,7 @@ def _entregar_email(cfg, mensagem: EmailMessage) -> None:
             servidor.starttls(context=contexto)
             servidor.login(cfg.usuario, cfg.senha)
             servidor.send_message(mensagem)
+    return ""
 
 
 def _enviar_token_por_email(cfg: ConfiguracaoSMTP, destino: str, token: str) -> None:
@@ -3851,13 +3858,13 @@ def _faixa_ainda_vale(faixa: str, data_alvo, criado_em: str | None, vigente_desd
     return max(entrada, criada) >= desde
 
 
-def _enviar_email_simples(cfg: "ConfiguracaoSMTP", destino: str, assunto: str, corpo: str, html: str | None = None) -> None:
+def _enviar_email_simples(cfg: "ConfiguracaoSMTP", destino: str, assunto: str, corpo: str, html: str | None = None) -> str:
     mensagem = EmailMessage()
     mensagem["Subject"], mensagem["From"], mensagem["To"] = assunto, cfg.remetente, destino
     mensagem.set_content(corpo)
     if html:
         mensagem.add_alternative(html, subtype="html")
-    _entregar_email(cfg, mensagem)
+    return _entregar_email(cfg, mensagem) or ""
 
 
 async def _alertar_prazos(gestao: "RegistroClientesCasos", agora=lambda: datetime.now(timezone.utc), enviar=None) -> bool:
