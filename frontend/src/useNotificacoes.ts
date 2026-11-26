@@ -158,6 +158,15 @@ export function useNotificacoes(cliente: ClienteMCP | null, aberta: boolean, som
     await atualizarContagem()
   }
 
+  // Marca no servidor todas as não lidas, inclusive as que ainda não foram paginadas.
+  async function marcarTodas() {
+    const resultado = await executarAcao('todas', sinal => enviarJson<{ marcadas: number }>(cliente, '/notificacoes', { lida: true }, 'PATCH', sinal))
+    if (!resultado) return
+    const agora = new Date().toISOString()
+    setItens(atual => somenteNaoLidas ? [] : atual.map(n => n.lida_em ? n : { ...n, lida_em: agora }))
+    await atualizarContagem()
+  }
+
   // Confirma ciência do prazo ao qual a notificação se refere. Vale para todos os avisos da mesma atividade.
   async function confirmarCiencia(item: Notificacao) {
     const destino = item.destino
@@ -184,5 +193,5 @@ export function useNotificacoes(cliente: ClienteMCP | null, aberta: boolean, som
     })
   }
 
-  return { itens, naoLidas, cursor, carregando, carregou, erro, acaoPendente, carregar, marcarLida, confirmarCiencia, buscarDestino }
+  return { itens, naoLidas, cursor, carregando, carregou, erro, acaoPendente, carregar, marcarLida, marcarTodas, confirmarCiencia, buscarDestino }
 }

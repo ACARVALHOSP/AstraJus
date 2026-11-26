@@ -6266,6 +6266,19 @@ class _AutenticacaoBearer:
                                     estado=parametros.get("estado", "todas"), cursor=parametros.get("cursor"))
                 await _json(send, 200, dados)
                 return
+            if caminho == "/notificacoes" and metodo == "PATCH":
+                corpo = await _ler_corpo(receive)
+                if corpo is None:
+                    await _json(send, 413, _erro("O conteúdo enviado passou do limite de 64 KB. Encurte o texto e tente de novo."))
+                    return
+                try:
+                    dados = json.loads(corpo.decode("utf-8"))
+                except (ValueError, UnicodeDecodeError):
+                    raise ValueError("JSON inválido.")
+                if not isinstance(dados, dict) or set(dados) != {"lida"} or dados["lida"] is not True:
+                    raise ValueError("Informe somente lida: true para marcar as notificações como lidas.")
+                await _json(send, 200, repo.marcar_todas_lidas(usuario))
+                return
             destino = re.fullmatch(r"/notificacoes/([0-9]{1,20})/destino", caminho)
             if destino and metodo == "GET":
                 dados = repo.destino(usuario, destino[1])

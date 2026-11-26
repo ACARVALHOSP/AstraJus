@@ -373,6 +373,17 @@ class Repositorio:
             c.execute("UPDATE notificacoes SET lida_em=COALESCE(lida_em, ?) WHERE evento_id=?", (instante(agora_dt), linha[0]))
             return {"id": str(linha[0]), "lida_em": c.execute("SELECT lida_em FROM notificacoes WHERE evento_id=?", (linha[0],)).fetchone()[0]}
 
+    def marcar_todas_lidas(self, usuario):
+        agora_dt = datetime.fromisoformat(instante(self.agora()))
+        corte = instante(agora_dt - timedelta(days=RETENCAO_DIAS))
+        with self.transacao() as c:
+            self._processar(c, usuario, corte, instante(agora_dt))
+            # Mesmo predicado do feed: marca todas as não lidas visíveis, não só a página carregada.
+            c.execute("UPDATE notificacoes SET lida_em=? WHERE lida_em IS NULL AND evento_id IN (SELECT e.id" + _FONTES
+                      + " JOIN notificacoes n ON n.evento_id=e.id WHERE e.usuario=? AND e.criado_em>=? AND " + _VISIVEL + ")",
+                      (instante(agora_dt), usuario, corte))
+            return {"marcadas": c.rowcount}
+
     def destino(self, usuario, identificador):
         # O mesmo predicado usado no feed, reavaliado no momento de abrir o destino.
         if not isinstance(identificador, str) or not identificador.isdigit():

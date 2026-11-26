@@ -77,6 +77,14 @@ class NotificacoesTest(unittest.TestCase):
         self.assertEqual(self.chamar('ana', rota=f"/notificacoes/{item['id']}/destino")[0], 404)
         self.assertEqual(self.feed('bia')['nao_lidas'], 1)
 
+    def test_marcar_todas_alcanca_alem_da_pagina_e_isola_usuario(self):
+        self.delegar()
+        self.assertEqual(self.chamar('bia', 'PATCH', '/notificacoes', {'lida': False})[0], 400)
+        self.assertEqual(self.chamar('ana', 'PATCH', '/notificacoes', {'lida': True})[1]['marcadas'], 0)
+        self.assertEqual(self.feed('bia')['nao_lidas'], 1)
+        self.assertEqual(self.chamar('bia', 'PATCH', '/notificacoes', {'lida': True})[1]['marcadas'], 1)
+        self.assertEqual(self.feed('bia')['nao_lidas'], 0)
+
     def test_ler_e_idempotente_persistente_e_nao_conclui_trabalho(self):
         atividade = self.delegar()
         item = self.feed('bia')['notificacoes'][0]
