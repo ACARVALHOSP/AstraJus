@@ -49,6 +49,10 @@ VARIAVEIS = {
 }
 
 
+# Integrações com ambientes 'sandbox' e 'producao' (uma configuração por ambiente).
+COM_AMBIENTE = ('asaas', 'zapsign')
+
+
 # Integrações cuja ativação não exige teste de conexão aprovado (o teste continua disponível, mas opcional).
 SEM_TESTE_OBRIGATORIO = {'datajud'}
 
@@ -94,6 +98,12 @@ class Cofre:
             c.execute('INSERT OR IGNORE INTO integracoes_identidades VALUES (?,?)',
                       ('admin-bootstrap', secrets.token_hex(16)))
             c.execute("INSERT OR IGNORE INTO integracoes_meta VALUES ('asaas_ambiente','sandbox')")
+            c.execute("INSERT OR IGNORE INTO integracoes_meta VALUES ('zapsign_ambiente','producao')")
+            # Migração idempotente: o ZapSign tinha um único ambiente 'padrao', que passa a ser 'producao'.
+            # Só migra quando ainda não existe a linha de produção, preservando bases já atualizadas.
+            if not c.execute("SELECT 1 FROM integracoes_config WHERE provedor='zapsign' AND ambiente='producao'").fetchone():
+                c.execute("UPDATE integracoes_config SET ambiente='producao' WHERE provedor='zapsign' AND ambiente='padrao'")
+                c.execute("UPDATE integracoes_auditoria SET ambiente='producao' WHERE provedor='zapsign' AND ambiente='padrao'")
 
     def _backup_inicial(self):
         """Snapshot consistente e cifrado antes da primeira migração de uma base existente."""
@@ -141,7 +151,7 @@ class Cofre:
 
     @staticmethod
     def validar(provedor, ambiente):
-        if provedor not in PROVEDORES or ambiente not in ({'sandbox', 'producao'} if provedor == 'asaas' else {'padrao'}):
+        if provedor not in PROVEDORES or ambiente not in ({'sandbox', 'producao'} if provedor in COM_AMBIENTE else {'padrao'}):
             raise ValueError('Integração ou ambiente inválido.')
 
     @staticmethod
@@ -217,7 +227,7 @@ class Cofre:
                 falha = 'Informe a chave da API antes de ativar.'
             elif r['base'] != (atual['versao'] if atual else 0):
                 falha = 'A configuração mudou. Crie e teste um novo candidato.'
-            elif r['provedor'] == 'asaas' and r['ambiente'] == 'producao' and confirmar_producao is not True:
+            elif r['provedor'] in COM_AMBIENTE and r['ambiente'] == 'producao' and confirmar_producao is not True:
                 falha = 'Confirme explicitamente o ambiente de produção.'
             if falha:
                 self.auditar(c, autor, 'ativacao_recusada', r['provedor'] if r else 'desconhecido', r['ambiente'] if r else 'padrao', resultado='recusada')
@@ -232,7 +242,7 @@ class Cofre:
         result = []
         with self.abrir() as c:
             for p, (escopo, segredos, _) in PROVEDORES.items():
-                for a in (('sandbox', 'producao') if p == 'asaas' else ('padrao',)):
+                for a in (('sandbox', 'producao') if p in COM_AMBIENTE else ('padrao',)):
                     r = c.execute("SELECT * FROM integracoes_config WHERE provedor=? AND ambiente=? AND estado='ativo'", (p, a)).fetchone()
                     ultimo = c.execute('SELECT * FROM integracoes_auditoria WHERE provedor=? AND ambiente=? ORDER BY id DESC LIMIT 1', (p, a)).fetchone()
                     teste = c.execute('SELECT * FROM integracoes_testes WHERE config_id=? ORDER BY criado_em DESC LIMIT 1', (r['id'],)).fetchone() if r else None
@@ -268,22 +278,32 @@ class Cofre:
                 c.execute('UPDATE integracoes_google SET segredo=? WHERE finalidade=? AND dono=?', (self.cifra.rotate(r['segredo']), r['finalidade'], r['dono']))
             self.auditar(c, autor, 'rotacao_cifragem', 'cofre', 'padrao')
 
-    def ambiente_asaas(self, novo=None, autor=None):
+    def _ambiente(self, provedor, meta, novo=None, autor=None):
         with self.abrir() as c:
             if novo is not None:
-                self.validar('asaas', novo)
-                if not self.ativo('asaas', novo):
+                self.validar(provedor, novo)
+                if not self.ativo(provedor, novo):
                     raise ValueError('Ative e valide a configuração desse ambiente primeiro.')
-                aprovado = c.execute("SELECT 1 FROM integracoes_testes t JOIN integracoes_config cfg ON cfg.id=t.config_id WHERE cfg.provedor='asaas' AND cfg.ambiente=? AND cfg.estado='ativo' AND t.aprovado=1", (novo,)).fetchone()
+                aprovado = c.execute("SELECT 1 FROM integracoes_testes t JOIN integracoes_config cfg ON cfg.id=t.config_id WHERE cfg.provedor=? AND cfg.ambiente=? AND cfg.estado='ativo' AND t.aprovado=1", (provedor, novo)).fetchone()
                 if not aprovado:
-                    raise Conflito('Teste e ative uma nova versão desse ambiente antes de selecioná-lo para cobranças.')
-                c.execute("UPDATE integracoes_meta SET valor=? WHERE nome='asaas_ambiente'", (novo,))
-                self.auditar(c, autor, 'selecionar_ambiente', 'asaas', novo)
-            return c.execute("SELECT valor FROM integracoes_meta WHERE nome='asaas_ambiente'").fetchone()[0]
+                    raise Conflito('Teste e ative uma nova versão desse ambiente antes de selecioná-lo.')
+                c.execute("UPDATE integracoes_meta SET valor=? WHERE nome=?", (novo, meta))
+                self.auditar(c, autor, 'selecionar_ambiente', provedor, novo)
+            return c.execute("SELECT valor FROM integracoes_meta WHERE nome=?", (meta,)).fetchone()[0]
+
+    def ambiente_asaas(self, novo=None, autor=None):
+        return self._ambiente('asaas', 'asaas_ambiente', novo, autor)
+
+    def ambiente_zapsign(self, novo=None, autor=None):
+        return self._ambiente('zapsign', 'zapsign_ambiente', novo, autor)
 
     def valor(self, nome, padrao=''):
         if nome == 'ASAAS_AMBIENTE':
             return self.ambiente_asaas()
+        if nome == 'ZAPSIGN_AMBIENTE':
+            return self.ambiente_zapsign()
+        if nome == 'ZAPSIGN_API_KEY':
+            return (self.ativo('zapsign', self.ambiente_zapsign()) or {}).get('api_key', padrao)
         if nome in ('ASAAS_API_KEY', 'ASAAS_API_KEY_SANDBOX'):
             r = self.ativo('asaas', 'producao' if nome == 'ASAAS_API_KEY' else 'sandbox')
             return (r or {}).get('api_key', padrao)
@@ -298,10 +318,12 @@ class Cofre:
             if c.execute("SELECT 1 FROM integracoes_meta WHERE nome='importado'").fetchone():
                 return
         for p in PROVEDORES:
-            for a in (('sandbox', 'producao') if p == 'asaas' else ('padrao',)):
+            for a in (('sandbox', 'producao') if p in COM_AMBIENTE else ('padrao',)):
                 dados = {campo: env[n] for n, (prov, campo) in VARIAVEIS.items() if prov == p and env.get(n)}
                 if p == 'asaas':
                     dados = {'api_key': env.get('ASAAS_API_KEY' if a == 'producao' else 'ASAAS_API_KEY_SANDBOX', '')}
+                elif p == 'zapsign':
+                    dados = {'api_key': env.get('ZAPSIGN_API_KEY', '')} if a == 'producao' else {}
                 if any(dados.values()) and not self.ativo(p, a):
                     ident = self.candidato(p, a, dados, 0, 'migracao')
                     with self.abrir() as c:
@@ -370,7 +392,8 @@ async def testar(provedor, ambiente, dados, cliente, contexto=None):
             elif provedor == 'openrouter':
                 r = await cliente.get('https://openrouter.ai/api/v1/auth/key', headers={'Authorization': 'Bearer ' + chave})
             elif provedor == 'zapsign':
-                r = await cliente.get('https://api.zapsign.com.br/api/v1/docs/', params={'page': 1}, headers={'Authorization': 'Bearer ' + chave})
+                base = 'https://sandbox.api.zapsign.com.br' if ambiente == 'sandbox' else 'https://api.zapsign.com.br'
+                r = await cliente.get(base + '/api/v1/docs/', params={'page': 1}, headers={'Authorization': 'Bearer ' + chave})
             else:
                 r = await cliente.post('https://api-publica.datajud.cnj.jus.br/api_publica_tjsp/_search', json={'size': 0, 'query': {'match_all': {}}}, headers={'Authorization': 'APIKey ' + chave})
             if r.status_code == 200:

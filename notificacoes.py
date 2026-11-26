@@ -37,6 +37,8 @@ _FONTES = """
  LEFT JOIN caso_atividades a ON a.id=e.atividade_id AND a.caso_id=e.caso_id
  LEFT JOIN publicacoes_capturadas p ON p.hash=e.publicacao_hash
  LEFT JOIN atividade_ciencia ci ON ci.atividade_id=e.atividade_id AND ci.data_prazo=substr(a.data, 1, 10)
+ LEFT JOIN documentos_gerados d ON e.tipo IN ('doc_visualizado','doc_email_devolvido','doc_prazo_assinatura')
+     AND d.id = CAST(substr(e.chave, 1, instr(e.chave || ':', ':') - 1) AS INTEGER)
 """
 _VISIVEL = """
  (json_extract(u.dados, '$.revogado') IS NULL OR json_extract(u.dados, '$.revogado')=0)
@@ -48,6 +50,7 @@ _VISIVEL = """
    ))
    OR (e.tipo IN ('movimento_processual', 'processo_parado', 'processo_atribuido', 'processo_rascunho') AND c.id IS NOT NULL)
    OR (e.tipo IN ('prazo_vencendo', 'prazo_escalonado') AND a.id IS NOT NULL AND c.id IS NOT NULL AND a.status IN ('pendente', 'em_andamento', 'aguardando'))
+   OR (e.tipo IN ('doc_visualizado', 'doc_email_devolvido', 'doc_prazo_assinatura') AND d.id IS NOT NULL)
  )
 """
 
@@ -84,6 +87,16 @@ class Repositorio:
     def __init__(self, caminho, agora=None):
         self.caminho = caminho
         self.agora = agora or (lambda: datetime.now(timezone.utc))
+        # A central lê documentos_gerados pelo JOIN dos avisos da ZapSign; garante o schema
+        # mesmo quando esta é a primeira parte do sistema a abrir o banco.
+        from documentos import criar_tabelas
+
+        conexao = sqlite3.connect(str(caminho), timeout=30)
+        try:
+            with conexao:
+                criar_tabelas(conexao)
+        finally:
+            conexao.close()
 
     @contextmanager
     def transacao(self):
@@ -153,6 +166,29 @@ class Repositorio:
                 cursor = c.execute(
                     "INSERT OR IGNORE INTO notificacao_eventos (usuario, tipo, chave, caso_id, criado_em) VALUES (?, ?, ?, ?, ?)",
                     (usuario, "processo_parado", chave, caso_id, instante(self.agora())),
+                )
+                if cursor.rowcount:
+                    novos.append(usuario)
+        return novos
+
+    def registrar_aviso_documento(self, doc_id, tipo, destinatarios):
+        """Avisa (só no sino) o criador e o responsável pelo caso de um aviso da ZapSign.
+        Uma vez por pessoa, documento e tipo. Devolve quem ainda não tinha o aviso."""
+        sufixos = {"doc_visualizado": "visualizado", "doc_email_devolvido": "email_devolvido",
+                   "doc_prazo_assinatura": "prazo"}
+        sufixo = sufixos.get(tipo)
+        if not sufixo:
+            return []
+        novos = []
+        chave = f"{doc_id}:{sufixo}"
+        with self.transacao() as c:
+            ativo = "json_extract(dados, '$.revogado') IS NULL OR json_extract(dados, '$.revogado')=0"
+            for usuario in dict.fromkeys(d for d in destinatarios if d):
+                if not c.execute(f"SELECT 1 FROM usuarios WHERE nome=? AND ({ativo})", (usuario,)).fetchone():
+                    continue
+                cursor = c.execute(
+                    "INSERT OR IGNORE INTO notificacao_eventos (usuario, tipo, chave, criado_em) VALUES (?, ?, ?, ?)",
+                    (usuario, tipo, chave, instante(self.agora())),
                 )
                 if cursor.rowcount:
                     novos.append(usuario)
@@ -241,7 +277,7 @@ class Repositorio:
             if estado == "nao_lidas":
                 query += " AND n.lida_em IS NULL"
             linhas = c.execute(
-                "SELECT e.id, e.tipo, e.caso_id, e.atividade_id, e.criado_em, n.lida_em, a.titulo, a.responsavel, c.titulo AS caso_titulo, a.data AS ativ_data, a.hora AS ativ_hora, a.tipo AS ativ_tipo, ci.confirmado_em AS ciente_em, e.chave AS chave" + query
+                "SELECT e.id, e.tipo, e.caso_id, e.atividade_id, e.criado_em, n.lida_em, a.titulo, a.responsavel, c.titulo AS caso_titulo, a.data AS ativ_data, a.hora AS ativ_hora, a.tipo AS ativ_tipo, ci.confirmado_em AS ciente_em, e.chave AS chave, d.nome AS doc_nome" + query
                 + " ORDER BY e.criado_em DESC, e.id DESC LIMIT ?", [*argumentos, limite + 1],
             ).fetchall()
             mais = len(linhas) > limite
@@ -266,6 +302,25 @@ class Repositorio:
                                   "criado_em": linha["criado_em"], "lida_em": linha["lida_em"],
                                   "exige_ciencia": linha["ativ_tipo"] == "prazo", "ciente": linha["ciente_em"] is not None,
                                   "destino": {"tipo": "atividade", "caso_id": linha["caso_id"], "atividade_id": linha["atividade_id"]}})
+                    continue
+                if linha["tipo"] == "doc_visualizado":
+                    itens.append({"id": str(linha["id"]), "tipo": linha["tipo"], "titulo": "Documento visualizado",
+                                  "mensagem": f"{linha['doc_nome']}: o signatário abriu o link para assinar.",
+                                  "criado_em": linha["criado_em"], "lida_em": linha["lida_em"],
+                                  "destino": {"tipo": "documentos"}})
+                    continue
+                if linha["tipo"] == "doc_email_devolvido":
+                    itens.append({"id": str(linha["id"]), "tipo": linha["tipo"], "titulo": "E-mail devolvido",
+                                  "mensagem": f"{linha['doc_nome']}: o e-mail do signatário não foi entregue. "
+                                              "Corrija o contato ou envie por WhatsApp.",
+                                  "criado_em": linha["criado_em"], "lida_em": linha["lida_em"],
+                                  "destino": {"tipo": "documentos"}})
+                    continue
+                if linha["tipo"] == "doc_prazo_assinatura":
+                    itens.append({"id": str(linha["id"]), "tipo": linha["tipo"], "titulo": "Prazo para assinar acabando",
+                                  "mensagem": f"{linha['doc_nome']}: o prazo de assinatura está perto do fim. Cobre o signatário.",
+                                  "criado_em": linha["criado_em"], "lida_em": linha["lida_em"],
+                                  "destino": {"tipo": "documentos"}})
                     continue
                 if linha["tipo"] == "processo_rascunho":
                     itens.append({"id": str(linha["id"]), "tipo": linha["tipo"], "titulo": "Novo processo a confirmar",
@@ -335,6 +390,8 @@ class Repositorio:
                 return {"tipo": "processo", "caso_id": linha["caso_id"]}
             if linha["tipo"] == "processo_rascunho":
                 return {"tipo": "processos_a_confirmar"}
+            if linha["tipo"] in ("doc_visualizado", "doc_email_devolvido", "doc_prazo_assinatura"):
+                return {"tipo": "documentos"}
             if linha["tipo"] in ("atividade_delegada", "prazo_vencendo", "prazo_escalonado"):
                 return {"tipo": "atividade", "caso_id": linha["caso_id"], "atividade_id": linha["atividade_id"]}
             return {"tipo": "publicacoes_processo", "caso_id": linha["caso_id"]} if linha["caso_id"] else {"tipo": "publicacoes_monitoradas"}

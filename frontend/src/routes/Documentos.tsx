@@ -20,6 +20,7 @@ type Signatario = { nome?: string; email?: string; status?: string; assinou_em?:
 type Documento = {
   id: number; nome: string; cliente_id: string | null; status: 'gerado' | 'enviado' | 'assinado' | 'recusado' | 'expirado'
   signatarios: Signatario[]; tem_pdf: boolean; tem_assinado: boolean; criado_em: string
+  visualizado_em?: string | null; alerta?: 'email_devolvido' | 'prazo_acabando' | null
 }
 type Campo = { chave: string; rotulo: string; origem: string; valor: string }
 type Paragrafo = { texto: string; negrito: boolean; centralizado: boolean }
@@ -146,6 +147,8 @@ export default function Documentos() {
                 <Table.Cell>
                   <Badge color={STATUS[d.status].cor}>{STATUS[d.status].rotulo}</Badge>
                   {d.status === 'enviado' && d.signatarios.length > 0 && <Text as="div" size="1" color="gray">{d.signatarios.filter(s => s.status === 'signed').length}/{d.signatarios.length} assinaram</Text>}
+                  {d.status === 'enviado' && d.visualizado_em && <Text as="div" size="1" color="gray">Visualizado</Text>}
+                  {d.status === 'enviado' && d.alerta && <Badge color="amber">{d.alerta === 'email_devolvido' ? 'E-mail devolvido' : 'Prazo acabando'}</Badge>}
                 </Table.Cell>
                 <Table.Cell>{formatarDataSimples(d.criado_em.slice(0, 10))}</Table.Cell>
                 <Table.Cell justify="end">

@@ -4,11 +4,11 @@ import { AlertDialog, Badge, Button, Callout, Card, Flex, Heading, Text, TextFie
 import Carregamento from '../../Carregamento'
 import { buscarJson, enviarJson } from '../../api/rest'
 import {
-  CAMPOS, DESCRICOES, ENVIAM_EMAIL, PRECISAM_GOOGLE, SEM_TESTE_OBRIGATORIO, SO_NO_PAINEL_AVANCADO, agruparCatalogo, chaveItem, ehAsaas, estadoAtual, linhaHistorico,
-  mesmoConteudo, seloItem, textoAjuda, tituloItem, type EventoIntegracao, type ItemIntegracao,
+  CAMPOS, DESCRICOES, ENVIAM_EMAIL, PRECISAM_GOOGLE, SEM_TESTE_OBRIGATORIO, SO_NO_PAINEL_AVANCADO, agruparCatalogo, chaveItem, estadoAtual, linhaHistorico,
+  mesmoConteudo, seloItem, temAmbiente, textoAjuda, tituloItem, type EventoIntegracao, type ItemIntegracao,
 } from './integracoes'
 
-type Dados = { integracoes: ItemIntegracao[]; historico: EventoIntegracao[]; asaas_ambiente: string; drive_conectado: boolean; pode_gerir_administradores: boolean }
+type Dados = { integracoes: ItemIntegracao[]; historico: EventoIntegracao[]; asaas_ambiente: string; zapsign_ambiente: string; drive_conectado: boolean; pode_gerir_administradores: boolean }
 type Confirmacao = { titulo: string; texto: string; rotulo: string; acao: () => Promise<void> }
 
 function api<T>(token: string, caminho: string, corpo?: unknown): Promise<T> {
@@ -75,7 +75,8 @@ export default function IntegracoesAdmin({ token }: { token: string }) {
     setRetorno({ texto: r.mensagem, tom: r.aprovado ? 'green' : 'red' })
   })
   const ativar = (i: ItemIntegracao) => {
-    const producao = ehAsaas(i) && i.ambiente === 'producao'
+    const producao = temAmbiente(i) && i.ambiente === 'producao'
+    const zapsign = i.provedor === 'zapsign'
     const fazer = () => executar(async () => {
       if (SEM_TESTE_OBRIGATORIO.has(i.provedor)) {
         const id = await garantirCandidato(i)
@@ -87,7 +88,11 @@ export default function IntegracoesAdmin({ token }: { token: string }) {
       await carregar(true, chaveItem(i))
       setRetorno({ texto: 'Configuração ativada. As próximas chamadas usarão os novos valores.', tom: 'green' })
     })
-    if (producao) setConfirmacao({ titulo: 'Ativar no ambiente de produção?', texto: 'Esta chave do Asaas passará a gerar cobranças reais.', rotulo: 'Ativar em produção', acao: fazer })
+    if (producao) setConfirmacao({
+      titulo: zapsign ? 'Ativar a ZapSign em produção?' : 'Ativar no ambiente de produção?',
+      texto: zapsign ? 'Os documentos enviados terão validade jurídica e consomem o plano de API.' : 'Esta chave do Asaas passará a gerar cobranças reais.',
+      rotulo: 'Ativar em produção', acao: fazer,
+    })
     else void fazer()
   }
   const podeAtivar = (i: ItemIntegracao) => SEM_TESTE_OBRIGATORIO.has(i.provedor)
@@ -99,8 +104,17 @@ export default function IntegracoesAdmin({ token }: { token: string }) {
   })
   const usarAmbiente = (i: ItemIntegracao) => {
     const producao = i.ambiente === 'producao'
-    const fazer = () => executar(async () => { await api(token, '/ambiente', { ambiente: i.ambiente, confirmar_producao: producao }); await carregar(true, chaveItem(i)); setRetorno({ texto: 'Ambiente de cobranças atualizado.', tom: 'green' }) })
-    if (producao) setConfirmacao({ titulo: 'Usar produção nas próximas cobranças?', texto: 'As cobranças do Asaas passarão a ser reais.', rotulo: 'Usar produção', acao: fazer })
+    const zapsign = i.provedor === 'zapsign'
+    const fazer = () => executar(async () => {
+      await api(token, '/ambiente', { provedor: i.provedor, ambiente: i.ambiente, confirmar_producao: producao })
+      await carregar(true, chaveItem(i))
+      setRetorno({ texto: zapsign ? 'Ambiente da ZapSign atualizado.' : 'Ambiente de cobranças atualizado.', tom: 'green' })
+    })
+    if (producao) setConfirmacao({
+      titulo: zapsign ? 'Ativar a ZapSign em produção?' : 'Usar produção nas próximas cobranças?',
+      texto: zapsign ? 'Os próximos documentos irão para assinatura com validade jurídica.' : 'As cobranças do Asaas passarão a ser reais.',
+      rotulo: 'Usar produção', acao: fazer,
+    })
     else void fazer()
   }
   // Envio real: é a prova de que o e-mail sai (o "Testar" do cofre só confere credenciais). Vai para o e-mail do próprio administrador.
@@ -154,7 +168,7 @@ export default function IntegracoesAdmin({ token }: { token: string }) {
               <Text as="p" size="1" weight="bold" color="gray" mb="1">{g.titulo}</Text>
               <Flex direction="column" gap="1">
                 {g.itens.map(i => {
-                  const selo = seloItem(i, dados.asaas_ambiente, dados.drive_conectado)
+                  const selo = seloItem(i, { asaas: dados.asaas_ambiente, zapsign: dados.zapsign_ambiente }, dados.drive_conectado)
                   return (
                     <button key={chaveItem(i)} type="button" className="administracao__servico" aria-pressed={chaveItem(i) === selecionado} onClick={() => escolher(i)}>
                       <span>{tituloItem(i)}</span><Badge color={selo.cor} variant="soft">{selo.texto}</Badge>
@@ -192,7 +206,7 @@ export default function IntegracoesAdmin({ token }: { token: string }) {
                   <Button type="button" disabled={ocupado || !podeAtivar(item)} onClick={() => ativar(item)}>Ativar configuração</Button>
                   {ENVIAM_EMAIL.has(item.provedor) && item.versao > 0 && <Button type="button" variant="soft" disabled={ocupado} onClick={() => void enviarEmailTeste()}>Enviar e-mail de teste</Button>}
                   {PRECISAM_GOOGLE.has(item.provedor) && <Button type="button" variant="soft" disabled={ocupado} onClick={() => void autorizarGoogle(item)}>{item.provedor === 'drive' ? 'Conectar conta Google' : 'Autorizar conta Google'}</Button>}
-                  {ehAsaas(item) && item.versao > 0 && item.ambiente !== dados.asaas_ambiente && <Button type="button" variant="soft" disabled={ocupado} onClick={() => usarAmbiente(item)}>Usar este ambiente</Button>}
+                  {temAmbiente(item) && item.versao > 0 && item.ambiente !== (item.provedor === 'asaas' ? dados.asaas_ambiente : dados.zapsign_ambiente) && <Button type="button" variant="soft" disabled={ocupado} onClick={() => usarAmbiente(item)}>Usar este ambiente</Button>}
                   {item.versao > 0 && <Button type="button" variant="ghost" color="red" disabled={ocupado} onClick={() => desativar(item)}>Desativar</Button>}
                 </Flex>
                 <div>

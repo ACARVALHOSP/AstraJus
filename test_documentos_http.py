@@ -113,6 +113,39 @@ class DocumentosHttpTest(unittest.TestCase):
         d = self.req("GET", "/documentos")[1]["documentos"][0]
         self.assertEqual((d["status"], d["tem_assinado"]), ("assinado", True))
 
+    def _enviado(self, token="zapX"):
+        m = self.modelo()
+        doc = self.req("POST", "/documentos", {"modelo_id": m["id"], "valores": {}})[1]["documento"]
+        documentos.Repositorio(self.caminho).marcar_enviado(doc["id"], token, [])
+        return doc
+
+    def test_avisos_de_visualizacao_bounce_e_prazo(self):
+        _, _, bia = server._criar_usuario_core(self.registro, "bia@teste.com")
+        doc = self._enviado()
+        casos = (("doc_viewed", "Documento visualizado"), ("email_bounce", "E-mail devolvido"),
+                 ("doc-expiration-alert", "Prazo para assinar acabando"))
+        with mock.patch.dict(os.environ, {"ZAPSIGN_WEBHOOK_TOKEN": "segredo"}):
+            self.assertEqual(_webhook(self.mw, "segredo", {"event_type": "doc_viewed", "token": "desconhecido"}), 200)
+            for evento, _ in casos:
+                for _ in range(2):  # o reenvio do mesmo aviso não duplica
+                    self.assertEqual(_webhook(self.mw, "segredo", {"event_type": evento, "token": "zapX"}), 200)
+        titulos = [n["titulo"] for n in self.req("GET", "/notificacoes")[1]["notificacoes"]]
+        self.assertEqual(sorted(titulos), sorted(t for _, t in casos))
+        self.assertEqual(chamar(self.mw, "GET", "/notificacoes", bia)[1]["notificacoes"], [])
+        d = self.req("GET", "/documentos")[1]["documentos"][0]
+        self.assertTrue(d["visualizado_em"])
+        self.assertEqual((d["alerta"], d["status"]), ("prazo_acabando", "enviado"))
+
+    def test_avisos_ignorados_em_documento_final(self):
+        doc = self._enviado()
+        with mock.patch.dict(os.environ, {"ZAPSIGN_WEBHOOK_TOKEN": "segredo"}):
+            self.assertEqual(_webhook(self.mw, "segredo", {"event_type": "doc_signed", "token": "zapX", "status": "signed", "signers": []}), 200)
+            for evento in ("doc_viewed", "email_bounce", "doc-expiration-alert"):
+                self.assertEqual(_webhook(self.mw, "segredo", {"event_type": evento, "token": "zapX"}), 200)
+        self.assertEqual(self.req("GET", "/notificacoes")[1]["notificacoes"], [])
+        d = self.req("GET", "/documentos")[1]["documentos"][0]
+        self.assertEqual((d["status"], d["visualizado_em"], d["alerta"]), ("assinado", None, None))
+
 
 if __name__ == "__main__":
     unittest.main()

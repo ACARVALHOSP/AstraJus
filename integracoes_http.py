@@ -48,7 +48,7 @@ async def tratar(app, scope, receive, send):
     autor = 'usuario:' + usuario if admin_nomeado else cofre.ator()
     try:
         if path == '/admin/integracoes/api' and method == 'GET':
-            await s._json(send, 200, {'integracoes': cofre.catalogo(), 'historico': cofre.historico(), 'asaas_ambiente': cofre.ambiente_asaas(), 'drive_conectado': bool(cofre.google().obter_conexao()), 'ator': autor, 'pode_gerir_administradores': bootstrap})
+            await s._json(send, 200, {'integracoes': cofre.catalogo(), 'historico': cofre.historico(), 'asaas_ambiente': cofre.ambiente_asaas(), 'zapsign_ambiente': cofre.ambiente_zapsign(), 'drive_conectado': bool(cofre.google().obter_conexao()), 'ator': autor, 'pode_gerir_administradores': bootstrap})
             return
         if method != 'POST':
             await s._json(send, 405, {'erro': 'Método não permitido.'})
@@ -100,9 +100,12 @@ async def tratar(app, scope, receive, send):
             await s._json(send, 200, {'ativado': True})
         elif path == '/admin/integracoes/ambiente':
             novo = dados.get('ambiente')
+            provedor = dados.get('provedor', 'asaas')
+            if provedor not in ('asaas', 'zapsign'):
+                raise ValueError('Integração ou ambiente inválido.')
             if novo == 'producao' and dados.get('confirmar_producao') is not True:
-                raise ValueError('Confirme o uso do Asaas em produção.')
-            cofre.ambiente_asaas(novo, autor)
+                raise ValueError('Confirme o uso do %s em produção.' % ('Asaas' if provedor == 'asaas' else 'ZapSign'))
+            (cofre.ambiente_asaas if provedor == 'asaas' else cofre.ambiente_zapsign)(novo, autor)
             await s._json(send, 200, {'ambiente': novo})
         elif path == '/admin/integracoes/desativar':
             if dados.get('confirmar') is not True:

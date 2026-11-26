@@ -303,21 +303,31 @@ def _agora() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def criar_tabelas(conexao):
+    """Garante o schema de documentos. Bases antigas recebem as colunas novas por migração idempotente."""
+    conexao.executescript("""
+    CREATE TABLE IF NOT EXISTS documento_modelos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT NOT NULL, tipo TEXT NOT NULL,
+        docx BLOB NOT NULL, variaveis TEXT NOT NULL, criado_em TEXT NOT NULL, criado_por TEXT);
+    CREATE TABLE IF NOT EXISTS documentos_gerados (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, modelo_id INTEGER, nome TEXT NOT NULL,
+        cliente_id TEXT, caso_id TEXT, valores TEXT NOT NULL, docx BLOB NOT NULL, pdf BLOB,
+        status TEXT NOT NULL DEFAULT 'gerado', zap_token TEXT, signatarios TEXT,
+        assinado BLOB, visualizado_em TEXT, alerta TEXT,
+        criado_em TEXT NOT NULL, criado_por TEXT, atualizado_em TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS documentos_zap ON documentos_gerados(zap_token);
+    """)
+    existentes = {linha[1] for linha in conexao.execute("PRAGMA table_info(documentos_gerados)")}
+    for coluna in ("visualizado_em", "alerta"):
+        if coluna not in existentes:
+            conexao.execute(f"ALTER TABLE documentos_gerados ADD COLUMN {coluna} TEXT")
+
+
 class Repositorio:
     def __init__(self, caminho):
         self.caminho = str(caminho)
         with self._abrir() as c:
-            c.executescript("""
-            CREATE TABLE IF NOT EXISTS documento_modelos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT NOT NULL, tipo TEXT NOT NULL,
-                docx BLOB NOT NULL, variaveis TEXT NOT NULL, criado_em TEXT NOT NULL, criado_por TEXT);
-            CREATE TABLE IF NOT EXISTS documentos_gerados (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, modelo_id INTEGER, nome TEXT NOT NULL,
-                cliente_id TEXT, caso_id TEXT, valores TEXT NOT NULL, docx BLOB NOT NULL, pdf BLOB,
-                status TEXT NOT NULL DEFAULT 'gerado', zap_token TEXT, signatarios TEXT,
-                assinado BLOB, criado_em TEXT NOT NULL, criado_por TEXT, atualizado_em TEXT NOT NULL);
-            CREATE INDEX IF NOT EXISTS documentos_zap ON documentos_gerados(zap_token);
-            """)
+            criar_tabelas(c)
 
     @contextmanager
     def _abrir(self):
@@ -379,7 +389,7 @@ class Repositorio:
                           (modelo_id, nome, cliente_id, caso_id, json.dumps(valores), docx, pdf, _agora(), usuario, _agora())).lastrowid
         return self.documento(i)
 
-    _COLUNAS = "id,modelo_id,nome,cliente_id,caso_id,status,zap_token,signatarios,criado_em,criado_por,atualizado_em,(pdf IS NOT NULL) AS tem_pdf,(assinado IS NOT NULL) AS tem_assinado"
+    _COLUNAS = "id,modelo_id,nome,cliente_id,caso_id,status,zap_token,signatarios,criado_em,criado_por,atualizado_em,visualizado_em,alerta,(pdf IS NOT NULL) AS tem_pdf,(assinado IS NOT NULL) AS tem_assinado"
 
     def documentos(self, cliente_id=None, caso_id=None):
         filtros, args = [], []
@@ -402,6 +412,7 @@ class Repositorio:
     def _doc(l):
         return {"id": l["id"], "modelo_id": l["modelo_id"], "nome": l["nome"], "cliente_id": l["cliente_id"], "caso_id": l["caso_id"],
                 "status": l["status"], "signatarios": json.loads(l["signatarios"]) if l["signatarios"] else [],
+                "visualizado_em": l["visualizado_em"], "alerta": l["alerta"],
                 "tem_pdf": bool(l["tem_pdf"]), "tem_assinado": bool(l["tem_assinado"]),
                 "criado_em": l["criado_em"], "criado_por": l["criado_por"], "atualizado_em": l["atualizado_em"]}
 
@@ -435,6 +446,44 @@ class Repositorio:
             c.execute("UPDATE documentos_gerados SET status=?, signatarios=COALESCE(?,signatarios), assinado=COALESCE(?,assinado), atualizado_em=? WHERE id=?",
                       (status, json.dumps(signatarios) if signatarios is not None else None, assinado, _agora(), l["id"]))
         return True
+
+    def registrar_aviso(self, token, evento, signatarios=None) -> dict | None:
+        """Aplica o aviso da ZapSign (visualização, e-mail devolvido, prazo acabando).
+
+        Devolve os dados do documento quando o aviso é novo e o documento ainda aceita avisos;
+        None quando o token não existe, o estado já é final ou o aviso já tinha sido registrado."""
+        with self._abrir() as c:
+            l = c.execute("SELECT id,nome,criado_por,caso_id,status,visualizado_em,alerta "
+                          "FROM documentos_gerados WHERE zap_token=?", (token,)).fetchone()
+            if not l or l["status"] in ("assinado", "recusado", "expirado"):
+                return None
+            agora = _agora()
+            campos = {"atualizado_em": agora}
+            novo = False
+            if evento == "doc_viewed":
+                if not l["visualizado_em"]:
+                    campos["visualizado_em"] = agora
+                    novo = True
+            elif evento == "email_bounce":
+                if l["alerta"] != "email_devolvido":
+                    campos["alerta"] = "email_devolvido"
+                    novo = True
+            elif evento == "doc-expiration-alert":
+                if l["alerta"] != "prazo_acabando":
+                    campos["alerta"] = "prazo_acabando"
+                    novo = True
+            else:
+                return None
+            sets = ", ".join(f"{campo}=?" for campo in campos)
+            argumentos = [*campos.values()]
+            if signatarios is not None:
+                sets += ", signatarios=?"
+                argumentos.append(json.dumps(signatarios))
+            argumentos.append(l["id"])
+            c.execute(f"UPDATE documentos_gerados SET {sets} WHERE id=?", argumentos)
+        if not novo:
+            return None
+        return {"id": l["id"], "nome": l["nome"], "criado_por": l["criado_por"], "caso_id": l["caso_id"]}
 
 
 def signatarios_do_retorno(zap: dict) -> list[dict]:
