@@ -1,4 +1,4 @@
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, FilePlus2 } from 'lucide-react'
 import { useState } from 'react'
 import { Button, Flex, Heading, Skeleton, Tabs } from '@radix-ui/themes'
 import { useNavegacao } from '../api/NavegacaoContext'
@@ -12,7 +12,7 @@ import './contatos/contatos-radix.css'
 type Visao = { tipo: 'lista' } | { tipo: 'detalhe'; clienteId: string | null }
 
 export default function Contatos() {
-  const { consumirPayload } = useNavegacao()
+  const { consumirPayload, irPara } = useNavegacao()
   const [visao, setVisao] = useState<Visao>(() => {
     const payload = consumirPayload<{ id: string }>('contatos')
     return payload?.id ? { tipo: 'detalhe', clienteId: payload.id } : { tipo: 'lista' }
@@ -43,7 +43,14 @@ export default function Contatos() {
         <ChevronLeft size={16} />
         Voltar para contatos
       </Button>
-      <Heading as="h1" size="6">{nomeDetalhe ?? <Skeleton width="16rem" height="1.75rem" aria-label="Carregando…" />}</Heading>
+      <Flex align="center" justify="between" gap="3" wrap="wrap">
+        <Heading as="h1" size="6">{nomeDetalhe ?? <Skeleton width="16rem" height="1.75rem" aria-label="Carregando…" />}</Heading>
+        {visao.clienteId && (
+          <Button size="2" variant="soft" onClick={() => confirmarSaida(() => irPara('financeiro', { aba: 'contratos', novoContratoClienteId: visao.clienteId }))}>
+            <FilePlus2 size={15} aria-hidden="true" />Criar contrato de honorários
+          </Button>
+        )}
+      </Flex>
       <Tabs.Root key={visao.clienteId ?? 'novo'} value={aba} onValueChange={(v) => confirmarSaida(() => setAba(v))}>
         <Tabs.List aria-label="Detalhes do contato">
           <Tabs.Trigger value="cadastro">Cadastro</Tabs.Trigger>

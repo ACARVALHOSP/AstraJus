@@ -131,6 +131,17 @@ DATAJUD_BACKOFFS_S = (2.0, 5.0, 12.0)  # espera após a 1ª, 2ª e 3ª falha (4 
 DATAJUD_BACKOFF_JITTER = 0.25          # acréscimo aleatório de até 25%
 DATAJUD_RETRY_AFTER_MAX_S = 30.0       # teto para o cabeçalho Retry-After
 
+# Job de movimentos: cada rodada reprocessa só os processos que falharam por instabilidade do
+# DataJud (resposta parcial, 429/502/503/504, timeout). 0 rodadas máximas = só termina com sucesso.
+try:
+    DATAJUD_RODADA_INTERVALO_S = max(0.0, float(os.environ.get("CNJ_DATAJUD_RODADA_S", "60")))
+except ValueError:
+    DATAJUD_RODADA_INTERVALO_S = 60.0
+try:
+    DATAJUD_RODADAS_MAX = max(0, int(os.environ.get("CNJ_DATAJUD_RODADAS_MAX", "0")))
+except ValueError:
+    DATAJUD_RODADAS_MAX = 0
+
 # Semáforo/lock criados sob demanda, dentro do loop em execução (ver _limitador_datajud).
 _LOOP_DATAJUD = None
 _SEM_DATAJUD = None
@@ -513,8 +524,13 @@ async def consultar_processo_datajud(tribunal: str, numero_processo: str) -> dic
         if _CACHE_DATAJUD is not None:
             resultado_cache = await asyncio.to_thread(_CACHE_DATAJUD.obter, chave_cache)
             if resultado_cache is not None:
-                log.info("DataJud cache hit: %s/%s", tribunal_norm, numero)
-                return resultado_cache
+                # Entradas antigas com "encontrado": True e "processos": [] são falso negativo
+                # (resposta parcial do Elasticsearch): tratadas como cache miss para serem refeitas.
+                if resultado_cache.get("encontrado") and not resultado_cache.get("processos"):
+                    log.info("DataJud cache ignorado (entrada vazia): %s/%s", tribunal_norm, numero)
+                else:
+                    log.info("DataJud cache hit: %s/%s", tribunal_norm, numero)
+                    return resultado_cache
 
         url = f"{DATAJUD_BASE_URL}/api_publica_{tribunal_norm}/_search"
         headers = {
@@ -546,6 +562,14 @@ async def consultar_processo_datajud(tribunal: str, numero_processo: str) -> dic
             }
 
         processos = [_extrair_processo_datajud(h.get("_source") or {}) for h in hits.get("hits") or []]
+        if not processos:
+            # total > 0 sem hits é resposta parcial disfarçada (o Elasticsearch não devolve os
+            # documentos): falha temporária, nunca "encontrado" vazio nem cache.
+            return {**_erro(
+                f"Resposta parcial da API DataJud para o processo {numero} no tribunal "
+                f"'{tribunal_norm}' ({total} resultado(s) indicado(s), nenhum documento recebido). "
+                "Tente novamente em alguns minutos."
+            ), "temporario": True}
         resultado = {"encontrado": True, "total": total, "processos": processos}
         if _CACHE_DATAJUD is not None:
             await asyncio.to_thread(RegistroClientesCasos(_CACHE_DATAJUD.caminho).salvar_datajud,
@@ -559,15 +583,47 @@ async def consultar_processo_datajud(tribunal: str, numero_processo: str) -> dic
         return _erro(f"Erro inesperado ao consultar o DataJud: {exc}")
 
 
+def _datajud_resposta_parcial(resp: httpx.Response, corpo: dict) -> tuple[bool, int]:
+    """Detecta a resposta PARCIAL do Elasticsearch saturado: HTTP 200, mas `timed_out`,
+    `_shards.failed > 0` (es_rejected_execution_exception) ou `hits.total > 0` sem nenhum
+    `hits.hits`. Não é "processo não encontrado": é falha temporária, que deve ser retentada e
+    nunca ir para o cache. Corpo que não é JSON fica para o chamador tratar.
+
+    Devolve (incompleta, quantidade de shards falhos)."""
+    try:
+        dados = resp.json()
+    except ValueError:
+        return False, 0
+    if not isinstance(dados, dict):
+        return False, 0
+    shards = dados.get("_shards") if isinstance(dados.get("_shards"), dict) else {}
+    try:
+        shards_falhos = int(shards.get("failed") or 0)
+    except (TypeError, ValueError):
+        shards_falhos = 0
+    if dados.get("timed_out") or shards_falhos > 0:
+        return True, shards_falhos
+    hits = dados.get("hits") if isinstance(dados.get("hits"), dict) else {}
+    try:
+        tamanho = int(corpo.get("size", 10))
+    except (TypeError, ValueError):
+        tamanho = 10
+    if tamanho > 0 and _total_hits(hits) > 0 and not (hits.get("hits") or []):
+        return True, shards_falhos
+    return False, shards_falhos
+
+
 async def _datajud_post_com_retry(url: str, headers: dict, corpo: dict):
-    """Faz o POST com timeout de 70s. Retenta em timeout, em 502/503/504 (gateway lento) e em
-    429 (Elasticsearch sobrecarregado, comum em horário de pico).
+    """Faz o POST com timeout de 70s. Retenta em timeout, em 502/503/504 (gateway lento), em
+    429 (Elasticsearch sobrecarregado, comum em horário de pico) e em resposta parcial (HTTP 200
+    com shards falhos ou hits vazios apesar de total > 0 — também é saturação do cluster).
 
     O tráfego passa por um limitador global (semáforo + intervalo mínimo entre inícios) para
     reduzir a sobrecarga que provoca 429/504. Nas retentativas respeita Retry-After (até 30s)
     ou usa backoff exponencial com jitter.
 
-    Retorna a resposta httpx em caso de sucesso, ou um dicionário de erro já pronto.
+    Retorna a resposta httpx em caso de sucesso, ou um dicionário de erro já pronto (com
+    "temporario": True quando as tentativas se esgotaram por falha transitória).
     """
     global _ULTIMO_INICIO_DATAJUD
     ultimo_problema = "sem detalhes"
@@ -606,8 +662,12 @@ async def _datajud_post_com_retry(url: str, headers: dict, corpo: dict):
                         _CIRCUIT_DATAJUD.registrar_sucesso()  # API respondeu com erro de cliente
                         return _erro(f"HTTP {resp.status_code} da API DataJud: {resp.text[:300]}")
                     else:
-                        _CIRCUIT_DATAJUD.registrar_sucesso()
-                        return resp
+                        parcial, shards_falhos = _datajud_resposta_parcial(resp, corpo)
+                        if parcial:
+                            ultimo_problema = f"resposta parcial ({shards_falhos} shards falhos)"
+                        else:
+                            _CIRCUIT_DATAJUD.registrar_sucesso()
+                            return resp
 
             log.warning("DataJud tentativa %d/%d falhou: %s", tentativa, DATAJUD_TENTATIVAS, ultimo_problema)
             if tentativa < DATAJUD_TENTATIVAS:
@@ -625,10 +685,10 @@ async def _datajud_post_com_retry(url: str, headers: dict, corpo: dict):
                 await asyncio.sleep(espera)
 
     _CIRCUIT_DATAJUD.registrar_falha()
-    return _erro(
+    return {**_erro(
         f"Falha ao consultar o DataJud após {DATAJUD_TENTATIVAS} tentativas ({ultimo_problema}). "
         "A API é instável em horários de pico; tente novamente em alguns minutos."
-    )
+    ), "temporario": True}
 
 
 def _extrair_processo_datajud(fonte: dict) -> dict:
@@ -3906,50 +3966,115 @@ async def _atualizar_movimentos_processos(gestao: "RegistroClientesCasos", agora
     """Preenche snapshots completos dos CNJs cadastrados ou monitorados e atualiza
     as capas vinculadas a um tribunal, preservando os campos manuais. Não manda e-mail: o caso não tem um "dono" único no modelo atual (é a conta
     institucional do escritório inteiro, ver google_integracao.py), só o Monitoramento tem
-    usuário - o movimento novo aparece na capa do processo e na linha do tempo do caso."""
+    usuário - o movimento novo aparece na capa do processo e na linha do tempo do caso.
+
+    O DataJud às vezes responde HTTP 200 com resultado PARCIAL (cluster saturado): isso é falha
+    temporária, não "processo sem movimentos". Por isso o job trabalha em rodadas: um processo que
+    falhar por instabilidade (resposta parcial, 429/502/503/504, timeout ou erro de rede) volta para
+    a próxima rodada, com DATAJUD_RODADA_INTERVALO_S de espera, até obter resposta válida. Sucesso,
+    "não encontrado" legítimo e erro permanente (número inválido, 401/403, 404 de tribunal) saem da
+    fila. DATAJUD_RODADAS_MAX > 0 limita as rodadas (0 = sem limite)."""
     falhou = False
-    # Inclui cadastros antigos sem capa e processos apenas monitorados.
-    for numero, tribunal in gestao.processos_datajud_pendentes():
-        try:
-            tribunal = tribunal or _tribunal_do_numero(numero)
-            if tribunal:
+
+    def _temporario(resultado) -> bool:
+        """Erro estruturado que veio de instabilidade do DataJud (não de dado inválido)."""
+        return isinstance(resultado, dict) and bool(resultado.get("erro")) and bool(resultado.get("temporario"))
+
+    async def _processar_datajud(itens: list[tuple[str, str | None]]) -> list[tuple[str, str | None]]:
+        """Primeiro laço: preenche os snapshots. Devolve só os itens que falharam por instabilidade."""
+        pendentes: list[tuple[str, str | None]] = []
+        nonlocal falhou
+        for numero, tribunal in itens:
+            try:
+                tribunal = tribunal or _tribunal_do_numero(numero)
+                if not tribunal:
+                    continue
                 resultado = await consultar_processo_datajud(tribunal.lower(), numero)
                 if resultado.get("encontrado"):
                     gestao.salvar_datajud(numero, tribunal, [p["datajud"] for p in resultado["processos"]])
-        except Exception:
-            falhou = True
-            log.exception("DataJud: falha ao preencher processo %s", numero)
-    for vinculo in gestao.capas_vinculadas():
-        caso_id, numero, tribunal = vinculo["caso_id"], vinculo["numero_processo"], vinculo["tribunal"]
-        try:
-            capa_atual = gestao.obter_capa_processo(caso_id, numero) or {}
-            if capa_atual.get("movimentos"):
-                # Já há histórico: pergunta só pelos movimentos mais novos que o último guardado e
-                # pula a atualização completa (DataJud + DJEN) quando nada mudou.
-                if await _datajud_tem_movimento_novo(tribunal.lower(), numero, capa_atual["movimentos"]) is False:
-                    continue
-            campos, erro = await _montar_capa_via_tribunal(numero, tribunal.lower())
-            if erro:
+                elif _temporario(resultado):
+                    pendentes.append((numero, tribunal))
+                    log.warning("DataJud: processo %s (%s) pendente para a próxima rodada: %s",
+                                numero, tribunal, resultado.get("mensagem"))
+                elif resultado.get("erro"):
+                    falhou = True
+                    log.warning("DataJud: falha ao preencher processo %s (%s): %s",
+                                numero, tribunal, resultado.get("mensagem"))
+            except (httpx.HTTPError, asyncio.TimeoutError):
+                pendentes.append((numero, tribunal))
+                log.warning("DataJud: falha de rede ao preencher processo %s (%s); nova rodada", numero, tribunal)
+            except Exception:
                 falhou = True
-                log.warning("Atualização de movimentos: processo %s (%s): %s", numero, tribunal, erro.get("erro"))
-                continue
-            novos = _movimentos_novos(capa_atual.get("movimentos"), campos.get("movimentos"))
-            gestao.salvar_capa_processo(caso_id, numero, agora=agora, **campos)
-            if campos.get("datajud"):
-                gestao.salvar_datajud(numero, tribunal, campos["datajud"])
-            if novos:
-                gestao.registrar_evento_no_caso(
-                    caso_id, numero, "movimento_processual",
-                    {"quantidade": len(novos), "ultimo": novos[-1]}, agora,
-                )
-                # Só avisa quando já havia um histórico: na primeira carga tudo seria "novo".
+                log.exception("DataJud: falha ao preencher processo %s", numero)
+        return pendentes
+
+    async def _processar_capas(vinculos: list[dict]) -> list[dict]:
+        """Segundo laço: atualiza as capas vinculadas. Devolve só os itens com falha transitória."""
+        pendentes: list[dict] = []
+        nonlocal falhou
+        for vinculo in vinculos:
+            caso_id, numero, tribunal = vinculo["caso_id"], vinculo["numero_processo"], vinculo["tribunal"]
+            try:
+                capa_atual = gestao.obter_capa_processo(caso_id, numero) or {}
                 if capa_atual.get("movimentos"):
-                    ultimo = novos[-1]
-                    notificacoes.Repositorio(gestao.caminho, agora=agora).registrar_movimento_processual(
-                        caso_id, f"{numero}:{ultimo.get('codigo')}:{ultimo.get('dataHora')}")
-        except Exception:
-            falhou = True
-            log.exception("Atualização de movimentos: falha ao processar processo %s", numero)
+                    # Já há histórico: pergunta só pelos movimentos mais novos que o último guardado e
+                    # pula a atualização completa (DataJud + DJEN) quando nada mudou. None = não deu
+                    # para saber (falha ou processo sem retorno): segue para a atualização completa,
+                    # como antes; se ela também falhar por instabilidade, o item volta para a fila.
+                    if await _datajud_tem_movimento_novo(tribunal.lower(), numero, capa_atual["movimentos"]) is False:
+                        continue
+                campos, erro = await _montar_capa_via_tribunal(numero, tribunal.lower())
+                if erro:
+                    if _temporario(erro):
+                        pendentes.append(vinculo)
+                        log.warning("Atualização de movimentos: processo %s (%s) pendente para a próxima rodada: %s",
+                                    numero, tribunal, erro.get("mensagem"))
+                    else:
+                        falhou = True
+                        log.warning("Atualização de movimentos: processo %s (%s): %s",
+                                    numero, tribunal, erro.get("mensagem"))
+                    continue
+                novos = _movimentos_novos(capa_atual.get("movimentos"), campos.get("movimentos"))
+                gestao.salvar_capa_processo(caso_id, numero, agora=agora, **campos)
+                if campos.get("datajud"):
+                    gestao.salvar_datajud(numero, tribunal, campos["datajud"])
+                if novos:
+                    gestao.registrar_evento_no_caso(
+                        caso_id, numero, "movimento_processual",
+                        {"quantidade": len(novos), "ultimo": novos[-1]}, agora,
+                    )
+                    # Só avisa quando já havia um histórico: na primeira carga tudo seria "novo".
+                    if capa_atual.get("movimentos"):
+                        ultimo = novos[-1]
+                        notificacoes.Repositorio(gestao.caminho, agora=agora).registrar_movimento_processual(
+                            caso_id, f"{numero}:{ultimo.get('codigo')}:{ultimo.get('dataHora')}")
+            except (httpx.HTTPError, asyncio.TimeoutError):
+                pendentes.append(vinculo)
+                log.warning("Atualização de movimentos: falha de rede no processo %s (%s); nova rodada",
+                            numero, tribunal)
+            except Exception:
+                falhou = True
+                log.exception("Atualização de movimentos: falha ao processar processo %s", numero)
+        return pendentes
+
+    # Inclui cadastros antigos sem capa e processos apenas monitorados.
+    pendentes_datajud = list(gestao.processos_datajud_pendentes())
+    pendentes_capas = list(gestao.capas_vinculadas())
+    rodada = 0
+    while pendentes_datajud or pendentes_capas:
+        rodada += 1
+        if rodada > 1:
+            log.info("Atualização de movimentos: %d pendente(s); nova rodada em %.0fs",
+                     len(pendentes_datajud) + len(pendentes_capas), DATAJUD_RODADA_INTERVALO_S)
+            await asyncio.sleep(DATAJUD_RODADA_INTERVALO_S)
+        pendentes_datajud = await _processar_datajud(pendentes_datajud)
+        pendentes_capas = await _processar_capas(pendentes_capas)
+        if DATAJUD_RODADAS_MAX > 0 and rodada >= DATAJUD_RODADAS_MAX:
+            break
+    if pendentes_datajud or pendentes_capas:
+        falhou = True
+        log.warning("Atualização de movimentos: %d processo(s) seguem pendentes após %d rodada(s)",
+                    len(pendentes_datajud) + len(pendentes_capas), rodada)
 
     return not falhou
 
