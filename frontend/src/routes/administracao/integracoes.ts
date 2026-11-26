@@ -15,7 +15,7 @@ export const NOMES: Record<string, string> = {
 export const DESCRICOES: Record<string, string> = {
   drive: 'Pasta institucional do escritório no Google Drive.',
   asaas: 'Cobranças e boletos (Financeiro › Pagamentos).',
-  zapsign: 'Assinatura digital de documentos.',
+  zapsign: 'Assinatura digital de documentos. O sandbox não tem validade jurídica; use-o para testes.',
   datajud: 'Consulta de processos no DataJud (CNJ).',
   openrouter: 'Acesso a modelos de IA pelo OpenRouter (openrouter.ai/keys).',
   brevo: 'Envio de e-mails pela API do Brevo (porta 443). Quando configurado, tem prioridade sobre o SMTP.',
@@ -44,18 +44,20 @@ export const PRECISAM_GOOGLE = new Set(['drive', 'google_oauth'])
 
 export const chaveItem = (i: { provedor: string; ambiente: string }) => `${i.provedor}:${i.ambiente}`
 export const ehAsaas = (i: { provedor: string }) => i.provedor === 'asaas'
+/** Serviços com os ambientes 'sandbox' e 'producao' (um em uso por provedor). */
+export const temAmbiente = (i: { provedor: string }) => i.provedor === 'asaas' || i.provedor === 'zapsign'
 export const rotuloAmbiente = (ambiente: string) => ambiente === 'sandbox' ? 'Homologação' : ambiente === 'producao' ? 'Produção' : ''
 
 export function tituloItem(i: { provedor: string; ambiente: string }) {
-  return ehAsaas(i) ? `${NOMES.asaas} · ${rotuloAmbiente(i.ambiente)}` : (NOMES[i.provedor] ?? i.provedor)
+  return temAmbiente(i) ? `${NOMES[i.provedor] ?? i.provedor} · ${rotuloAmbiente(i.ambiente)}` : (NOMES[i.provedor] ?? i.provedor)
 }
 
-/** Selo da lista: "Em uso" (Asaas), "Conta conectada" (Drive) ou "Configurado" / "Não configurado". */
-export function seloItem(i: ItemIntegracao, ambienteAsaas: string, driveConectado: boolean): { texto: string; cor: 'green' | 'gray' | 'blue' } {
+/** Selo da lista: "Em uso" (Asaas/ZapSign), "Conta conectada" (Drive) ou "Configurado" / "Não configurado". */
+export function seloItem(i: ItemIntegracao, ambientes: Record<string, string>, driveConectado: boolean): { texto: string; cor: 'green' | 'gray' | 'blue' } {
   if (i.provedor === 'drive' && driveConectado) return { texto: 'Conta conectada', cor: 'green' }
   if (i.estado !== 'ativo') return { texto: 'Não configurado', cor: 'gray' }
-  if (ehAsaas(i) && i.ambiente === ambienteAsaas) return { texto: 'Em uso', cor: 'green' }
-  return { texto: 'Configurado', cor: ehAsaas(i) ? 'blue' : 'green' }
+  if (temAmbiente(i) && i.ambiente === ambientes[i.provedor]) return { texto: 'Em uso', cor: 'green' }
+  return { texto: 'Configurado', cor: temAmbiente(i) ? 'blue' : 'green' }
 }
 
 export function estadoAtual(i: ItemIntegracao): string {

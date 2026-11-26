@@ -4286,7 +4286,7 @@ class _AutenticacaoBearer:
 
         if caminho == "/integracoes/status" and scope.get("method") == "GET":
             await _json(send, 200, {"google": self._google_configurado(), "asaas": _asaas_config() is not None,
-                                   'zapsign': bool(self.integracoes and self.integracoes.ativo('zapsign'))})
+                                   'zapsign': bool(self.integracoes and self.integracoes.ativo('zapsign', self.integracoes.ambiente_zapsign()))})
             return
 
         if caminho == "/responsaveis/me" and scope.get("method") in ("GET", "PATCH"):
@@ -5277,6 +5277,21 @@ class _AutenticacaoBearer:
         await _json(send, 200, {"recebido": True})  # sempre 200: senão a ZapSign reenvia e duplica
 
     async def _aplicar_retorno_zapsign(self, repo, zap: dict, evento: str | None) -> str:
+        # Visualização, e-mail devolvido e prazo acabando só geram aviso no sino do responsável.
+        tipo_aviso = {"doc_viewed": "doc_visualizado", "email_bounce": "doc_email_devolvido",
+                      "doc-expiration-alert": "doc_prazo_assinatura"}.get(evento)
+        if tipo_aviso:
+            signatarios = documentos.signatarios_do_retorno(zap) if zap.get("signers") else None
+            aviso = repo.registrar_aviso(zap["token"], evento, signatarios)
+            if aviso:
+                destinatarios = [aviso.get("criado_por")]
+                if aviso.get("caso_id"):
+                    caso = self.gestao.obter_caso(aviso["caso_id"])
+                    responsavel = (caso or {}).get("responsavel")
+                    if responsavel and responsavel != aviso.get("criado_por"):
+                        destinatarios.append(responsavel)
+                notificacoes.Repositorio(self.gestao.caminho).registrar_aviso_documento(aviso["id"], tipo_aviso, destinatarios)
+            return "enviado"
         status = documentos.status_do_retorno(zap, evento)
         assinado = None
         if status == "assinado" and zap.get("signed_file"):

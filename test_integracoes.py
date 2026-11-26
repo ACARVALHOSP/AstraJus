@@ -173,6 +173,41 @@ class CofreTest(unittest.TestCase):
         self.assertEqual('https://openrouter.ai/api/v1/auth/key',str(chamadas[0].url))
         self.assertEqual('Bearer sk-or-v1-abc',chamadas[0].headers['authorization'])
 
+    def test_catalogo_zapsign_tem_ambientes_sandbox_e_producao(self):
+        ambientes=[x['ambiente'] for x in self.c.catalogo() if x['provedor']=='zapsign']
+        self.assertEqual(['sandbox','producao'],ambientes)
+
+    def test_zapsign_producao_exige_confirmacao(self):
+        ident=self.c.candidato('zapsign','producao',{'api_key':'chave-producao'},0,self.ator)
+        teste=self.aprovar_teste(ident)
+        with self.assertRaises(i.Conflito):
+            self.c.ativar(ident,teste,self.ator)
+        self.assertIsNone(self.c.ativo('zapsign','producao'))
+        self.c.ativar(ident,teste,self.ator,True)
+        self.assertEqual('chave-producao',self.c.valor('ZAPSIGN_API_KEY'))
+
+    def test_ambiente_zapsign_exige_configuracao_testada(self):
+        with self.assertRaises(ValueError):
+            self.c.ambiente_zapsign('sandbox',self.ator)
+        ident=self.c.candidato('zapsign','sandbox',{'api_key':'chave-sandbox'},0,self.ator)
+        teste=self.aprovar_teste(ident)
+        self.c.ativar(ident,teste,self.ator)
+        self.c.ambiente_zapsign('sandbox',self.ator)
+        self.assertEqual('sandbox',self.c.valor('ZAPSIGN_AMBIENTE'))
+        self.assertEqual('chave-sandbox',self.c.valor('ZAPSIGN_API_KEY'))
+
+    def test_migracao_zapsign_padrao_para_producao(self):
+        with self.c.abrir() as c:
+            c.execute('INSERT INTO integracoes_config(provedor,ambiente,escopo,dono,versao,segredo,parametros,estado,base,autor,criado_em) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+                      ('zapsign','padrao','sistema','sistema',1,self.c.cifrar({'api_key':'chave-legada'}),'{}','ativo',0,'migracao',time.time()))
+            c.execute('INSERT INTO integracoes_auditoria(autor,acao,provedor,ambiente,versao,instante,resultado) VALUES(?,?,?,?,?,?,?)',
+                      ('migracao','importacao_nao_testada','zapsign','padrao',1,time.time(),'ok'))
+        migrado=i.Cofre(self.path,self.chave)
+        self.assertIsNone(migrado.ativo('zapsign','padrao'))
+        self.assertEqual('chave-legada',migrado.ativo('zapsign','producao')['api_key'])
+        self.assertTrue(any(h['ambiente']=='producao' and h['provedor']=='zapsign' for h in migrado.historico()))
+        self.assertFalse(any(h['ambiente']=='padrao' and h['provedor']=='zapsign' for h in migrado.historico()))
+
     def test_teste_zapsign_leitura_sem_retorno_sensivel(self):
         chamadas=[]
         def responder(req):
@@ -180,7 +215,7 @@ class CofreTest(unittest.TestCase):
             return httpx.Response(200,json={'results':[{'token':'segredo-documento'}]})
         async def rodar():
             async with httpx.AsyncClient(transport=httpx.MockTransport(responder)) as client:
-                return await i.testar('zapsign','padrao',{'api_key':'token-api'},client)
+                return await i.testar('zapsign','sandbox',{'api_key':'token-api'},client)
         ok,msg=asyncio.run(rodar())
         self.assertTrue(ok);self.assertNotIn('segredo',msg)
         self.assertEqual('GET',chamadas[0].method)
@@ -208,7 +243,7 @@ class CofreTest(unittest.TestCase):
                 r=await client.get('/admin/integracoes/api',headers={'Authorization':'Bearer admin-token'})
                 self.assertEqual(200,r.status_code)
                 self.assertEqual('usuario:admin',r.json()['ator'])
-                r=await client.post('/admin/integracoes/candidato',headers={'Authorization':'Bearer admin-token'},json={'provedor':'zapsign','ambiente':'padrao','base':0,'dados':{'api_key':'secret'}})
+                r=await client.post('/admin/integracoes/candidato',headers={'Authorization':'Bearer admin-token'},json={'provedor':'zapsign','ambiente':'sandbox','base':0,'dados':{'api_key':'secret'}})
                 self.assertEqual(201,r.status_code)
                 self.assertEqual('usuario:admin',self.c.historico()[0]['autor'])
         asyncio.run(rodar())

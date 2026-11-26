@@ -74,9 +74,10 @@ A chave fica cifrada no cofre e nunca é exibida de volta nem gravada em log.
 
 A tela **Documentos** gera PDF a partir de modelos DOCX (campos `{{cliente_nome}}`, `{{poderes}}`...) e envia para assinatura. O PDF é feito pelo LibreOffice, instalado na imagem Docker.
 
-Variáveis de ambiente (além da chave `ZAPSIGN_API_KEY` do cofre):
-- `ZAPSIGN_AMBIENTE=sandbox` usa `sandbox.api.zapsign.com.br` (sem validade jurídica; token próprio). Sem a variável, vale a produção, que exige plano de API.
+Ambiente: em **Integrações** a ZapSign tem duas configurações, **Sandbox** (`sandbox.api.zapsign.com.br`, sem validade jurídica, token próprio) e **Produção** (exige plano de API). Cada uma tem a sua chave; "Usar este ambiente" escolhe qual o sistema usa. A chave que já existia foi migrada para Produção.
+
+Variável de ambiente:
 - `ZAPSIGN_WEBHOOK_TOKEN`: segredo do webhook. A ZapSign não assina as chamadas, então o segredo vai num cabeçalho que a própria ZapSign repete a cada aviso.
 
-Webhook: no painel da ZapSign (Configurações > Integrações > ZapSign API > Webhooks), cadastre `https://<servidor>/zapsign/webhook`, os eventos `doc_signed`, `doc_refused` e `doc-expired`, e o cabeçalho `X-Webhook-Token` com o valor de `ZAPSIGN_WEBHOOK_TOKEN`. Sem o webhook, o botão **Atualizar** da linha do documento consulta a ZapSign na hora.
+Webhook: no painel da ZapSign (Configurações > Integrações > ZapSign API > Webhooks), cadastre `https://<servidor>/zapsign/webhook`, os eventos `doc_signed`, `doc_refused` e `doc-expired`, e o cabeçalho `X-Webhook-Token` com o valor de `ZAPSIGN_WEBHOOK_TOKEN`. Cadastre também, à parte, `doc_viewed`, `email_bounce` (este não entra na opção "Todos") e `doc-expiration-alert`: eles geram aviso no sino do responsável pelo documento (e do responsável pelo caso), sem alterar a situação da assinatura. Sem o webhook, o botão **Atualizar** da linha do documento consulta a ZapSign na hora.
 O PDF assinado é baixado e guardado no banco: o link da ZapSign vale só 60 minutos.

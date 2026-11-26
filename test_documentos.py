@@ -107,6 +107,21 @@ class TestDocumentos(unittest.TestCase):
             self.assertEqual(documentos.status_do_retorno({"status": "signed"}), "assinado")
             self.assertEqual(documentos.status_do_retorno({"status": "pending"}, "doc_refused"), "recusado")
 
+    def test_migracao_de_tabela_antiga(self):
+        import sqlite3
+        with tempfile.TemporaryDirectory() as pasta:
+            caminho = Path(pasta) / "d.db"
+            c = sqlite3.connect(caminho)
+            c.execute("CREATE TABLE documentos_gerados (id INTEGER PRIMARY KEY AUTOINCREMENT, modelo_id INTEGER, nome TEXT NOT NULL, "
+                      "cliente_id TEXT, caso_id TEXT, valores TEXT NOT NULL, docx BLOB NOT NULL, pdf BLOB, status TEXT NOT NULL DEFAULT 'gerado', "
+                      "zap_token TEXT, signatarios TEXT, assinado BLOB, criado_em TEXT NOT NULL, criado_por TEXT, atualizado_em TEXT NOT NULL)")
+            c.execute("INSERT INTO documentos_gerados (nome,valores,docx,criado_em,atualizado_em) VALUES ('Antigo','{}',x'00','a','a')")
+            c.commit(); c.close()
+            repo = documentos.Repositorio(caminho)
+            doc = repo.documentos()[0]
+            self.assertEqual((doc["nome"], doc["visualizado_em"], doc["alerta"]), ("Antigo", None, None))
+            documentos.Repositorio(caminho)  # segunda abertura não falha
+
 
 if __name__ == "__main__":
     unittest.main()

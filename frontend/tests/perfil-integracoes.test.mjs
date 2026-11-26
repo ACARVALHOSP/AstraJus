@@ -34,18 +34,24 @@ test('foto: tipos e tamanho aceitos', () => {
   assert.match(validarArquivoFoto({ type: 'image/jpeg', size: 20 * 1024 * 1024 }), /grande/)
 })
 
-const item = (extra = {}) => ({ provedor: 'zapsign', ambiente: 'padrao', escopo: 'escritorio', versao: 0, estado: 'nao_configurado', parametros: {}, segredos: {}, testado_em: null, ...extra })
+const item = (extra = {}) => ({ provedor: 'zapsign', ambiente: 'sandbox', escopo: 'escritorio', versao: 0, estado: 'nao_configurado', parametros: {}, segredos: {}, testado_em: null, ...extra })
+const ambientes = { asaas: 'sandbox', zapsign: 'producao' }
 
 test('integrações: selos de estado', () => {
-  assert.deepEqual(seloItem(item(), 'sandbox', false), { texto: 'Não configurado', cor: 'gray' })
-  assert.equal(seloItem(item({ estado: 'ativo', versao: 2 }), 'sandbox', false).texto, 'Configurado')
-  assert.equal(seloItem(item({ provedor: 'drive' }), 'sandbox', true).texto, 'Conta conectada')
+  assert.deepEqual(seloItem(item(), ambientes, false), { texto: 'Não configurado', cor: 'gray' })
+  assert.equal(seloItem(item({ estado: 'ativo', versao: 2 }), ambientes, false).texto, 'Configurado')
+  assert.equal(seloItem(item({ provedor: 'drive' }), ambientes, true).texto, 'Conta conectada')
   const asaas = item({ provedor: 'asaas', ambiente: 'producao', estado: 'ativo', versao: 1 })
-  assert.equal(seloItem(asaas, 'producao', false).texto, 'Em uso')
-  assert.equal(seloItem(asaas, 'sandbox', false).texto, 'Configurado')
+  assert.equal(seloItem(asaas, ambientes, false).texto, 'Configurado')
+  assert.equal(seloItem(asaas, { asaas: 'producao', zapsign: 'producao' }, false).texto, 'Em uso')
+  const zapsign = item({ ambiente: 'producao', estado: 'ativo', versao: 1 })
+  assert.equal(seloItem(zapsign, ambientes, false).texto, 'Em uso')
+  assert.equal(seloItem(zapsign, { asaas: 'sandbox', zapsign: 'sandbox' }, false).texto, 'Configurado')
 })
 test('integrações: títulos, estado e histórico', () => {
   assert.equal(tituloItem({ provedor: 'asaas', ambiente: 'sandbox' }), 'Asaas · Homologação')
+  assert.equal(tituloItem({ provedor: 'zapsign', ambiente: 'sandbox' }), 'ZapSign · Homologação')
+  assert.equal(tituloItem({ provedor: 'zapsign', ambiente: 'producao' }), 'ZapSign · Produção')
   assert.equal(tituloItem({ provedor: 'smtp', ambiente: 'padrao' }), 'E-mail (SMTP)')
   assert.equal(estadoAtual(item()), 'Não configurado.')
   assert.match(estadoAtual(item({ estado: 'ativo', versao: 3 })), /versão 3 · Não testada/)
@@ -69,6 +75,6 @@ test('Brevo: nome, campos e botão de e-mail de teste', () => {
   assert.match(textoAjuda('brevo', ''), /IP deste servidor/)
   assert.match(textoAjuda('brevo', ''), /Enviar e-mail de teste/)
   const brevo = item({ provedor: 'brevo', escopo: 'sistema', estado: 'ativo', versao: 1 })
-  assert.equal(seloItem(brevo, 'sandbox', false).texto, 'Configurado')
+  assert.equal(seloItem(brevo, ambientes, false).texto, 'Configurado')
   assert.deepEqual(agruparCatalogo([brevo, item()]).map(g => g.chave), ['escritorio', 'sistema'])
 })
