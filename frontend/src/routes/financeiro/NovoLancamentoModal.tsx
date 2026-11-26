@@ -135,10 +135,6 @@ export default function NovoLancamentoModal({ open, onClose, onSalvo, predefinid
       setErro('Busque e selecione um cliente cadastrado.')
       return
     }
-    if (casosSelecionados.size === 0) {
-      setErro('Selecione ao menos um processo do cliente.')
-      return
-    }
     if (!descricao.trim() || !vencimento || !responsavel.trim()) {
       setErro('Preencha descrição, vencimento e responsável.')
       return
@@ -150,10 +146,12 @@ export default function NovoLancamentoModal({ open, onClose, onSalvo, predefinid
     setSalvando(true)
     try {
       // O servidor divide o valor em parcelas (centavos exatos) e cria o grupo de uma vez.
-      for (const casoId of casosSelecionados) {
+      // Sem processo marcado, cria um único lançamento apenas no cliente.
+      const alvos: (string | null)[] = casosSelecionados.size > 0 ? [...casosSelecionados] : [null]
+      for (const casoId of alvos) {
         await enviarJson(cliente, '/lancamentos', {
           tipo, vencimento, valor: valorNumerico, descricao: descricao.trim(), recorrente,
-          parcelas: parcelar ? parcelas : 1, caso_id: casoId, cliente_id: clienteSelecionado.id,
+          parcelas: parcelar ? parcelas : 1, ...(casoId ? { caso_id: casoId } : {}), cliente_id: clienteSelecionado.id,
           responsavel: responsavel.trim(), direcao,
           ...(tipo === 'CUSTAS' ? { reembolsavel } : {}),
           ...(tipo === 'REPASSE' ? { favorecido: favorecido.trim(), ...(predefinido?.origemId ? { origem_id: predefinido.origemId } : {}) } : {}),
@@ -319,7 +317,7 @@ export default function NovoLancamentoModal({ open, onClose, onSalvo, predefinid
             {buscaCliente.trim() && !clienteSelecionado && resultadosBusca.length === 0 && <Text size="2" color="gray">Nenhum cliente encontrado.</Text>}
 
             <div className="form-campo">
-              <Text as="p" size="2" weight="medium">Processos do cliente *</Text>
+              <Text as="p" size="2" weight="medium">Processos do cliente (opcional)</Text>
               {!clienteSelecionado && <Text size="2" color="gray">Selecione o cliente para ver os processos vinculados.</Text>}
               {clienteSelecionado && processosDoCliente.length === 0 && <Text size="2" color="gray">Esse cliente não tem processos cadastrados.</Text>}
               <Flex direction="column" gap="2" mt="1">
@@ -335,6 +333,9 @@ export default function NovoLancamentoModal({ open, onClose, onSalvo, predefinid
                   </Text>
                 ))}
               </Flex>
+              {clienteSelecionado && casosSelecionados.size === 0 && (
+                <Text size="1" color="gray">Nenhum processo marcado: o lançamento ficará só no cliente.</Text>
+              )}
             </div>
             <div className="form-campo">
               <label className="form-campo-label" htmlFor="honorario-responsavel">Responsável *</label>

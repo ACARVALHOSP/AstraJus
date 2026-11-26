@@ -77,6 +77,8 @@ def exigencia_rota(caminho, metodo):
         return rota('casos', leitura=todas_leitura)
     if caminho == '/lancamentos' or caminho.startswith('/lancamentos/'):
         return rota('financeiro', leitura=('financeiro', 'pagamentos'))
+    if caminho == '/contratos-honorarios' or caminho.startswith('/contratos-honorarios/'):
+        return rota('financeiro', leitura=('financeiro', 'pagamentos', 'contatos', 'casos'))
     if caminho == '/pagamentos' or caminho.startswith('/pagamentos/'):
         return rota('pagamentos', leitura=('pagamentos', 'financeiro'))
     if caminho in ('/pendentes', '/automacoes') or caminho.startswith(('/pendentes/', '/publicacoes-oab')):

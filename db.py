@@ -396,12 +396,13 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 valor REAL NOT NULL,
                 descricao TEXT NOT NULL,
                 recorrente INTEGER NOT NULL DEFAULT 0,
-                caso_id TEXT NOT NULL REFERENCES casos(id),
+                caso_id TEXT REFERENCES casos(id),
                 cliente_id TEXT NOT NULL REFERENCES clientes(id),
                 responsavel TEXT NOT NULL,
                 criado_em TEXT NOT NULL,
                 direcao TEXT NOT NULL DEFAULT 'RECEITA',
-                pago INTEGER NOT NULL DEFAULT 0
+                pago INTEGER NOT NULL DEFAULT 0,
+                contrato_id TEXT
             );
 
             CREATE INDEX IF NOT EXISTS idx_lancamentos_caso ON lancamentos_financeiros (caso_id);
@@ -459,6 +460,7 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
         _migrar_colunas_clientes(conexao)
         _migrar_funil_clientes(conexao)
         _migrar_colunas_lancamentos(conexao)
+        _migrar_lancamentos_sem_processo(conexao)
         _migrar_remover_calendar_evento_id(conexao)
         _migrar_fk_publicacoes_capturadas(conexao)
         _migrar_processos_individuais(conexao)
@@ -478,6 +480,9 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 UPDATE notificacao_eventos SET caso_id=NEW.caso_id
                 WHERE tipo='publicacao_monitorada' AND publicacao_hash=NEW.hash;
             END""")
+        # O contrato de honorários também garante o próprio schema quando é o primeiro a abrir o banco.
+        from contratos_honorarios import criar_tabelas as _criar_tabelas_contratos
+        _criar_tabelas_contratos(conexao)
 
 
 def _migrar_processos_individuais(conexao: sqlite3.Connection) -> None:
@@ -638,9 +643,66 @@ def _migrar_colunas_lancamentos(conexao: sqlite3.Connection) -> None:
         for coluna, definicao in (
             ("pago_em", "TEXT"), ("grupo_parcelas", "TEXT"), ("parcela_numero", "INTEGER"), ("parcela_total", "INTEGER"),
             ("reembolsavel", "INTEGER NOT NULL DEFAULT 0"), ("favorecido", "TEXT"), ("origem_id", "TEXT"),
+            ("contrato_id", "TEXT"),
         ):
             if coluna not in colunas:
                 conexao.execute(f"ALTER TABLE lancamentos_financeiros ADD COLUMN {coluna} {definicao}")
+
+
+def _migrar_lancamentos_sem_processo(conexao: sqlite3.Connection) -> None:
+    """Lançamentos podem existir sem processo (contratos de honorários sem caso vinculado).
+
+    Bancos antigos nasceram com `caso_id TEXT NOT NULL`; ALTER TABLE não relaxa a restrição, então
+    a tabela é recriada. Para não reescrever FKs de outras tabelas, a tabela antiga não é renomeada:
+    cria-se a nova, copiam-se as colunas em comum, apaga-se a antiga e renomeia-se a nova."""
+    colunas = conexao.execute("PRAGMA table_info(lancamentos_financeiros)").fetchall()
+    caso_id = next((linha for linha in colunas if linha[1] == "caso_id"), None)
+    if caso_id is None or not caso_id[3]:
+        return  # já migrado (ou tabela ausente)
+    antigas = [linha[1] for linha in colunas]
+    novas = (
+        "id", "tipo", "vencimento", "valor", "descricao", "recorrente", "caso_id", "cliente_id",
+        "responsavel", "criado_em", "direcao", "pago", "asaas_cobranca_id", "pago_em",
+        "grupo_parcelas", "parcela_numero", "parcela_total", "reembolsavel", "favorecido",
+        "origem_id", "contrato_id",
+    )
+    comuns = [coluna for coluna in novas if coluna in antigas]
+    with conexao:
+        conexao.execute(
+            """
+            CREATE TABLE lancamentos_financeiros_novo (
+                id TEXT PRIMARY KEY,
+                tipo TEXT NOT NULL DEFAULT 'HONORARIO',
+                vencimento TEXT NOT NULL,
+                valor REAL NOT NULL,
+                descricao TEXT NOT NULL,
+                recorrente INTEGER NOT NULL DEFAULT 0,
+                caso_id TEXT REFERENCES casos(id),
+                cliente_id TEXT NOT NULL REFERENCES clientes(id),
+                responsavel TEXT NOT NULL,
+                criado_em TEXT NOT NULL,
+                direcao TEXT NOT NULL DEFAULT 'RECEITA',
+                pago INTEGER NOT NULL DEFAULT 0,
+                asaas_cobranca_id TEXT,
+                pago_em TEXT,
+                grupo_parcelas TEXT,
+                parcela_numero INTEGER,
+                parcela_total INTEGER,
+                reembolsavel INTEGER NOT NULL DEFAULT 0,
+                favorecido TEXT,
+                origem_id TEXT,
+                contrato_id TEXT
+            )
+            """
+        )
+        conexao.execute(
+            f"INSERT INTO lancamentos_financeiros_novo ({','.join(comuns)}) "
+            f"SELECT {','.join(comuns)} FROM lancamentos_financeiros"
+        )
+        conexao.execute("DROP TABLE lancamentos_financeiros")
+        conexao.execute("ALTER TABLE lancamentos_financeiros_novo RENAME TO lancamentos_financeiros")
+        conexao.execute("CREATE INDEX IF NOT EXISTS idx_lancamentos_caso ON lancamentos_financeiros (caso_id)")
+        conexao.execute("CREATE INDEX IF NOT EXISTS idx_lancamentos_cliente ON lancamentos_financeiros (cliente_id)")
 
 
 def _migrar_impressao_publicacoes(conexao: sqlite3.Connection) -> None:
@@ -2044,47 +2106,39 @@ class RegistroClientesCasos:
     _COLUNAS_LANCAMENTO = (
         "id, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, "
         "criado_em, direcao, pago, asaas_cobranca_id, pago_em, grupo_parcelas, parcela_numero, parcela_total, "
-        "reembolsavel, favorecido, origem_id"
+        "reembolsavel, favorecido, origem_id, contrato_id"
     )
     TIPOS_LANCAMENTO = ("HONORARIO", "EXITO", "CUSTAS", "REPASSE", "OUTRO")
 
     def criar_lancamento(
         self, tipo: str, vencimento: str, valor: float, descricao: str, recorrente: bool,
-        caso_id: str, cliente_id: str, responsavel: str, agora, direcao: str = "RECEITA",
+        caso_id: str | None, cliente_id: str, responsavel: str, agora, direcao: str = "RECEITA",
         *, parcelas: int = 1, reembolsavel: bool = False, favorecido: str | None = None,
-        origem_id: str | None = None,
+        origem_id: str | None = None, contrato_id: str | None = None,
     ) -> dict:
         """Cria um lançamento. Com `parcelas` > 1 cria o grupo inteiro numa transação (valor total
         dividido em centavos, sobra na última; vencimentos mensais) e devolve a primeira parcela,
-        com a lista completa em "parcelas"."""
+        com a lista completa em "parcelas". `caso_id` vazio/None cria um lançamento sem processo."""
         if tipo not in self.TIPOS_LANCAMENTO:
             raise ValueError("Tipo de lançamento inválido.")
         if not 1 <= parcelas <= 120:
             raise ValueError("Informe de 1 a 120 parcelas.")
+        caso_id = (caso_id or "").strip() or None
+        contrato_id = (contrato_id or "").strip() or None
         total_centavos = round(valor * 100)
-        base = total_centavos // parcelas
-        valores = [base] * parcelas
-        valores[-1] += total_centavos - base * parcelas
-        grupo = uuid.uuid4().hex if parcelas > 1 else None
         criado_em = agora().isoformat()
-        ids = []
         with self._trava, _abrir(self.caminho) as conexao, conexao:
+            if caso_id and not conexao.execute("SELECT 1 FROM casos WHERE id = ?", (caso_id,)).fetchone():
+                raise ValueError("Processo/caso não encontrado.")
             if origem_id and not conexao.execute("SELECT 1 FROM lancamentos_financeiros WHERE id = ?", (origem_id,)).fetchone():
                 raise ValueError("Lançamento de origem do repasse não encontrado.")
-            for i, centavos in enumerate(valores):
-                novo_id = uuid.uuid4().hex
-                ids.append(novo_id)
-                conexao.execute(
-                    "INSERT INTO lancamentos_financeiros "
-                    "(id, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, criado_em, direcao, "
-                    "grupo_parcelas, parcela_numero, parcela_total, reembolsavel, favorecido, origem_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (novo_id, tipo, _somar_meses_iso(vencimento, i), centavos / 100,
-                     descricao if parcelas == 1 else f"{descricao} (parcela {i + 1}/{parcelas})",
-                     int(recorrente), caso_id, cliente_id, responsavel, criado_em, direcao,
-                     grupo, i + 1 if grupo else None, parcelas if grupo else None,
-                     int(reembolsavel), favorecido, origem_id),
-                )
+            ids = inserir_lancamentos(
+                conexao, tipo=tipo, vencimento=vencimento, total_centavos=total_centavos,
+                descricao=descricao, recorrente=recorrente, caso_id=caso_id, cliente_id=cliente_id,
+                responsavel=responsavel, criado_em=criado_em, direcao=direcao, parcelas=parcelas,
+                reembolsavel=reembolsavel, favorecido=favorecido, origem_id=origem_id,
+                contrato_id=contrato_id,
+            )
         with _abrir(self.caminho) as conexao:
             linhas = conexao.execute(
                 f"SELECT {self._COLUNAS_LANCAMENTO} FROM lancamentos_financeiros WHERE id IN ({','.join('?' * len(ids))}) "
@@ -2537,9 +2591,45 @@ def _limpar_lista_dicts(itens: list[dict] | None, campos: tuple, campo_obrigator
     return limpos
 
 
+def inserir_lancamentos(
+    conexao: sqlite3.Connection, *, tipo: str, vencimento: str, total_centavos: int, descricao: str,
+    recorrente: bool, caso_id: str | None, cliente_id: str, responsavel: str, criado_em: str,
+    direcao: str = "RECEITA", parcelas: int = 1, reembolsavel: bool = False,
+    favorecido: str | None = None, origem_id: str | None = None, contrato_id: str | None = None,
+    agrupar: bool | None = None,
+) -> list[str]:
+    """Insere um lançamento (ou o grupo de parcelas) na conexão já aberta, sem abrir transação.
+
+    Usado por `criar_lancamento` e pelo contrato de honorários, que precisa criar as parcelas e
+    mudar a situação do contrato atomicamente. Divide o total em centavos exatos (sobra na
+    última parcela) e soma um mês a cada vencimento."""
+    base = total_centavos // parcelas
+    valores = [base] * parcelas
+    valores[-1] += total_centavos - base * parcelas
+    em_grupo = parcelas > 1 if agrupar is None else agrupar
+    grupo = uuid.uuid4().hex if em_grupo else None
+    ids = []
+    for i, centavos in enumerate(valores):
+        novo_id = uuid.uuid4().hex
+        ids.append(novo_id)
+        conexao.execute(
+            "INSERT INTO lancamentos_financeiros "
+            "(id, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, criado_em, direcao, "
+            "grupo_parcelas, parcela_numero, parcela_total, reembolsavel, favorecido, origem_id, contrato_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (novo_id, tipo, _somar_meses_iso(vencimento, i), centavos / 100,
+             descricao if not em_grupo else f"{descricao} (parcela {i + 1}/{parcelas})",
+             int(recorrente), caso_id, cliente_id, responsavel, criado_em, direcao,
+             grupo, i + 1 if grupo else None, parcelas if grupo else None,
+             int(reembolsavel), favorecido, origem_id, contrato_id),
+        )
+    return ids
+
+
 def _linha_lancamento(linha) -> dict:
     (id_, tipo, vencimento, valor, descricao, recorrente, caso_id, cliente_id, responsavel, criado_em, direcao, pago,
-     asaas_cobranca_id, pago_em, grupo_parcelas, parcela_numero, parcela_total, reembolsavel, favorecido, origem_id) = linha
+     asaas_cobranca_id, pago_em, grupo_parcelas, parcela_numero, parcela_total, reembolsavel, favorecido, origem_id,
+     contrato_id) = linha
     return {
         "id": id_, "tipo": tipo, "vencimento": vencimento, "valor": valor,
         "descricao": descricao, "recorrente": bool(recorrente), "caso_id": caso_id,
@@ -2547,7 +2637,7 @@ def _linha_lancamento(linha) -> dict:
         "direcao": direcao, "pago": bool(pago), "asaas_cobranca_id": asaas_cobranca_id,
         "pago_em": pago_em, "grupo_parcelas": grupo_parcelas, "parcela_numero": parcela_numero,
         "parcela_total": parcela_total, "reembolsavel": bool(reembolsavel), "favorecido": favorecido,
-        "origem_id": origem_id,
+        "origem_id": origem_id, "contrato_id": contrato_id,
     }
 
 

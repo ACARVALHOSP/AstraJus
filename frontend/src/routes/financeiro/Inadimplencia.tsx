@@ -104,7 +104,9 @@ export default function Inadimplencia({ abas }: { abas: ReactNode }) {
                         <div>
                           <Text size="2" weight="medium">{i.descricao}</Text>
                           <div className="fin-secundario">
-                            <button type="button" className="fin-link" onClick={() => irPara('casos', { id: i.caso_id })}>{tituloCaso(i.caso_id)}</button>
+                            {i.caso_id
+                              ? <button type="button" className="fin-link" onClick={() => irPara('casos', { id: i.caso_id as string })}>{tituloCaso(i.caso_id)}</button>
+                              : <span>{tituloCaso(null)}</span>}
                             {' · '}venceu em {dataCurta(i.vencimento)} ({i.dias_atraso} dias)
                           </div>
                         </div>

@@ -30,7 +30,9 @@ export function useResumoFinanceiro() {
   const erro = falha ? (falha instanceof ErroMCP ? falha.message : 'Não foi possível carregar o financeiro. Tente de novo.') : ''
   const carregar = async () => { await Promise.all(consultas.map(c => c.refetch())) }
 
-  const nomeCliente = (id?: string) => formatarNomeExibicao(clientes.find(c => c.id === id)?.nome ?? '') || '—'
-  const tituloCaso = (id?: string) => formatarNomeExibicao(casos.find(c => c.id === id)?.titulo ?? '') || 'Processo sem título'
+  const nomeCliente = (id?: string | null) => formatarNomeExibicao(clientes.find(c => c.id === id)?.nome ?? '') || '—'
+  const tituloCaso = (id?: string | null) => (!id
+    ? 'Sem processo'
+    : formatarNomeExibicao(casos.find(c => c.id === id)?.titulo ?? '') || 'Processo sem título')
   return { resumo, carregando, erro, carregar, nomeCliente, tituloCaso }
 }
