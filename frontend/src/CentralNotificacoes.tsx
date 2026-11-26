@@ -17,12 +17,8 @@ function PainelNotificacoes({ cliente }: { cliente: ClienteMCP | null }) {
   const { irPara } = useNavegacao()
   const [aberta, setAberta] = useState(false)
   const [somenteNaoLidas, setSomenteNaoLidas] = useState(false)
-  const { itens, naoLidas, cursor, carregando, carregou, erro, acaoPendente, carregar, marcarLida, confirmarCiencia, buscarDestino } = useNotificacoes(cliente, aberta, somenteNaoLidas)
+  const { itens, naoLidas, cursor, carregando, carregou, erro, acaoPendente, carregar, marcarLida, marcarTodas, confirmarCiencia, buscarDestino } = useNotificacoes(cliente, aberta, somenteNaoLidas)
   const ocupado = carregando || acaoPendente !== null
-  const naoLidasVisiveis = itens.filter(n => !n.lida_em)
-  async function marcarTodas() {
-    for (const n of naoLidasVisiveis) await marcarLida(n)
-  }
   const rotulo = !cliente ? 'Conecte-se para consultar notificações' : naoLidas === null ? 'Contagem indisponível' : `${naoLidas} não lidas`
 
   async function abrirDestino(item: Notificacao) {
@@ -56,7 +52,7 @@ function PainelNotificacoes({ cliente }: { cliente: ClienteMCP | null }) {
           <Flex align="center" justify="between">
             <Heading size="3">Notificações</Heading>
             <Flex gap="3">
-              {naoLidasVisiveis.length > 1 && <Button variant="ghost" size="1" onClick={() => void marcarTodas()} disabled={ocupado}>Marcar todas como lidas</Button>}
+              {(naoLidas ?? 0) > 1 && <Button variant="ghost" size="1" onClick={() => void marcarTodas()} disabled={ocupado}>Marcar todas como lidas</Button>}
               <Button variant="ghost" size="1" onClick={() => carregar()} disabled={!cliente || ocupado}>Atualizar</Button>
             </Flex>
           </Flex>
