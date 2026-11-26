@@ -42,14 +42,18 @@ const ABAS_FINANCEIRO: AbaFinanceiro[] = ['lancamentos', 'processos', 'inadimple
 export default function Financeiro() {
   const { consumirPayload, versaoNavegacao, sincronizarUrl } = useNavegacao()
   const [aba, setAba] = useState<AbaFinanceiro>('lancamentos')
+  const [novoContrato, setNovoContrato] = useState<{ clienteId?: string } | null>(null)
+  const consumirNovoContrato = useCallback(() => setNovoContrato(null), [])
   const versaoLida = useRef(-1)
   useEffect(() => {
     if (versaoLida.current === versaoNavegacao) return // evita reler no StrictMode
     versaoLida.current = versaoNavegacao
     // Atalhos de outras telas (ex.: o resumo do escritório) abrem direto numa das abas.
-    const destino = consumirPayload<{ aba?: AbaFinanceiro }>('financeiro')
+    const destino = consumirPayload<{ aba?: AbaFinanceiro; novoContratoClienteId?: string }>('financeiro')
     // eslint-disable-next-line react/set-state-in-effect
     setAba(destino?.aba && ABAS_FINANCEIRO.includes(destino.aba) ? destino.aba : 'lancamentos')
+    // A ficha do contato pede um contrato novo já com o cliente escolhido.
+    setNovoContrato(destino?.novoContratoClienteId ? { clienteId: destino.novoContratoClienteId } : null)
   }, [consumirPayload, versaoNavegacao])
   // Na aba Lançamentos quem grava a URL é a lista (ela leva os filtros); nas outras, só a aba.
   useEffect(() => { if (aba !== 'lancamentos') sincronizarUrl('financeiro', { aba }) }, [aba, sincronizarUrl])
@@ -65,11 +69,11 @@ export default function Financeiro() {
   )
   if (aba === 'processos') return <PorProcesso abas={abas} />
   if (aba === 'inadimplencia') return <Inadimplencia abas={abas} />
-  if (aba === 'contratos') return <Contratos abas={abas} />
-  return <ListaLancamentos abas={abas} />
+  if (aba === 'contratos') return <Contratos abas={abas} novo={novoContrato} onNovoConsumido={consumirNovoContrato} />
+  return <ListaLancamentos abas={abas} onNovoContrato={() => { setNovoContrato({}); setAba('contratos') }} />
 }
 
-function ListaLancamentos({ abas }: { abas: React.ReactNode }) {
+function ListaLancamentos({ abas, onNovoContrato }: { abas: React.ReactNode; onNovoContrato: () => void }) {
   const { cliente } = useCliente()
   const nomePessoa = useNomePessoa()
   const { irPara } = useNavegacao()
@@ -314,6 +318,7 @@ function ListaLancamentos({ abas }: { abas: React.ReactNode }) {
           <Button size="2" variant={todosMeses ? 'soft' : 'outline'} color="gray" aria-pressed={todosMeses} onClick={() => { setTodosMeses(v => !v); setSelecionados(new Set()) }}>Todos os meses</Button>
           {!todosMeses && mes !== hoje.slice(0, 7) && <Button size="2" variant="soft" color="gray" onClick={() => setMes(hoje.slice(0, 7))}>Mês atual</Button>}
           <Button size="2" variant="soft" color="gray" onClick={exportar}><Download size={14} aria-hidden="true" />Exportar CSV</Button>
+          <Button size="2" variant="soft" onClick={onNovoContrato}>Novo contrato</Button>
           <Button size="2" onClick={() => { setPredefinido(null); setModalNovoAberto(true) }}>Novo lançamento</Button>
         </>}
       />

@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, FilePlus2, Info } from 'lucide-react'
 import {
@@ -28,7 +28,12 @@ const SEM_CASOS: Caso[] = []
 const dataOuTraco = (iso?: string | null) => (iso ? formatarDataSimples(iso) : '—')
 
 /** Contratos de honorários: rascunho, parcelas lançadas no Financeiro e acompanhamento do pagamento. */
-export default function Contratos({ abas }: { abas: ReactNode }) {
+export default function Contratos({ abas, novo, onNovoConsumido }: {
+  abas: ReactNode
+  /** Pedido vindo de outra tela para abrir "Novo contrato" (opcionalmente com o cliente escolhido). */
+  novo?: { clienteId?: string } | null
+  onNovoConsumido?: () => void
+}) {
   const { cliente } = useCliente()
   const { avisar } = useAvisos()
   const queryClient = useQueryClient()
@@ -37,6 +42,14 @@ export default function Contratos({ abas }: { abas: ReactNode }) {
   const [selecionado, setSelecionado] = useState<string | null>(null)
   const [novoAberto, setNovoAberto] = useState(false)
   const [editando, setEditando] = useState<Contrato | null>(null)
+  const [clienteInicial, setClienteInicial] = useState<string | undefined>()
+  useEffect(() => {
+    if (!novo) return
+    // eslint-disable-next-line react/set-state-in-effect
+    setClienteInicial(novo.clienteId)
+    setNovoAberto(true)
+    onNovoConsumido?.()
+  }, [novo, onNovoConsumido])
 
   const consulta = useQuery({
     queryKey: ['contratos', cliente?.token],
@@ -87,6 +100,7 @@ export default function Contratos({ abas }: { abas: ReactNode }) {
     const eraEdicao = Boolean(editando)
     setNovoAberto(false)
     setEditando(null)
+    setClienteInicial(undefined)
     setSelecionado(contrato.id)
     avisar({ texto: eraEdicao ? 'Contrato atualizado.' : 'Rascunho de contrato salvo.' })
     void queryClient.invalidateQueries({ queryKey: ['contratos'] })
@@ -101,6 +115,7 @@ export default function Contratos({ abas }: { abas: ReactNode }) {
   function fecharNovo() {
     setNovoAberto(false)
     setEditando(null)
+    setClienteInicial(undefined)
   }
 
   return (
@@ -148,8 +163,11 @@ export default function Contratos({ abas }: { abas: ReactNode }) {
           <Callout.Text>
             {contratos.length
               ? 'Nenhum contrato com esta busca ou situação.'
-              : 'Nenhum contrato ainda. Crie o primeiro para organizar as parcelas no Financeiro.'}
+              : 'Nenhum contrato ainda. Um contrato de honorários define o valor, a entrada e as parcelas do cliente. Você cria como rascunho, confere a prévia e, ao ativar, as parcelas entram no Financeiro. Também dá para começar pela ficha de um contato.'}
           </Callout.Text>
+          {!contratos.length && (
+            <Button size="2" mt="3" onClick={() => setNovoAberto(true)}><FilePlus2 size={15} aria-hidden="true" />Criar o primeiro contrato</Button>
+          )}
         </Callout.Root>
       )}
 
@@ -215,6 +233,7 @@ export default function Contratos({ abas }: { abas: ReactNode }) {
       <NovoContratoModal
         open={novoAberto || Boolean(editando)}
         contrato={editando}
+        clienteInicial={clienteInicial}
         onClose={fecharNovo}
         onSalvo={aoSalvar}
       />

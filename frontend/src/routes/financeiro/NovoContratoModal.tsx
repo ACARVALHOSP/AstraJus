@@ -29,9 +29,11 @@ function normalizar(texto: string): string {
 }
 
 /** Criação e edição de rascunho de contrato; no contrato vigente só os campos permitidos ficam abertos. */
-export default function NovoContratoModal({ open, contrato, onClose, onSalvo }: {
+export default function NovoContratoModal({ open, contrato, clienteInicial, onClose, onSalvo }: {
   open: boolean
   contrato?: Contrato | null
+  /** Cliente já escolhido ao criar (atalho da ficha do contato). */
+  clienteInicial?: string
   onClose: () => void
   onSalvo: (contrato: Contrato) => void
 }) {
@@ -67,7 +69,7 @@ export default function NovoContratoModal({ open, contrato, onClose, onSalvo }: 
 
   useEffect(() => {
     if (!open) return
-    const novo = contrato ? formDeContrato(contrato) : { ...FORM_CONTRATO_VAZIO }
+    const novo = contrato ? formDeContrato(contrato) : { ...FORM_CONTRATO_VAZIO, cliente_id: clienteInicial ?? '' }
     // eslint-disable-next-line react/set-state-in-effect
     setForm(novo)
     setInicial(novo)
