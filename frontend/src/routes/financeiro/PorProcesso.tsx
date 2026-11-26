@@ -43,8 +43,10 @@ export default function PorProcesso({ abas }: { abas: ReactNode }) {
         {linhas.length > 0 && (estreita ? (
           <ul className="fin-cartoes">
             {linhas.map(p => (
-              <li key={p.caso_id} className="fin-cartao">
-                <button type="button" className="fin-link" onClick={() => irPara('casos', { id: p.caso_id })}>{tituloCaso(p.caso_id)}</button>
+              <li key={p.caso_id ?? 'sem-processo'} className="fin-cartao">
+                {p.caso_id
+                  ? <button type="button" className="fin-link" onClick={() => irPara('casos', { id: p.caso_id! })}>{tituloCaso(p.caso_id)}</button>
+                  : <Text size="2" weight="medium">Sem processo</Text>}
                 <Text size="2" color="gray">{nomeCliente(p.cliente_id)}</Text>
                 <dl className="fin-mini">
                   <div><dt>Honorários em aberto</dt><dd>{formatarMoeda(p.honorarios.em_aberto)}</dd></div>
@@ -70,10 +72,12 @@ export default function PorProcesso({ abas }: { abas: ReactNode }) {
               </thead>
               <tbody>
                 {linhas.map(p => (
-                  <tr key={p.caso_id}>
+                  <tr key={p.caso_id ?? 'sem-processo'}>
                     <td>
                       <div className="tabela-celula-limitada">
-                        <button type="button" className="fin-link" onClick={() => irPara('casos', { id: p.caso_id })}>{tituloCaso(p.caso_id)}</button>
+                        {p.caso_id
+                          ? <button type="button" className="fin-link" onClick={() => irPara('casos', { id: p.caso_id! })}>{tituloCaso(p.caso_id)}</button>
+                          : <Text size="2" weight="medium">Sem processo</Text>}
                         <div className="fin-secundario">{nomeCliente(p.cliente_id)}</div>
                       </div>
                     </td>

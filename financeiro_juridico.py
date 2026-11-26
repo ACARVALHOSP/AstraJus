@@ -24,7 +24,7 @@ def por_processo(lancamentos: list[dict], hoje: str) -> list[dict]:
       reembolsáveis sem cobrança de reembolso emitida) ou já foi cobrado e aguarda pagamento;
     - repasses: total, já repassado e pendente;
     - saldo: o que entrou (receitas pagas) menos o que saiu (despesas pagas)."""
-    por_caso: dict[str, list[dict]] = {}
+    por_caso: dict[str | None, list[dict]] = {}
     for l in lancamentos:
         por_caso.setdefault(l["caso_id"], []).append(l)
     reembolsados = {l["origem_id"] for l in lancamentos if l["direcao"] == "RECEITA" and l["tipo"] == "CUSTAS" and l.get("origem_id")}
@@ -56,7 +56,7 @@ def por_processo(lancamentos: list[dict], hoje: str) -> list[dict]:
             },
             "entrou": entrou, "saiu": saiu, "saldo": round(entrou - saiu, 2),
         })
-    linhas.sort(key=lambda r: (-r["honorarios"]["vencidos"], -r["honorarios"]["em_aberto"], r["caso_id"]))
+    linhas.sort(key=lambda r: (-r["honorarios"]["vencidos"], -r["honorarios"]["em_aberto"], r["caso_id"] or ""))
     return linhas
 
 

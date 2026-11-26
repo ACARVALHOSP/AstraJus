@@ -22,6 +22,7 @@ import { useAvisos } from '../Avisos'
 import NovoLancamentoModal, { ROTULO_TIPO_LANCAMENTO, type Predefinido, type TipoLancamento } from './financeiro/NovoLancamentoModal'
 import PorProcesso from './financeiro/PorProcesso'
 import Inadimplencia from './financeiro/Inadimplencia'
+import Contratos from './financeiro/Contratos'
 import {
   calcularKpis, calcularTotais, contarPorSituacao, doPeriodo as lancamentosDoPeriodo, filtrarLancamentos, idsReembolsados,
   mesSomado, ORDEM_SITUACAO, partesDescricao, relativo, responsaveisDe, rotuloMes, situacaoDe, somar as soma,
@@ -34,33 +35,37 @@ type Caso = { id: string; titulo?: string }
 const SEM_CLIENTES: Cliente[] = []
 const SEM_CASOS: Caso[] = []
 type Atalho = '' | Situacao
+type AbaFinanceiro = 'lancamentos' | 'processos' | 'inadimplencia' | 'contratos'
+const ABAS_FINANCEIRO: AbaFinanceiro[] = ['lancamentos', 'processos', 'inadimplencia', 'contratos']
 
-// Lançamentos, situação por processo e inadimplência: três visões do mesmo financeiro.
+// Lançamentos, situação por processo, inadimplência e contratos: quatro visões do mesmo financeiro.
 export default function Financeiro() {
   const { consumirPayload, versaoNavegacao, sincronizarUrl } = useNavegacao()
-  const [aba, setAba] = useState<'lancamentos' | 'processos' | 'inadimplencia'>('lancamentos')
+  const [aba, setAba] = useState<AbaFinanceiro>('lancamentos')
   const versaoLida = useRef(-1)
   useEffect(() => {
     if (versaoLida.current === versaoNavegacao) return // evita reler no StrictMode
     versaoLida.current = versaoNavegacao
     // Atalhos de outras telas (ex.: o resumo do escritório) abrem direto numa das abas.
-    const destino = consumirPayload<{ aba?: 'lancamentos' | 'processos' | 'inadimplencia' }>('financeiro')
+    const destino = consumirPayload<{ aba?: AbaFinanceiro }>('financeiro')
     // eslint-disable-next-line react/set-state-in-effect
-    setAba(destino?.aba && ['lancamentos', 'processos', 'inadimplencia'].includes(destino.aba) ? destino.aba : 'lancamentos')
+    setAba(destino?.aba && ABAS_FINANCEIRO.includes(destino.aba) ? destino.aba : 'lancamentos')
   }, [consumirPayload, versaoNavegacao])
   // Na aba Lançamentos quem grava a URL é a lista (ela leva os filtros); nas outras, só a aba.
   useEffect(() => { if (aba !== 'lancamentos') sincronizarUrl('financeiro', { aba }) }, [aba, sincronizarUrl])
   const abas = (
-    <Tabs.Root value={aba} onValueChange={(v) => setAba(v as typeof aba)}>
+    <Tabs.Root value={aba} onValueChange={(v) => setAba(v as AbaFinanceiro)}>
       <Tabs.List aria-label="Financeiro">
         <Tabs.Trigger value="lancamentos">Lançamentos</Tabs.Trigger>
         <Tabs.Trigger value="processos">Por processo</Tabs.Trigger>
         <Tabs.Trigger value="inadimplencia">Inadimplência</Tabs.Trigger>
+        <Tabs.Trigger value="contratos">Contratos</Tabs.Trigger>
       </Tabs.List>
     </Tabs.Root>
   )
   if (aba === 'processos') return <PorProcesso abas={abas} />
   if (aba === 'inadimplencia') return <Inadimplencia abas={abas} />
+  if (aba === 'contratos') return <Contratos abas={abas} />
   return <ListaLancamentos abas={abas} />
 }
 
@@ -121,8 +126,8 @@ function ListaLancamentos({ abas }: { abas: React.ReactNode }) {
 
   const carregar = async () => { await Promise.all(consultas.map(c => c.refetch())) }
 
-  const nomeCliente = useCallback((id?: string) => formatarNomeExibicao(clientes.find(c => c.id === id)?.nome ?? '') || '—', [clientes])
-  const tituloCaso = useCallback((id?: string) => formatarNomeExibicao(casos.find(c => c.id === id)?.titulo ?? ''), [casos])
+  const nomeCliente = useCallback((id?: string | null) => formatarNomeExibicao(clientes.find(c => c.id === id)?.nome ?? '') || '—', [clientes])
+  const tituloCaso = useCallback((id?: string | null) => (!id ? 'Sem processo' : formatarNomeExibicao(casos.find(c => c.id === id)?.titulo ?? '')), [casos])
 
   const doPeriodo = useMemo(() => lancamentosDoPeriodo(lancamentos ?? [], mes, todosMeses, hoje), [lancamentos, mes, todosMeses, hoje])
   const filtrados = useMemo(
@@ -275,11 +280,12 @@ function ListaLancamentos({ abas }: { abas: React.ReactNode }) {
           {l.reembolsavel && <Badge color="amber" variant="outline">{reembolsadas.has(l.id) ? 'Reembolso cobrado' : 'Reembolsável'}</Badge>}
           {parcela && <Badge color="gray" variant="soft">Parcela {parcela}</Badge>}
           {l.recorrente && <Badge color="gray" variant="soft">Mensal</Badge>}
+          {l.contrato_id && <Badge size="1" color="iris" variant="soft">Contrato</Badge>}
         </Flex>
         {l.favorecido && <div className="fin-secundario">Repasse a {l.favorecido}</div>}
-        {processo
-          ? <button type="button" className="fin-link" onClick={() => irPara('casos', { id: l.caso_id })}>{processo}</button>
-          : <div className="fin-secundario">Sem processo vinculado</div>}
+        {l.caso_id
+          ? <button type="button" className="fin-link" onClick={() => irPara('casos', { id: l.caso_id! })}>{processo}</button>
+          : <div className="fin-secundario">Sem processo</div>}
       </>
     )
   }

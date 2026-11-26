@@ -10,7 +10,8 @@ export type Lancamento = {
   descricao: string
   recorrente?: boolean
   cliente_id?: string
-  caso_id?: string
+  caso_id?: string | null
+  contrato_id?: string | null
   responsavel?: string
   direcao: 'DESPESA' | 'RECEITA'
   pago: boolean
@@ -86,7 +87,7 @@ export type FiltrosLancamento = {
 export function filtrarLancamentos(
   lista: Lancamento[],
   f: FiltrosLancamento,
-  rotulos: { cliente: (id?: string) => string; caso: (id?: string) => string },
+  rotulos: { cliente: (id?: string | null) => string; caso: (id?: string | null) => string },
 ): Lancamento[] {
   const termo = f.busca.trim().toLocaleLowerCase('pt-BR')
   return lista.filter(l =>

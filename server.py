@@ -56,6 +56,7 @@ import notificacoes
 import regras_prazo
 import horas
 import documentos
+import contratos_honorarios
 import monitoramento_runtime
 import db as _db
 import google_integracao
@@ -4363,6 +4364,9 @@ class _AutenticacaoBearer:
         if (caminho == "/horas" or caminho.startswith("/horas/")) and self.gestao is not None:
             await self._horas(scope, receive, send, caminho[len("/horas"):].strip("/"))
             return
+        if (caminho == "/contratos-honorarios" or caminho.startswith("/contratos-honorarios/")) and self.gestao is not None:
+            await self._contratos_honorarios(scope, receive, send, caminho[len("/contratos-honorarios"):].strip("/"))
+            return
         if (caminho == "/tipos-prazo" or caminho.startswith("/tipos-prazo/")) and self.gestao is not None:
             await self._tipos_prazo(scope, receive, send, caminho[len("/tipos-prazo"):].strip("/"))
             return
@@ -5536,6 +5540,68 @@ class _AutenticacaoBearer:
         conhecida = not partes or partes[0].isdigit() or partes[0] in ("relatorio", "tarifas", "cronometro", "faturar")
         await _responder(send, 405 if conhecida else 404, b"Metodo nao permitido" if conhecida else b"Nao encontrado")
 
+    async def _contratos_honorarios(self, scope, receive, send, resto: str) -> None:
+        """Contratos de honorários: GET/POST /contratos-honorarios, POST /contratos-honorarios/previa,
+        GET/PATCH /contratos-honorarios/<id>, POST .../<id>/ativar|cancelar|encerrar."""
+        repo = contratos_honorarios.Repositorio(self.gestao.caminho, self.gestao)
+        usuario, metodo = scope["usuario"], scope.get("method")
+        consulta = parse_qs((scope.get("query_string") or b"").decode("utf-8", "ignore"))
+        partes = resto.split("/") if resto else []
+        try:
+            if not partes:
+                if metodo == "GET":
+                    cliente_id = (consulta.get("cliente_id") or [None])[0] or None
+                    situacao = (consulta.get("situacao") or [None])[0] or None
+                    await _json(send, 200, {"contratos": repo.listar(cliente_id, situacao)})
+                    return
+                if metodo == "POST":
+                    dados = await self._corpo_json(receive, send)
+                    if dados is not None:
+                        await _json(send, 201, {"contrato": repo.criar(dados, usuario)})
+                    return
+            elif partes == ["previa"] and metodo == "POST":
+                dados = await self._corpo_json(receive, send)
+                if dados is not None:
+                    await _json(send, 200, {"parcelas": repo.previa(dados)})
+                return
+            elif len(partes) == 1 and partes[0]:
+                contrato_id = partes[0]
+                if metodo == "GET":
+                    await _json(send, 200, {"contrato": repo.obter(contrato_id)})
+                    return
+                if metodo == "PATCH":
+                    dados = await self._corpo_json(receive, send)
+                    if dados is not None:
+                        await _json(send, 200, {"contrato": repo.atualizar(contrato_id, dados)})
+                    return
+            elif len(partes) == 2 and partes[0] and metodo == "POST":
+                contrato_id, acao = partes
+                if acao == "ativar":
+                    await _json(send, 200, {"contrato": repo.ativar(contrato_id, usuario)})
+                    return
+                if acao == "cancelar":
+                    resultado = repo.cancelar(contrato_id)
+                    await _json(send, 200, {**resultado, "contrato": repo.obter(contrato_id)})
+                    return
+                if acao == "encerrar":
+                    await _json(send, 200, {"contrato": repo.encerrar(contrato_id)})
+                    return
+        except contratos_honorarios.ConflitoContrato as erro:
+            await _json(send, 409, _erro(str(erro)))
+            return
+        except LookupError as erro:
+            await _json(send, 404, _erro(str(erro.args[0]) if erro.args else "Não encontrado."))
+            return
+        except ValueError as erro:
+            await _json(send, 400, _erro(str(erro)))
+            return
+        except PermissionError as erro:
+            await _json(send, 403, _erro(str(erro)))
+            return
+        conhecida = not partes or partes == ["previa"] or (partes[0] and (
+            len(partes) == 1 or (len(partes) == 2 and partes[1] in ("ativar", "cancelar", "encerrar"))))
+        await _responder(send, 405 if conhecida else 404, b"Metodo nao permitido" if conhecida else b"Nao encontrado")
+
     async def _tipos_prazo(self, scope, receive, send, tipo_id: str) -> None:
         """Tipos de prazo: GET /tipos-prazo[/<id>], POST /tipos-prazo,
         PATCH /tipos-prazo/<id>, DELETE /tipos-prazo/<id>."""
@@ -5920,8 +5986,8 @@ class _AutenticacaoBearer:
         if not responsavel:
             await _json(send, 400, _erro("Informe o responsável."))
             return
-        caso_id = (dados.get("caso_id") or "").strip()
-        if self.gestao.obter_caso(caso_id) is None:
+        caso_id = (dados.get("caso_id") or "").strip() or None
+        if caso_id and self.gestao.obter_caso(caso_id) is None:
             await _json(send, 400, _erro("Selecione um processo/caso válido."))
             return
         cliente_id = (dados.get("cliente_id") or "").strip()
