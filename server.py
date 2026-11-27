@@ -4520,6 +4520,10 @@ class _AutenticacaoBearer:
             await self._evento_calendar_do_caso(scope, receive, send, caso_id)
             return
         if caminho.startswith("/casos/") and "/atividades" in caminho and self.gestao is not None:
+            rota_meet = re.fullmatch(r"/casos/([^/]+)/atividades/([0-9]+)/meet", caminho)
+            if rota_meet:
+                await self._meet_da_atividade(scope, send, rota_meet[1], int(rota_meet[2]))
+                return
             rota_agenda = re.fullmatch(r"/casos/([^/]+)/atividades/([0-9]+)/agenda", caminho)
             if rota_agenda:
                 await self._agenda_da_atividade(scope, receive, send, rota_agenda[1], int(rota_agenda[2]))
@@ -6600,6 +6604,49 @@ class _AutenticacaoBearer:
             await _json(send, getattr(erro, "status", 409), _erro(str(erro)))
         except (google_integracao.ErroGoogle, httpx.HTTPError):
             await _json(send, 502, _erro("Não foi possível consultar o Google Calendar. Atualize a agenda para tentar novamente."))
+
+    async def _meet_da_atividade(self, scope, send, caso_id: str, aid: int):
+        """POST /casos/<id>/atividades/<aid>/meet: cria na agenda individual de quem pediu um evento
+        com horário e link do Meet (essa pessoa é a criadora/organizadora) e grava o link na atividade."""
+        if scope.get("method") != "POST":
+            await _responder(send, 405, b"Metodo nao permitido")
+            return
+        atividade = next((a for a in self.gestao.listar_atividades(caso_id) if a["id"] == aid), None)
+        if atividade is None:
+            await _json(send, 404, _erro("Atividade não encontrada."))
+            return
+        if atividade.get("meet_url"):
+            await _json(send, 200, {"meet_url": atividade["meet_url"]})
+            return
+        if not atividade.get("data") or not re.fullmatch(r"\d{2}:\d{2}", atividade.get("hora") or ""):
+            await _json(send, 400, _erro("Informe data e hora na atividade para criar o link do Meet."))
+            return
+        conexao_google = (self.integracoes.google('calendar', scope['usuario']).obter_conexao() if self.integracoes else self._google_conectado())
+        if not conexao_google:
+            await _json(send, 400, _erro("Conecte sua agenda individual na página Integrações antes de criar o link do Meet."))
+            return
+        caso = self.gestao.obter_caso(caso_id) or {}
+        numero = (caso.get("processos") or [None])[0]
+        descricao = "\n".join(filter(None, [
+            f"Processo: {numero}" if numero else "",
+            f"Abrir no AstraJus: {_base_publica(scope)}/radix/#/casos?id={caso_id}&aba=atividades&atividadeId={aid}",
+        ]))
+        try:
+            async with _cliente(20) as http_cliente:
+                token = await google_integracao.obter_access_token(
+                    http_cliente, self.google_client_id, self.google_client_secret, conexao_google["refresh_token"])
+                evento = await google_integracao.criar_evento_com_meet(
+                    http_cliente, token, atividade["titulo"], atividade["data"], atividade["hora"], descricao, caso_id)
+        except (google_integracao.ErroGoogle, httpx.HTTPError, ValueError) as erro:
+            log.warning("Caso %s: falha ao criar Meet da atividade %s: %s", caso_id, aid, erro)
+            await _json(send, 502, _erro("Não foi possível criar o link do Meet no Google Calendar. Tente novamente."))
+            return
+        url = evento.get("hangoutLink")
+        if not url:
+            await _json(send, 502, _erro("O Google criou o evento, mas não devolveu o link do Meet."))
+            return
+        self.gestao.gravar_meet_atividade(caso_id, aid, url)
+        await _json(send, 201, {"meet_url": url, "link": evento.get("htmlLink")})
 
     async def _checklist_da_atividade(self, scope, receive, send, caso_id: str, aid: int, item_id: int | None):
         """GET/POST /casos/<id>/atividades/<aid>/checklist,

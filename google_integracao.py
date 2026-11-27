@@ -8,7 +8,8 @@ O chamador seleciona calendar ou drive.file conforme o consentimento solicitado.
 
 from typing import Any
 from urllib.parse import urlencode, quote
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from uuid import uuid4
 
 import httpx
 
@@ -199,6 +200,31 @@ async def criar_evento_calendar(
         },
     )
     return _json_ou_erro(resposta, "criar evento no Calendar")
+
+
+async def criar_evento_com_meet(
+    cliente: httpx.AsyncClient, access_token: str, titulo: str, data_iso: str, hora: str,
+    descricao: str, caso_id: str, duracao_min: int = 60,
+) -> dict:
+    """Cria evento com horário no calendário principal de quem autorizou (o token é do usuário,
+    então ele é o organizador/criador) e pede uma sala do Google Meet. Devolve {id, htmlLink, hangoutLink}.
+    shortcut: fuso fixo de Brasília, trocar se houver usuários em outro fuso."""
+    inicio = datetime.fromisoformat(f"{data_iso}T{hora}")
+    fim = inicio + timedelta(minutes=duracao_min)
+    resposta = await cliente.post(
+        f"{_URL_CALENDAR_EVENTOS}?conferenceDataVersion=1&fields=id,htmlLink,hangoutLink",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={
+            "summary": titulo,
+            "description": descricao,
+            "start": {"dateTime": inicio.isoformat(), "timeZone": "America/Sao_Paulo"},
+            "end": {"dateTime": fim.isoformat(), "timeZone": "America/Sao_Paulo"},
+            "conferenceData": {"createRequest": {
+                "requestId": uuid4().hex, "conferenceSolutionKey": {"type": "hangoutsMeet"}}},
+            "extendedProperties": {"private": {"cnj_caso_id": caso_id}},
+        },
+    )
+    return _json_ou_erro(resposta, "criar evento com Meet no Calendar")
 
 
 async def listar_eventos_de_casos(
