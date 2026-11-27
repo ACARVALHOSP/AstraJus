@@ -280,7 +280,8 @@ def _criar_schema(conexao: sqlite3.Connection) -> None:
                 status TEXT NOT NULL DEFAULT 'pendente',
                 observacoes TEXT,
                 responsavel TEXT,
-                criado_em TEXT NOT NULL
+                criado_em TEXT NOT NULL,
+                meet_url TEXT
             );
 
             -- Histórico e operações sobrevivem à exclusão de atividade/processo já cancelados.
@@ -730,6 +731,8 @@ def _migrar_colunas_caso_atividades(conexao: sqlite3.Connection) -> None:
     with conexao:
         if "responsavel" not in colunas:
             conexao.execute("ALTER TABLE caso_atividades ADD COLUMN responsavel TEXT")
+        if "meet_url" not in colunas:
+            conexao.execute("ALTER TABLE caso_atividades ADD COLUMN meet_url TEXT")
         if "origem_djen_hash" not in colunas:
             conexao.execute("ALTER TABLE caso_atividades ADD COLUMN origem_djen_hash TEXT")
         if "atribuicao_revisao" not in colunas:
@@ -1794,7 +1797,11 @@ class RegistroClientesCasos:
             )
             return cursor.rowcount > 0
 
-    _COLUNAS_ATIVIDADE = "id, caso_id, tipo, titulo, data, hora, status, observacoes, responsavel, criado_em, origem_djen_hash"
+    _COLUNAS_ATIVIDADE = "id, caso_id, tipo, titulo, data, hora, status, observacoes, responsavel, criado_em, origem_djen_hash, meet_url"
+
+    def gravar_meet_atividade(self, caso_id: str, aid: int, url: str) -> None:
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            conexao.execute("UPDATE caso_atividades SET meet_url = ? WHERE id = ? AND caso_id = ?", (url, aid, caso_id))
 
     def listar_atividades(self, caso_id: str) -> list[dict]:
         """Atividades do caso, cada uma com o resumo do checklist ({total, concluidos} ou None)."""
@@ -2003,8 +2010,8 @@ class RegistroClientesCasos:
                     resumo[aid] = {"total": total, "concluidos": concluidos or 0}
         resultado = []
         for linha in linhas:
-            atividade = _linha_atividade(linha[:11])
-            atividade["caso"] = {"id": linha[1], "titulo": linha[11], "responsavel": linha[12],
+            atividade = _linha_atividade(linha[:12])
+            atividade["caso"] = {"id": linha[1], "titulo": linha[12], "responsavel": linha[13],
                                  "processos": processos.get(linha[1], [])}
             atividade["checklist"] = resumo.get(atividade["id"])
             resultado.append(atividade)
@@ -2663,11 +2670,12 @@ def _linha_caso(linha) -> dict:
 
 
 def _linha_atividade(linha) -> dict:
-    id_, caso_id, tipo, titulo, data, hora, status, observacoes, responsavel, criado_em, origem_djen_hash = linha
+    id_, caso_id, tipo, titulo, data, hora, status, observacoes, responsavel, criado_em, origem_djen_hash, meet_url = linha
     return {
         "id": id_, "caso_id": caso_id, "tipo": tipo, "titulo": titulo,
         "data": data, "hora": hora, "status": status, "observacoes": observacoes,
         "responsavel": responsavel, "criado_em": criado_em, "origem_djen_hash": origem_djen_hash,
+        "meet_url": meet_url,
     }
 
 

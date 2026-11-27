@@ -19,6 +19,7 @@ import { CHAVE_TEMA } from './api/mcpClient'
 import Carregamento from './Carregamento'
 import LimiteDeErro from './LimiteDeErro'
 import BuscaGlobal from './BuscaGlobal'
+import AnotarRapido from './AnotarRapido'
 import ContaUsuario from './ContaUsuario'
 import type { AccentColor } from './aparencia'
 import CentralNotificacoes from './CentralNotificacoes'
@@ -343,6 +344,7 @@ export default function App() {
 
               <div className="aj-topbar-right">
                 <StatusConexao />
+                <AnotarRapido />
                 <BuscaPaginas />
                 <CentralNotificacoes />
 

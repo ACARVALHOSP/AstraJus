@@ -32,6 +32,7 @@ export type Atividade = {
   agenda?: VinculoAgenda | null
   agenda_institucional_anterior?: boolean
   origem_djen_hash?: string | null
+  meet_url?: string | null
   checklist?: { total: number; concluidos: number } | null
 }
 
@@ -183,7 +184,7 @@ export default function AtividadesCaso({ casoId, atividadeInicialId, onAlterado 
           <Text as="p" size="2">{a.observacoes || 'Sem observações.'}</Text>
         </div>
         {(a.agenda || agendaDisponivel) && (
-          <AgendaAtividade casoId={casoId} atividadeId={a.id} titulo={a.titulo} data={a.data} hora={a.hora}
+          <AgendaAtividade casoId={casoId} atividadeId={a.id} titulo={a.titulo} data={a.data} hora={a.hora} meetUrl={a.meet_url}
             agenda={a.agenda} agendaInstitucionalAnterior={a.agenda_institucional_anterior}
             agendaDisponivel={agendaDisponivel} onAtualizado={carregar} />
         )}

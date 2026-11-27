@@ -62,6 +62,15 @@ function PainelHome({ abas }: { abas: ReactNode }) {
   const [periodo, setPeriodo] = useState<Periodo>('')
   const [colunaMobile, setColunaMobile] = useState<StatusAtividade>('pendente')
   const [todasConcluidas, setTodasConcluidas] = useState(false)
+  // Escolha por navegador: a coluna Concluídas continua como destino do arraste, mas sem mostrar os cards.
+  const [ocultarConcluidas, setOcultarConcluidas] = useState(() => {
+    try { return localStorage.getItem('astrajus.home.ocultarConcluidas') === '1' } catch { return false }
+  })
+  function alternarConcluidas() {
+    const novo = !ocultarConcluidas
+    setOcultarConcluidas(novo)
+    try { localStorage.setItem('astrajus.home.ocultarConcluidas', novo ? '1' : '0') } catch { /* sem armazenamento: vale só nesta visita */ }
+  }
   const [salvando, setSalvando] = useState<Set<string>>(new Set())
   const [arrastando, setArrastando] = useState<string | null>(null)
   const [destinoArraste, setDestinoArraste] = useState<StatusAtividade | null>(null)
@@ -460,7 +469,8 @@ function PainelHome({ abas }: { abas: ReactNode }) {
             <div className="home-quadro">
               {COLUNAS.map(coluna => {
                 const todos = filtrados.filter(i => colunaAtividade(i.atividade.status) === coluna.id)
-                const visiveis = coluna.id === 'concluida' && !todasConcluidas ? todos.slice(0, 10) : todos
+                const ocultas = coluna.id === 'concluida' && ocultarConcluidas
+                const visiveis = ocultas ? [] : coluna.id === 'concluida' && !todasConcluidas ? todos.slice(0, 10) : todos
                 return (
                   <section
                     key={coluna.id}
@@ -476,6 +486,11 @@ function PainelHome({ abas }: { abas: ReactNode }) {
                     <div className="home-coluna-titulo">
                       <Heading as="h3" size="2" id={`home-coluna-${coluna.id}`}>{coluna.titulo}</Heading>
                       <span className="home-coluna-titulo-count">{todos.length}</span>
+                      {coluna.id === 'concluida' && (
+                        <Button variant="ghost" size="1" style={{ marginLeft: 8 }} aria-pressed={ocultarConcluidas} onClick={alternarConcluidas}>
+                          {ocultarConcluidas ? 'Mostrar' : 'Ocultar'}
+                        </Button>
+                      )}
                     </div>
 
                     {visiveis.map(item => {
@@ -535,6 +550,11 @@ function PainelHome({ abas }: { abas: ReactNode }) {
                       )
                     })}
 
+                    {ocultas && todos.length > 0 && (
+                      <div className="home-coluna-vazia">
+                        <p>{todos.length === 1 ? '1 concluída oculta.' : `${todos.length} concluídas ocultas.`} Solte aqui para concluir.</p>
+                      </div>
+                    )}
                     {!todos.length && (
                       <div className="home-coluna-vazia">
                         {erro && !itens.length ? (
@@ -555,7 +575,7 @@ function PainelHome({ abas }: { abas: ReactNode }) {
                         )}
                       </div>
                     )}
-                    {coluna.id === 'concluida' && todos.length > 10 && (
+                    {coluna.id === 'concluida' && !ocultas && todos.length > 10 && (
                       <Button variant="ghost" size="1" onClick={() => setTodasConcluidas(!todasConcluidas)}>
                         {todasConcluidas ? 'Exibir até 10' : `Ver todas (${todos.length})`}
                       </Button>

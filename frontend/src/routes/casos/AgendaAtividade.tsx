@@ -24,13 +24,14 @@ const ROTULO_ESTADO: Record<string, string> = {
 }
 
 export default function AgendaAtividade({
-  casoId, atividadeId, titulo, data, hora, agenda, agendaInstitucionalAnterior, agendaDisponivel, onAtualizado,
+  casoId, atividadeId, titulo, data, hora, meetUrl, agenda, agendaInstitucionalAnterior, agendaDisponivel, onAtualizado,
 }: {
-  casoId: string; atividadeId: string; titulo: string; data?: string | null; hora?: string | null
+  casoId: string; atividadeId: string; titulo: string; data?: string | null; hora?: string | null; meetUrl?: string | null
   agenda?: VinculoAgenda | null; agendaInstitucionalAnterior?: boolean; agendaDisponivel: boolean; onAtualizado: () => void
 }) {
   const { cliente } = useCliente()
   const [carregando, setCarregando] = useState(false)
+  const [erroMeet, setErroMeet] = useState<string | null>(null)
   const [confirmacao, setConfirmacao] = useState<{ metodo: 'POST' | 'PATCH' | 'DELETE'; comando?: string; texto: string } | null>(null)
   const chaveIdempotencia = useRef<string | null>(null)
 
@@ -55,6 +56,20 @@ export default function AgendaAtividade({
       onAtualizado()
     } catch {
       onAtualizado()
+    } finally {
+      setCarregando(false)
+    }
+  }
+
+  async function criarMeet() {
+    if (!cliente) return
+    setCarregando(true)
+    setErroMeet(null)
+    try {
+      await enviarJson(cliente, `/casos/${casoId}/atividades/${atividadeId}/meet`, {})
+      onAtualizado()
+    } catch (e) {
+      setErroMeet((e as Error).message)
     } finally {
       setCarregando(false)
     }
@@ -130,6 +145,14 @@ export default function AgendaAtividade({
         ) : agendaDisponivel ? (
           <p>Para vincular à agenda, informe uma data e deixe a hora vazia.</p>
         ) : null}
+        {meetUrl ? (
+          <Link href={meetUrl} target="_blank" rel="noopener">Entrar no Google Meet</Link>
+        ) : agendaDisponivel && data && hora ? (
+          <Button variant="ghost" size="1" disabled={carregando} onClick={() => void criarMeet()}>
+            Criar link do Meet
+          </Button>
+        ) : null}
+        {erroMeet && <p role="alert">{erroMeet}</p>}
         {agenda?.link && (
           <Link href={agenda.link} target="_blank" rel="noopener">
             Abrir no Google Calendar
