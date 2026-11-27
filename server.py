@@ -7017,7 +7017,9 @@ class _AutenticacaoBearer:
             return
         busca = (parametros.get("busca") or "").strip()[:120] or None
         tipo = (parametros.get("tipo") or "").strip()[:80] or None
-        filtros = {"tipo": tipo, "desde": datas["desde"], "ate": datas["ate"], "busca": busca}
+        # várias referências: parâmetro `referencia` repetido (até 50)
+        referencias = [v.strip()[:120] for k, v in _query(scope) if k == "referencia" and v.strip()][:50] or None
+        filtros = {"tipo": tipo, "desde": datas["desde"], "ate": datas["ate"], "busca": busca, "referencias": referencias}
         total = self.publicacoes.contar(status, data, **filtros)
         pagina = min(pagina, max(1, (total + tamanho - 1) // tamanho))
         publicacoes = self.publicacoes.listar(status, tamanho, (pagina - 1) * tamanho, data, ordem=ordem, **filtros)
@@ -7025,6 +7027,7 @@ class _AutenticacaoBearer:
                               "pagina": pagina, "tamanho": tamanho, "campos_djen": self.publicacoes.campos_djen(),
                               "contagem_status": self.publicacoes.contar_por_status(data, **filtros),
                               "tipos_disponiveis": self.publicacoes.tipos_disponiveis(),
+                              "referencias_disponiveis": self.publicacoes.referencias_disponiveis(),
                               "datas_disponiveis": self.publicacoes.datas_disponiveis(status),
                               "hashes_disponiveis": self.publicacoes.hashes_disponiveis(status, data, **filtros),
                               "destinadas_a_clientes": len(self.publicacoes.hashes_para_clientes(status, data, **filtros)),

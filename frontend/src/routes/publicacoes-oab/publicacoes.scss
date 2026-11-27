@@ -40,6 +40,8 @@
   font: inherit; font-size: 13px; color: var(--accent-11); background: none; border: 0; padding: 0;
   cursor: pointer; text-align: start; text-decoration: underline; text-underline-offset: 2px;
   &:disabled { cursor: default; color: var(--gray-11); }
+  // nome longo do processo: no máximo 3 linhas (texto completo no title)
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden;
 }
 .oab-sem-vinculo { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 13px; color: var(--amber-11); }
 .tabela-adaptavel .tabela-fluida td.oab-detalhes-celula { background: var(--gray-2); padding: 1rem 1.5rem 1.25rem; }

@@ -508,6 +508,7 @@ function PainelHome({ abas }: { abas: ReactNode }) {
                           <h4>
                             <button
                               className="home-abrir-atividade"
+                              title={atividade.titulo}
                               onClick={() => irPara('casos', { id: processo.id, aba: 'atividades', atividadeId: atividade.id })}
                             >
                               {atividade.titulo}
@@ -515,6 +516,7 @@ function PainelHome({ abas }: { abas: ReactNode }) {
                           </h4>
                           <button
                             className="home-processo-btn"
+                            title={processo.titulo || undefined}
                             onClick={() => irPara('casos', { id: processo.id })}
                           >
                             {processo.titulo || 'Processo sem título'}
