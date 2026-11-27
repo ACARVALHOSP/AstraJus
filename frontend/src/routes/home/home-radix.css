@@ -141,7 +141,7 @@
   justify-content: space-between;
   padding: 0.25rem 0.25rem 0.5rem;
 }
-.home-coluna-titulo-count { font-size: 12px; color: var(--gray-11); }
+.home-coluna-titulo-count { font-size: 12px; color: var(--gray-11); margin-left: auto; }
 .home-coluna-vazia {
   display: flex;
   flex-direction: column;
