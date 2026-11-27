@@ -175,6 +175,8 @@ function PainelHome({ abas }: { abas: ReactNode }) {
     if (carregando || trava.current.has(chave) || item.atividade.status === novoStatus) return
     const anterior = colunaAtividade(item.atividade.status)
     trava.current.add(chave); setSalvando(new Set(trava.current))
+    const trocar = (atividade: AtividadeHome) => queryClient.setQueryData<DadosDia>(chaveDia, antigo => antigo && { ...antigo, itens: antigo.itens.map(i => chaveItem(i) === chave ? { ...i, atividade } : i) })
+    trocar({ ...item.atividade, status: novoStatus }) // o cartão muda de coluna (ou some, se Concluídas está oculta) já ao soltar
     try {
       const atualizada = await enviarJson<AtividadeHome>(cliente, `/casos/${item.processo.id}/atividades/${item.atividade.id}`, { status: novoStatus }, 'PATCH')
       if (!montado.current) return
@@ -186,6 +188,7 @@ function PainelHome({ abas }: { abas: ReactNode }) {
         })
       }
     } catch (e) {
+      trocar(item.atividade) // falhou: devolve o cartão à coluna de origem
       if (montado.current) avisar({ tipo: 'erro', texto: e instanceof Error ? e.message : 'Não foi possível alterar o status. Tente novamente.' })
     } finally {
       trava.current.delete(chave)
