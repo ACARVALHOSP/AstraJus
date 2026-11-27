@@ -5,7 +5,7 @@ import CampoData from '../../CampoData'
 import TabelaResponsiva from '../../TabelaResponsiva'
 import AcoesTabela from '../../AcoesTabela'
 import Carregamento from '../../Carregamento'
-import { Fragment, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import { AlertTriangle, Archive, Check, ChevronDown, ChevronRight, FilePlus, Info, Keyboard, Link2, Unlink } from 'lucide-react'
 import { Badge, Button, Callout, Checkbox, Dialog, Flex, IconButton, Popover, Select, Text, TextField } from '@radix-ui/themes'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -32,7 +32,7 @@ import './publicacoes.scss'
 type Status = PublicacaoOab['status']
 type RespostaLista = {
   publicacoes: PublicacaoOab[]; total: number; pagina: number
-  hashes_disponiveis?: string[]; contagem_status?: ContagemStatus; tipos_disponiveis?: string[]; triagem?: InfoTriagem; destinadas_a_clientes?: number
+  hashes_disponiveis?: string[]; contagem_status?: ContagemStatus; tipos_disponiveis?: string[]; referencias_disponiveis?: string[]; triagem?: InfoTriagem; destinadas_a_clientes?: number
 }
 type ResultadoStatus = { hashes_atualizados: string[]; hashes_falharam: string[] }
 type Periodo = '' | 'hoje' | '7' | '30' | 'personalizado'
@@ -66,7 +66,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
   const estreita = useEstreita()
   // Filtros, ordem e página ficam na URL ("#/publicacoes-oab?status=tratada&pagina=2"): recarregar ou compartilhar mantém a lista.
   const [filtros, setFiltros] = useFiltrosUrl('publicacoes-oab',
-    { status: 'nao_tratada', tipo: '', periodo: '', desde: '', ate: '', busca: '', ordem: '', prio: '', pagina: '1', tamanho: '20' },
+    { status: 'nao_tratada', tipo: '', referencia: '', periodo: '', desde: '', ate: '', busca: '', ordem: '', prio: '', pagina: '1', tamanho: '20' },
     {
       normalizar: f => ({
         ...f,
@@ -82,6 +82,9 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
     })
   const status = filtros.status as Status | ''
   const tipo = filtros.tipo
+  // referências escolhidas ficam na URL separadas por "|"
+  const referencias = useMemo(() => (filtros.referencia ? filtros.referencia.split('|') : []), [filtros.referencia])
+  const setReferencias = (v: string[]) => mudar({ referencia: v.join('|') })
   const periodo = filtros.periodo as Periodo
   const desde = filtros.desde, ate = filtros.ate
   const busca = filtros.busca
@@ -110,7 +113,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
   // Voltar/avançar do navegador troca a busca na URL: o campo acompanha.
   useEffect(() => { setTextoBusca(atual => (atual.trim() === busca ? atual : busca)) }, [busca]) // eslint-disable-line react-hooks/set-state-in-effect
 
-  const [contagem, setContagem] = useState<ContagemStatus | null>(null), [tipos, setTipos] = useState<string[]>([])
+  const [contagem, setContagem] = useState<ContagemStatus | null>(null), [tipos, setTipos] = useState<string[]>([]), [opcoesReferencia, setOpcoesReferencia] = useState<string[]>([])
   const [preferencias, setPreferencias] = useState(lerPreferencias)
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set()), [expandidas, setExpandidas] = useState<Set<string>>(new Set())
   const [todasFiltro, setTodasFiltro] = useState(false)
@@ -125,7 +128,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
   const { desde: filtroDesde, ate: filtroAte } = intervalo(periodo, desde, ate)
 
   const queryClient = useQueryClient()
-  const chaveLista = ['publicacoes-oab', cliente?.token, { pagina, tamanho, status, tipo, busca, filtroDesde, filtroAte, ordemAsc, porPrioridade }]
+  const chaveLista = ['publicacoes-oab', cliente?.token, { pagina, tamanho, status, tipo, referencias, busca, filtroDesde, filtroAte, ordemAsc, porPrioridade }]
   const consulta = useQuery({
     queryKey: chaveLista,
     enabled: Boolean(cliente),
@@ -136,6 +139,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
         ...(status ? { status } : {}), ...(tipo ? { tipo } : {}), ...(busca ? { busca } : {}),
         ...(filtroDesde ? { desde: filtroDesde } : {}), ...(filtroAte ? { ate: filtroAte } : {}),
       })
+      referencias.forEach(r => query.append('referencia', r))
       return buscarJson<RespostaLista>(cliente, `/publicacoes-oab?${query}`, signal)
     },
   })
@@ -154,6 +158,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
     if (dados.contagem_status) setContagem(dados.contagem_status)
     if (dados.triagem) setInfoTriagem(dados.triagem)
     if (dados.tipos_disponiveis) setTipos(dados.tipos_disponiveis)
+    if (dados.referencias_disponiveis) setOpcoesReferencia(dados.referencias_disponiveis)
     if (dados.pagina && dados.pagina !== pagina) setPagina(dados.pagina)
     if (dados.hashes_disponiveis) {
       const disponiveis = new Set(dados.hashes_disponiveis)
@@ -170,7 +175,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
   const algumasPagina = publicacoes.some(p => selecionadas.has(p.hash)) && !todasPagina
   const totalPaginas = Math.max(1, Math.ceil(total / tamanho))
   const primeira = total ? (pagina - 1) * tamanho + 1 : 0, ultima = Math.min(total, pagina * tamanho)
-  const filtrosAtivos = Boolean(tipo || periodo || busca)
+  const filtrosAtivos = Boolean(tipo || referencias.length || periodo || busca)
 
   function filtrar(acao: () => void) {
     if (ocupada) return
@@ -187,6 +192,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
         ...(status ? { status } : {}), ...(tipo ? { tipo } : {}), ...(busca ? { busca } : {}),
         ...(filtroDesde ? { desde: filtroDesde } : {}), ...(filtroAte ? { ate: filtroAte } : {}),
       })
+      referencias.forEach(r => query.append('referencia', r))
       const dados = await buscarJson<RespostaLista>(cliente, `/publicacoes-oab?${query}`)
       const lote = dados.publicacoes ?? []
       todas.push(...lote)
@@ -335,7 +341,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
   }
   function vinculo(p: PublicacaoOab) {
     if (p.caso_id) {
-      return <button type="button" className="oab-vinculo" disabled={ocupada || lote} onClick={() => abrirAcao('processo', p)}>{formatarNomeExibicao(p.caso_titulo) || 'Processo vinculado'}</button>
+      return <button type="button" className="oab-vinculo" title={formatarNomeExibicao(p.caso_titulo) || undefined} disabled={ocupada || lote} onClick={() => abrirAcao('processo', p)}>{formatarNomeExibicao(p.caso_titulo) || 'Processo vinculado'}</button>
     }
     if (p.status !== 'nao_tratada') return null
     return <span className="oab-sem-vinculo"><Unlink size={12} aria-hidden="true" /> Sem processo vinculado</span>
@@ -489,7 +495,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
         </Button>
       </div>
 
-      <LinhaFiltros ativos={[tipo, periodo].filter(Boolean).length}>
+      <LinhaFiltros ativos={[tipo, referencias.length, periodo].filter(Boolean).length}>
         <div className="form-campo aj-filtros-busca">
           <label className="form-campo-label" htmlFor="oab-busca">Buscar</label>
           <TextField.Root id="oab-busca" type="search" placeholder="Número do processo, parte ou advogado" autoComplete="off"
@@ -504,6 +510,30 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
               {tipos.map(t => <Select.Item key={t} value={t}>{t}</Select.Item>)}
             </Select.Content>
           </Select.Root>
+        </div>
+        <div className="form-campo">
+          <label className="form-campo-label" id="oab-referencia-rotulo">Referência</label>
+          <Popover.Root>
+            <Popover.Trigger>
+              <Button variant="surface" color="gray" size="2" disabled={ocupada} aria-labelledby="oab-referencia-rotulo">
+                {referencias.length === 0 ? 'Todas' : referencias.length === 1 ? formatarNomeExibicao(referencias[0]) : `${referencias.length} selecionadas`}
+              </Button>
+            </Popover.Trigger>
+            <Popover.Content style={{ width: 280, maxHeight: 320, overflowY: 'auto' }}>
+              {opcoesReferencia.length === 0 && <Text as="p" size="2" color="gray">Nenhuma referência capturada.</Text>}
+              <Flex direction="column" gap="2">
+                {opcoesReferencia.map(r => (
+                  <Text as="label" size="2" key={r}>
+                    <Flex gap="2" align="center">
+                      <Checkbox checked={referencias.includes(r)}
+                        onCheckedChange={marcada => filtrar(() => setReferencias(marcada ? [...referencias, r] : referencias.filter(x => x !== r)))} />
+                      {formatarNomeExibicao(r)}
+                    </Flex>
+                  </Text>
+                ))}
+              </Flex>
+            </Popover.Content>
+          </Popover.Root>
         </div>
         <div className="form-campo">
           <label className="form-campo-label" id="oab-periodo-rotulo">Divulgação</label>
@@ -530,7 +560,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
         </>}
         {filtrosAtivos && (
           <Button variant="soft" color="gray" size="2" disabled={ocupada}
-            onClick={() => filtrar(() => { setTipo(''); setPeriodo(''); setDesde(''); setAte(''); setTextoBusca(''); setBusca('') })}>
+            onClick={() => filtrar(() => { setTipo(''); setReferencias([]); setPeriodo(''); setDesde(''); setAte(''); setTextoBusca(''); setBusca('') })}>
             Limpar filtros
           </Button>
         )}

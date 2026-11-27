@@ -333,7 +333,7 @@ export default function Atividades() {
                             <Text size="1" color="gray">{a.responsavel ? nomePessoa(a.responsavel) : 'Sem responsável'}</Text>
                           </Flex>
                           <Text as="p" size="3" weight="bold">{formatarNomeExibicao(a.titulo)}</Text>
-                          <button type="button" className="atividades-link" onClick={() => abrirProcesso(a)}>{tituloProcesso(a)}</button>
+                          <button type="button" className="atividades-link" title={tituloProcesso(a)} onClick={() => abrirProcesso(a)}>{tituloProcesso(a)}</button>
                           <Flex gap="2" mt="1">{acaoPrincipal(a, true)}{menu(a)}</Flex>
                         </div>
                       </li>
@@ -389,7 +389,7 @@ export default function Atividades() {
                           </Flex>
                         </td>
                         {colunas.visivel('processo') && <td>
-                          <button type="button" className="atividades-link" onClick={() => abrirProcesso(a)}>{tituloProcesso(a)}</button>
+                          <button type="button" className="atividades-link" title={tituloProcesso(a)} onClick={() => abrirProcesso(a)}>{tituloProcesso(a)}</button>
                           {processoNumero(a) && <div className="atividades-secundario">{processoNumero(a)}</div>}
                         </td>}
                         {colunas.visivel('responsavel') && <td>
