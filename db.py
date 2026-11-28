@@ -2374,6 +2374,26 @@ class RegistroClientesCasos:
                     "polo=excluded.polo, atualizado_em=excluded.atualizado_em", (caso_id, cliente_id, polo, agora().isoformat()))
         return True
 
+    def substituir_cliente_do_caso(self, caso_id: str, antigo_id: str, novos: list[str]) -> bool:
+        """Troca um cliente do processo por outros (o primeiro assume a vaga se o antigo era o principal)."""
+        with self._trava, _abrir(self.caminho) as conexao, conexao:
+            caso = conexao.execute("SELECT cliente_id FROM casos WHERE id = ?", (caso_id,)).fetchone()
+            if caso is None or not novos:
+                return False
+            membros = [caso[0], *self._clientes_adicionais_do_caso(conexao, caso_id)]
+            if antigo_id not in membros:
+                return False
+            final = list(dict.fromkeys([*(m for m in membros if m != antigo_id), *novos]))
+            if caso[0] == antigo_id:
+                conexao.execute("UPDATE casos SET cliente_id = ? WHERE id = ?", (novos[0], caso_id))
+                final = [c for c in final if c != novos[0]]
+            else:
+                final = [c for c in final if c != caso[0]]
+            conexao.execute("DELETE FROM caso_clientes WHERE caso_id = ?", (caso_id,))
+            conexao.executemany("INSERT INTO caso_clientes (caso_id, cliente_id) VALUES (?, ?)", [(caso_id, c) for c in final])
+            conexao.execute("DELETE FROM caso_polos WHERE caso_id = ? AND cliente_id = ?", (caso_id, antigo_id))
+        return True
+
     @staticmethod
     def _clientes_adicionais_do_caso(conexao: sqlite3.Connection, caso_id: str) -> list[str]:
         cursor = conexao.execute(

@@ -6024,15 +6024,32 @@ class _AutenticacaoBearer:
             return
         cliente_id = str(dados.get("cliente_id") or "").strip()
         polo = str(dados.get("polo") or "").strip().lower() or None
+        agora = lambda: datetime.now(timezone.utc)
+        trocados = False
         try:
-            ok = self.gestao.definir_polo(caso_id, cliente_id, polo, lambda: datetime.now(timezone.utc))
+            ok = self.gestao.definir_polo(caso_id, cliente_id, polo, agora)
+            antigo = self.gestao.obter_cliente(cliente_id) if ok else None
+            if ok and polo in ("ativo", "passivo") and (antigo or {}).get("nome", "").strip().lower() == "pendente":
+                # "Pendente" escolhe um polo: as partes desse polo na capa viram contatos (clientes) do processo.
+                caso = self.gestao.obter_caso(caso_id) or {}
+                excecoes = nomes_mod.Nomes(self.gestao.caminho).excecoes()
+                nomes = list(dict.fromkeys(
+                    nomes_mod.normalizar(p["nome"].strip(), excecoes)
+                    for n in caso.get("processos") or []
+                    for p in (self.gestao.obter_capa_processo(caso_id, n) or {}).get("partes") or []
+                    if (p.get("nome") or "").strip() and polos_mod.polo_da_parte(p.get("polo")) == polo))
+                novos = [i for n in nomes if (i := _resolver_cliente_id(self.gestao, {"cliente_novo": {"nome": n}})[0])]
+                if novos and self.gestao.substituir_cliente_do_caso(caso_id, cliente_id, novos):
+                    trocados = True
+                    for novo in novos:
+                        self.gestao.definir_polo(caso_id, novo, polo, agora)
         except ValueError as e:
             await _json(send, 400, _erro(str(e)))
             return
         if not ok:
             await _json(send, 404, _erro("Processo ou cliente do processo não encontrado."))
             return
-        await _json(send, 200, {"polos": (self.gestao.obter_caso(caso_id) or {}).get("polos", [])})
+        await _json(send, 200, {"polos": (self.gestao.obter_caso(caso_id) or {}).get("polos", []), "clientes_trocados": trocados})
 
     async def _caso_detalhe(self, scope, receive, send, caso_id: str):
         """GET /casos/<id>: o caso com sua linha do tempo.
