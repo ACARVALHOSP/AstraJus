@@ -65,7 +65,7 @@ def exigencia_rota(caminho, metodo):
     if caminho == '/clientes' or caminho.startswith('/clientes/'):
         return rota('contatos', leitura=todas_leitura)
     if caminho == '/documentos' or caminho.startswith('/documentos/'):
-        return rota('contatos', leitura=('contatos', 'casos'))
+        return rota('contatos', 'casos')  # peças nascem de publicações e processos; leitura usa as mesmas áreas
     if caminho == '/horas/faturar':
         return rota('financeiro')  # cria um lançamento de honorário
     if caminho == '/horas' or caminho.startswith('/horas/'):
