@@ -23,6 +23,7 @@ import {
 import ProcessoPublicacao from './ProcessoPublicacao'
 import type { Caso } from '../casos/ListaCasos'
 import AtividadePublicacao from './AtividadePublicacao'
+import MinutaPublicacao from './MinutaPublicacao'
 import { PRAZOS_PADRAO } from './prazos'
 import { pct, selosTriagem, type InfoTriagem } from './triagem'
 import { POLO_CURTO } from '../../utils/polos'
@@ -122,6 +123,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
   const [operacao, setOperacao] = useState(false)
   const { avisar } = useAvisos()
   const [modal, setModal] = useState<{ tipo: 'processo' | 'atividade'; p: PublicacaoOab } | null>(null)
+  const [minuta, setMinuta] = useState<PublicacaoOab | null>(null)
   const [capturaAberta, setCapturaAberta] = useState(false)
   const trava = useRef(false)
   const opcionais = COLUNAS_OPCIONAIS.filter(c => preferencias.includes(c.key))
@@ -334,6 +336,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
       ...(link ? [{ texto: 'Abrir no DJEN', href: link }] : []),
       { texto: p.caso_id ? 'Abrir processo' : 'Criar / vincular processo', desabilitada: bloqueada || (!p.caso_id && numeroPublicacao(p).length !== 20), executar: () => abrirAcao('processo', p) },
       { texto: p.caso_id ? 'Criar atividade' : 'Criar atividade (vincule um processo)', desabilitada: bloqueada || !p.caso_id, executar: () => abrirAcao('atividade', p) },
+      { texto: 'Gerar minuta', desabilitada: bloqueada, executar: () => setMinuta(p) },
       { texto: 'Marcar como tratada', desabilitada: bloqueada || p.status === 'tratada', executar: () => mudarStatus([p.hash], 'tratada') },
       { texto: 'Arquivar', desabilitada: bloqueada || p.status === 'arquivada', executar: () => mudarStatus([p.hash], 'arquivada') },
       ...(p.status !== 'nao_tratada' ? [{ texto: 'Reabrir como não tratada', desabilitada: bloqueada, executar: () => mudarStatus([p.hash], 'nao_tratada') }] : []),
@@ -776,6 +779,7 @@ export default function PainelPublicacoes({ Captura, abas }: { Captura: Componen
         </Dialog.Content>
       </Dialog.Root>
       {modal?.tipo === 'processo' && <ProcessoPublicacao publicacao={modal.p} onClose={() => { setModal(null); void carregar() }} onConcluido={m => { avisar({ texto: m }); setModal(null); void carregar() }} />}
+      {minuta && <MinutaPublicacao publicacao={minuta} onClose={() => setMinuta(null)} />}
       {modal?.tipo === 'atividade' && <AtividadePublicacao publicacao={modal.p} onClose={() => setModal(null)} onConcluido={m => { avisar({ texto: m }); setModal(null); void carregar() }} />}
       {hashesLote && <VincularProcessoLote hashes={hashesLote} onClose={() => setHashesLote(null)} onConcluido={m => { avisar({ texto: m }); setHashesLote(null); setSelecionadas(new Set()); setTodasFiltro(false); void carregar() }} />}
       {criarLote && <CriarProcessosLote publicacoes={criarLote} onClose={() => setCriarLote(null)} onConcluido={m => { avisar({ texto: m }); setCriarLote(null); setSelecionadas(new Set()); setTodasFiltro(false); void carregar() }} />}

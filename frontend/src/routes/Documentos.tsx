@@ -14,25 +14,25 @@ import { formatarDataSimples } from '../utils/formatadores'
 import './home/home-radix.css'
 
 type Variavel = { chave: string; rotulo: string; origem: string }
-type Catalogo = { variaveis: Variavel[]; poderes: { chave: string; texto: string }[]; tipos: string[]; zapsign: boolean }
-type Modelo = { id: number; nome: string; tipo: string; variaveis: string[]; criado_em: string }
+export type Catalogo = { variaveis: Variavel[]; poderes: { chave: string; texto: string }[]; tipos: string[]; zapsign: boolean }
+export type Modelo = { id: number; nome: string; tipo: string; variaveis: string[]; criado_em: string }
 type Signatario = { nome?: string; email?: string; status?: string; assinou_em?: string | null; link?: string }
-type Documento = {
+export type Documento = {
   id: number; nome: string; cliente_id: string | null; status: 'gerado' | 'enviado' | 'assinado' | 'recusado' | 'expirado'
   signatarios: Signatario[]; tem_pdf: boolean; tem_assinado: boolean; criado_em: string
   visualizado_em?: string | null; alerta?: 'email_devolvido' | 'prazo_acabando' | null
 }
 type Campo = { chave: string; rotulo: string; origem: string; valor: string }
 type Paragrafo = { texto: string; negrito: boolean; centralizado: boolean }
-type ContatoLista = { id: string; nome?: string; email?: string | null; telefone?: string | null }
+export type ContatoLista = { id: string; nome?: string; email?: string | null; telefone?: string | null }
 type CasoLista = { id: string; titulo?: string; cliente_id?: string }
 
-const TIPOS: Record<string, string> = { procuracao: 'Procuração', contrato: 'Contrato', outro: 'Outro' }
+const TIPOS: Record<string, string> = { procuracao: 'Procuração', contrato: 'Contrato', peca: 'Peça (minuta)', outro: 'Outro' }
 const STATUS: Record<string, { rotulo: string; cor: 'gray' | 'blue' | 'green' | 'red' | 'amber' }> = {
   gerado: { rotulo: 'Gerado', cor: 'gray' }, enviado: { rotulo: 'Aguardando assinatura', cor: 'blue' },
   assinado: { rotulo: 'Assinado', cor: 'green' }, recusado: { rotulo: 'Recusado', cor: 'red' }, expirado: { rotulo: 'Expirado', cor: 'amber' },
 }
-const LONGOS = new Set(['poderes', 'objeto', 'condicoes_pagamento', 'cliente_qualificacao'])
+const LONGOS = new Set(['poderes', 'objeto', 'condicoes_pagamento', 'cliente_qualificacao', 'publicacao_texto'])
 const CAMPO = /\{\{\s*([a-z0-9_]+)\s*\}\}/g
 const NENHUM = '__nenhum__'
 
@@ -179,7 +179,7 @@ export default function Documentos() {
       {dialogo === 'modelo' && catalogo.data && <DialogoModelo catalogo={catalogo.data} onFechar={() => setDialogo(null)} />}
       {dialogo === 'gerar' && catalogo.data && modelos.data && (
         <DialogoGerar catalogo={catalogo.data} modelos={modelos.data} contatos={contatos.data ?? []}
-          onFechar={() => setDialogo(null)} onGerado={(d) => { setDialogo(null); recarregar(); if (catalogo.data?.zapsign) setEnviando(d) }} />
+          onFechar={() => setDialogo(null)} onGerado={(d) => { setDialogo(null); recarregar(); if (catalogo.data?.zapsign && d.tem_pdf) setEnviando(d) }} />
       )}
       {paraExcluir && (
         <AlertDialog.Root open onOpenChange={o => { if (!o) setParaExcluir(null) }}>
@@ -236,7 +236,7 @@ function DialogoModelo({ catalogo, onFechar }: { catalogo: Catalogo; onFechar: (
           <details>
             <summary><Text size="2" weight="bold">Campos disponíveis</Text></summary>
             <Flex direction="column" gap="1" mt="2">
-              {catalogo.variaveis.map(v => <Text key={v.chave} size="1"><code>{`{{${v.chave}}}`}</code> — {v.rotulo}{v.origem === 'manual' ? ' (preenchido por você ao gerar)' : ''}</Text>)}
+              {catalogo.variaveis.map(v => <Text key={v.chave} size="1"><code>{`{{${v.chave}}}`}</code> — {v.rotulo}{v.origem === 'manual' ? ' (preenchido por você ao gerar)' : v.origem === 'publicacao' ? ' (vem da publicação, ao gerar a minuta)' : ''}</Text>)}
               <Text size="1" color="gray">Campos com outro nome também funcionam e ficam para preenchimento manual.</Text>
             </Flex>
           </details>
@@ -309,14 +309,16 @@ function PreviaDocumento({ paragrafos, valores, rotulos, foco }: {
   )
 }
 
-function DialogoGerar({ catalogo, modelos, contatos, onFechar, onGerado }: {
+/** Gera um documento de um modelo, com prévia ao vivo. Com `publicacaoHash`, nasce de uma publicação do DJEN (minuta). */
+export function DialogoGerar({ catalogo, modelos, contatos, onFechar, onGerado, publicacaoHash, casoIdInicial, titulo = 'Gerar documento' }: {
   catalogo: Catalogo; modelos: Modelo[]; contatos: ContatoLista[]; onFechar: () => void; onGerado: (d: Documento) => void
+  publicacaoHash?: string; casoIdInicial?: string; titulo?: string
 }) {
   const { cliente } = useCliente()
   const casos = useCasos<CasoLista>()
   const [modeloId, setModeloId] = useState(String(modelos[0]?.id ?? ''))
   const [contatoId, setContatoId] = useState('')
-  const [casoId, setCasoId] = useState('')
+  const [casoId, setCasoId] = useState(casoIdInicial ?? '')
   const [campos, setCampos] = useState<Campo[]>([])
   const [paragrafos, setParagrafos] = useState<Paragrafo[]>([])
   const [automaticos, setAutomaticos] = useState<Set<string>>(new Set())
@@ -330,9 +332,13 @@ function DialogoGerar({ catalogo, modelos, contatos, onFechar, onGerado }: {
   useEffect(() => {
     if (!modeloId) return
     let cancelado = false
-    enviarJson<{ campos: Campo[]; paragrafos: Paragrafo[] }>(cliente, `/documentos/modelos/${modeloId}/previa`, { cliente_id: contatoId || null, caso_id: casoId || null })
+    enviarJson<{ campos: Campo[]; paragrafos: Paragrafo[]; contexto?: { caso_id?: string | null; cliente_id?: string | null } }>(
+      cliente, `/documentos/modelos/${modeloId}/previa`, { cliente_id: contatoId || null, caso_id: casoId || null, publicacao_hash: publicacaoHash ?? null })
       .then(r => {
         if (cancelado) return
+        // Na minuta, o servidor descobre o processo e o contato pela publicação; os selects acompanham.
+        if (r.contexto?.cliente_id) setContatoId(atual => atual || r.contexto?.cliente_id || '')
+        if (r.contexto?.caso_id) setCasoId(atual => atual || r.contexto?.caso_id || '')
         setCampos(r.campos)
         setParagrafos(r.paragrafos ?? [])
         // Guarda o que já veio do cadastro para destacar os campos na prévia.
@@ -341,7 +347,7 @@ function DialogoGerar({ catalogo, modelos, contatos, onFechar, onGerado }: {
       })
       .catch(e => { if (!cancelado) setErro(mensagem(e, 'Não foi possível carregar o modelo.')) })
     return () => { cancelado = true }
-  }, [cliente, modeloId, contatoId, casoId])
+  }, [cliente, modeloId, contatoId, casoId, publicacaoHash])
 
   function definir(chave: string, valor: string) {
     setCampos(cs => cs.map(c => (c.chave === chave ? { ...c, valor } : c)))
@@ -365,6 +371,7 @@ function DialogoGerar({ catalogo, modelos, contatos, onFechar, onGerado }: {
         modelo_id: Number(modeloId), cliente_id: contatoId || null, caso_id: casoId || null,
         nome: `${modelo?.nome ?? 'Documento'}${contatoId ? ' - ' + (contatos.find(c => c.id === contatoId)?.nome ?? '') : ''}`,
         valores: Object.fromEntries(campos.map(c => [c.chave, c.valor])),
+        publicacao_hash: publicacaoHash ?? null,
       })
       onGerado(r.documento)
     } catch (e) { setErro(mensagem(e, 'Não foi possível gerar o documento.')) } finally { setGerando(false) }
@@ -377,8 +384,10 @@ function DialogoGerar({ catalogo, modelos, contatos, onFechar, onGerado }: {
   return (
     <Dialog.Root open onOpenChange={o => { if (!o) onFechar() }}>
       <Dialog.Content maxWidth="1100px" maxHeight="90vh">
-        <Dialog.Title>Gerar documento</Dialog.Title>
-        <Dialog.Description size="2" color="gray" mb="3">Os campos vêm preenchidos com os dados do contato e podem ser editados antes de gerar o PDF.</Dialog.Description>
+        <Dialog.Title>{titulo}</Dialog.Title>
+        <Dialog.Description size="2" color="gray" mb="3">
+          {publicacaoHash ? 'Os campos vêm da publicação, do processo e do prazo. Revise e edite antes de gerar o DOCX.' : 'Os campos vêm preenchidos com os dados do contato e podem ser editados antes de gerar o PDF.'}
+        </Dialog.Description>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16, alignItems: 'start' }}>
           <Flex direction="column" gap="3">
             <Flex gap="3" wrap="wrap">
@@ -440,7 +449,7 @@ function DialogoGerar({ catalogo, modelos, contatos, onFechar, onGerado }: {
           </Text>
           <Flex gap="3">
             <Button variant="soft" color="gray" size="2" onClick={onFechar}>Cancelar</Button>
-            <Button size="2" loading={gerando} disabled={!modeloId} onClick={() => void gerar()}>Gerar PDF</Button>
+            <Button size="2" loading={gerando} disabled={!modeloId} onClick={() => void gerar()}>{modelo?.tipo === 'peca' ? 'Gerar minuta (DOCX)' : 'Gerar PDF'}</Button>
           </Flex>
         </Flex>
       </Dialog.Content>

@@ -147,5 +147,87 @@ class DocumentosHttpTest(unittest.TestCase):
         self.assertEqual((d["status"], d["visualizado_em"], d["alerta"]), ("assinado", None, None))
 
 
+def _docx_peca():
+    d = Document()
+    d.add_paragraph("Processo {{processo_numero}}: {{publicacao_tipo}} de {{publicacao_data}}, {{processo_vara}}. Prazo até {{prazo_final}}. {{cliente_polo}}.")
+    s = io.BytesIO()
+    d.save(s)
+    return s.getvalue()
+
+
+class MinutaDePublicacaoTest(unittest.TestCase):
+    NUMERO = "10012348320268260100"
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.caminho = Path(tmp.name) / "teste.db"
+        self.registro = db.RegistroUsuarios(self.caminho)
+        self.token = {}
+        for nome in ("adm@teste.com", "ana@teste.com", "carla@teste.com", "dora@teste.com"):
+            _, _, self.token[nome] = server._criar_usuario_core(self.registro, nome)
+        usuarios_admin.alterar(self.registro, {"nivel_acesso": "administrador"}, "bootstrap", "adm@teste.com")
+        usuarios_admin.alterar(self.registro, {"permissoes": {"contatos": "nenhum"}}, "bootstrap", "carla@teste.com")
+        usuarios_admin.alterar(self.registro, {"permissoes": {"contatos": "nenhum", "casos": "nenhum"}}, "bootstrap", "dora@teste.com")
+        self.gestao = db.RegistroClientesCasos(self.caminho)
+        self.pubs = db.RegistroPublicacoesOAB(self.caminho)
+        cliente = self.gestao.criar_cliente("Maria Souza", "52998224725", None, AGORA)
+        self.caso = self.gestao.criar_caso(cliente["id"], "Silva x Banco", "ana@teste.com", [self.NUMERO], AGORA)
+        self.gestao.definir_polo(self.caso["id"], cliente["id"], "passivo", AGORA)
+        dados = {"data_disponibilizacao": "2026-11-05", "tipoComunicacao": "Intimação", "nomeOrgao": "1ª Vara Cível",
+                 "siglaTribunal": "TJSP", "texto": "Manifeste-se em 15 dias."}
+        self.pubs.registrar("h1", None, None, self.NUMERO, dados, "nao_tratada", self.caso["id"], AGORA)
+        self.gestao.criar_atividade(self.caso["id"], "prazo", "Manifestação", "2099-12-01", None, None, AGORA, origem_djen_hash="h1")
+        self.mw = server._AutenticacaoBearer(None, self.registro, gestao=self.gestao, publicacoes=self.pubs)
+        status, corpo = self.req("POST", "/documentos/modelos", {"nome": "Manifestação", "tipo": "peca",
+                                 "arquivo_base64": base64.b64encode(_docx_peca()).decode()}, "adm@teste.com")
+        self.assertEqual(status, 201, corpo)
+        self.modelo = corpo["modelo"]
+
+    def req(self, metodo, url, corpo=None, quem="ana@teste.com"):
+        return chamar(self.mw, metodo, url, self.token[quem], corpo)
+
+    def test_previa_com_a_publicacao(self):
+        status, r = self.req("POST", f"/documentos/modelos/{self.modelo['id']}/previa", {"publicacao_hash": "h1"})
+        self.assertEqual(status, 200, r)
+        valores = {c["chave"]: c["valor"] for c in r["campos"]}
+        self.assertEqual(valores["publicacao_tipo"], "Intimação")
+        self.assertEqual(valores["publicacao_data"], "05/11/2026")
+        self.assertEqual(valores["processo_vara"], "1ª Vara Cível")
+        self.assertEqual(valores["prazo_final"], "01/12/2099")
+        self.assertEqual(valores["cliente_polo"], "Polo passivo (réu)")
+        self.assertEqual(r["contexto"]["caso_id"], self.caso["id"])
+        self.assertTrue(r["contexto"]["cliente_id"])
+        self.assertEqual(self.req("POST", f"/documentos/modelos/{self.modelo['id']}/previa", {"publicacao_hash": "nao-existe"})[0], 404)
+
+    def test_peca_sai_so_em_docx_e_guarda_a_origem(self):
+        corpo = {"modelo_id": self.modelo["id"], "publicacao_hash": "h1", "caso_id": self.caso["id"], "valores": {"processo_numero": "123"}}
+        with mock.patch.object(documentos, "converter_pdf", side_effect=AssertionError("peça não converte PDF")):
+            status, r = self.req("POST", "/documentos", corpo)
+        self.assertEqual(status, 201, r)
+        doc = r["documento"]
+        self.assertEqual((doc["tem_pdf"], doc["publicacao_hash"]), (False, "h1"))
+        self.assertEqual([d["id"] for d in self.req("GET", "/documentos?publicacao_hash=h1")[1]["documentos"]], [doc["id"]])
+        self.assertEqual(self.req("GET", "/documentos?publicacao_hash=outra")[1]["documentos"], [])
+        with mock.patch.object(documentos, "converter_pdf", return_value=b"%PDF-falso") as conversor:
+            status, r = self.req("POST", "/documentos", {**corpo, "gerar_pdf": True})
+        self.assertEqual((status, r["documento"]["tem_pdf"], conversor.call_count), (201, True, 1))
+        self.assertEqual(self.req("POST", "/documentos", {**corpo, "publicacao_hash": "nao-existe"})[0], 404)
+
+    def test_enviar_sem_pdf_nao_chama_a_zapsign(self):
+        doc = self.req("POST", "/documentos", {"modelo_id": self.modelo["id"], "valores": {}})[1]["documento"]
+        enviar = mock.AsyncMock()
+        with mock.patch.dict(os.environ, {"ZAPSIGN_API_KEY": "k"}), mock.patch.object(documentos, "enviar_para_assinatura", enviar):
+            status, r = self.req("POST", f"/documentos/{doc['id']}/enviar", {"signatarios": [{"nome": "Maria", "email": "m@x.com"}]})
+        self.assertEqual(status, 400)
+        self.assertIn("não tem PDF", str(r))
+        enviar.assert_not_called()
+
+    def test_quem_so_tem_processos_gera_e_quem_nao_tem_nada_nao(self):
+        corpo = {"modelo_id": self.modelo["id"], "publicacao_hash": "h1", "valores": {}}
+        self.assertEqual(self.req("POST", "/documentos", corpo, "carla@teste.com")[0], 201)
+        self.assertEqual(self.req("POST", "/documentos", corpo, "dora@teste.com")[0], 403)
+
+
 if __name__ == "__main__":
     unittest.main()

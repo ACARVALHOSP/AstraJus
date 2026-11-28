@@ -23,7 +23,7 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 MAX_DOCX = 5 * 1024 * 1024
-TIPOS = ("procuracao", "contrato", "outro")
+TIPOS = ("procuracao", "contrato", "peca", "outro")  # peca = minuta de petição: sai só em DOCX, para editar no Word
 PADRAO = re.compile(r"\{\{\s*([a-z0-9_]+)\s*\}\}")
 _CONTROLE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 HOSTS = {"producao": "https://api.zapsign.com.br", "sandbox": "https://sandbox.api.zapsign.com.br"}
@@ -49,6 +49,13 @@ VARIAVEIS = {
     "data_hoje": ("Data de hoje (dd/mm/aaaa)", "sistema"), "data_extenso": ("Data por extenso", "sistema"),
     "poderes": ("Poderes outorgados", "manual"), "objeto": ("Objeto", "manual"),
     "condicoes_pagamento": ("Condições de pagamento", "manual"), "valor_honorarios": ("Valor dos honorários", "manual"),
+    # Vêm da publicação do DJEN quando a minuta nasce dela ("Gerar minuta").
+    "publicacao_data": ("Data da publicação", "publicacao"), "publicacao_tipo": ("Tipo da comunicação", "publicacao"),
+    "publicacao_orgao": ("Órgão da publicação", "publicacao"), "publicacao_classe": ("Classe da publicação", "publicacao"),
+    "publicacao_texto": ("Texto da publicação", "publicacao"),
+    "processo_numero": ("Número do processo (CNJ)", "publicacao"), "processo_vara": ("Vara ou órgão julgador", "publicacao"),
+    "tribunal": ("Tribunal", "publicacao"), "prazo_nome": ("Prazo que a publicação abre (sugerido)", "publicacao"),
+    "prazo_final": ("Fim do prazo", "publicacao"), "cliente_polo": ("Polo do cliente no processo", "publicacao"),
 }
 
 # Poderes usuais de procuração, para marcar e depois editar à vontade.
@@ -216,6 +223,43 @@ def valores_automaticos(cliente: dict | None, caso: dict | None, hoje: datetime 
     return {chave: str(valor) for chave, valor in valores.items() if valor}
 
 
+def _data_br(texto) -> str:
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", str(texto or ""))
+    return f"{m[3]}/{m[2]}/{m[1]}" if m else ""
+
+
+def valores_da_publicacao(publicacao: dict, caso: dict | None = None, capa: dict | None = None,
+                          atividades: list[dict] | None = None, cliente_id: str | None = None,
+                          triagem: dict | None = None) -> dict:
+    """Valores de uma publicação do DJEN (e do prazo e do polo ligados a ela) para os campos da minuta.
+    Só entram chaves com dado; o resto fica para o usuário preencher."""
+    dados = publicacao.get("dados") or {}
+    hash_ = publicacao.get("hash")
+    valores = {
+        "publicacao_data": _data_br(dados.get("data_disponibilizacao")),
+        "publicacao_tipo": dados.get("tipoComunicacao") or dados.get("tipoDocumento"),
+        "publicacao_orgao": dados.get("nomeOrgao"),
+        "publicacao_classe": dados.get("nomeClasse"),
+        "publicacao_texto": str(dados.get("texto") or "")[:8000],
+        "processo_numero": dados.get("numeroprocessocommascara") or publicacao.get("numero_processo"),
+        "processo_vara": (capa or {}).get("orgao_julgador") or dados.get("nomeOrgao"),
+        "tribunal": dados.get("siglaTribunal"),
+    }
+    # Prazo: a atividade do tipo "prazo" criada a partir desta publicação (a mais próxima de hoje em diante).
+    hoje = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    prazos = sorted((a["data"] for a in atividades or [] if hash_ and a.get("origem_djen_hash") == hash_ and a.get("tipo") == "prazo" and a.get("data")))
+    escolhido = next((d for d in prazos if d >= hoje), prazos[-1] if prazos else None)
+    valores["prazo_final"] = _data_br(escolhido)
+    # Prazo sugerido pela triagem, só quando ela tem confiança (a mesma regra do destaque na tela).
+    sugerido = ((triagem or {}).get("prazo_padrao") or {}).get("valor")
+    if sugerido and sugerido != "nenhum" and ((triagem or {}).get("faixas") or {}).get("prazo_padrao") != "baixa":
+        from triagem import PRAZOS_PADRAO
+        valores["prazo_nome"] = PRAZOS_PADRAO.get(sugerido, "")
+    polo = next((p.get("polo") for p in (caso or {}).get("polos") or [] if p.get("cliente_id") == cliente_id), None)
+    valores["cliente_polo"] = {"ativo": "Polo ativo (autor)", "passivo": "Polo passivo (réu)"}.get(polo or "", "")
+    return {chave: str(valor) for chave, valor in valores.items() if valor}
+
+
 # ---------------------------------------------------------------- ZapSign
 
 def _ambiente(valor) -> str:
@@ -313,14 +357,15 @@ def criar_tabelas(conexao):
         id INTEGER PRIMARY KEY AUTOINCREMENT, modelo_id INTEGER, nome TEXT NOT NULL,
         cliente_id TEXT, caso_id TEXT, valores TEXT NOT NULL, docx BLOB NOT NULL, pdf BLOB,
         status TEXT NOT NULL DEFAULT 'gerado', zap_token TEXT, signatarios TEXT,
-        assinado BLOB, visualizado_em TEXT, alerta TEXT,
+        assinado BLOB, visualizado_em TEXT, alerta TEXT, publicacao_hash TEXT,
         criado_em TEXT NOT NULL, criado_por TEXT, atualizado_em TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS documentos_zap ON documentos_gerados(zap_token);
     """)
     existentes = {linha[1] for linha in conexao.execute("PRAGMA table_info(documentos_gerados)")}
-    for coluna in ("visualizado_em", "alerta"):
+    for coluna in ("visualizado_em", "alerta", "publicacao_hash"):
         if coluna not in existentes:
             conexao.execute(f"ALTER TABLE documentos_gerados ADD COLUMN {coluna} TEXT")
+    conexao.execute("CREATE INDEX IF NOT EXISTS documentos_publicacao ON documentos_gerados(publicacao_hash)")
 
 
 class Repositorio:
@@ -387,18 +432,18 @@ class Repositorio:
             if not c.execute("DELETE FROM documentos_gerados WHERE id=?", (doc_id,)).rowcount:
                 raise LookupError("Documento não encontrado.")
 
-    def criar_documento(self, modelo_id, nome, cliente_id, caso_id, valores, docx, pdf, usuario):
+    def criar_documento(self, modelo_id, nome, cliente_id, caso_id, valores, docx, pdf, usuario, publicacao_hash=None):
         with self._abrir() as c:
-            i = c.execute("INSERT INTO documentos_gerados (modelo_id,nome,cliente_id,caso_id,valores,docx,pdf,criado_em,criado_por,atualizado_em) "
-                          "VALUES (?,?,?,?,?,?,?,?,?,?)",
-                          (modelo_id, nome, cliente_id, caso_id, json.dumps(valores), docx, pdf, _agora(), usuario, _agora())).lastrowid
+            i = c.execute("INSERT INTO documentos_gerados (modelo_id,nome,cliente_id,caso_id,valores,docx,pdf,criado_em,criado_por,atualizado_em,publicacao_hash) "
+                          "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                          (modelo_id, nome, cliente_id, caso_id, json.dumps(valores), docx, pdf, _agora(), usuario, _agora(), publicacao_hash)).lastrowid
         return self.documento(i)
 
-    _COLUNAS = "id,modelo_id,nome,cliente_id,caso_id,status,zap_token,signatarios,criado_em,criado_por,atualizado_em,visualizado_em,alerta,(pdf IS NOT NULL) AS tem_pdf,(assinado IS NOT NULL) AS tem_assinado"
+    _COLUNAS = "id,modelo_id,nome,cliente_id,caso_id,status,zap_token,signatarios,criado_em,criado_por,atualizado_em,visualizado_em,alerta,publicacao_hash,(pdf IS NOT NULL) AS tem_pdf,(assinado IS NOT NULL) AS tem_assinado"
 
-    def documentos(self, cliente_id=None, caso_id=None):
+    def documentos(self, cliente_id=None, caso_id=None, publicacao_hash=None):
         filtros, args = [], []
-        for coluna, valor in (("cliente_id", cliente_id), ("caso_id", caso_id)):
+        for coluna, valor in (("cliente_id", cliente_id), ("caso_id", caso_id), ("publicacao_hash", publicacao_hash)):
             if valor:
                 filtros.append(f"{coluna}=?")
                 args.append(valor)
@@ -417,7 +462,7 @@ class Repositorio:
     def _doc(l):
         return {"id": l["id"], "modelo_id": l["modelo_id"], "nome": l["nome"], "cliente_id": l["cliente_id"], "caso_id": l["caso_id"],
                 "status": l["status"], "signatarios": json.loads(l["signatarios"]) if l["signatarios"] else [],
-                "visualizado_em": l["visualizado_em"], "alerta": l["alerta"],
+                "visualizado_em": l["visualizado_em"], "alerta": l["alerta"], "publicacao_hash": l["publicacao_hash"],
                 "tem_pdf": bool(l["tem_pdf"]), "tem_assinado": bool(l["tem_assinado"]),
                 "criado_em": l["criado_em"], "criado_por": l["criado_por"], "atualizado_em": l["atualizado_em"]}
 

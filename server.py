@@ -5469,6 +5469,15 @@ class _AutenticacaoBearer:
         repo.aplicar_estado(zap["token"], status, documentos.signatarios_do_retorno(zap), assinado)
         return status
 
+    def _publicacao_da_minuta(self, hash_publicacao):
+        """Publicação de origem da minuta (ou None); hash informado e inexistente vira 404."""
+        if not hash_publicacao:
+            return None
+        publicacao = self.publicacoes.obter(str(hash_publicacao)) if self.publicacoes is not None else None
+        if not publicacao:
+            raise LookupError("Publicação não encontrada.")
+        return publicacao
+
     async def _documentos(self, scope, receive, send, resto: str) -> None:
         """Modelos DOCX e documentos gerados. GET /documentos/catalogo; GET/POST /documentos/modelos,
         DELETE /documentos/modelos/<id> (administrador), POST /documentos/modelos/<id>/previa;
@@ -5523,26 +5532,42 @@ class _AutenticacaoBearer:
             elif len(partes) == 3 and partes[0] == "modelos" and partes[1].isdigit() and partes[2] == "previa" and metodo == "POST":
                 dados = await corpo()
                 modelo = repo.modelo(int(partes[1]))
-                auto = documentos.valores_automaticos(
-                    self.gestao.obter_cliente(dados["cliente_id"]) if dados.get("cliente_id") else None,
-                    self.gestao.obter_caso(dados["caso_id"]) if dados.get("caso_id") else None)
+                cliente_id, caso_id = dados.get("cliente_id") or None, dados.get("caso_id") or None
+                publicacao = self._publicacao_da_minuta(dados.get("publicacao_hash"))
+                if publicacao:
+                    caso_id = caso_id or publicacao.get("caso_id")
+                caso = self.gestao.obter_caso(caso_id) if caso_id else None
+                cliente_id = cliente_id or (caso or {}).get("cliente_id")
+                auto = documentos.valores_automaticos(self.gestao.obter_cliente(cliente_id) if cliente_id else None, caso)
+                if publicacao:  # a minuta nasce de uma publicação: acrescenta publicação, vara, prazo e polo
+                    numero = publicacao.get("numero_processo")
+                    capa = self.gestao.obter_capa_processo(caso_id, numero) if caso_id and numero else None
+                    triagem = self.publicacoes.obter_triagens([publicacao["hash"]]).get(publicacao["hash"])
+                    auto = {**documentos.valores_da_publicacao(
+                        publicacao, caso, capa, self.gestao.listar_atividades(caso_id) if caso_id else [], cliente_id, triagem), **auto}
                 campos = [{"chave": v, "rotulo": documentos.VARIAVEIS.get(v, (v, ""))[0], "origem": documentos.VARIAVEIS.get(v, ("", "manual"))[1],
                            "valor": auto.get(v, "")} for v in modelo["variaveis"]]
                 paragrafos = await asyncio.to_thread(lambda: documentos.texto_do_modelo(repo.docx_do_modelo(modelo["id"])))
-                await _json(send, 200, {"modelo": modelo, "campos": campos, "paragrafos": paragrafos})
+                await _json(send, 200, {"modelo": modelo, "campos": campos, "paragrafos": paragrafos,
+                                        "contexto": {"caso_id": caso_id, "cliente_id": cliente_id}})
                 return
             elif not partes:
                 if metodo == "GET":
-                    await _json(send, 200, {"documentos": repo.documentos((consulta.get("cliente_id") or [None])[0], (consulta.get("caso_id") or [None])[0])})
+                    await _json(send, 200, {"documentos": repo.documentos(
+                        (consulta.get("cliente_id") or [None])[0], (consulta.get("caso_id") or [None])[0], (consulta.get("publicacao_hash") or [None])[0])})
                     return
                 if metodo == "POST":
                     dados = await corpo(256 * 1024)
                     modelo = repo.modelo(int(dados.get("modelo_id") or 0))
+                    publicacao = self._publicacao_da_minuta(dados.get("publicacao_hash"))
                     valores = {k: str(v) for k, v in (dados.get("valores") or {}).items() if k in modelo["variaveis"]}
                     docx = await asyncio.to_thread(documentos.preencher, repo.docx_do_modelo(modelo["id"]), valores)
-                    pdf = await asyncio.to_thread(documentos.converter_pdf, docx)
+                    # Peça (minuta de petição) sai só em DOCX, para editar no Word; o PDF fica opcional.
+                    gerar_pdf = dados["gerar_pdf"] is True if "gerar_pdf" in dados else modelo["tipo"] != "peca"
+                    pdf = await asyncio.to_thread(documentos.converter_pdf, docx) if gerar_pdf else None
                     nome = str(dados.get("nome") or modelo["nome"]).strip()[:120] or modelo["nome"]
-                    criado = repo.criar_documento(modelo["id"], nome, dados.get("cliente_id"), dados.get("caso_id"), valores, docx, pdf, usuario)
+                    criado = repo.criar_documento(modelo["id"], nome, dados.get("cliente_id"), dados.get("caso_id"), valores, docx, pdf, usuario,
+                                                  publicacao["hash"] if publicacao else None)
                     await _json(send, 201, {"documento": criado})
                     return
             elif partes[0].isdigit():
@@ -5569,6 +5594,8 @@ class _AutenticacaoBearer:
                     if doc["status"] != "gerado":
                         raise documentos.ErroDocumento("Esse documento já foi enviado para assinatura.")
                     pdf = repo.arquivo(doc_id, "pdf")
+                    if not pdf:
+                        raise documentos.ErroDocumento("Esta minuta não tem PDF. Gere o PDF antes de enviar para assinatura.")
                     signatarios = documentos.signatarios_zapsign(dados.get("signatarios"), "whatsapp" if dados.get("canal") == "whatsapp" else "email")
                     zap = await documentos.enviar_para_assinatura(pdf, doc["nome"], signatarios, chave, ambiente, f"astrajus-{doc_id}", dados.get("prazo") or None)
                     repo.marcar_enviado(doc_id, zap["token"], documentos.signatarios_do_retorno(zap))

@@ -123,5 +123,41 @@ class TestDocumentos(unittest.TestCase):
             documentos.Repositorio(caminho)  # segunda abertura não falha
 
 
+    def test_valores_da_publicacao(self):
+        pub = {"hash": "h1", "numero_processo": "10012348320268260100", "dados": {
+            "data_disponibilizacao": "2026-11-05T00:00:00", "tipoComunicacao": "Intimação", "nomeOrgao": "1ª Vara",
+            "siglaTribunal": "TJSP", "texto": "x" * 9000, "numeroprocessocommascara": "1001234-83.2026.8.26.0100"}}
+        atividades = [{"origem_djen_hash": "h1", "tipo": "prazo", "data": "2099-12-01"},
+                      {"origem_djen_hash": "outra", "tipo": "prazo", "data": "2099-01-01"},
+                      {"origem_djen_hash": "h1", "tipo": "tarefa", "data": "2099-02-01"}]
+        caso = {"polos": [{"cliente_id": "c1", "polo": "ativo"}]}
+        v = documentos.valores_da_publicacao(pub, caso, {"orgao_julgador": "2ª Vara Cível"}, atividades, "c1",
+                                             {"prazo_padrao": {"valor": "contestacao"}, "faixas": {"prazo_padrao": "alta"}})
+        self.assertEqual(v["publicacao_data"], "05/11/2026")
+        self.assertEqual(v["processo_numero"], "1001234-83.2026.8.26.0100")
+        self.assertEqual(v["processo_vara"], "2ª Vara Cível")  # a capa vale mais que o órgão da publicação
+        self.assertEqual((v["prazo_final"], v["cliente_polo"], v["tribunal"]), ("01/12/2099", "Polo ativo (autor)", "TJSP"))
+        self.assertEqual(len(v["publicacao_texto"]), 8000)
+        self.assertIn("contestação", v["prazo_nome"])
+        sem = documentos.valores_da_publicacao({"hash": "h2", "dados": {}}, None, None, [], None,
+                                               {"prazo_padrao": {"valor": "contestacao"}, "faixas": {"prazo_padrao": "baixa"}})
+        self.assertEqual(sem, {})  # sem dado, sem chave; triagem de baixa confiança não sugere prazo
+
+    def test_migracao_da_origem_da_publicacao(self):
+        import sqlite3
+        with tempfile.TemporaryDirectory() as pasta:
+            caminho = Path(pasta) / "d.db"
+            c = sqlite3.connect(caminho)
+            c.execute("CREATE TABLE documentos_gerados (id INTEGER PRIMARY KEY AUTOINCREMENT, modelo_id INTEGER, nome TEXT NOT NULL, "
+                      "cliente_id TEXT, caso_id TEXT, valores TEXT NOT NULL, docx BLOB NOT NULL, pdf BLOB, status TEXT NOT NULL DEFAULT 'gerado', "
+                      "zap_token TEXT, signatarios TEXT, assinado BLOB, visualizado_em TEXT, alerta TEXT, criado_em TEXT NOT NULL, criado_por TEXT, atualizado_em TEXT NOT NULL)")
+            c.execute("INSERT INTO documentos_gerados (nome,valores,docx,criado_em,atualizado_em) VALUES ('Antigo','{}',x'00','a','a')")
+            c.commit()
+            c.close()
+            repo = documentos.Repositorio(caminho)
+            self.assertIsNone(repo.documentos()[0]["publicacao_hash"])
+            self.assertEqual(repo.documentos(publicacao_hash="x"), [])
+
+
 if __name__ == "__main__":
     unittest.main()
