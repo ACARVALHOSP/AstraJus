@@ -850,7 +850,7 @@ function CriarProcessosLote({ publicacoes, onClose, onConcluido }: { publicacoes
             {semCnj > 0 && ` ${semCnj} sem CNJ válido serão ignoradas.`}
             {publicacoes.length - pendentes.length > 0 && ` ${publicacoes.length - pendentes.length} já vinculadas serão ignoradas.`}
           </Text>
-          <Text as="p" size="2" color="gray">O cliente será "{CLIENTE_PENDENTE}"; altere-o em cada processo depois.</Text>
+          <Text as="p" size="2" color="gray">O cliente será "{CLIENTE_PENDENTE}", salvo quando o advogado monitorado representar uma parte da publicação: ela vira o cliente. Ajuste em cada processo depois.</Text>
           <div className="form-campo">
             <label className="form-campo-label" htmlFor="clote-responsavel">Responsável <span className="aj-obrigatorio" aria-hidden="true">*</span></label>
             <Select.Root value={responsavel || '__none__'} disabled={salvando} onValueChange={v => setResponsavel(v === '__none__' ? '' : v)}>

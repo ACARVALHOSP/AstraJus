@@ -1,7 +1,7 @@
 import { confirmarSaida } from '../AlteracoesPendentes'
 import { ChevronLeft } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Badge, Button, Flex, Heading, Skeleton, Tabs, Text } from '@radix-ui/themes'
 import { useCliente } from '../api/ClienteContext'
 import { useNavegacao } from '../api/NavegacaoContext'
@@ -15,6 +15,7 @@ import AtividadesCaso from './casos/AtividadesCaso'
 import PublicacoesCaso from './casos/PublicacoesCaso'
 import MovimentacoesCaso from './casos/MovimentacoesCaso'
 import PoloClientes from './casos/PoloClientes'
+import type { PoloCliente } from '../utils/polos'
 import VinculosCaso from './casos/VinculosCaso'
 import LinhaDoTempoCaso from './casos/LinhaDoTempoCaso'
 import JurimetriaCaso from './casos/JurimetriaCaso'
@@ -48,6 +49,13 @@ export default function Casos() {
   const [resumo, setResumo] = useState<Caso | null>(null)
   const [abaSelecionada, setAbaSelecionada] = useState<AbaId>('cadastro')
   const [titulo, setTitulo] = useState<string | null>(null)
+  // Polos corrigidos no cabeçalho: a capa os usa para marcar o cliente (ex.: "Pendente") na parte certa.
+  const queryClient = useQueryClient()
+  const [versaoCadastro, setVersaoCadastro] = useState(0) // muda quando os clientes do processo são trocados: recarrega cadastro e capa
+  const [polosEditados, setPolosEditados] = useState<{ id: string; polos: PoloCliente[] } | null>(null)
+  const polosAtuais = polosEditados?.id === casoId ? polosEditados.polos : resumo?.polos
+  // Após trocar clientes, o cadastro recarregado traz os polos novos; o valor editado fica obsoleto.
+  const aoCarregarCaso = (caso: Caso) => { setPolosEditados(null); setResumo(caso); setTitulo(caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)') }
   const faixaAbas = useRef<HTMLDivElement>(null)
 
   const versaoLida = useRef(-1)
@@ -125,7 +133,10 @@ export default function Casos() {
               {formatarNumeroCNJ(numero)}{i === 0 && resumo.foro ? ` · ${resumo.foro}` : ''}
             </p>
           ))}
-          {resumo && <PoloClientes key={casoId} casoId={casoId} polos={resumo.polos} podeEditar={podeEditar('casos')} />}
+          {resumo && <PoloClientes key={`${casoId}-${versaoCadastro}`} casoId={casoId} polos={polosAtuais} podeEditar={podeEditar('casos')} onAlterado={(polos, trocou) => {
+            setPolosEditados({ id: casoId, polos })
+            if (trocou) { setVersaoCadastro(v => v + 1); void queryClient.invalidateQueries({ queryKey: ['clientes'] }) }
+          }} />}
         </div>
         <SugestaoPrazos key={casoId} casoId={casoId} onAplicado={() => { atualizarContagens(); setVersaoAtividades(v => v + 1) }} />
         <Tabs.Root key={casoId} value={abaSelecionada} onValueChange={(v) => confirmarSaida(() => setAbaSelecionada(v as AbaId))}>
@@ -148,8 +159,10 @@ export default function Casos() {
           </div>
           <Tabs.Content value="cadastro">
             <CadastroCaso
+              key={versaoCadastro}
               casoId={casoId}
-              onCarregado={(caso) => { setResumo(caso); setTitulo(caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)') }}
+              polos={polosAtuais}
+              onCarregado={aoCarregarCaso}
               onSalvo={(caso) => { setResumo(caso); setTitulo(caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)') }}
               onExcluido={() => setCasoId(null)}
               onMovimentacoes={() => setAbaSelecionada('movimentacoes')}

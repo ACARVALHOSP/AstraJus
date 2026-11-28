@@ -9,6 +9,7 @@ import { useClientes } from '../../api/consultas'
 import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarNomeExibicao, formatarNumeroCNJ } from '../../utils/formatadores'
 import { siglaTribunalPorNumero } from '../../utils/tribunalPorNumero'
+import type { PoloCliente } from '../../utils/polos'
 import { clienteDaParte, dataCapa, poloDaParte, type ClienteCapa, type ParteCapa } from './dadosCapa'
 import type { Caso } from './ListaCasos'
 
@@ -47,8 +48,8 @@ const campos = [
 type Edicao = Record<typeof campos[number][0], string>
 const editar = (capa: Capa) => Object.fromEntries(campos.map(([chave]) => [chave, String(capa[chave] ?? '')])) as Edicao
 
-export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentacoes }: {
-  caso: Caso; numero: string; onAtualizado: (caso: Caso) => void; onMovimentacoes: () => void
+export default function CapaProcesso({ caso, numero, polos, onAtualizado, onMovimentacoes }: {
+  caso: Caso; numero: string; polos?: PoloCliente[]; onAtualizado: (caso: Caso) => void; onMovimentacoes: () => void
 }) {
   const { cliente } = useCliente()
   const { avisar } = useAvisos()
@@ -130,13 +131,17 @@ export default function CapaProcesso({ caso, numero, onAtualizado, onMovimentaco
 
   const vinculados = [caso.cliente_id, ...(caso.clientes_adicionais ?? [])].filter((id): id is string => Boolean(id))
   const partes = (capa?.partes ?? []).filter(p => p.nome?.trim())
+  // Cliente sem parte reconhecida pelo nome/CPF (ex.: "Pendente") vale pelo polo escolhido no cabeçalho.
+  const clientesPorPolo = (polos ?? []).filter(p => (p.polo === 'ativo' || p.polo === 'passivo')
+    && !partes.some(parte => clienteDaParte(parte, registros, [p.cliente_id])?.id === p.cliente_id))
   function participantes(polo: 'ativo' | 'passivo' | 'outro') {
     const grupo = partes.filter(p => poloDaParte(p) === polo)
     return grupo.length ? grupo.map((parte, i) => {
       const registro = clienteDaParte(parte, registros, vinculados)
+      const nomeCliente = registro?.nome ?? clientesPorPolo.find(p => p.polo === polo)?.nome
       return <span className="capa-parte" key={`${parte.nome}-${i}`}>
         {formatarNomeExibicao(parte.nome)}
-        {registro && <Badge color="blue" size="1" ml="1" title={`Cliente vinculado ao processo: ${registro.nome ?? ''}`}>Cliente</Badge>}
+        {nomeCliente !== undefined && <Badge color="blue" size="1" ml="1" title={`Cliente vinculado ao processo: ${nomeCliente}`}>Cliente</Badge>}
       </span>
     }) : 'Não informado pelo DJEN'
   }

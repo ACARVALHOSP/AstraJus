@@ -47,6 +47,7 @@ import asaas_integracao
 import automacoes
 import autocadastro
 import nomes as nomes_mod
+import polos as polos_mod
 import regras_responsavel
 import agenda_atividades
 import financeiro_juridico
@@ -3587,7 +3588,25 @@ def _consultar_casos_para_vinculo(gestao, termo: str) -> list[dict]:
     return encontrados
 
 
-def _criar_caso_de_publicacao(gestao, publicacoes, publicacao, dados, usuario_padrao=None, *, rascunho=False, contexto_regras=None):
+def _partes_do_advogado_monitorado(publicacao, registro_monitoramentos) -> list[str]:
+    """Nomes das partes representadas pelo advogado cuja OAB gerou a captura, ou [] se não der para afirmar.
+    shortcut: o DJEN não liga advogado a polo; só vale quando todos os destinatários são do mesmo polo."""
+    if registro_monitoramentos is None:
+        return []
+    criterio = (registro_monitoramentos.carregar().get(publicacao.get("monitoramento_id") or "") or {}).get("criterio") or {}
+    oab, uf = polos_mod.so_digitos(criterio.get("numero_oab")), str(criterio.get("uf_oab") or "").upper()
+    d = publicacao.get("dados") or {}
+    if not oab or not any(polos_mod.so_digitos(a.get("numero_oab")) == oab and (not uf or str(a.get("uf_oab") or "").upper() == uf)
+                          for a in d.get("destinatarioadvogados") or []):
+        return []
+    destinatarios = d.get("destinatarios") or []
+    if len({polos_mod.polo_da_parte(p.get("polo")) for p in destinatarios}) != 1:
+        return []
+    return list(dict.fromkeys(p["nome"].strip() for p in destinatarios if (p.get("nome") or "").strip() and polos_mod.polo_da_parte(p.get("polo"))))
+
+
+def _criar_caso_de_publicacao(gestao, publicacoes, publicacao, dados, usuario_padrao=None, *, rascunho=False, contexto_regras=None,
+                              registro_monitoramentos=None):
     """Cria usando dados já capturados; não consulta APIs externas."""
     numero = publicacao.get("numero_processo")
     if not numero:
@@ -3610,8 +3629,16 @@ def _criar_caso_de_publicacao(gestao, publicacoes, publicacao, dados, usuario_pa
     nome_cliente = nomes_mod.normalizar((dados.get("nome_cliente") or publicacao.get("nome_pesquisado") or "").strip(), excecoes)
     if not cliente_id and not nome_cliente:
         return None, _erro("Selecione um cliente ou informe nome_cliente.")
+    # Cliente "Pendente": se o advogado monitorado representa uma parte da publicação, ela vira o cliente.
+    pendente = (nome_cliente if not cliente_id else (gestao.obter_cliente(cliente_id) or {}).get("nome", "")).strip().lower() == "pendente"
+    representadas = _partes_do_advogado_monitorado(publicacao, registro_monitoramentos) if pendente else []
+    adicionais = []
+    if representadas:
+        cliente_id, nome_cliente = None, nomes_mod.normalizar(representadas[0], excecoes)
+        adicionais = [{"cliente_novo": {"nome": nomes_mod.normalizar(n, excecoes)}} for n in representadas[1:]]
     corpo = {
         **({"cliente_id": cliente_id} if cliente_id else {"cliente_novo": {"nome": nome_cliente}}),
+        **({"clientes_adicionais": adicionais} if adicionais else {}),
         "titulo": nome,
         "responsavel": dados.get("responsavel"),
         "numeros_processo": [numero],
@@ -5446,7 +5473,7 @@ class _AutenticacaoBearer:
         """Modelos DOCX e documentos gerados. GET /documentos/catalogo; GET/POST /documentos/modelos,
         DELETE /documentos/modelos/<id> (administrador), POST /documentos/modelos/<id>/previa;
         GET/POST /documentos; GET /documentos/<id>/arquivo?tipo=docx|pdf|assinado;
-        POST /documentos/<id>/enviar (ZapSign) e /documentos/<id>/atualizar."""
+        POST /documentos/<id>/enviar (ZapSign) e /documentos/<id>/atualizar; DELETE /documentos/<id>."""
         repo = documentos.Repositorio(self.gestao.caminho)
         usuario, metodo = scope["usuario"], scope.get("method")
         administrador = scope.get("nivel_acesso") == "administrador"
@@ -5521,6 +5548,10 @@ class _AutenticacaoBearer:
             elif partes[0].isdigit():
                 doc_id = int(partes[0])
                 acao = partes[1] if len(partes) == 2 else None
+                if len(partes) == 1 and metodo == "DELETE":
+                    repo.excluir_documento(doc_id)
+                    await _json(send, 200, {"excluido": True})
+                    return
                 if acao == "arquivo" and metodo == "GET":
                     tipo = (consulta.get("tipo") or ["pdf"])[0]
                     if tipo not in ("docx", "pdf", "assinado"):
@@ -5993,15 +6024,32 @@ class _AutenticacaoBearer:
             return
         cliente_id = str(dados.get("cliente_id") or "").strip()
         polo = str(dados.get("polo") or "").strip().lower() or None
+        agora = lambda: datetime.now(timezone.utc)
+        trocados = False
         try:
-            ok = self.gestao.definir_polo(caso_id, cliente_id, polo, lambda: datetime.now(timezone.utc))
+            ok = self.gestao.definir_polo(caso_id, cliente_id, polo, agora)
+            antigo = self.gestao.obter_cliente(cliente_id) if ok else None
+            if ok and polo in ("ativo", "passivo") and (antigo or {}).get("nome", "").strip().lower() == "pendente":
+                # "Pendente" escolhe um polo: as partes desse polo na capa viram contatos (clientes) do processo.
+                caso = self.gestao.obter_caso(caso_id) or {}
+                excecoes = nomes_mod.Nomes(self.gestao.caminho).excecoes()
+                nomes = list(dict.fromkeys(
+                    nomes_mod.normalizar(p["nome"].strip(), excecoes)
+                    for n in caso.get("processos") or []
+                    for p in (self.gestao.obter_capa_processo(caso_id, n) or {}).get("partes") or []
+                    if (p.get("nome") or "").strip() and polos_mod.polo_da_parte(p.get("polo")) == polo))
+                novos = [i for n in nomes if (i := _resolver_cliente_id(self.gestao, {"cliente_novo": {"nome": n}})[0])]
+                if novos and self.gestao.substituir_cliente_do_caso(caso_id, cliente_id, novos):
+                    trocados = True
+                    for novo in novos:
+                        self.gestao.definir_polo(caso_id, novo, polo, agora)
         except ValueError as e:
             await _json(send, 400, _erro(str(e)))
             return
         if not ok:
             await _json(send, 404, _erro("Processo ou cliente do processo não encontrado."))
             return
-        await _json(send, 200, {"polos": (self.gestao.obter_caso(caso_id) or {}).get("polos", [])})
+        await _json(send, 200, {"polos": (self.gestao.obter_caso(caso_id) or {}).get("polos", []), "clientes_trocados": trocados})
 
     async def _caso_detalhe(self, scope, receive, send, caso_id: str):
         """GET /casos/<id>: o caso com sua linha do tempo.
@@ -7151,7 +7199,8 @@ class _AutenticacaoBearer:
         if responsavel and responsavel not in self.registro.ativos():
             await _json(send, 400, _erro("Selecione um responsável ativo."))
             return
-        caso, erro = _criar_caso_de_publicacao(self.gestao, self.publicacoes, publicacao, dados_corpo, scope.get("usuario"))
+        caso, erro = _criar_caso_de_publicacao(self.gestao, self.publicacoes, publicacao, dados_corpo, scope.get("usuario"),
+                                                registro_monitoramentos=self.registro_monitoramentos)
         if erro:
             await _json(send, 400, erro)
             return

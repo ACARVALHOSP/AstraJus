@@ -9,7 +9,7 @@ import { COR_POLO, ROTULO_POLO, type Polo, type PoloCliente } from '../../utils/
 
 /** Cabeçalho do processo: em que polo cada cliente está. O sistema deduz pela capa e pelas
  *  publicações; aqui dá para corrigir (ou voltar ao automático). */
-export default function PoloClientes({ casoId, polos: iniciais, podeEditar }: { casoId: string; polos?: PoloCliente[]; podeEditar: boolean }) {
+export default function PoloClientes({ casoId, polos: iniciais, podeEditar, onAlterado }: { casoId: string; polos?: PoloCliente[]; podeEditar: boolean; onAlterado?: (polos: PoloCliente[], clientesTrocados: boolean) => void }) {
   const { cliente } = useCliente()
   const { avisar } = useAvisos()
   const [local, setPolos] = useState<PoloCliente[] | null>(null)
@@ -19,9 +19,11 @@ export default function PoloClientes({ casoId, polos: iniciais, podeEditar }: { 
   async function mudar(clienteId: string, valor: string) {
     setSalvando(clienteId)
     try {
-      const r = await enviarJson<{ polos: PoloCliente[] }>(cliente, `/casos/${encodeURIComponent(casoId)}/polos`, { cliente_id: clienteId, polo: valor === 'auto' ? null : valor }, 'PUT')
+      const r = await enviarJson<{ polos: PoloCliente[]; clientes_trocados?: boolean }>(cliente, `/casos/${encodeURIComponent(casoId)}/polos`, { cliente_id: clienteId, polo: valor === 'auto' ? null : valor }, 'PUT')
       setPolos(r.polos)
-      avisar({ texto: valor === 'auto' ? 'Polo voltou a ser deduzido automaticamente.' : 'Polo do cliente atualizado.' })
+      onAlterado?.(r.polos, Boolean(r.clientes_trocados))
+      avisar({ texto: r.clientes_trocados ? 'Contatos criados com o nome das partes do polo e vinculados ao processo.'
+        : valor === 'auto' ? 'Polo voltou a ser deduzido automaticamente.' : 'Polo do cliente atualizado.' })
     } catch (e) {
       avisar({ tipo: 'erro', texto: e instanceof ErroMCP ? e.message : 'Não foi possível salvar o polo.' })
     } finally { setSalvando('') }

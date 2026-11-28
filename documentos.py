@@ -382,6 +382,11 @@ class Repositorio:
                 raise LookupError("Modelo não encontrado.")
 
     # documentos gerados
+    def excluir_documento(self, doc_id):
+        with self._abrir() as c:
+            if not c.execute("DELETE FROM documentos_gerados WHERE id=?", (doc_id,)).rowcount:
+                raise LookupError("Documento não encontrado.")
+
     def criar_documento(self, modelo_id, nome, cliente_id, caso_id, valores, docx, pdf, usuario):
         with self._abrir() as c:
             i = c.execute("INSERT INTO documentos_gerados (modelo_id,nome,cliente_id,caso_id,valores,docx,pdf,criado_em,criado_por,atualizado_em) "

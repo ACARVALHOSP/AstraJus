@@ -12,18 +12,21 @@ import { buscarJson, enviarJson } from '../../api/rest'
 import { formatarNumeroCNJ } from '../../utils/formatadores'
 import type { Caso } from './ListaCasos'
 import CapaProcesso from './CapaProcesso'
+import type { PoloCliente } from '../../utils/polos'
 import AvisoProcessoParadoOpcao from './AvisoProcessoParado'
 
 const SEM_RESPONSAVEIS: string[] = []
 
 export default function CadastroCaso({
   casoId,
+  polos,
   onCarregado,
   onSalvo,
   onExcluido,
   onMovimentacoes,
 }: {
   casoId: string
+  polos?: PoloCliente[]
   onCarregado: (caso: Caso) => void
   onSalvo: (caso: Caso) => void
   onExcluido: () => void
@@ -119,6 +122,7 @@ export default function CadastroCaso({
           key={`${casoId}-${numero}`}
           caso={caso}
           numero={numero}
+          polos={polos}
           onMovimentacoes={onMovimentacoes}
           onAtualizado={atualizado => { setCaso(atualizado); onSalvo(atualizado) }}
         />
