@@ -15,6 +15,7 @@ import AtividadesCaso from './casos/AtividadesCaso'
 import PublicacoesCaso from './casos/PublicacoesCaso'
 import MovimentacoesCaso from './casos/MovimentacoesCaso'
 import PoloClientes from './casos/PoloClientes'
+import type { PoloCliente } from '../utils/polos'
 import VinculosCaso from './casos/VinculosCaso'
 import LinhaDoTempoCaso from './casos/LinhaDoTempoCaso'
 import JurimetriaCaso from './casos/JurimetriaCaso'
@@ -48,6 +49,9 @@ export default function Casos() {
   const [resumo, setResumo] = useState<Caso | null>(null)
   const [abaSelecionada, setAbaSelecionada] = useState<AbaId>('cadastro')
   const [titulo, setTitulo] = useState<string | null>(null)
+  // Polos corrigidos no cabeçalho: a capa os usa para marcar o cliente (ex.: "Pendente") na parte certa.
+  const [polosEditados, setPolosEditados] = useState<{ id: string; polos: PoloCliente[] } | null>(null)
+  const polosAtuais = polosEditados?.id === casoId ? polosEditados.polos : resumo?.polos
   const faixaAbas = useRef<HTMLDivElement>(null)
 
   const versaoLida = useRef(-1)
@@ -125,7 +129,7 @@ export default function Casos() {
               {formatarNumeroCNJ(numero)}{i === 0 && resumo.foro ? ` · ${resumo.foro}` : ''}
             </p>
           ))}
-          {resumo && <PoloClientes key={casoId} casoId={casoId} polos={resumo.polos} podeEditar={podeEditar('casos')} />}
+          {resumo && <PoloClientes key={casoId} casoId={casoId} polos={resumo.polos} podeEditar={podeEditar('casos')} onAlterado={polos => setPolosEditados({ id: casoId, polos })} />}
         </div>
         <SugestaoPrazos key={casoId} casoId={casoId} onAplicado={() => { atualizarContagens(); setVersaoAtividades(v => v + 1) }} />
         <Tabs.Root key={casoId} value={abaSelecionada} onValueChange={(v) => confirmarSaida(() => setAbaSelecionada(v as AbaId))}>
@@ -149,6 +153,7 @@ export default function Casos() {
           <Tabs.Content value="cadastro">
             <CadastroCaso
               casoId={casoId}
+              polos={polosAtuais}
               onCarregado={(caso) => { setResumo(caso); setTitulo(caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)') }}
               onSalvo={(caso) => { setResumo(caso); setTitulo(caso.titulo ? formatarNomeExibicao(caso.titulo) : '(sem título)') }}
               onExcluido={() => setCasoId(null)}

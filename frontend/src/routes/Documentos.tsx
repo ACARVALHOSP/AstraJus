@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Badge, Box, Button, Callout, Checkbox, Dialog, Flex, Select, Table, Text, TextArea, TextField } from '@radix-ui/themes'
+import { AlertDialog, Badge, Box, Button, Callout, Checkbox, Dialog, Flex, Select, Table, Text, TextArea, TextField } from '@radix-ui/themes'
 import { AlertTriangle, Download, FilePlus, RefreshCw, Send, Trash2, Upload } from 'lucide-react'
 import { useAvisos } from '../Avisos'
 import CabecalhoPagina from '../CabecalhoPagina'
@@ -61,6 +61,7 @@ export default function Documentos() {
   const [dialogo, setDialogo] = useState<null | 'modelo' | 'gerar'>(null)
   const [enviando, setEnviando] = useState<Documento | null>(null)
   const [ocupado, setOcupado] = useState<number | null>(null)
+  const [paraExcluir, setParaExcluir] = useState<Documento | null>(null)
 
   const catalogo = useQuery({ queryKey: ['documentos-catalogo', cliente?.token], enabled: !!cliente, queryFn: ({ signal }) => buscarJson<Catalogo>(cliente, '/documentos/catalogo', signal) })
   const modelos = useQuery({ queryKey: ['documentos-modelos', cliente?.token], enabled: !!cliente, queryFn: ({ signal }) => buscarJson<{ modelos: Modelo[] }>(cliente, '/documentos/modelos', signal).then(r => r.modelos) })
@@ -88,6 +89,14 @@ export default function Documentos() {
       await enviarJson(cliente, `/documentos/${doc.id}/atualizar`, {})
       recarregar()
     } catch (e) { avisar({ texto: mensagem(e, 'Não foi possível consultar a ZapSign.'), tipo: 'erro' }) } finally { setOcupado(null) }
+  }
+
+  async function excluirDocumento(doc: Documento) {
+    try {
+      await enviarJson(cliente, `/documentos/${doc.id}`, undefined, 'DELETE')
+      recarregar()
+      avisar({ texto: 'Documento excluído.' })
+    } catch (e) { avisar({ texto: mensagem(e, 'Não foi possível excluir o documento.'), tipo: 'erro' }) }
   }
 
   async function excluirModelo(m: Modelo) {
@@ -158,6 +167,7 @@ export default function Documentos() {
                     {d.tem_assinado && <Button size="1" variant="soft" color="green" onClick={() => void baixar(d, 'assinado')}><Download size={13} aria-hidden="true" />Assinado</Button>}
                     {d.status === 'gerado' && d.tem_pdf && catalogo.data?.zapsign && <Button size="1" onClick={() => setEnviando(d)}><Send size={13} aria-hidden="true" />Enviar para assinatura</Button>}
                     {d.status === 'enviado' && <Button size="1" variant="soft" loading={ocupado === d.id} onClick={() => void atualizar(d)}><RefreshCw size={13} aria-hidden="true" />Atualizar</Button>}
+                    <Button size="1" variant="soft" color="red" aria-label={`Excluir ${d.nome}`} onClick={() => setParaExcluir(d)}><Trash2 size={13} aria-hidden="true" />Excluir</Button>
                   </Flex>
                 </Table.Cell>
               </Table.Row>
@@ -170,6 +180,21 @@ export default function Documentos() {
       {dialogo === 'gerar' && catalogo.data && modelos.data && (
         <DialogoGerar catalogo={catalogo.data} modelos={modelos.data} contatos={contatos.data ?? []}
           onFechar={() => setDialogo(null)} onGerado={(d) => { setDialogo(null); recarregar(); if (catalogo.data?.zapsign) setEnviando(d) }} />
+      )}
+      {paraExcluir && (
+        <AlertDialog.Root open onOpenChange={o => { if (!o) setParaExcluir(null) }}>
+          <AlertDialog.Content maxWidth="440px">
+            <AlertDialog.Title>Excluir documento</AlertDialog.Title>
+            <AlertDialog.Description size="2">
+              Excluir “{paraExcluir.nome}”? Os arquivos gerados serão apagados e isso não pode ser desfeito.
+              {paraExcluir.status === 'enviado' && ' Ele já foi enviado para assinatura; o envio na ZapSign não é cancelado.'}
+            </AlertDialog.Description>
+            <Flex gap="3" justify="end" mt="4">
+              <AlertDialog.Cancel><Button variant="soft" color="gray" size="2">Cancelar</Button></AlertDialog.Cancel>
+              <AlertDialog.Action><Button color="red" size="2" onClick={() => void excluirDocumento(paraExcluir)}>Excluir</Button></AlertDialog.Action>
+            </Flex>
+          </AlertDialog.Content>
+        </AlertDialog.Root>
       )}
       {enviando && <DialogoEnviar documento={enviando} contato={contatos.data?.find(c => c.id === enviando.cliente_id)} onFechar={() => setEnviando(null)} onEnviado={() => { setEnviando(null); recarregar() }} />}
     </div>
